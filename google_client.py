@@ -243,9 +243,13 @@ def sync_data(gc, tasks_service, assignments, lectures):
         if len(all_data) > 1:
             data_rows = all_data[1:]
             
+            # Compute max column count to preserve any custom notes the user added
+            max_col_count = max((len(r) for r in data_rows), default=7)
+            max_col_count = max(max_col_count, 7)
+            
             # Ensure uniform row length
             for row in data_rows:
-                while len(row) < 7:
+                while len(row) < max_col_count:
                     row.append("")
 
             # Reformat dates and sort
@@ -257,8 +261,18 @@ def sync_data(gc, tasks_service, assignments, lectures):
             # Sort by Course (0), Type (1), then Date Descending (3)
             data_rows.sort(key=lambda x: (x[0], x[1], -parse_date(x[3]).timestamp()))
             
+            # Convert numeric column index to letter (e.g. 7 -> G, 9 -> I)
+            def col_letter(n):
+                res = ""
+                while n > 0:
+                    n, rem = divmod(n - 1, 26)
+                    res = chr(65 + rem) + res
+                return res
+            
+            end_col = col_letter(max_col_count)
+            
             # Write the sorted data back to the sheet
-            ws.update(f'A2:G{len(data_rows)+1}', data_rows)
+            ws.update(f'A2:{end_col}{len(data_rows)+1}', data_rows)
             logging.info("Sorted spreadsheet in-place by Course, Type, and Date.")
             
             # Update the last sync date in I1 so we know exactly when we last successfully ran
