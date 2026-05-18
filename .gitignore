@@ -1,0 +1,25 @@
+# Credentials & Environment Variables
+.env
+credentials.json
+token.json
+sync_cache.json
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Logs and Media
+*.log
+*.png
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and Editor
+.vscode/
+.idea/
+.history
+.gemini
