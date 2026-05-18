@@ -40,18 +40,29 @@ Click the **Fork** button at the top right of this page to create your own copy 
 5. Go to **Credentials**. Create a new **OAuth client ID** (Application type: Desktop App).
 6. Download the JSON and rename it to `credentials.json`.
 
+### 3. Configure environment variables
+Create your `.env` file (see `.env.example` format).
+- Configure your Spreadsheet and Worksheet name **exactly** the way they are named, avoid using special characters i.e. $£%^&)(...
+- To obtain you Moodle API key, enter the preferences tab in Moodle:
+<img width="2122" height="913" alt="image" src="https://github.com/user-attachments/assets/3f2dd9d7-9141-4ba1-afff-df01109a5eca" />
+
+   - Click on security keys, select 'Reset' for 'Moodle mobile web service' security key, this will prompt a confirmation dialog and finally will produce your API key:
+   <img width="2090" height="1331" alt="image" src="https://github.com/user-attachments/assets/059b0008-2397-48e7-8fdc-e685fd0d5d7f" />
+
+- To obtain your Panopto course links simply enter the course folder and copy its link:
+<img width="2386" height="322" alt="image" src="https://github.com/user-attachments/assets/230c641e-89e0-4a87-a306-8af915fdc0bc" />
+
 ### 3. Generate Your Access Token (Locally Once)
 Because this runs headlessly in the cloud, you need to authorize the app once on your computer to generate a `token.json` file.
 1. Clone your fork to your local machine.
 2. Place `credentials.json` in the root folder.
-3. Create your `.env` file (see `.env.example` format).
-4. Run the script once locally:
+3. Run the script once locally:
    ```bash
    pip install -r requirements.txt
    python main.py
    ```
-5. A browser window will open. Log in to your Google Account and accept the permissions. 
-6. A `token.json` file will be generated in your folder.
+4. A browser window will open. Log in to your Google Account and accept the permissions. 
+5. A `token.json` file will be generated in your folder.
 
 ### 4. Setup GitHub Secrets
 Now that you have your configuration files, you need to provide them to GitHub Actions.
