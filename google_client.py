@@ -61,16 +61,28 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
         
         for t in all_tasks:
             if t.get('title') == task_title:
+                patch_body = {}
+                
                 # If the user has manually completed the task in Google Tasks, don't revert it!
                 if t.get('status') == 'completed' and target_status == 'needsAction':
                     logging.info(f"Task '{task_title}' is manually completed in Google Tasks. Preserving 'completed' status.")
-                    return "https://calendar.google.com/calendar/u/0/r/tasks"
-                
-                # If the task exists, ensure its completion status perfectly mirrors Moodle/Sheet
-                if t.get('status') != target_status:
-                    tasks_service.tasks().patch(tasklist='@default', task=t['id'], body={'status': target_status}).execute()
-                    t['status'] = target_status # update local cache
-                    logging.info(f"Updated Google Task '{task_title}' status to: {target_status}")
+                elif t.get('status') != target_status:
+                    patch_body['status'] = target_status
+                    
+                # Check if the deadline changed
+                if task_date:
+                    current_due = t.get('due', '')
+                    # Compare only the Date portion YYYY-MM-DD because Google Tasks truncates the Time
+                    if current_due[:10] != task_date[:10]:
+                        patch_body['due'] = task_date
+                        
+                if patch_body:
+                    tasks_service.tasks().patch(tasklist='@default', task=t['id'], body=patch_body).execute()
+                    if 'status' in patch_body:
+                        t['status'] = target_status
+                    if 'due' in patch_body:
+                        t['due'] = task_date
+                    logging.info(f"Updated Google Task '{task_title}' with: {patch_body}")
                 return "https://calendar.google.com/calendar/u/0/r/tasks"
                 
         # If task does not exist, create it
@@ -135,6 +147,7 @@ def sync_data(gc, tasks_service, assignments, lectures):
         last_sync_dt = datetime.min
 
     existing_titles = ws.col_values(3) # Column C
+    existing_deadlines = ws.col_values(4) # Column D
     existing_links = ws.col_values(5) # Column E
     existing_statuses = ws.col_values(6) # Column F
     
@@ -204,6 +217,16 @@ def sync_data(gc, tasks_service, assignments, lectures):
             if should_update and row_idx < len(existing_statuses):
                 ws.update_acell(f"F{row_idx + 1}", new_status)
                 logging.info(f"Updated spreadsheet status for '{title}' to: {new_status}")
+                
+            # Check if the deadline changed (e.g. postponed)
+            current_sheet_deadline = existing_deadlines[row_idx] if row_idx < len(existing_deadlines) else ""
+            new_deadline_dt = parse_date(assign.get('deadline', ''))
+            curr_deadline_dt = parse_date(current_sheet_deadline)
+            
+            if new_deadline_dt != datetime.min and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
+                new_sheet_deadline = new_deadline_dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
+                ws.update_acell(f"D{row_idx + 1}", new_sheet_deadline)
+                logging.info(f"Updated spreadsheet deadline for '{title}' to: {new_sheet_deadline}")
 
     for lec in lectures:
         title = lec.get('lecture_title', '')
