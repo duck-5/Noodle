@@ -62,8 +62,6 @@ def get_pending_assignments():
             if len(title) < 5 or not any(c.isalpha() for c in title):
                 continue
                 
-            deadline = datetime.datetime.fromtimestamp(assign['duedate'], tz)
-            
             opened_str = ""
             if 'allowsubmissionsfromdate' in assign and assign['allowsubmissionsfromdate'] > 0:
                 opened = datetime.datetime.fromtimestamp(assign['allowsubmissionsfromdate'], tz)
@@ -83,14 +81,30 @@ def get_pending_assignments():
                 
                 if sub_status == 'submitted':
                     status = 'Submitted'
-                elif deadline < now:
-                    status = 'Not submitted'
                 else:
                     status = 'Assigned'
+                    
+                # Attempt to extract personal extension date
+                extension_ts = s_resp.get('lastattempt', {}).get('extensionduedate', 0)
             except Exception as e:
                 logging.warning(f"Could not fetch status for {title}: {e}")
-                if deadline < now:
-                    status = 'Not submitted'
+                extension_ts = 0
+                
+            # The true deadline is the latest of the nominal due date, the strict cutoff date, or a personal extension
+            due_ts = assign.get('duedate', 0)
+            cutoff_ts = assign.get('cutoffdate', 0)
+            
+            # Ensure they are numbers
+            due_ts = due_ts if isinstance(due_ts, int) else 0
+            cutoff_ts = cutoff_ts if isinstance(cutoff_ts, int) else 0
+            extension_ts = extension_ts if isinstance(extension_ts, int) else 0
+            
+            final_deadline_ts = max(due_ts, cutoff_ts, extension_ts)
+            deadline = datetime.datetime.fromtimestamp(final_deadline_ts, tz)
+            
+            # If the true deadline has passed and it's not submitted, it's overdue
+            if status != 'Submitted' and deadline < now:
+                status = 'Not submitted'
             
             link = f"https://moodle.tau.ac.il/mod/assign/view.php?id={assign.get('cmid', '')}"
             
