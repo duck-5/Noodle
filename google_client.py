@@ -116,7 +116,17 @@ def sync_data(gc, tasks_service, assignments, lectures):
         d_str = re.sub(r'\s+', ' ', d_str).strip()
         
         # Supported formats (Moodle vs Panopto vs standalone date)
-        formats = ["%d/%m/%y %H:%M", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y 00:00:00", "%d/%m/%Y %H:%M", "%d/%m/%y", "%m/%d/%Y", "%d/%m/%Y"]
+        formats = [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d",
+            "%d/%m/%y %H:%M", 
+            "%m/%d/%Y %H:%M:%S", 
+            "%m/%d/%Y 00:00:00", 
+            "%d/%m/%Y %H:%M", 
+            "%d/%m/%y", 
+            "%m/%d/%Y", 
+            "%d/%m/%Y"
+        ]
         for fmt in formats:
             try:
                 return datetime.strptime(d_str, fmt)
