@@ -1,10 +1,25 @@
 # Changelog
 
-All notable changes in this uncommitted working copy are documented below. This release introduces multi-worksheet synchronization grouped by academic semesters, an interactive setup wizard, and streamlined course-level configuration.
+All notable changes in this uncommitted working copy are documented below. This release introduces package reorganization for clean modularity, a new developer block-inspection utility, and streamlined package-based imports.
 
 ---
 
 ## [Unreleased] - 2026-05-25
+
+### Added
+- **Developer Utility Script (`inspect_blocks.py`)**:
+  - Added a diagnostic helper script to test retrieval of Moodle course blocks using the `core_block_get_course_blocks` endpoint, dumping results to `course_blocks.json`.
+
+### Changed
+- **Code Refactoring & Package Reorganization**:
+  - Moved client modules (`moodle_client.py`, `google_client.py`, and `panopto_client.py`) into a unified `clients` package folder.
+  - Created `clients/__init__.py` to cleanly expose public API functions (`get_enrolled_courses`, `get_pending_assignments`, `parse_course_metadata`, `get_new_lectures`, `get_google_services`, and `sync_data`).
+  - Refactored `main.py`, `startup.py`, and `configure_courses.py` to import all client modules from the centralized `clients` package instead of direct parent-directory files.
+
+---
+
+## [1.0.0] - 2026-05-25
+
 
 ### Added
 - **Interactive Setup Wizard (`startup.py`)**:
