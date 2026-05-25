@@ -188,3 +188,105 @@ def get_new_lectures(course_mapping=None):
         filtered_lectures.extend(standalone)
 
     return filtered_lectures
+
+def resolve_course_panopto_folders(course_ids, username, password, pid):
+    """
+    Automates logging into Moodle via SSO, navigating to each course's main view page,
+    finding the block_panopto session viewer link, clicking/navigating to it to LTI authenticate,
+    intercepting the DeliveryInfo response, and returning a mapping of course_id -> panopto_folder_link.
+    """
+    resolved = {}
+    if not course_ids or not username or not password or not pid:
+        return resolved
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+
+        try:
+            print("Logging into Moodle via SSO...")
+            page.goto("https://moodle.tau.ac.il/login/index.php")
+            
+            login_btn = page.query_selector("a:has-text('התחברות'), a:has-text('Login'), .login-btn")
+            if login_btn:
+                login_btn.click()
+
+            page.wait_for_selector("#Ecom_User_ID", timeout=15000)
+            page.fill("#Ecom_User_ID", username)
+            page.fill("#Ecom_User_Pid", pid)
+            page.fill("#Ecom_Password", password)
+            page.press("#Ecom_Password", "Enter")
+
+            page.wait_for_url(lambda url: "mycourses" in url or "course" in url, timeout=20000)
+            print("[Success] Successfully logged into Moodle!")
+
+            for cid in course_ids:
+                print(f"Resolving Panopto link for Moodle Course ID: {cid}...")
+                course_url = f"https://moodle.tau.ac.il/course/view.php?id={cid}"
+                try:
+                    page.goto(course_url)
+                    page.wait_for_load_state('networkidle', timeout=15000)
+                    page.wait_for_timeout(3000)
+
+                    # Find any viewer link inside block_panopto_content or general page
+                    viewer_link_element = page.query_selector("a[href*='panopto.eu/Panopto/Pages/Viewer.aspx']")
+                    if not viewer_link_element:
+                        print(f"[-] No Panopto viewer link found for Course {cid}. Skipping.")
+                        continue
+
+                    # Set up network intercepting on the new page/tab that will open
+                    delivery_info_content = None
+                    
+                    def handle_response(response):
+                        nonlocal delivery_info_content
+                        if "deliveryinfo.aspx" in response.url.lower():
+                            try:
+                                delivery_info_content = response.text()
+                            except:
+                                pass
+
+                    # When clicking, we expect a new page to open
+                    with context.expect_page(timeout=10000) as new_page_info:
+                        viewer_link_element.click()
+                    
+                    panopto_page = new_page_info.value
+                    panopto_page.on("response", handle_response)
+                    
+                    panopto_page.wait_for_load_state('networkidle', timeout=20000)
+                    
+                    # Wait up to 10 seconds for the DeliveryInfo AJAX response
+                    for _ in range(20):
+                        if delivery_info_content:
+                            break
+                        panopto_page.wait_for_timeout(500)
+
+                    if delivery_info_content:
+                        import json
+                        data = json.loads(delivery_info_content)
+                        delivery = data.get("Delivery", {})
+                        folder_id = delivery.get("SessionGroupPublicID") or delivery.get("FolderId")
+                        if folder_id:
+                            folder_link = f"https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx#folderID=\"{folder_id}\""
+                            resolved[cid] = folder_link
+                            print(f"[+] Successfully resolved Panopto link for Course {cid}!")
+                        else:
+                            print(f"[-] Found DeliveryInfo but no Folder ID for Course {cid}.")
+                    else:
+                        print(f"[-] Failed to capture DeliveryInfo network request for Course {cid}.")
+                    
+                    try:
+                        panopto_page.close()
+                    except:
+                        pass
+                except Exception as ex:
+                    print(f"[-] Error during auto-resolution of Course {cid}: {ex}")
+
+        except Exception as e:
+            print(f"[-] Error during Moodle/Panopto login flow: {e}")
+        finally:
+            browser.close()
+
+    return resolved
