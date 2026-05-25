@@ -21,7 +21,7 @@ def job():
     try:
         # Fetch data
         logging.info("Fetching Moodle assignments...")
-        assignments, course_mapping = get_pending_assignments()
+        assignments, course_mapping, course_metadata = get_pending_assignments()
         
         logging.info("Fetching Panopto lectures...")
         lectures = get_new_lectures(course_mapping)
@@ -31,7 +31,7 @@ def job():
         gc, tasks_service = get_google_services()
         
         logging.info("Syncing to Google Sheets and Calendar...")
-        sync_data(gc, tasks_service, assignments, lectures)
+        sync_data(gc, tasks_service, assignments, lectures, course_metadata)
         
         logging.info("Sync complete!")
         logging.info("-------------------------------------------\n\n")
