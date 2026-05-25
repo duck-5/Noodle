@@ -1,10 +1,32 @@
 # Changelog
 
-All notable changes in this uncommitted working copy are documented below. This release introduces package reorganization for clean modularity, a new developer block-inspection utility, and streamlined package-based imports.
+All notable changes in this working copy are documented below.
 
 ---
 
 ## [Unreleased] - 2026-05-25
+
+### Changed
+- **Renamed Panopto/SSO Credential Keys (`config.py`, `.env.example`)**:
+  - Renamed `PANOPTO_USER` → `UNIVERSITY_USERNAME`, `PANOPTO_PASS` → `UNIVERSITY_PASSWORD`, and `PANOPTO_PID` → `STUDENT_ID` to reflect that these credentials belong to the university SSO system (used for both Moodle and Panopto), not Panopto alone.
+  - Updated `config.py` to read from the new env var names.
+  - Updated `.env.example` to document the new names under a clearer comment: `# University SSO Credentials`.
+
+### Added
+- **Panopto Scraping Feature Flag (`config.py`, `.env.example`, `clients/panopto_client.py`)**:
+  - Introduced `SCRAPE_PANOPTO` environment variable (set to `1` to enable, default `0`/disabled).
+  - `config.py` reads `SCRAPE_PANOPTO` and exposes it as a boolean.
+  - `panopto_client.py`'s `get_new_lectures()` returns early with an info log when `SCRAPE_PANOPTO` is falsy, allowing users to opt-out of Playwright headless browser usage entirely.
+- **Legacy Credential Migration in Setup Wizard (`startup.py`)**:
+  - The setup wizard now auto-detects old-style `PANOPTO_USER` / `PANOPTO_PASS` / `PANOPTO_PID` keys in `.env` and silently migrates them to the new names (`UNIVERSITY_USERNAME`, `UNIVERSITY_PASSWORD`, `STUDENT_ID`), removing the old keys.
+- **Interactive SSO Credential Entry in Setup Wizard (`startup.py`)**:
+  - If SSO credentials are not yet configured when the wizard needs to resolve Panopto folders, users are now interactively prompted (with `getpass` for password masking) to enter their university login details, which are saved directly to `.env`.
+- **Interactive `SCRAPE_PANOPTO` Enable Prompt (`startup.py`)**:
+  - If Panopto scraping is disabled, the wizard now asks the user whether to enable it and writes `SCRAPE_PANOPTO=1` to `.env` if they confirm.
+
+---
+
+## [Previous Unreleased] - 2026-05-25
 
 ### Added
 - **Automated Panopto Folder Auto-Discovery (`clients/panopto_client.py`)**:

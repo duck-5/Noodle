@@ -4,6 +4,31 @@ This developer guide details the integrations, endpoints, and scraper flows used
 
 ---
 
+## 0. Environment Variables Reference
+
+All runtime configuration is managed through a `.env` file (see `.env.example` for a template). The following table documents every supported key:
+
+| Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `MOODLE_URL` | ✅ | `https://moodle.tau.ac.il` | Base URL of the Moodle instance. |
+| `MOODLE_TOKEN` | ✅ | — | Moodle Mobile Web Service token (from Preferences → Security Keys). |
+| `MOODLE_COURSES` | ✅ | — | Comma-separated list of course ID prefixes to filter synced assignments. |
+| `SPREADSHEET_NAME` | ✅ | `University Tracker` | Name of the Google Spreadsheet to sync into. |
+| `WORKSHEET_NAME` | ✅ | `Year1-SemesterB` | Fallback worksheet name when semester metadata is unavailable. |
+| `UNIVERSITY_USERNAME` | ⚠️ | — | TAU SSO username, used for Moodle browser login and Panopto scraping. Replaces the old `PANOPTO_USER`. |
+| `UNIVERSITY_PASSWORD` | ⚠️ | — | TAU SSO password. Stored locally only. Replaces the old `PANOPTO_PASS`. |
+| `STUDENT_ID` | ⚠️ | — | Israeli ID or Passport number used by the TAU SSO portal. Replaces the old `PANOPTO_PID`. |
+| `PANOPTO_URL` | ⚠️ | `https://tau.cloud.panopto.eu` | Root URL of the Panopto instance. |
+| `SCRAPE_PANOPTO` | ❌ | `0` (disabled) | Set to `1` to enable headless Playwright scraping of Panopto lectures. |
+| `PANOPTO_COURSE_{ID}` | ❌ | — | Maps a Moodle course ID to its Panopto session folder URL. Auto-populated by the setup wizard. |
+| `GOOGLE_TOKEN_JSON` | ❌ | — | Allows providing the full `token.json` contents as a single env var (used in GitHub Actions CI). |
+
+> [!NOTE]
+> `UNIVERSITY_USERNAME`, `UNIVERSITY_PASSWORD`, and `STUDENT_ID` replaced the old `PANOPTO_USER`, `PANOPTO_PASS`, and `PANOPTO_PID` keys. The setup wizard auto-migrates existing `.env` files.
+
+---
+
+
 ## 1. Moodle Web Service API
 
 Tau Moodle runs on a standard Moodle platform, exposing the Moodle Mobile Web Services protocol. The tracker communicates with Moodle via standard JSON-REST requests using a mobile token (`wstoken`) that users generate from their Moodle Preferences.
