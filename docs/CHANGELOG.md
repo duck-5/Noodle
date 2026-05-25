@@ -7,14 +7,19 @@ All notable changes in this uncommitted working copy are documented below. This 
 ## [Unreleased] - 2026-05-25
 
 ### Added
-- **Developer Utility Script (`inspect_blocks.py`)**:
-  - Added a diagnostic helper script to test retrieval of Moodle course blocks using the `core_block_get_course_blocks` endpoint, dumping results to `course_blocks.json`.
+- **Automated Panopto Folder Auto-Discovery (`clients/panopto_client.py`)**:
+  - Implemented `resolve_course_panopto_folders()` using Playwright network interception to automate Moodle SSO login, navigate to course main view pages, and trigger LTI integration viewer clicks.
+  - Captures `deliveryinfo.aspx` AJAX payloads to dynamically parse and extract `SessionGroupPublicID` or `FolderId`.
+- **Integrated Panopto Auto-Discovery into Setup Wizard (`startup.py`)**:
+  - Automatically prompts users to discover and map Panopto courses using saved Moodle SSO credentials, eliminating manual copy-paste steps for `PANOPTO_COURSE_{id}` variables in `.env`.
+- **Developer Diagnostic Utilities**:
+  - Added `inspect_course_contents.py` to fetch Moodle course structures via `core_course_get_contents`.
+  - Added `inspect_functions.py` to fetch Moodle web service functions via `core_webservice_get_site_info` and search for Panopto integrations.
+  - Added `search_moodle_functions.py` to filter site info functions for block, LTI, and tool keywords.
+  - Added `search_transcript.py` to query local conversation transcripts for Panopto credentials/IDs.
+- **Enterprise `.gitignore` Upgrade (`.gitignore`)**:
+  - Redesigned gitignore configuration to secure sensitive API keys, local databases, and diagnostic files containing personal/academic details (`site_info.json`, `course_contents.json`, `course_blocks.json`, etc.).
 
-### Changed
-- **Code Refactoring & Package Reorganization**:
-  - Moved client modules (`moodle_client.py`, `google_client.py`, and `panopto_client.py`) into a unified `clients` package folder.
-  - Created `clients/__init__.py` to cleanly expose public API functions (`get_enrolled_courses`, `get_pending_assignments`, `parse_course_metadata`, `get_new_lectures`, `get_google_services`, and `sync_data`).
-  - Refactored `main.py`, `startup.py`, and `configure_courses.py` to import all client modules from the centralized `clients` package instead of direct parent-directory files.
 
 ---
 

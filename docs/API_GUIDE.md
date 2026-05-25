@@ -82,6 +82,12 @@ All requests are sent via HTTP GET or POST and must include the following common
     *   `returncontents`: `1` (indicates whether block content should be returned).
 *   **Purpose**: Retrieves all active blocks for a given course page on Moodle. Used for diagnostic extraction of sidebar contents, links, and specialized modules.
 
+#### 6. Retrieve Course Contents
+*   **Function**: `core_course_get_contents`
+*   **Parameters**:
+    *   `courseid`: The unique Moodle course ID integer (e.g. `321110401`).
+*   **Purpose**: Retrieves the entire course structure, including modules, sections, forums, quizzes, assignments, and external files. Used for full diagnostic structure inspection.
+
 ---
 
 ## 2. Panopto Scraper (Single Sign-On Bypass)
@@ -117,6 +123,43 @@ For each mapped Panopto course folder URL:
 3.  **Deduplication & Recitation Filtering**:
     *   Classifies videos containing `"tirgul"` or `"תרגול"` as **Recitations**; others as **Lectures**.
     *   If multiple records represent the same class session (e.g. `Tirgul 3 - Group A` and `Tirgul 3 - Group B`), the deduplication logic keeps only the most recently published video to prevent cluttering the spreadsheet.
+
+### Automated Folder Link Discovery (SSO Interception)
+
+To remove the friction of manually finding and copy-pasting Panopto Folder UUIDs into `.env`, TauTracker implements an automated discovery sub-system (`resolve_course_panopto_folders`):
+
+```mermaid
+sequenceDiagram
+    participant W as Setup Wizard (startup.py)
+    participant P as Playwright Session
+    participant M as Moodle (course/view.php?id=...)
+    participant Pa as Panopto (Viewer.aspx)
+    participant A as DeliveryInfo API
+    
+    W->>P: Trigger Auto-Discovery with Moodle SSO credentials
+    P->>M: Navigate to Moodle Course Page
+    M-->>P: Render Course contents with Panopto Viewer Block
+    P->>P: Extract link matching Viewer.aspx
+    P->>Pa: Click link (Opens LTI Authentication Tab)
+    Pa->>A: Request session details via deliveryinfo.aspx
+    P->>P: Intercept HTTP response for deliveryinfo.aspx
+    P->>W: Parse SessionGroupPublicID / FolderId from JSON
+    W->>W: Automatically save PANOPTO_COURSE_{id} to .env!
+```
+
+#### Network Response Interception
+The automation attaches a listener to the `response` event inside the newly opened Panopto tab:
+```python
+def handle_response(response):
+    if "deliveryinfo.aspx" in response.url.lower():
+        delivery_info_content = response.text()
+```
+The intercepted response returns a JSON structure containing:
+*   `Delivery.SessionGroupPublicID`: The folder UUID.
+*   `Delivery.FolderId`: Fallback folder UUID.
+
+This folder UUID is used to construct the direct session list URL required for the scraper:
+`https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx#folderID="{FolderId}"`
 
 ---
 
