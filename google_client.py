@@ -104,9 +104,10 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
         logging.error(f"Failed to sync task '{task_title}': {e}")
         return ''
 
-def sync_data(gc, tasks_service, assignments, lectures):
+def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
     import re
     from datetime import datetime
+    
     def parse_date(date_str):
         if not date_str:
             return datetime.min
@@ -134,33 +135,47 @@ def sync_data(gc, tasks_service, assignments, lectures):
                 continue
         return datetime.min
 
+    def get_worksheet_name(course_id_or_name, metadata, fallback_name):
+        if not metadata:
+            return fallback_name
+        ref_str = str(course_id_or_name).strip()
+        if ref_str in metadata:
+            return metadata[ref_str].get("worksheet_name", fallback_name)
+        # Search for key substring match
+        for key, meta in metadata.items():
+            if key in ref_str or ref_str in key:
+                return meta.get("worksheet_name", fallback_name)
+        return fallback_name
+
     try:
         sh = gc.open(SPREADSHEET_NAME)
     except gspread.exceptions.SpreadsheetNotFound:
         logging.error(f"Spreadsheet '{SPREADSHEET_NAME}' not found.")
         return
 
-    try:
-        ws = sh.worksheet(WORKSHEET_NAME)
-    except gspread.exceptions.WorksheetNotFound:
-        logging.error(f"Worksheet '{WORKSHEET_NAME}' not found in '{SPREADSHEET_NAME}'.")
-        return
+    if course_metadata is None:
+        course_metadata = {}
 
-    # Read Last Sync Date from I1
-    try:
-        last_sync_str = ws.acell('I1').value
-        if last_sync_str and "Last Sync: " in last_sync_str:
-            last_sync_dt = datetime.strptime(last_sync_str.replace("Last Sync: ", ""), "%m/%d/%Y %H:%M:%S")
-        else:
-            last_sync_dt = datetime.min
-    except Exception:
-        last_sync_dt = datetime.min
+    # Group assignments and lectures by target worksheet
+    assignments_by_sheet = {}
+    lectures_by_sheet = {}
 
-    existing_titles = ws.col_values(3) # Column C
-    existing_deadlines = ws.col_values(4) # Column D
-    existing_links = ws.col_values(5) # Column E
-    existing_statuses = ws.col_values(6) # Column F
-    
+    for assign in assignments:
+        course_ref = assign.get('course_id') or assign.get('course_name', '')
+        sheet_name = get_worksheet_name(course_ref, course_metadata, WORKSHEET_NAME)
+        assignments_by_sheet.setdefault(sheet_name, []).append(assign)
+
+    for lec in lectures:
+        course_ref = lec.get('course_name', '')
+        sheet_name = get_worksheet_name(course_ref, course_metadata, WORKSHEET_NAME)
+        lectures_by_sheet.setdefault(sheet_name, []).append(lec)
+
+    all_sheets = set(list(assignments_by_sheet.keys()) + list(lectures_by_sheet.keys()))
+
+    # If no data is found, ensure at least the default worksheet is handled
+    if not all_sheets:
+        all_sheets = {WORKSHEET_NAME}
+
     # Pre-fetch all Google Tasks to drastically reduce API calls
     try:
         tasks_result = tasks_service.tasks().list(tasklist='@default', maxResults=100, showHidden=True).execute()
@@ -168,147 +183,177 @@ def sync_data(gc, tasks_service, assignments, lectures):
     except Exception as e:
         logging.error(f"Failed to fetch existing Google Tasks: {e}")
         all_tasks = []
-        
-    rows_to_insert = []
 
-    for assign in assignments:
-        title = assign.get('assignment_name', '')
-        if not title:
-            continue
-            
-        new_status = assign.get('status', 'Assigned')
-        deadline_iso = assign.get('deadline', '').replace(" ", "T")
-        if deadline_iso:
-            deadline_iso += "Z"
-            
-        task_desc = f"Course: {assign.get('course_name', '')}\nLink: {assign.get('link', '')}\nSource: Moodle (TauTracker)"
-            
-        if title not in existing_titles:
-            # Re-use our robust date parser logic
-            opened_dt = parse_date(assign.get('opened', ''))
-            
-            # If it's old (opened before last sync), don't resurrect it if the user deleted it.
-            # If we can't parse opened date, we default to adding it just in case.
-            if opened_dt != datetime.min and opened_dt <= last_sync_dt:
+    for sheet_name in sorted(all_sheets):
+        logging.info(f"--- Synchronizing Worksheet: '{sheet_name}' ---")
+        
+        try:
+            ws = sh.worksheet(sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            logging.info(f"Worksheet '{sheet_name}' not found. Creating and formatting a new one...")
+            try:
+                ws = sh.add_worksheet(title=sheet_name, rows="1000", cols="10")
+                ws.append_row(['Course', 'Type', 'Title', 'Date', 'Link', 'Status', 'Tasks Link'])
+                ws.format("A1:G1", {
+                    "textFormat": {"bold": True}
+                })
+            except Exception as e:
+                logging.error(f"Failed to create worksheet '{sheet_name}': {e}. Skipping sync for this sheet.")
+                continue
+
+        # Read Last Sync Date from I1
+        try:
+            last_sync_str = ws.acell('I1').value
+            if last_sync_str and "Last Sync: " in last_sync_str:
+                last_sync_dt = datetime.strptime(last_sync_str.replace("Last Sync: ", ""), "%m/%d/%Y %H:%M:%S")
+            else:
+                last_sync_dt = datetime.min
+        except Exception:
+            last_sync_dt = datetime.min
+
+        existing_titles = ws.col_values(3) # Column C
+        existing_deadlines = ws.col_values(4) # Column D
+        existing_links = ws.col_values(5) # Column E
+        existing_statuses = ws.col_values(6) # Column F
+        
+        rows_to_insert = []
+        sheet_assignments = assignments_by_sheet.get(sheet_name, [])
+        sheet_lectures = lectures_by_sheet.get(sheet_name, [])
+
+        for assign in sheet_assignments:
+            title = assign.get('assignment_name', '')
+            if not title:
                 continue
                 
-            event_link = sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status)
-            
-            rows_to_insert.append([
-                assign.get('course_name', ''),
-                "Assignment",
-                title,
-                assign.get('deadline', ''),
-                assign.get('link', ''),
-                new_status, 
-                event_link
-            ])
-            existing_titles.append(title)
-            logging.info(f"Queued Assignment: {title}")
-            
-        elif title in existing_titles:
-            # Assignment exists in spreadsheet!
-            row_idx = existing_titles.index(title)
-            current_sheet_status = existing_statuses[row_idx] if row_idx < len(existing_statuses) else ""
-            
-            # Sync the Google Task status regardless (in case it was checked off manually or updated)
-            sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status, current_sheet_status)
-            
-            # Check if we should update the spreadsheet status
-            should_update = False
-            if new_status == 'Submitted' and current_sheet_status != 'Submitted':
-                should_update = True
-            elif new_status == 'Not submitted' and current_sheet_status not in ['Submitted', 'Not submitted']:
-                should_update = True
-            elif new_status == 'Assigned' and current_sheet_status not in ['Submitted', 'Not submitted', 'Assigned']:
-                should_update = True
-
-            # Update the spreadsheet status cell if logic dictates
-            if should_update and row_idx < len(existing_statuses):
-                ws.update_acell(f"F{row_idx + 1}", new_status)
-                logging.info(f"Updated spreadsheet status for '{title}' to: {new_status}")
+            new_status = assign.get('status', 'Assigned')
+            deadline_iso = assign.get('deadline', '').replace(" ", "T")
+            if deadline_iso:
+                deadline_iso += "Z"
                 
-            # Check if the deadline changed (e.g. postponed)
-            current_sheet_deadline = existing_deadlines[row_idx] if row_idx < len(existing_deadlines) else ""
-            new_deadline_dt = parse_date(assign.get('deadline', ''))
-            curr_deadline_dt = parse_date(current_sheet_deadline)
-            
-            if new_deadline_dt != datetime.min and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
-                new_sheet_deadline = new_deadline_dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
-                ws.update_acell(f"D{row_idx + 1}", new_sheet_deadline)
-                logging.info(f"Updated spreadsheet deadline for '{title}' to: {new_sheet_deadline}")
+            task_desc = f"Course: {assign.get('course_name', '')}\nLink: {assign.get('link', '')}\nSource: Moodle (TauTracker)"
+                
+            if title not in existing_titles:
+                opened_dt = parse_date(assign.get('opened', ''))
+                
+                # If it's old (opened before last sync), don't resurrect it if the user deleted it.
+                if opened_dt != datetime.min and opened_dt <= last_sync_dt:
+                    continue
+                    
+                event_link = sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status)
+                
+                rows_to_insert.append([
+                    assign.get('course_name', ''),
+                    "Assignment",
+                    title,
+                    assign.get('deadline', ''),
+                    assign.get('link', ''),
+                    new_status, 
+                    event_link
+                ])
+                existing_titles.append(title)
+                logging.info(f"[{sheet_name}] Queued Assignment: {title}")
+                
+            elif title in existing_titles:
+                row_idx = existing_titles.index(title)
+                current_sheet_status = existing_statuses[row_idx] if row_idx < len(existing_statuses) else ""
+                
+                # Sync the Google Task status regardless
+                sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status, current_sheet_status)
+                
+                # Check if we should update the spreadsheet status
+                should_update = False
+                if new_status == 'Submitted' and current_sheet_status != 'Submitted':
+                    should_update = True
+                elif new_status == 'Not submitted' and current_sheet_status not in ['Submitted', 'Not submitted']:
+                    should_update = True
+                elif new_status == 'Assigned' and current_sheet_status not in ['Submitted', 'Not submitted', 'Assigned']:
+                    should_update = True
 
-    for lec in lectures:
-        title = lec.get('lecture_title', '')
-        link = lec.get('recording_link', '')
-        pub_date = lec.get('published_date', '')
-        
-        # Only push if it was published after our last sync
-        lec_dt = parse_date(pub_date)
-        is_new = (lec_dt > last_sync_dt) or (lec_dt == datetime.min)
-        
-        # For lectures, use the Panopto link as the unique identifier because titles can be identical
-        if title and link and link not in existing_links and is_new:
-            is_tirgul = 'tirgul' in title.lower() or 'תרגול' in title
-            resource_type = "Recitation" if is_tirgul else "Lecture"
-            
-            rows_to_insert.append([
-                lec.get('course_name', ''),
-                resource_type,
-                title,
-                pub_date,
-                link,
-                "Unattended", 
-                "" # NO TASKS FOR LECTURES
-            ])
-            existing_links.append(link)
-            logging.info(f"Queued Lecture/Recitation: {title}")
-            
-    if rows_to_insert:
-        ws.insert_rows(rows_to_insert, row=2)
-        logging.info(f"Inserted {len(rows_to_insert)} new rows safely at the top of the table.")
-    else:
-        logging.info("No new rows to insert. Sheet is up to date.")
+                # Update the spreadsheet status cell if logic dictates
+                if should_update and row_idx < len(existing_statuses):
+                    ws.update_acell(f"F{row_idx + 1}", new_status)
+                    logging.info(f"[{sheet_name}] Updated spreadsheet status for '{title}' to: {new_status}")
+                    
+                # Check if the deadline changed (e.g. postponed)
+                current_sheet_deadline = existing_deadlines[row_idx] if row_idx < len(existing_deadlines) else ""
+                new_deadline_dt = parse_date(assign.get('deadline', ''))
+                curr_deadline_dt = parse_date(current_sheet_deadline)
+                
+                if new_deadline_dt != datetime.min and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
+                    new_sheet_deadline = new_deadline_dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
+                    ws.update_acell(f"D{row_idx + 1}", new_sheet_deadline)
+                    logging.info(f"[{sheet_name}] Updated spreadsheet deadline for '{title}' to: {new_sheet_deadline}")
 
-    # Sort the entire spreadsheet (Course -> Type -> Date Descending)
-    try:
-        all_data = ws.get_all_values()
-        if len(all_data) > 1:
-            data_rows = all_data[1:]
+        for lec in sheet_lectures:
+            title = lec.get('lecture_title', '')
+            link = lec.get('recording_link', '')
+            pub_date = lec.get('published_date', '')
             
-            # Compute max column count to preserve any custom notes the user added
-            max_col_count = max((len(r) for r in data_rows), default=7)
-            max_col_count = max(max_col_count, 7)
+            # Only push if it was published after our last sync
+            lec_dt = parse_date(pub_date)
+            is_new = (lec_dt > last_sync_dt) or (lec_dt == datetime.min)
             
-            # Ensure uniform row length
-            for row in data_rows:
-                while len(row) < max_col_count:
-                    row.append("")
+            if title and link and link not in existing_links and is_new:
+                is_tirgul = 'tirgul' in title.lower() or 'תרגול' in title
+                resource_type = "Recitation" if is_tirgul else "Lecture"
+                
+                rows_to_insert.append([
+                    lec.get('course_name', ''),
+                    resource_type,
+                    title,
+                    pub_date,
+                    link,
+                    "Unattended", 
+                    "" # NO TASKS FOR LECTURES
+                ])
+                existing_links.append(link)
+                logging.info(f"[{sheet_name}] Queued Lecture/Recitation: {title}")
+                
+        if rows_to_insert:
+            ws.insert_rows(rows_to_insert, row=2)
+            logging.info(f"[{sheet_name}] Inserted {len(rows_to_insert)} new rows safely at the top of the table.")
+        else:
+            logging.info(f"[{sheet_name}] No new rows to insert. Sheet is up to date.")
 
-            # Reformat dates and sort
-            for row in data_rows:
-                dt = parse_date(row[3])
-                if dt != datetime.min:
-                    row[3] = dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
+        # Sort the entire spreadsheet (Course -> Type -> Date Descending)
+        try:
+            all_data = ws.get_all_values()
+            if len(all_data) > 1:
+                data_rows = all_data[1:]
+                
+                # Compute max column count to preserve any custom notes the user added
+                max_col_count = max((len(r) for r in data_rows), default=7)
+                max_col_count = max(max_col_count, 7)
+                
+                # Ensure uniform row length
+                for row in data_rows:
+                    while len(row) < max_col_count:
+                        row.append("")
 
-            # Sort by Course (0), Type (1), then Date Descending (3)
-            data_rows.sort(key=lambda x: (x[0], x[1], -parse_date(x[3]).timestamp()))
-            
-            # Convert numeric column index to letter (e.g. 7 -> G, 9 -> I)
-            def col_letter(n):
-                res = ""
-                while n > 0:
-                    n, rem = divmod(n - 1, 26)
-                    res = chr(65 + rem) + res
-                return res
-            
-            end_col = col_letter(max_col_count)
-            
-            # Write the sorted data back to the sheet
-            ws.update(f'A2:{end_col}{len(data_rows)+1}', data_rows)
-            logging.info("Sorted spreadsheet in-place by Course, Type, and Date.")
-            
-            # Update the last sync date in I1 so we know exactly when we last successfully ran
-            ws.update_acell('I1', f"Last Sync: {datetime.now().strftime('%m/%d/%Y %H:%M:%S')}")
-    except Exception as e:
-        logging.error(f"Failed to sort spreadsheet and save sync state: {e}")
+                # Reformat dates and sort
+                for row in data_rows:
+                    dt = parse_date(row[3])
+                    if dt != datetime.min:
+                        row[3] = dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
+
+                # Sort by Course (0), Type (1), then Date Descending (3)
+                data_rows.sort(key=lambda x: (x[0], x[1], -parse_date(x[3]).timestamp()))
+                
+                # Convert numeric column index to letter (e.g. 7 -> G, 9 -> I)
+                def col_letter(n):
+                    res = ""
+                    while n > 0:
+                        n, rem = divmod(n - 1, 26)
+                        res = chr(65 + rem) + res
+                    return res
+                
+                end_col = col_letter(max_col_count)
+                
+                # Write the sorted data back to the sheet
+                ws.update(f'A2:{end_col}{len(data_rows)+1}', data_rows)
+                logging.info(f"[{sheet_name}] Sorted spreadsheet in-place by Course, Type, and Date.")
+                
+                # Update the last sync date in I1 so we know exactly when we last successfully ran
+                ws.update_acell('I1', f"Last Sync: {datetime.now().strftime('%m/%d/%Y %H:%M:%S')}")
+        except Exception as e:
+            logging.error(f"[{sheet_name}] Failed to sort spreadsheet and save sync state: {e}")
