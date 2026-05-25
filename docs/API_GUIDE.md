@@ -75,6 +75,13 @@ All requests are sent via HTTP GET or POST and must include the following common
         *   `Not submitted`: If the student hasn't submitted and the True Deadline has passed.
         *   `Assigned`: If the assignment is open and the deadline has not yet passed.
 
+#### 5. Retrieve Course Blocks
+*   **Function**: `core_block_get_course_blocks`
+*   **Parameters**:
+    *   `courseid`: The unique Moodle course ID integer (e.g. `321110401`).
+    *   `returncontents`: `1` (indicates whether block content should be returned).
+*   **Purpose**: Retrieves all active blocks for a given course page on Moodle. Used for diagnostic extraction of sidebar contents, links, and specialized modules.
+
 ---
 
 ## 2. Panopto Scraper (Single Sign-On Bypass)
@@ -182,3 +189,39 @@ flowchart TD
 
 *   **Google Tasks URL**: The Google Tasks API does not expose direct URLs for individual tasks. TauTracker resolves this by injecting a general tasks dashboard URL:
     `https://calendar.google.com/calendar/u/0/r/tasks`
+
+---
+
+## 4. Code Architecture & Unified Packages
+
+To keep the codebase modular, reusable, and structured, the standalone clients have been organized into a unified package structure:
+
+```
+TauTracker/
+│
+├── clients/                # Unified API Clients Package
+│   ├── __init__.py         # Package entry point (exposes client functions)
+│   ├── google_client.py    # Google Sheets & Google Tasks integration
+│   ├── moodle_client.py    # Moodle API interface & metadata parser
+│   └── panopto_client.py   # Playwright headless browser session scraper
+│
+├── configure_courses.py    # CLI Course Selection tool (imports from 'clients')
+├── startup.py              # Guided CLI Setup Wizard (imports from 'clients')
+└── main.py                 # Core background sync Orchestrator (imports from 'clients')
+```
+
+### Exposing Public API Functions
+The `clients/__init__.py` file aggregates and exposes the public interface. This allows any main execution scripts or external integrations to import multiple capabilities in a clean, unified statement:
+
+```python
+from clients import (
+    get_enrolled_courses,
+    get_pending_assignments,
+    parse_course_metadata,
+    get_new_lectures,
+    get_google_services,
+    sync_data
+)
+```
+
+This structural clean-up isolates external API dependencies and ensures easier maintenance and testing of the core business logic.
