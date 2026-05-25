@@ -36,8 +36,8 @@ Click the **Fork** button at the top right of this page to create your own copy 
    - Choose **External**.
    - Fill in the required app details.
    - Under **Scopes**, add `.../auth/spreadsheets`, `.../auth/drive`, and `.../auth/tasks`.
-   - **IMPORTANT**: Click **Publish App** to push it to production (this ensures your tokens won't expire in 7 days).
-5. Go to **Credentials**. Create a new **OAuth client ID** (Application type: Desktop App).
+   - **IMPORTANT**: Click **Publish App** (under `Audience`) to push it to production (this ensures your tokens won't expire in 7 days).
+5. Go to **Clients**. Create a new **OAuth client ID** (Application type: Desktop App).
 6. Download the JSON and rename it to `credentials.json`.
 
 ### 3. Configure environment variables
@@ -52,17 +52,25 @@ Create your `.env` file (see `.env.example` format).
 - To obtain your Panopto course links simply enter the course folder and copy its link:
 <img width="2386" height="322" alt="image" src="https://github.com/user-attachments/assets/230c641e-89e0-4a87-a306-8af915fdc0bc" />
 
-### 3. Generate Your Access Token (Locally Once)
-Because this runs headlessly in the cloud, you need to authorize the app once on your computer to generate a `token.json` file.
+### 3. Run the Interactive Setup Wizard
+Because this runs headlessly in the cloud, you need to configure your environment and authorize Google API access once on your computer to generate a `token.json` and `.env` file. We have created a simple interactive wizard that handles everything for you:
+
 1. Clone your fork to your local machine.
-2. Place `credentials.json` in the root folder.
-3. Run the script once locally:
+2. Install all requirements:
    ```bash
    pip install -r requirements.txt
-   python main.py
    ```
-4. A browser window will open. Log in to your Google Account and accept the permissions. 
-5. A `token.json` file will be generated in your folder.
+3. Run the interactive setup wizard:
+   ```bash
+   python startup.py
+   ```
+4. The setup wizard will automatically walk you through:
+   - Creating/verifying your `.env` configuration file.
+   - Setting your Moodle Web Service token.
+   - **Moodle Course Selection**: Interactively selecting which courses to synchronize via a simple terminal menu.
+   - **Google API Authorization**: Opening your browser to sign in to your Google Account, generating your `token.json` file automatically.
+   - **Playwright Headless Browser Setup**: Downloading necessary headless browsers for Panopto sync.
+   - **Test Run**: Prompting to run a test synchronization cycle to verify everything is working.
 
 ### 4. Setup GitHub Secrets
 Now that you have your configuration files, you need to provide them to GitHub Actions.
