@@ -1,26 +1,61 @@
-# Credentials & Environment Variables
+# ==========================================
+# Credentials, Keys & Secrets (High Risk)
+# ==========================================
 .env
 credentials.json
 token.json
+
+# ==========================================
+# Runtime Caches, Logs & Dumps
+# ==========================================
 sync_cache.json
-course_blocks.json
-
-# Virtual Environment
-.venv/
-venv/
-env/
-
-# Logs and Media
+TauTracker.log
 *.log
 *.png
 
-# Python Cache
+# ==========================================
+# Developer JSON Dumps & API Diagnostics
+# ==========================================
+# Moodle WS API Dumps
+site_info.json
+course_blocks.json
+course_contents.json
+course_content.json
+assignments.json
+submission_status.json
+enrolled_courses.json
+courses.json
+
+# Panopto API/Scraper Dumps
+panopto_sessions.json
+sessions.json
+lectures.json
+
+# Generic Dev JSON Dumps (for custom scratch scripts)
+*_dump.json
+*_response.json
+scratch_*.json
+
+# ==========================================
+# Python Build, Cache & Virtual Environments
+# ==========================================
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.coverage
+htmlcov/
 
-# IDE and Editor
+# ==========================================
+# IDEs, Editors & OS Files
+# ==========================================
 .vscode/
 .idea/
 .history
 .gemini
+.DS_Store
+Thumbs.db
+desktop.ini
