@@ -2,7 +2,7 @@ import logging
 import requests
 import datetime
 import pytz
-from config import MOODLE_URL, MOODLE_TOKEN, TIMEZONE, MOODLE_COURSES_LIST, PANOPTO_COURSES
+from config import MOODLE_URL, MOODLE_TOKEN, TIMEZONE, MOODLE_COURSES_LIST, PANOPTO_COURSES, COURSE_NAMES
 
 def parse_course_metadata(course):
     """Parses academic year and semester from Moodle's idnumber or shortname.
@@ -92,12 +92,18 @@ def get_pending_assignments():
         parts = shortname.split('-')
         if len(parts) >= 2:
             course_id_extracted = parts[0].strip()
+        else:
+            course_id_extracted = str(course.get('id', ''))
+
+        # Use user-defined COURSE_{id} name if available, else derive from shortname
+        resolved_name = COURSE_NAMES.get(course_id_extracted)
+        if resolved_name:
+            course_display_name = resolved_name
+        elif len(parts) >= 2:
             course_english = parts[-1].strip()
             course_display_name = f"{course_id_extracted} - {course_english}"
         else:
-            course_id_extracted = str(course.get('id', ''))
             course_display_name = shortname
-            
         course_mapping[course_id_extracted] = course_display_name
         
         parsed = parse_course_metadata(course)
@@ -151,7 +157,10 @@ def get_pending_assignments():
             
         course_display_name = course_mapping.get(course_id_extracted)
         if not course_display_name:
-            if len(parts) >= 2:
+            resolved_name = COURSE_NAMES.get(course_id_extracted)
+            if resolved_name:
+                course_display_name = resolved_name
+            elif len(parts) >= 2:
                 course_english = parts[-1].strip()
                 course_display_name = f"{course_id_extracted} - {course_english}"
             else:

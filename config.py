@@ -27,5 +27,9 @@ SCRAPE_PANOPTO = os.getenv("SCRAPE_PANOPTO", "0") == "1"
 # Extract all course links dynamically from .env
 PANOPTO_COURSES = {k: v for k, v in os.environ.items() if k.startswith('PANOPTO_COURSE_')}
 
+# Human-readable course names keyed by course ID: COURSE_{id} -> name
+# e.g. COURSE_321110401=Introduction to Thermodynamics
+COURSE_NAMES = {k.replace('COURSE_', ''): v for k, v in os.environ.items() if k.startswith('COURSE_') and not k.startswith('COURSE_NAMES')}
+
 # Timezone
 TIMEZONE = 'Asia/Jerusalem'
