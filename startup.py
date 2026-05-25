@@ -181,21 +181,108 @@ def run_interactive_course_config():
         if match:
             existing_panopto_keys.add(match.group(1))
 
-    # Try to load Panopto credentials to see if auto-resolution is possible
+    # --- University SSO Credentials Setup ---
     from dotenv import load_dotenv
-    load_dotenv()
-    panopto_user = os.getenv("PANOPTO_USER", "").strip()
-    panopto_pass = os.getenv("PANOPTO_PASS", "").strip()
-    panopto_pid = os.getenv("PANOPTO_PID", "").strip()
+    load_dotenv(override=True)
+
+    # Step A: Migrate legacy PANOPTO_USER / PANOPTO_PASS / PANOPTO_PID keys if present
+    legacy_map = {
+        "PANOPTO_USER": "UNIVERSITY_USERNAME",
+        "PANOPTO_PASS": "UNIVERSITY_PASSWORD",
+        "PANOPTO_PID": "STUDENT_ID",
+    }
+    migrated = False
+    for old_key, new_key in legacy_map.items():
+        old_val = os.getenv(old_key, "").strip()
+        new_val = os.getenv(new_key, "").strip()
+        if old_val and not new_val:
+            save_env_var(new_key, old_val)
+            os.environ[new_key] = old_val
+            # Remove the legacy key from .env (best effort)
+            if os.path.exists('.env'):
+                with open('.env', 'r', encoding='utf-8') as f:
+                    raw = f.readlines()
+                with open('.env', 'w', encoding='utf-8') as f:
+                    for l in raw:
+                        if not l.strip().startswith(f"{old_key}="):
+                            f.write(l)
+            migrated = True
+    if migrated:
+        print("\n[+] Migrated legacy credential keys to new names (UNIVERSITY_USERNAME / UNIVERSITY_PASSWORD / STUDENT_ID).")
+        load_dotenv(override=True)
+
+    # Step B: Load new credential keys
+    panopto_user = os.getenv("UNIVERSITY_USERNAME", "").strip()
+    panopto_pass = os.getenv("UNIVERSITY_PASSWORD", "").strip()
+    panopto_pid = os.getenv("STUDENT_ID", "").strip()
 
     to_resolve_cids = [cid for cid, _, _, _, _ in selected_courses if f"PANOPTO_COURSE_{cid}" not in existing_panopto_keys]
+
+    # Step C: If credentials are missing and there are courses to resolve, prompt the user
+    if to_resolve_cids and not (panopto_user and panopto_pass and panopto_pid):
+        print("\n----------------------------------------------------")
+        print("  University SSO Credentials (Optional but Recommended)")
+        print("----------------------------------------------------")
+        print("TauTracker can automatically discover and map Panopto")
+        print("lecture folder links for your selected courses.")
+        print("")
+        print("To do this, it needs your university (TAU) login credentials:")
+        print("  - Username : Your TAU Moodle username (e.g. 'jsmith')")
+        print("  - Password : Your TAU Moodle/SSO password")
+        print("  - Student ID: Your Israeli ID or Passport number (used by TAU SSO)")
+        print("")
+        print("These credentials are only saved locally in your .env file and")
+        print("are used solely to log into Moodle and fetch Panopto folder links.")
+        print("If you skip this, you can always manually paste Panopto links into .env later.")
+        print("----------------------------------------------------")
+        ans = input("Would you like to enter your university credentials now? (y/n) [y]: ").strip().lower()
+        if ans in ['y', 'yes', '']:
+            entered_user = input("  University Username: ").strip()
+            import getpass
+            entered_pass = getpass.getpass("  University Password: ").strip()
+            entered_pid  = input("  Student ID (Israeli ID / Passport): ").strip()
+
+            if entered_user:
+                save_env_var("UNIVERSITY_USERNAME", entered_user)
+                os.environ["UNIVERSITY_USERNAME"] = entered_user
+                panopto_user = entered_user
+            if entered_pass:
+                save_env_var("UNIVERSITY_PASSWORD", entered_pass)
+                os.environ["UNIVERSITY_PASSWORD"] = entered_pass
+                panopto_pass = entered_pass
+            if entered_pid:
+                save_env_var("STUDENT_ID", entered_pid)
+                os.environ["STUDENT_ID"] = entered_pid
+                panopto_pid = entered_pid
+
+            if panopto_user and panopto_pass and panopto_pid:
+                print("[+] University credentials saved to .env!")
+            else:
+                print("[!] Some credentials were left empty. Panopto auto-discovery will be skipped.")
+
     resolved_links = {}
 
-    if to_resolve_cids and panopto_user and panopto_pass and panopto_pid:
+    # Only attempt Panopto auto-discovery when SCRAPE_PANOPTO=1
+    scrape_enabled = os.getenv("SCRAPE_PANOPTO", "0") == "1"
+
+    if to_resolve_cids and not scrape_enabled:
         print("\n----------------------------------------------------")
-        print("We detected your TAU Moodle SSO credentials in .env.")
-        print("Would you like to automatically discover and map the Panopto")
-        print("folder links for the selected courses using Playwright?")
+        print("Panopto scraping is currently disabled (SCRAPE_PANOPTO is not set to 1).")
+        print("Enabling it allows TauTracker to automatically fetch your lecture")
+        print("recordings from Panopto during each sync cycle.")
+        print("----------------------------------------------------")
+        ans = input("Enable Panopto lecture scraping? (y/n) [y]: ").strip().lower()
+        if ans in ['y', 'yes', '']:
+            save_env_var("SCRAPE_PANOPTO", "1")
+            os.environ["SCRAPE_PANOPTO"] = "1"
+            scrape_enabled = True
+            print("[+] SCRAPE_PANOPTO=1 saved to .env.")
+
+    if to_resolve_cids and scrape_enabled and panopto_user and panopto_pass and panopto_pid:
+        print("\n----------------------------------------------------")
+        print("TAU SSO credentials are configured.")
+        print("Would you like to automatically discover and map the")
+        print("Panopto folder links for the selected courses?")
         print("----------------------------------------------------")
         ans = input("Auto-discover Panopto links? (y/n) [y]: ").strip().lower()
         if ans in ['y', 'yes', '']:
