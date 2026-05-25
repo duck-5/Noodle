@@ -19,9 +19,10 @@ CREDENTIALS_FILE = "credentials.json" # Downloaded from Google Cloud Console
 
 # Panopto Configuration
 PANOPTO_URL = os.getenv("PANOPTO_URL")
-PANOPTO_USER = os.getenv("PANOPTO_USER")
-PANOPTO_PASS = os.getenv("PANOPTO_PASS")
-PANOPTO_PID = os.getenv("PANOPTO_PID")
+PANOPTO_USER = os.getenv("UNIVERSITY_USERNAME")
+PANOPTO_PASS = os.getenv("UNIVERSITY_PASSWORD")
+PANOPTO_PID = os.getenv("STUDENT_ID")
+SCRAPE_PANOPTO = os.getenv("SCRAPE_PANOPTO", "0") == "1"
 
 # Extract all course links dynamically from .env
 PANOPTO_COURSES = {k: v for k, v in os.environ.items() if k.startswith('PANOPTO_COURSE_')}
