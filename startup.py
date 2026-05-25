@@ -169,6 +169,16 @@ def run_interactive_course_config():
     save_env_var("MOODLE_COURSES", moodle_courses_str)
     print(f"\nSaved course IDs: {moodle_courses_str} to .env!")
 
+    # Save a human-readable display name for each selected course
+    for cid, disp_name, fullname, _, _ in selected_courses:
+        # Extract just the English part as the canonical name (e.g. "Introduction to Thermodynamics")
+        parts = disp_name.split(' - ', 1)
+        short_name = parts[1].strip() if len(parts) == 2 else disp_name
+        course_key = f"COURSE_{cid}"
+        save_env_var(course_key, short_name)
+        os.environ[course_key] = short_name
+        print(f"[+] Saved {course_key}={short_name}")
+
     # Check/Append Panopto placeholders or auto-resolve them
     env_lines = []
     if os.path.exists('.env'):
