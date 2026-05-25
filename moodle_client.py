@@ -4,41 +4,89 @@ import datetime
 import pytz
 from config import MOODLE_URL, MOODLE_TOKEN, TIMEZONE, MOODLE_COURSES_LIST, PANOPTO_COURSES
 
-def get_pending_assignments():
-    """Fetches assignments from Moodle and checks their submission status."""
-    params = {
+def parse_course_metadata(course):
+    """Parses academic year and semester from Moodle's idnumber or shortname.
+    TAU idnumber structure: [8-digit Course Code]-[2-digit Group]-[4-digit Year]-[1-digit Semester]
+    e.g. 03211100-01-2025-1 -> Year 2025, Semester A (1)
+    """
+    idnumber = course.get("idnumber", "")
+    import re
+    match = re.match(r'^(\d{8})-(\d{2})-(\d{4})-(\d)$', idnumber)
+    if match:
+        course_code, group_id, year, semester = match.groups()
+        semester_map = {"1": "SemesterA", "2": "SemesterB", "0": "Yearly"}
+        worksheet_name = f"{year}-{semester_map.get(semester, 'SemesterA')}"
+        return {
+            "course_id": f"{course_code}{group_id}",
+            "year": year,
+            "semester_code": semester,
+            "semester_name": "Semester A" if semester == "1" else "Semester B" if semester == "2" else "Yearly",
+            "worksheet_name": worksheet_name
+        }
+    return None
+
+def get_enrolled_courses():
+    """Fetches the list of enrolled courses for the current user from Moodle."""
+    # First, fetch site info to retrieve the user's ID
+    site_info_params = {
         "wstoken": MOODLE_TOKEN,
-        "wsfunction": "mod_assign_get_assignments",
+        "wsfunction": "core_webservice_get_site_info",
         "moodlewsrestformat": "json"
     }
-    
-    response = requests.get(MOODLE_URL, params=params)
-    response.raise_for_status()
-    data = response.json()
-    
-    if "exception" in data:
-        logging.error(f"Moodle API Error: {data.get('message', data)}")
-        return []
+    try:
+        response = requests.get(MOODLE_URL, params=site_info_params)
+        response.raise_for_status()
+        site_info = response.json()
         
-    if "errorcode" in data:
-        logging.error(f"Moodle API Error: {data.get('errorcode')} - {data.get('message', '')}")
+        if "exception" in site_info:
+            logging.error(f"Moodle API Error fetching site info: {site_info.get('message', site_info)}")
+            return []
+            
+        if "errorcode" in site_info:
+            logging.error(f"Moodle API Error fetching site info: {site_info.get('errorcode')} - {site_info.get('message', '')}")
+            return []
+            
+        userid = site_info.get("userid")
+        if not userid:
+            logging.error("Could not retrieve user ID from Moodle.")
+            return []
+            
+        # Second, fetch the courses enrolled by this user
+        courses_params = {
+            "wstoken": MOODLE_TOKEN,
+            "wsfunction": "core_enrol_get_users_courses",
+            "moodlewsrestformat": "json",
+            "userid": userid
+        }
+        response = requests.get(MOODLE_URL, params=courses_params)
+        response.raise_for_status()
+        courses = response.json()
+        
+        if isinstance(courses, dict) and "exception" in courses:
+            logging.error(f"Moodle API Error fetching enrolled courses: {courses.get('message', courses)}")
+            return []
+            
+        if isinstance(courses, dict) and "errorcode" in courses:
+            logging.error(f"Moodle API Error fetching enrolled courses: {courses.get('errorcode')} - {courses.get('message', '')}")
+            return []
+            
+        return courses
+    except Exception as e:
+        logging.error(f"Failed to fetch enrolled courses from Moodle: {e}")
         return []
 
-    courses = data.get('courses', [])
-    logging.info(f"Moodle returned {len(courses)} courses with assignments data.")
-    
-    tz = pytz.timezone(TIMEZONE)
-    now = datetime.datetime.now(tz)
-    pending_assignments = []
+def get_pending_assignments():
+    """Fetches assignments from Moodle and checks their submission status."""
+    # 1. Fetch enrolled courses to build a complete course mapping
+    enrolled_courses = get_enrolled_courses()
     course_mapping = {}
+    course_metadata = {}
     
-    for course in courses:
-        shortname = course.get('shortname', 'Unknown')
-        
-        if MOODLE_COURSES_LIST:
-            if not any(c in shortname for c in MOODLE_COURSES_LIST):
-                continue
-        
+    for course in enrolled_courses:
+        shortname = course.get('shortname', '')
+        if not shortname:
+            continue
+            
         # Cleanly extract course ID and English Name from messy Moodle string
         # e.g., "0368111801 - מתמטיקה בדידה 10368111801 - Discrete Mathematics 1"
         parts = shortname.split('-')
@@ -51,6 +99,64 @@ def get_pending_assignments():
             course_display_name = shortname
             
         course_mapping[course_id_extracted] = course_display_name
+        
+        parsed = parse_course_metadata(course)
+        if parsed:
+            metadata_info = {
+                **parsed,
+                "display_name": course_display_name
+            }
+            course_metadata[course_id_extracted] = metadata_info
+            course_metadata[course_display_name] = metadata_info
+
+    # 2. Fetch assignments
+    params = {
+        "wstoken": MOODLE_TOKEN,
+        "wsfunction": "mod_assign_get_assignments",
+        "moodlewsrestformat": "json"
+    }
+    
+    response = requests.get(MOODLE_URL, params=params)
+    response.raise_for_status()
+    data = response.json()
+    
+    if "exception" in data:
+        logging.error(f"Moodle API Error: {data.get('message', data)}")
+        return [], course_mapping
+        
+    if "errorcode" in data:
+        logging.error(f"Moodle API Error: {data.get('errorcode')} - {data.get('message', '')}")
+        return [], course_mapping
+
+    courses = data.get('courses', [])
+    logging.info(f"Moodle returned {len(courses)} courses with assignments data.")
+    
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.datetime.now(tz)
+    pending_assignments = []
+    
+    for course in courses:
+        shortname = course.get('shortname', 'Unknown')
+        
+        if MOODLE_COURSES_LIST:
+            if not any(c in shortname for c in MOODLE_COURSES_LIST):
+                continue
+        
+        # Cleanly extract course ID and display name
+        parts = shortname.split('-')
+        if len(parts) >= 2:
+            course_id_extracted = parts[0].strip()
+        else:
+            course_id_extracted = str(course.get('id', ''))
+            
+        course_display_name = course_mapping.get(course_id_extracted)
+        if not course_display_name:
+            if len(parts) >= 2:
+                course_english = parts[-1].strip()
+                course_display_name = f"{course_id_extracted} - {course_english}"
+            else:
+                course_display_name = shortname
+            course_mapping[course_id_extracted] = course_display_name
                 
         assignments = course.get('assignments', [])
         logging.info(f"Course '{course_display_name}' has {len(assignments)} assignments.")
@@ -119,4 +225,4 @@ def get_pending_assignments():
                 "status": status
             })
                 
-    return pending_assignments, course_mapping
+    return pending_assignments, course_mapping, course_metadata
