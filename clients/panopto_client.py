@@ -1,12 +1,16 @@
 import logging
 import re
 from playwright.sync_api import sync_playwright
-from config import PANOPTO_URL, PANOPTO_USER, PANOPTO_PASS, PANOPTO_PID, PANOPTO_COURSES
+from config import PANOPTO_URL, PANOPTO_USER, PANOPTO_PASS, PANOPTO_PID, PANOPTO_COURSES, SCRAPE_PANOPTO
 from datetime import datetime
 
 def get_new_lectures(course_mapping=None):
     if course_mapping is None:
         course_mapping = {}
+
+    if not SCRAPE_PANOPTO:
+        logging.info("Panopto scraping is disabled (SCRAPE_PANOPTO != 1). Skipping lecture fetch.")
+        return []
 
     if not PANOPTO_URL or not PANOPTO_USER or not PANOPTO_PASS or not PANOPTO_PID:
         logging.error("Panopto credentials not fully configured in .env.")
