@@ -3,7 +3,7 @@ import sys
 import shutil
 import re
 import subprocess
-from moodle_client import get_enrolled_courses
+from clients import get_enrolled_courses
 from config import MOODLE_TOKEN, MOODLE_URL, SPREADSHEET_NAME, WORKSHEET_NAME
 
 def save_env_var(key, value):
@@ -50,7 +50,7 @@ def run_interactive_course_config():
         print("This might be because your MOODLE_TOKEN in .env is incorrect, or you lack internet access.")
         return False
 
-    from moodle_client import parse_course_metadata
+    from clients import parse_course_metadata
 
     parsed_courses = []
     semester_groups = {} # "2025 - Semester B" -> list of courses
@@ -275,7 +275,7 @@ def main():
             try:
                 # Add workspace path to sys.path to ensure local imports succeed
                 sys.path.append(os.getcwd())
-                from google_client import get_google_services
+                from clients import get_google_services
                 gc, tasks_service = get_google_services()
                 print("[Success] Authorized successfully! token.json has been written.")
             except Exception as e:
