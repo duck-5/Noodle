@@ -3,6 +3,7 @@
 credentials.json
 token.json
 sync_cache.json
+course_blocks.json
 
 # Virtual Environment
 .venv/
