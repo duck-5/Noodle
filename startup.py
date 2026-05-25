@@ -169,7 +169,7 @@ def run_interactive_course_config():
     save_env_var("MOODLE_COURSES", moodle_courses_str)
     print(f"\nSaved course IDs: {moodle_courses_str} to .env!")
 
-    # Check/Append Panopto placeholders
+    # Check/Append Panopto placeholders or auto-resolve them
     env_lines = []
     if os.path.exists('.env'):
         with open('.env', 'r', encoding='utf-8') as f:
@@ -181,10 +181,34 @@ def run_interactive_course_config():
         if match:
             existing_panopto_keys.add(match.group(1))
 
+    # Try to load Panopto credentials to see if auto-resolution is possible
+    from dotenv import load_dotenv
+    load_dotenv()
+    panopto_user = os.getenv("PANOPTO_USER", "").strip()
+    panopto_pass = os.getenv("PANOPTO_PASS", "").strip()
+    panopto_pid = os.getenv("PANOPTO_PID", "").strip()
+
+    to_resolve_cids = [cid for cid, _, _, _, _ in selected_courses if f"PANOPTO_COURSE_{cid}" not in existing_panopto_keys]
+    resolved_links = {}
+
+    if to_resolve_cids and panopto_user and panopto_pass and panopto_pid:
+        print("\n----------------------------------------------------")
+        print("We detected your TAU Moodle SSO credentials in .env.")
+        print("Would you like to automatically discover and map the Panopto")
+        print("folder links for the selected courses using Playwright?")
+        print("----------------------------------------------------")
+        ans = input("Auto-discover Panopto links? (y/n) [y]: ").strip().lower()
+        if ans in ['y', 'yes', '']:
+            print("\nStarting auto-resolution. This might take a few moments...")
+            try:
+                from clients import resolve_course_panopto_folders
+                resolved_links = resolve_course_panopto_folders(to_resolve_cids, panopto_user, panopto_pass, panopto_pid)
+            except Exception as e:
+                print(f"[Warning] Auto-resolution failed: {e}")
+                print("Falling back to placeholder links.")
+
     new_panopto_added = False
-    new_env_lines = []
-    for line in env_lines:
-        new_env_lines.append(line)
+    new_env_lines = list(env_lines)
 
     for cid, name, _, _, _ in selected_courses:
         panopto_key = f"PANOPTO_COURSE_{cid}"
@@ -192,8 +216,14 @@ def run_interactive_course_config():
             if not new_panopto_added:
                 new_env_lines.append("\n# Panopto Config: Map your courses cleanly using PANOPTO_COURSE_{ID}\n")
                 new_panopto_added = True
-            new_env_lines.append(f"{panopto_key}=https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx#view=0&folderID=\"PASTE_UUID_HERE\"\n")
-            print(f"[+] Appended Panopto placeholder for: {name}")
+            
+            resolved_url = resolved_links.get(cid)
+            if resolved_url:
+                new_env_lines.append(f"{panopto_key}={resolved_url}\n")
+                print(f"[+] Automatically mapped Panopto link for: {name}")
+            else:
+                new_env_lines.append(f"{panopto_key}=https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx#view=0&folderID=\"PASTE_UUID_HERE\"\n")
+                print(f"[+] Appended Panopto placeholder for: {name}")
 
     if new_panopto_added:
         with open('.env', 'w', encoding='utf-8') as f:
