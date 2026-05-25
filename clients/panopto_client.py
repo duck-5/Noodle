@@ -1,7 +1,7 @@
 import logging
 import re
 from playwright.sync_api import sync_playwright
-from config import PANOPTO_URL, PANOPTO_USER, PANOPTO_PASS, PANOPTO_PID, PANOPTO_COURSES, SCRAPE_PANOPTO
+from config import PANOPTO_URL, PANOPTO_USER, PANOPTO_PASS, PANOPTO_PID, PANOPTO_COURSES, SCRAPE_PANOPTO, COURSE_NAMES
 from datetime import datetime
 
 def get_new_lectures(course_mapping=None):
@@ -44,14 +44,16 @@ def get_new_lectures(course_mapping=None):
             
             for course_key, course_url in PANOPTO_COURSES.items():
                 raw_key = course_key.replace("PANOPTO_COURSE_", "")
-                
-                # Try to map the Panopto ID back to Moodle's beautifully extracted 'ID - English Name' string
-                # We use a substring match because Moodle might have '0368110599' while .env has '03681105'
-                course_name = raw_key.replace("_", " ")
-                for mapped_id, mapped_name in course_mapping.items():
-                    if raw_key in mapped_id or mapped_id in raw_key:
-                        course_name = mapped_name
-                        break
+
+                # Priority: 1) COURSE_{id} env variable, 2) course_mapping from Moodle, 3) raw key
+                course_name = COURSE_NAMES.get(raw_key)
+                if not course_name:
+                    for mapped_id, mapped_name in course_mapping.items():
+                        if raw_key in mapped_id or mapped_id in raw_key:
+                            course_name = mapped_name
+                            break
+                if not course_name:
+                    course_name = raw_key.replace("_", " ")
                     
                 logging.info(f"Scraping Panopto course: {course_name}")
                 

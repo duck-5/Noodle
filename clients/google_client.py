@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import json
-from config import CREDENTIALS_FILE, SPREADSHEET_NAME, WORKSHEET_NAME
+from config import CREDENTIALS_FILE, SPREADSHEET_NAME, WORKSHEET_NAME, COURSE_NAMES
 from datetime import datetime
 
 SCOPES = [
@@ -107,6 +107,18 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
 def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
     import re
     from datetime import datetime
+
+    def resolve_course_name(course_id_or_name):
+        """Return the user-defined COURSE_{id} name if set, otherwise the raw value."""
+        ref = str(course_id_or_name).strip()
+        # Try direct key lookup first
+        if ref in COURSE_NAMES:
+            return COURSE_NAMES[ref]
+        # Try substring match (e.g. course_id is embedded in a longer name)
+        for cid, cname in COURSE_NAMES.items():
+            if cid in ref or ref in cid:
+                return cname
+        return ref
     
     def parse_date(date_str):
         if not date_str:
@@ -224,42 +236,52 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
             title = assign.get('assignment_name', '')
             if not title:
                 continue
-                
+
+            raw_course = assign.get('course_name') or assign.get('course_id', '')
+            friendly_course = resolve_course_name(raw_course)
+            task_title = f"[{friendly_course}] {title}"
+
             new_status = assign.get('status', 'Assigned')
             deadline_iso = assign.get('deadline', '').replace(" ", "T")
             if deadline_iso:
                 deadline_iso += "Z"
-                
-            task_desc = f"Course: {assign.get('course_name', '')}\nLink: {assign.get('link', '')}\nSource: Moodle (TauTracker)"
-                
-            if title not in existing_titles:
+
+            task_desc = f"Course: {friendly_course}\nLink: {assign.get('link', '')}\nSource: Moodle (TauTracker)"
+
+            # Check for the new prefixed title OR the legacy bare title (migration compat)
+            in_sheet_as_new = task_title in existing_titles
+            in_sheet_as_legacy = (not in_sheet_as_new) and (title in existing_titles)
+            already_in_sheet = in_sheet_as_new or in_sheet_as_legacy
+
+            if not already_in_sheet:
                 opened_dt = parse_date(assign.get('opened', ''))
-                
+
                 # If it's old (opened before last sync), don't resurrect it if the user deleted it.
                 if opened_dt != datetime.min and opened_dt <= last_sync_dt:
                     continue
-                    
-                event_link = sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status)
-                
+
+                event_link = sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status)
+
                 rows_to_insert.append([
-                    assign.get('course_name', ''),
+                    friendly_course,
                     "Assignment",
-                    title,
+                    task_title,
                     assign.get('deadline', ''),
                     assign.get('link', ''),
-                    new_status, 
+                    new_status,
                     event_link
                 ])
-                existing_titles.append(title)
-                logging.info(f"[{sheet_name}] Queued Assignment: {title}")
-                
-            elif title in existing_titles:
-                row_idx = existing_titles.index(title)
+                existing_titles.append(task_title)
+                logging.info(f"[{sheet_name}] Queued Assignment: {task_title}")
+
+            else:
+                # Resolve the row index from whichever title format is in the sheet
+                row_idx = existing_titles.index(task_title) if in_sheet_as_new else existing_titles.index(title)
                 current_sheet_status = existing_statuses[row_idx] if row_idx < len(existing_statuses) else ""
-                
+
                 # Sync the Google Task status regardless
-                sync_task(tasks_service, all_tasks, title, deadline_iso, task_desc, new_status, current_sheet_status)
-                
+                sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status, current_sheet_status)
+
                 # Check if we should update the spreadsheet status
                 should_update = False
                 if new_status == 'Submitted' and current_sheet_status != 'Submitted':
@@ -273,12 +295,19 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                 if should_update and row_idx < len(existing_statuses):
                     ws.update_acell(f"F{row_idx + 1}", new_status)
                     logging.info(f"[{sheet_name}] Updated spreadsheet status for '{title}' to: {new_status}")
-                    
+
+                # Also update the title cell if it was using the legacy bare format
+                if in_sheet_as_legacy and row_idx < len(existing_titles):
+                    ws.update_acell(f"C{row_idx + 1}", task_title)
+                    ws.update_acell(f"A{row_idx + 1}", friendly_course)
+                    existing_titles[row_idx] = task_title  # keep local cache consistent
+                    logging.info(f"[{sheet_name}] Migrated row title to prefixed format: {task_title}")
+
                 # Check if the deadline changed (e.g. postponed)
                 current_sheet_deadline = existing_deadlines[row_idx] if row_idx < len(existing_deadlines) else ""
                 new_deadline_dt = parse_date(assign.get('deadline', ''))
                 curr_deadline_dt = parse_date(current_sheet_deadline)
-                
+
                 if new_deadline_dt != datetime.min and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
                     new_sheet_deadline = new_deadline_dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
                     ws.update_acell(f"D{row_idx + 1}", new_sheet_deadline)
@@ -288,23 +317,26 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
             title = lec.get('lecture_title', '')
             link = lec.get('recording_link', '')
             pub_date = lec.get('published_date', '')
-            
+
             # Only push if it was published after our last sync
             lec_dt = parse_date(pub_date)
             is_new = (lec_dt > last_sync_dt) or (lec_dt == datetime.min)
-            
+
             if title and link and link not in existing_links and is_new:
                 is_tirgul = 'tirgul' in title.lower() or 'תרגול' in title
                 resource_type = "Recitation" if is_tirgul else "Lecture"
-                
+
+                raw_course = lec.get('course_name', '')
+                friendly_course = resolve_course_name(raw_course)
+
                 rows_to_insert.append([
-                    lec.get('course_name', ''),
+                    friendly_course,
                     resource_type,
                     title,
                     pub_date,
                     link,
-                    "Unattended", 
-                    "" # NO TASKS FOR LECTURES
+                    "Unattended",
+                    ""  # NO TASKS FOR LECTURES
                 ])
                 existing_links.append(link)
                 logging.info(f"[{sheet_name}] Queued Lecture/Recitation: {title}")
