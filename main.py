@@ -1,9 +1,7 @@
 import logging
 import time
 import schedule
-from moodle_client import get_pending_assignments
-from panopto_client import get_new_lectures
-from google_client import get_google_services, sync_data
+from clients import get_pending_assignments, get_new_lectures, get_google_services, sync_data
 
 from config import VERSION
 

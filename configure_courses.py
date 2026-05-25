@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from moodle_client import get_enrolled_courses
+from clients import get_enrolled_courses
 from config import MOODLE_TOKEN, MOODLE_URL
 
 def main():
@@ -22,7 +22,7 @@ def main():
         sys.exit(1)
 
     # Parse and sort courses
-    from moodle_client import parse_course_metadata
+    from clients import parse_course_metadata
 
     parsed_courses = []
     semester_groups = {} # "2025 - Semester B" -> list of courses
