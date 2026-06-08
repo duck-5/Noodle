@@ -15,6 +15,7 @@ All runtime configuration is managed through a `.env` file (see `.env.example` f
 | `MOODLE_COURSES` | ✅ | — | Comma-separated list of course ID prefixes to filter synced assignments. |
 | `SPREADSHEET_NAME` | ✅ | `University Tracker` | Name of the Google Spreadsheet to sync into. |
 | `WORKSHEET_NAME` | ✅ | `Year1-SemesterB` | Fallback worksheet name when semester metadata is unavailable. |
+| `GOOGLE_TASKS_LIST` | ❌ | `General` | Name of the Google Tasks list to sync assignments into. Created automatically if it doesn't exist. |
 | `UNIVERSITY_USERNAME` | ⚠️ | — | TAU SSO username, used for Moodle browser login and Panopto scraping. Replaces the old `PANOPTO_USER`. |
 | `UNIVERSITY_PASSWORD` | ⚠️ | — | TAU SSO password. Stored locally only. Replaces the old `PANOPTO_PASS`. |
 | `STUDENT_ID` | ⚠️ | — | Israeli ID or Passport number used by the TAU SSO portal. Replaces the old `PANOPTO_PID`. |
