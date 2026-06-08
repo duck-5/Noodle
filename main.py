@@ -1,16 +1,18 @@
+import sys
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 import logging
 import time
 import schedule
-from clients import get_pending_assignments, get_new_lectures, get_google_services, sync_data
-
+from clients import get_pending_assignments, get_enrolled_courses, get_new_lectures, get_google_services, sync_data, get_assignment_grades
 from config import VERSION
 
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("TauTracker.log"),
-        logging.StreamHandler()
+        logging.FileHandler("TauTracker.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 
@@ -20,16 +22,28 @@ def job():
         # Fetch data
         logging.info("Fetching Moodle assignments...")
         assignments, course_mapping, course_metadata = get_pending_assignments()
-        
+        enrolled_courses = list(course_metadata.values())  # reuse already-fetched course list
+
         logging.info("Fetching Panopto lectures...")
         lectures = get_new_lectures(course_mapping)
-        
+
+        logging.info("Fetching Moodle grades...")
+        # enrolled_courses values may be duplicated (keyed by both id and name) — dedupe by course id
+        seen_ids = set()
+        unique_courses = []
+        for meta in course_metadata.values():
+            cid = meta.get("course_id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                unique_courses.append({"id": int(cid)})
+        grades_by_cmid = get_assignment_grades(unique_courses)
+
         # Sync data
         logging.info("Authenticating with Google Workspace...")
         gc, tasks_service = get_google_services()
-        
+
         logging.info("Syncing to Google Sheets and Calendar...")
-        sync_data(gc, tasks_service, assignments, lectures, course_metadata)
+        sync_data(gc, tasks_service, assignments, lectures, course_metadata, grades_by_cmid)
         
         logging.info("Sync complete!")
         logging.info("-------------------------------------------\n\n")
