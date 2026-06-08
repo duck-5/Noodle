@@ -4,6 +4,26 @@ All notable changes in this working copy are documented below.
 
 ---
 
+## [Unreleased] - 2026-06-08 (Patch 2)
+
+### Added
+- **Moodle Assignment Grades Fetching (`clients/moodle_client.py`, `clients/__init__.py`)**:
+  - Implemented `get_assignment_grades(enrolled_courses)` which calls `gradereport_user_get_grade_items` for each enrolled course and builds a dict keyed by `cmid` (int), containing `gradeformatted`, `graderaw`, `grademax`, and `gradeishidden`.
+  - Exposed in `clients/__init__.py` for direct import by the orchestrator.
+- **Grades wired into the sync job (`main.py`)**:
+  - `job()` now calls `get_assignment_grades()` after fetching assignments, deduplicating courses by `course_id` to avoid redundant API calls, and passes the resulting `grades_by_cmid` dict to `sync_data()`.
+
+### Fixed
+- **Epoch `1970-01-01` deadline artifact (`clients/moodle_client.py`)**:
+  - Previously, when an assignment had no due date (`duedate=0`), the deadline was written as `1970-01-01 02:00:00` (Unix epoch). Now, `deadline_str` is set to an empty string `''` when `final_deadline_ts == 0`, preventing the bad epoch date from appearing in the spreadsheet.
+- **UTF-8 encoding for logs and stdout (`main.py`)**:
+  - Set `sys.stdout` encoding to `utf-8` (with `errors='replace'`) and opened `TauTracker.log` with `encoding='utf-8'` to prevent `UnicodeEncodeError` crashes when logging Hebrew course names on Windows.
+
+### Removed
+- Deleted stale developer diagnostic scripts (`inspect_blocks.py`, `inspect_course_contents.py`, `inspect_functions.py`, `search_moodle_functions.py`, `search_transcript.py`) that are no longer needed after the auto-discovery and clients package was established.
+
+---
+
 ## [Unreleased] - 2026-06-08
 
 ### Added
