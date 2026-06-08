@@ -14,8 +14,11 @@ MOODLE_COURSES_LIST = [c.strip() for c in MOODLE_COURSES_ENV.split(",")] if MOOD
 
 # Google Sheets Configuration
 SPREADSHEET_NAME = os.getenv("SPREADSHEET_NAME", "University Tracker")
-WORKSHEET_NAME = os.getenv("WORKSHEET_NAME", "Year1-SemesterB")
+WORKSHEET_NAME = os.getenv("WORKSHEET_NAME", "2025-SemesterB")
 CREDENTIALS_FILE = "credentials.json" # Downloaded from Google Cloud Console
+
+# Google Tasks Configuration
+GOOGLE_TASKS_LIST = os.getenv("GOOGLE_TASKS_LIST", "General")
 
 # Panopto Configuration
 PANOPTO_URL = os.getenv("PANOPTO_URL")
