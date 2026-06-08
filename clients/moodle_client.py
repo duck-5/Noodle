@@ -215,11 +215,16 @@ def get_pending_assignments():
             extension_ts = extension_ts if isinstance(extension_ts, int) else 0
             
             final_deadline_ts = max(due_ts, cutoff_ts, extension_ts)
-            deadline = datetime.datetime.fromtimestamp(final_deadline_ts, tz)
             
             # If the true deadline has passed and it's not submitted, it's overdue
-            if status != 'Submitted' and deadline < now:
-                status = 'Not submitted'
+            if final_deadline_ts > 0:
+                deadline = datetime.datetime.fromtimestamp(final_deadline_ts, tz)
+                deadline_str = deadline.strftime('%Y-%m-%d %H:%M:%S')
+                if status != 'Submitted' and deadline < now:
+                    status = 'Not submitted'
+            else:
+                # No due date set — avoid Jan 1 1970 epoch artifact
+                deadline_str = ''
             
             link = f"https://moodle.tau.ac.il/mod/assign/view.php?id={assign.get('cmid', '')}"
             
@@ -227,7 +232,7 @@ def get_pending_assignments():
                 "course_id": course['id'],
                 "course_name": course_display_name,
                 "assignment_name": title,
-                "deadline": deadline.strftime('%Y-%m-%d %H:%M:%S'),
+                "deadline": deadline_str,
                 "opened": opened_str,
                 "timestamp": assign['duedate'],
                 "link": link,
@@ -235,3 +240,79 @@ def get_pending_assignments():
             })
                 
     return pending_assignments, course_mapping, course_metadata
+
+
+def get_assignment_grades(enrolled_courses):
+    """Fetches per-assignment grades from Moodle for the current user.
+
+    Uses gradereport_user_get_grade_items (one call per course) and returns a
+    dict keyed by cmid (int) so google_client can look up a grade by the same
+    cmid already embedded in each assignment's Moodle link URL.
+
+    Return structure:
+        {
+            <cmid>: {
+                "gradeformatted": "85.00",   # "-" when not yet graded
+                "graderaw":       85.0,       # None when not yet graded
+                "grademax":       100,
+                "gradeishidden":  False,
+            },
+            ...
+        }
+    """
+    # We need the logged-in user's ID
+    try:
+        site_info = requests.get(MOODLE_URL, params={
+            "wstoken": MOODLE_TOKEN,
+            "wsfunction": "core_webservice_get_site_info",
+            "moodlewsrestformat": "json"
+        }).json()
+        userid = site_info.get("userid")
+        if not userid:
+            logging.error("get_assignment_grades: could not retrieve user ID.")
+            return {}
+    except Exception as e:
+        logging.error(f"get_assignment_grades: failed to fetch site info: {e}")
+        return {}
+
+    grades_by_cmid = {}
+
+    for course in enrolled_courses:
+        course_id = course.get("id")
+        if not course_id:
+            continue
+        try:
+            resp = requests.get(MOODLE_URL, params={
+                "wstoken": MOODLE_TOKEN,
+                "wsfunction": "gradereport_user_get_grade_items",
+                "moodlewsrestformat": "json",
+                "courseid": course_id,
+                "userid": userid
+            })
+            resp.raise_for_status()
+            data = resp.json()
+
+            if "exception" in data or "errorcode" in data:
+                # Some courses may not have gradebook access — silently skip
+                continue
+
+            for usergrade in data.get("usergrades", []):
+                for item in usergrade.get("gradeitems", []):
+                    # Only care about assignment-type grade items with a cmid
+                    if item.get("itemtype") != "mod" or item.get("itemmodule") != "assign":
+                        continue
+                    cmid = item.get("cmid")
+                    if not cmid:
+                        continue
+                    grades_by_cmid[int(cmid)] = {
+                        "gradeformatted": item.get("gradeformatted", "-"),
+                        "graderaw":       item.get("graderaw"),       # None = not yet graded
+                        "grademax":       item.get("grademax", 100),
+                        "gradeishidden":  item.get("gradeishidden", False),
+                    }
+        except Exception as e:
+            logging.warning(f"get_assignment_grades: error fetching grades for course {course_id}: {e}")
+            continue
+
+    logging.info(f"Fetched grades for {len(grades_by_cmid)} assignments across all courses.")
+    return grades_by_cmid
