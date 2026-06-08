@@ -114,6 +114,19 @@ All requests are sent via HTTP GET or POST and must include the following common
     *   `courseid`: The unique Moodle course ID integer (e.g. `321110401`).
 *   **Purpose**: Retrieves the entire course structure, including modules, sections, forums, quizzes, assignments, and external files. Used for full diagnostic structure inspection.
 
+#### 7. Retrieve Assignment Grades
+*   **Function**: `gradereport_user_get_grade_items`
+*   **Parameters**:
+    *   `courseid`: The Moodle course ID.
+    *   `userid`: The student's Moodle user ID (from `core_webservice_get_site_info`).
+*   **Purpose**: Returns all graded items in a course's gradebook for a specific student. TauTracker filters for `itemtype=mod` + `itemmodule=assign` entries and indexes results by `cmid` to match against assignment links already stored in the spreadsheet.
+*   **Response fields used**:
+    *   `cmid`: The course module ID — used as the join key with assignment links.
+    *   `gradeformatted`: Human-readable grade string (e.g. `"85.00"`; `"-"` when not yet graded).
+    *   `graderaw`: Numeric float or `null` when not yet graded.
+    *   `grademax`: Maximum achievable grade (used to render `"85 / 100"`).
+    *   `gradeishidden`: Boolean — TauTracker skips writing the grade cell when `true`.
+
 ---
 
 ## 2. Panopto Scraper (Single Sign-On Bypass)
