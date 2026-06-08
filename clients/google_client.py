@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import json
-from config import CREDENTIALS_FILE, SPREADSHEET_NAME, WORKSHEET_NAME, COURSE_NAMES
+from config import CREDENTIALS_FILE, SPREADSHEET_NAME, WORKSHEET_NAME, COURSE_NAMES, GOOGLE_TASKS_LIST
 from datetime import datetime
 
 SCOPES = [
@@ -52,7 +52,23 @@ def get_google_services():
     
     return gc, tasks_service
 
-def sync_task(tasks_service, all_tasks, task_title, task_date, description, status_string="Assigned", current_sheet_status=""):
+def get_or_create_tasklist(tasks_service, list_name):
+    """Return the tasklist ID for `list_name`, creating the list if it doesn't exist."""
+    try:
+        result = tasks_service.tasklists().list(maxResults=100).execute()
+        for tl in result.get('items', []):
+            if tl.get('title', '').strip().lower() == list_name.strip().lower():
+                logging.info(f"Using existing Google Tasks list: '{tl['title']}' (id={tl['id']})")
+                return tl['id']
+        # List not found — create it
+        new_list = tasks_service.tasklists().insert(body={'title': list_name}).execute()
+        logging.info(f"Created new Google Tasks list: '{list_name}' (id={new_list['id']})")
+        return new_list['id']
+    except Exception as e:
+        logging.warning(f"Could not resolve tasklist '{list_name}': {e}. Falling back to @default.")
+        return '@default'
+
+def sync_task(tasks_service, all_tasks, task_title, task_date, description, status_string="Assigned", current_sheet_status="", tasklist_id='@default'):
     """Creates or dynamically updates the completion status of a Google Task."""
     try:
         is_moodle_completed = (status_string == 'Submitted')
@@ -77,7 +93,7 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
                         patch_body['due'] = task_date
                         
                 if patch_body:
-                    tasks_service.tasks().patch(tasklist='@default', task=t['id'], body=patch_body).execute()
+                    tasks_service.tasks().patch(tasklist=tasklist_id, task=t['id'], body=patch_body).execute()
                     if 'status' in patch_body:
                         t['status'] = target_status
                     if 'due' in patch_body:
@@ -95,7 +111,7 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
         if task_date:
             task_body['due'] = task_date
             
-        created_task = tasks_service.tasks().insert(tasklist='@default', body=task_body).execute()
+        created_task = tasks_service.tasks().insert(tasklist=tasklist_id, body=task_body).execute()
         all_tasks.append(created_task) # append to local cache
         logging.info(f"Created Google Task for '{task_title}' (Status: {target_status})")
         
@@ -104,7 +120,7 @@ def sync_task(tasks_service, all_tasks, task_title, task_date, description, stat
         logging.error(f"Failed to sync task '{task_title}': {e}")
         return ''
 
-def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
+def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None, grades_by_cmid=None):
     import re
     from datetime import datetime
 
@@ -119,6 +135,28 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
             if cid in ref or ref in cid:
                 return cname
         return ref
+
+    def cmid_from_link(link):
+        """Extract the cmid integer from a Moodle assignment URL, or return None."""
+        import re
+        m = re.search(r'[?&]id=(\d+)', str(link))
+        return int(m.group(1)) if m else None
+
+    def format_grade(grade_info):
+        """Return a human-readable grade string, or '' if not yet graded / hidden."""
+        if not grade_info:
+            return ''
+        if grade_info.get('gradeishidden'):
+            return ''
+        raw = grade_info.get('graderaw')
+        if raw is None:
+            return ''
+        formatted = grade_info.get('gradeformatted', str(raw))
+        grademax = grade_info.get('grademax', 100)
+        return f"{formatted} / {int(grademax)}"
+
+    if grades_by_cmid is None:
+        grades_by_cmid = {}
     
     def parse_date(date_str):
         if not date_str:
@@ -188,9 +226,12 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
     if not all_sheets:
         all_sheets = {WORKSHEET_NAME}
 
+    # Resolve the target Google Tasks list once (find by name, or create it)
+    tasklist_id = get_or_create_tasklist(tasks_service, GOOGLE_TASKS_LIST)
+
     # Pre-fetch all Google Tasks to drastically reduce API calls
     try:
-        tasks_result = tasks_service.tasks().list(tasklist='@default', maxResults=100, showHidden=True).execute()
+        tasks_result = tasks_service.tasks().list(tasklist=tasklist_id, maxResults=100, showHidden=True).execute()
         all_tasks = tasks_result.get('items', [])
     except Exception as e:
         logging.error(f"Failed to fetch existing Google Tasks: {e}")
@@ -205,8 +246,8 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
             logging.info(f"Worksheet '{sheet_name}' not found. Creating and formatting a new one...")
             try:
                 ws = sh.add_worksheet(title=sheet_name, rows="1000", cols="10")
-                ws.append_row(['Course', 'Type', 'Title', 'Date', 'Link', 'Status', 'Tasks Link'])
-                ws.format("A1:G1", {
+                ws.append_row(['Course', 'Type', 'Title', 'Date', 'Link', 'Status', 'Tasks Link', 'Grade'])
+                ws.format("A1:H1", {
                     "textFormat": {"bold": True}
                 })
             except Exception as e:
@@ -227,6 +268,7 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
         existing_deadlines = ws.col_values(4) # Column D
         existing_links = ws.col_values(5) # Column E
         existing_statuses = ws.col_values(6) # Column F
+        existing_grades = ws.col_values(8)   # Column H
         
         rows_to_insert = []
         sheet_assignments = assignments_by_sheet.get(sheet_name, [])
@@ -260,7 +302,10 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                 if opened_dt != datetime.min and opened_dt <= last_sync_dt:
                     continue
 
-                event_link = sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status)
+                event_link = sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status, tasklist_id=tasklist_id)
+
+                cmid = cmid_from_link(assign.get('link', ''))
+                grade_str = format_grade(grades_by_cmid.get(cmid)) if cmid else ''
 
                 rows_to_insert.append([
                     friendly_course,
@@ -269,7 +314,8 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                     assign.get('deadline', ''),
                     assign.get('link', ''),
                     new_status,
-                    event_link
+                    event_link,
+                    grade_str
                 ])
                 existing_titles.append(task_title)
                 logging.info(f"[{sheet_name}] Queued Assignment: {task_title}")
@@ -280,7 +326,7 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                 current_sheet_status = existing_statuses[row_idx] if row_idx < len(existing_statuses) else ""
 
                 # Sync the Google Task status regardless
-                sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status, current_sheet_status)
+                sync_task(tasks_service, all_tasks, task_title, deadline_iso, task_desc, new_status, current_sheet_status, tasklist_id=tasklist_id)
 
                 # Check if we should update the spreadsheet status
                 should_update = False
@@ -308,10 +354,24 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                 new_deadline_dt = parse_date(assign.get('deadline', ''))
                 curr_deadline_dt = parse_date(current_sheet_deadline)
 
-                if new_deadline_dt != datetime.min and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
+                EPOCH = datetime(1970, 1, 1)
+                # Clear an existing 1970 epoch date if the new data has no deadline
+                if curr_deadline_dt == EPOCH and new_deadline_dt == datetime.min:
+                    ws.update_acell(f"D{row_idx + 1}", "")
+                    logging.info(f"[{sheet_name}] Cleared epoch (1970) deadline for '{title}'")
+                elif new_deadline_dt != datetime.min and new_deadline_dt != EPOCH and curr_deadline_dt != datetime.min and new_deadline_dt != curr_deadline_dt:
                     new_sheet_deadline = new_deadline_dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
                     ws.update_acell(f"D{row_idx + 1}", new_sheet_deadline)
                     logging.info(f"[{sheet_name}] Updated spreadsheet deadline for '{title}' to: {new_sheet_deadline}")
+
+                # Update grade column (H) if Moodle now has a grade that differs from what's in the sheet
+                cmid = cmid_from_link(assign.get('link', ''))
+                if cmid:
+                    new_grade_str = format_grade(grades_by_cmid.get(cmid))
+                    current_grade_str = existing_grades[row_idx] if row_idx < len(existing_grades) else ''
+                    if new_grade_str and new_grade_str != current_grade_str:
+                        ws.update_acell(f"H{row_idx + 1}", new_grade_str)
+                        logging.info(f"[{sheet_name}] Updated grade for '{title}' to: {new_grade_str}")
 
         for lec in sheet_lectures:
             title = lec.get('lecture_title', '')
@@ -354,8 +414,8 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None):
                 data_rows = all_data[1:]
                 
                 # Compute max column count to preserve any custom notes the user added
-                max_col_count = max((len(r) for r in data_rows), default=7)
-                max_col_count = max(max_col_count, 7)
+                max_col_count = max((len(r) for r in data_rows), default=8)
+                max_col_count = max(max_col_count, 8)
                 
                 # Ensure uniform row length
                 for row in data_rows:
