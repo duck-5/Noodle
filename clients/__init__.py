@@ -1,3 +1,3 @@
-from .moodle_client import get_enrolled_courses, get_pending_assignments, parse_course_metadata
+from .moodle_client import get_enrolled_courses, get_pending_assignments, parse_course_metadata, get_assignment_grades
 from .panopto_client import get_new_lectures, resolve_course_panopto_folders
 from .google_client import get_google_services, sync_data
