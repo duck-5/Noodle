@@ -4,7 +4,17 @@ All notable changes in this working copy are documented below.
 
 ---
 
-## [Unreleased] - 2026-05-25
+## [Unreleased] - 2026-06-08
+
+### Added
+- **Configurable Google Tasks List (`config.py`, `.env.example`, `clients/google_client.py`)**:
+  - Introduced `GOOGLE_TASKS_LIST` environment variable (default: `"General"`) that controls which named Google Tasks list TauTracker syncs assignments into.
+  - Added `get_or_create_tasklist(tasks_service, list_name)` helper in `google_client.py`: looks up the list by name from the user's tasklists (case-insensitive), and automatically creates it if it does not exist. Falls back to `@default` on any API error.
+  - Threaded the resolved `tasklist_id` through `sync_task()` (new keyword argument) and the pre-fetch `tasks().list()` call in `sync_data()`, replacing all previously hardcoded `tasklist='@default'` references.
+
+---
+
+## [Previous Unreleased] - 2026-05-25
 
 ### Changed
 - **Renamed Panopto/SSO Credential Keys (`config.py`, `.env.example`)**:
