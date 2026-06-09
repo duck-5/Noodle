@@ -32,6 +32,17 @@ TauTracker is a custom, modern, dark-themed replacement for the Tel Aviv Univers
 
 4. Register an account and configure your settings!
 
+## Docker Deployment
+
+To deploy TauTracker with Docker:
+
+1. Build and start the container:
+   ```bash
+   docker-compose up --build -d
+   ```
+2. Access the web interface at `http://localhost:8000`.
+3. All user databases will persist inside the `./db` directory on the host machine.
+
 ## Development
 
 - Frontend uses vanilla HTML/JS/CSS with ES6 modules (no build step required).
