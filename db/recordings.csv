@@ -1,4 +1,1 @@
 id,user_id,course_id,course_name,title,recording_link,published_date,type,status,last_synced
-1,60183ca9-43a6-4b87-8672-66c3716f0864,c1,Course 1,Lecture 1,,2025-01-01 10:00:00,,,
-2,60183ca9-43a6-4b87-8672-66c3716f0864,c1,Course 1,תרגול 1,,2025-01-02 10:00:00,,,
-3,60183ca9-43a6-4b87-8672-66c3716f0864,c2,Course 2,Lecture 2,,2025-01-03 10:00:00,,,

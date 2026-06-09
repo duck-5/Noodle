@@ -17,17 +17,17 @@
 - [x] 2.7 Sync/Refresh API
 
 ## Stage 3: Web Frontend — Core UI
-- [ ] 3.1 Frontend Project Structure & Design System
-- [ ] 3.2 Authentication UI (Login & Registration)
-- [ ] 3.3 Dashboard Page
-- [ ] 3.4 Courses Page
-- [ ] 3.5 Assignments Page
-- [ ] 3.6 Grades Page
-- [ ] 3.7 Files Page
-- [ ] 3.8 Recordings Page
-- [ ] 3.9 Meetings Page
-- [ ] 3.10 Settings Page
-- [ ] 3.11 Navigation & Layout Shell
+- [x] 3.1 Frontend Project Structure & Design System
+- [x] 3.2 Authentication UI (Login & Registration)
+- [x] 3.3 Dashboard Page
+- [x] 3.4 Courses Page
+- [x] 3.5 Assignments Page
+- [x] 3.6 Grades Page
+- [x] 3.7 Files Page
+- [x] 3.8 Recordings Page
+- [x] 3.9 Meetings Page
+- [x] 3.10 Settings Page
+- [x] 3.11 Navigation & Layout Shell
 
 ## Stage 4: Polish, Testing & Deployment
 - [ ] 4.1 End-to-End API Tests
