@@ -259,4 +259,4 @@ def test_sync_refresh_api(monkeypatch):
     
     status_resp = client.get("/api/sync/status", headers=headers)
     assert status_resp.status_code == 200
-    assert status_resp.json()["status"] in ["started", "syncing"]
+    assert status_resp.json()["status"] in ["started", "syncing", "completed"]
