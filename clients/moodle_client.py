@@ -2,6 +2,7 @@ import logging
 import requests
 import datetime
 import pytz
+import base64
 from config import MOODLE_URL, MOODLE_TOKEN, TIMEZONE, MOODLE_COURSES_LIST, PANOPTO_COURSES, COURSE_NAMES
 
 def parse_course_metadata(course):
@@ -25,16 +26,18 @@ def parse_course_metadata(course):
         }
     return None
 
-def get_enrolled_courses():
+def get_enrolled_courses(moodle_url=None, moodle_token=None):
     """Fetches the list of enrolled courses for the current user from Moodle."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
     # First, fetch site info to retrieve the user's ID
     site_info_params = {
-        "wstoken": MOODLE_TOKEN,
+        "wstoken": token,
         "wsfunction": "core_webservice_get_site_info",
         "moodlewsrestformat": "json"
     }
     try:
-        response = requests.get(MOODLE_URL, params=site_info_params)
+        response = requests.get(url, params=site_info_params)
         response.raise_for_status()
         site_info = response.json()
         
@@ -53,12 +56,12 @@ def get_enrolled_courses():
             
         # Second, fetch the courses enrolled by this user
         courses_params = {
-            "wstoken": MOODLE_TOKEN,
+            "wstoken": token,
             "wsfunction": "core_enrol_get_users_courses",
             "moodlewsrestformat": "json",
             "userid": userid
         }
-        response = requests.get(MOODLE_URL, params=courses_params)
+        response = requests.get(url, params=courses_params)
         response.raise_for_status()
         courses = response.json()
         
@@ -75,10 +78,13 @@ def get_enrolled_courses():
         logging.error(f"Failed to fetch enrolled courses from Moodle: {e}")
         return []
 
-def get_pending_assignments():
+def get_pending_assignments(moodle_url=None, moodle_token=None):
     """Fetches assignments from Moodle and checks their submission status."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    
     # 1. Fetch enrolled courses to build a complete course mapping
-    enrolled_courses = get_enrolled_courses()
+    enrolled_courses = get_enrolled_courses(moodle_url=url, moodle_token=token)
     course_mapping = {}
     course_metadata = {}
     
@@ -117,22 +123,22 @@ def get_pending_assignments():
 
     # 2. Fetch assignments
     params = {
-        "wstoken": MOODLE_TOKEN,
+        "wstoken": token,
         "wsfunction": "mod_assign_get_assignments",
         "moodlewsrestformat": "json"
     }
     
-    response = requests.get(MOODLE_URL, params=params)
+    response = requests.get(url, params=params)
     response.raise_for_status()
     data = response.json()
     
     if "exception" in data:
         logging.error(f"Moodle API Error: {data.get('message', data)}")
-        return [], course_mapping
+        return [], course_mapping, {}
         
     if "errorcode" in data:
         logging.error(f"Moodle API Error: {data.get('errorcode')} - {data.get('message', '')}")
-        return [], course_mapping
+        return [], course_mapping, {}
 
     courses = data.get('courses', [])
     logging.info(f"Moodle returned {len(courses)} courses with assignments data.")
@@ -185,8 +191,8 @@ def get_pending_assignments():
             # Fetch specific submission status for the assignment
             status = "Assigned"
             try:
-                s_resp = requests.get(MOODLE_URL, params={
-                    "wstoken": MOODLE_TOKEN,
+                s_resp = requests.get(url, params={
+                    "wstoken": token,
                     "wsfunction": "mod_assign_get_submission_status",
                     "moodlewsrestformat": "json",
                     "assignid": assign['id']
@@ -236,13 +242,14 @@ def get_pending_assignments():
                 "opened": opened_str,
                 "timestamp": assign['duedate'],
                 "link": link,
-                "status": status
+                "status": status,
+                "id": assign.get("id"),
+                "cmid": assign.get("cmid")
             })
                 
     return pending_assignments, course_mapping, course_metadata
 
-
-def get_assignment_grades(enrolled_courses):
+def get_assignment_grades(enrolled_courses, moodle_url=None, moodle_token=None):
     """Fetches per-assignment grades from Moodle for the current user.
 
     Uses gradereport_user_get_grade_items (one call per course) and returns a
@@ -260,10 +267,13 @@ def get_assignment_grades(enrolled_courses):
             ...
         }
     """
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    
     # We need the logged-in user's ID
     try:
-        site_info = requests.get(MOODLE_URL, params={
-            "wstoken": MOODLE_TOKEN,
+        site_info = requests.get(url, params={
+            "wstoken": token,
             "wsfunction": "core_webservice_get_site_info",
             "moodlewsrestformat": "json"
         }).json()
@@ -282,8 +292,8 @@ def get_assignment_grades(enrolled_courses):
         if not course_id:
             continue
         try:
-            resp = requests.get(MOODLE_URL, params={
-                "wstoken": MOODLE_TOKEN,
+            resp = requests.get(url, params={
+                "wstoken": token,
                 "wsfunction": "gradereport_user_get_grade_items",
                 "moodlewsrestformat": "json",
                 "courseid": course_id,
@@ -316,3 +326,183 @@ def get_assignment_grades(enrolled_courses):
 
     logging.info(f"Fetched grades for {len(grades_by_cmid)} assignments across all courses.")
     return grades_by_cmid
+
+
+def get_course_contents(course_id, moodle_url=None, moodle_token=None):
+    """Fetches the contents of a specific course."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    try:
+        resp = requests.get(url, params={
+            "wstoken": token,
+            "wsfunction": "core_course_get_contents",
+            "moodlewsrestformat": "json",
+            "courseid": course_id
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        if "exception" in data or "errorcode" in data:
+            logging.error(f"Error fetching course contents: {data}")
+            return []
+        return data
+    except Exception as e:
+        logging.error(f"Error fetching course contents for {course_id}: {e}")
+        return []
+
+def get_course_contents(course_id, moodle_url=None, moodle_token=None):
+    """Calls core_course_get_contents for a specific course."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    params = {
+        "wstoken": token,
+        "wsfunction": "core_course_get_contents",
+        "moodlewsrestformat": "json",
+        "courseid": course_id
+    }
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict) and ("exception" in data or "errorcode" in data):
+            logging.error(f"Error fetching course contents: {data}")
+            return []
+        return data
+    except Exception as e:
+        logging.error(f"Failed to fetch course contents for {course_id}: {e}")
+        return []
+
+def get_course_files(course_id, moodle_url=None, moodle_token=None):
+    """Extracts downloadable files from course contents."""
+    contents = get_course_contents(course_id, moodle_url=moodle_url, moodle_token=moodle_token)
+    files = []
+    for section in contents:
+        section_name = section.get("name", "")
+        for module in section.get("modules", []):
+            if module.get("modname") == "resource" and "contents" in module:
+                for content in module["contents"]:
+                    if content.get("type") == "file":
+                        files.append({
+                            "file_name": content.get("filename", ""),
+                            "file_url": content.get("fileurl", ""),
+                            "file_size": content.get("filesize", 0),
+                            "mime_type": content.get("mimetype", "application/octet-stream"),
+                            "section_name": section_name,
+                            "time_modified": content.get("timemodified", 0)
+                        })
+    return files
+
+def get_course_meetings(course_id, moodle_url=None, moodle_token=None):
+    """Extracts Zoom meetings from course contents."""
+    contents = get_course_contents(course_id, moodle_url=moodle_url, moodle_token=moodle_token)
+    meetings = []
+    for section in contents:
+        section_name = section.get("name", "")
+        for module in section.get("modules", []):
+            modname = module.get("modname")
+            name = module.get("name", "").lower()
+            
+            # Zoom LTI or URL checking
+            is_zoom = False
+            meeting_url = ""
+            
+            if modname == "lti":
+                if "zoom" in name:
+                    is_zoom = True
+                    meeting_url = module.get("url", "")
+            elif modname == "url":
+                contents_list = module.get("contents", [])
+                for content in contents_list:
+                    if content.get("type") == "url":
+                        m_url = content.get("fileurl", "")
+                        if "zoom.us" in m_url or "zoom." in m_url or any(kw in name for kw in ["zoom", "meeting", "שיעור", "הרצאה"]):
+                            is_zoom = True
+                            meeting_url = m_url
+                            break
+            
+            if is_zoom and meeting_url:
+                meetings.append({
+                    "title": module.get("name", ""),
+                    "meeting_url": meeting_url,
+                    "section_name": section_name,
+                    "type": "zoom"
+                })
+    return meetings
+
+def download_file(file_url, moodle_token):
+    """Downloads a file from Moodle's pluginfile.php by appending the token."""
+    separator = "&" if "?" in file_url else "?"
+    url = f"{file_url}{separator}token={moodle_token}"
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+    return response
+
+def upload_submission(assign_id, file_content_b64, filename, user_id, moodle_url=None, moodle_token=None):
+    """Uploads a file to the Moodle draft area and links it to assignment."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    
+    try:
+        params = {
+            "wstoken": token,
+            "wsfunction": "core_files_upload",
+            "moodlewsrestformat": "json",
+            "component": "user",
+            "filearea": "draft",
+            "itemid": 0,
+            "filepath": "/",
+            "filename": filename,
+            "filecontent": file_content_b64
+        }
+        
+        response = requests.post(url, data=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if isinstance(data, dict) and ("exception" in data or "errorcode" in data):
+            return {"success": False, "message": data.get("message", "Moodle upload error")}
+            
+        itemid = data.get("itemid")
+        if not itemid:
+            return {"success": False, "message": "Failed to get itemid from Moodle"}
+            
+        save_params = {
+            "wstoken": token,
+            "wsfunction": "mod_assign_save_submission",
+            "moodlewsrestformat": "json",
+            "assignmentid": assign_id,
+            "plugindata[files_filemanager]": itemid
+        }
+        response = requests.post(url, data=save_params)
+        response.raise_for_status()
+        save_data = response.json()
+        
+        if isinstance(save_data, dict) and ("exception" in save_data or "errorcode" in save_data):
+            return {"success": False, "message": save_data.get("message", "Moodle save submission error")}
+            
+        return {"success": True, "message": "File uploaded and linked successfully", "itemid": itemid}
+    except Exception as e:
+        return {"success": False, "message": f"Upload failed: {e}"}
+
+def submit_assignment(assign_id, moodle_url=None, moodle_token=None):
+    """Submits the assignment for grading (locking it)."""
+    url = moodle_url or MOODLE_URL
+    token = moodle_token or MOODLE_TOKEN
+    
+    params = {
+        "wstoken": token,
+        "wsfunction": "mod_assign_submit_for_grading",
+        "moodlewsrestformat": "json",
+        "assignmentid": assign_id,
+        "acceptsubmissionstatement": 1
+    }
+    try:
+        response = requests.post(url, data=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if isinstance(data, dict) and ("exception" in data or "errorcode" in data):
+            return {"success": False, "message": data.get("message", "Moodle submission error")}
+            
+        return {"success": True, "message": "Assignment submitted for grading"}
+    except Exception as e:
+        return {"success": False, "message": f"Submission failed: {e}"}

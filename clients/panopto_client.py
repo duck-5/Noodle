@@ -4,20 +4,26 @@ from playwright.sync_api import sync_playwright
 from config import PANOPTO_URL, PANOPTO_USER, PANOPTO_PASS, PANOPTO_PID, PANOPTO_COURSES, SCRAPE_PANOPTO, COURSE_NAMES
 from datetime import datetime
 
-def get_new_lectures(course_mapping=None):
+def get_new_lectures(course_mapping=None, panopto_url=None, username=None, password=None, pid=None, panopto_courses=None):
     if course_mapping is None:
         course_mapping = {}
+
+    url = panopto_url or PANOPTO_URL
+    user = username or PANOPTO_USER
+    passwd = password or PANOPTO_PASS
+    student_id = pid or PANOPTO_PID
+    courses_dict = panopto_courses or PANOPTO_COURSES
 
     if not SCRAPE_PANOPTO:
         logging.info("Panopto scraping is disabled (SCRAPE_PANOPTO != 1). Skipping lecture fetch.")
         return []
 
-    if not PANOPTO_URL or not PANOPTO_USER or not PANOPTO_PASS or not PANOPTO_PID:
-        logging.error("Panopto credentials not fully configured in .env.")
+    if not url or not user or not passwd or not student_id:
+        logging.error("Panopto credentials not fully configured. Skipping lecture fetch.")
         return []
 
-    if not PANOPTO_COURSES:
-        logging.warning("No PANOPTO_COURSE_ variables found in .env.")
+    if not courses_dict:
+        logging.warning("No Panopto courses configured. Skipping lecture fetch.")
         return []
 
     lectures = []
@@ -30,19 +36,19 @@ def get_new_lectures(course_mapping=None):
         page = context.new_page()
 
         try:
-            page.goto(PANOPTO_URL)
+            page.goto(url)
             page.wait_for_selector("#PageContentPlaceholder_loginControl_externalLoginButton", timeout=15000)
             page.click("#PageContentPlaceholder_loginControl_externalLoginButton")
             
             page.wait_for_selector("#Ecom_User_ID", timeout=15000)
-            page.fill("#Ecom_User_ID", PANOPTO_USER)
-            page.fill("#Ecom_User_Pid", PANOPTO_PID)
-            page.fill("#Ecom_Password", PANOPTO_PASS)
+            page.fill("#Ecom_User_ID", user)
+            page.fill("#Ecom_User_Pid", student_id)
+            page.fill("#Ecom_Password", passwd)
             page.press("#Ecom_Password", "Enter")
             
             page.wait_for_url("**/Panopto/Pages/**", timeout=20000)
             
-            for course_key, course_url in PANOPTO_COURSES.items():
+            for course_key, course_url in courses_dict.items():
                 raw_key = course_key.replace("PANOPTO_COURSE_", "")
 
                 # Priority: 1) COURSE_{id} env variable, 2) course_mapping from Moodle, 3) raw key
@@ -122,7 +128,7 @@ def get_new_lectures(course_mapping=None):
                             formatted_date = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
                             
                         if link and not link.startswith("http"):
-                            link = f"{PANOPTO_URL}{link}" if link.startswith("/") else f"{PANOPTO_URL}/{link}"
+                            link = f"{url}{link}" if link.startswith("/") else f"{url}/{link}"
                         
                         lectures.append({
                             "course_name": course_name,
