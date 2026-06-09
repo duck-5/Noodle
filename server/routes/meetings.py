@@ -1,61 +1,29 @@
-"""
-Meetings routes — Zoom meeting links extracted from Moodle.
-"""
-
-from fastapi import APIRouter, Depends, HTTPException
-from datetime import datetime, timedelta
-import pytz
-
+from fastapi import APIRouter, Depends, Query
+from typing import List, Optional
 from server.auth.dependencies import get_current_user
 from server.db.stores import meetings_store
-from server.config import TIMEZONE
 
 router = APIRouter()
 
 @router.get("/")
-async def get_meetings(
-    course_id: str | None = None,
+def get_meetings(
+    course_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Retrieve all cached Zoom meetings for the user's tracked courses."""
-    filters = {"user_id": current_user["user_id"]}
+    user_id = current_user["user_id"]
+    filters = {"user_id": user_id}
     if course_id:
         filters["course_id"] = course_id
         
     meetings = meetings_store.query(filters)
+    
+    # Sort by title or course name since they don't have explicit times in the scraped data
+    meetings.sort(key=lambda x: (x.get("course_name", ""), x.get("title", "")))
     return meetings
 
 @router.get("/course/{course_id}")
-async def get_course_meetings(course_id: str, current_user: dict = Depends(get_current_user)):
-    """Retrieve meetings for a specific course."""
-    return await get_meetings(course_id=course_id, current_user=current_user)
-
-@router.get("/upcoming")
-async def get_upcoming_meetings(current_user: dict = Depends(get_current_user)):
-    """Retrieve meetings scheduled for today or this week."""
-    meetings = meetings_store.query({"user_id": current_user["user_id"]})
-    
-    tz = pytz.timezone(TIMEZONE)
-    now = datetime.now(tz)
-    end_of_week = now + timedelta(days=7)
-    
-    upcoming = []
-    for m in meetings:
-        start_str = m.get("start_time", "")
-        if not start_str:
-            # Recurring meetings or generic links are always shown
-            upcoming.append(m)
-            continue
-            
-        try:
-            # Strip offset if present in isoformat parsing
-            dt_str = start_str.split("+")[0].replace("Z", "")
-            start_time = datetime.fromisoformat(dt_str)
-            start_time = tz.localize(start_time)
-            
-            if now <= start_time <= end_of_week:
-                upcoming.append(m)
-        except ValueError:
-            upcoming.append(m)
-            
-    return upcoming
+def get_course_meetings(course_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    meetings = meetings_store.query({"user_id": user_id, "course_id": course_id})
+    meetings.sort(key=lambda x: x.get("title", ""))
+    return meetings

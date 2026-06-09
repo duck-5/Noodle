@@ -35,6 +35,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
     user = users_store.read_by_key(user_id)
     if user is None:
+        print(f"401 ERROR! user_id={user_id}, all_users={users_store.read_all()}")
         raise credentials_exception
 
     return user

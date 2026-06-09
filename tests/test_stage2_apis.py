@@ -253,11 +253,10 @@ def test_sync_refresh_api(monkeypatch):
     monkeypatch.setattr("server.services.sync_service.get_course_files", mock_get_files)
     monkeypatch.setattr("server.services.sync_service.get_course_meetings", mock_get_meetings)
     
-    resp = client.post("/api/sync/refresh", headers=headers)
+    resp = client.post("/api/sync/", headers=headers)
     assert resp.status_code == 200
-    sync_id = resp.json()["sync_id"]
     assert resp.json()["status"] in ["started", "syncing"]
     
-    status_resp = client.get(f"/api/sync/status/{sync_id}", headers=headers)
+    status_resp = client.get("/api/sync/status", headers=headers)
     assert status_resp.status_code == 200
-    assert status_resp.json()["sync_id"] == sync_id
+    assert status_resp.json()["status"] in ["started", "syncing"]

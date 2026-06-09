@@ -1,35 +1,42 @@
-"""
-Recordings routes — viewing cached Panopto recordings.
-"""
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Query
+from typing import List, Optional
 from server.auth.dependencies import get_current_user
 from server.db.stores import recordings_store
 
 router = APIRouter()
 
+def _enrich_recording(r: dict):
+    title = r.get("lecture_title", "") or r.get("title", "")
+    is_recitation = 'tirgul' in title.lower() or 'תרגול' in title
+    if not r.get("type"):
+        r["type"] = "Recitation" if is_recitation else "Lecture"
+    return r
+
 @router.get("/")
-async def get_recordings(
-    course_id: str | None = None,
-    type: str | None = None,
+def get_recordings(
+    course_id: Optional[str] = None,
+    type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Retrieve all cached recordings for the user's tracked courses."""
-    filters = {"user_id": current_user["user_id"]}
+    user_id = current_user["user_id"]
+    filters = {"user_id": user_id}
     if course_id:
         filters["course_id"] = course_id
         
     recordings = recordings_store.query(filters)
+    recordings = recordings_store.query(filters)
+    enriched = [_enrich_recording(dict(r)) for r in recordings]
     
-    # Filter by type (Lecture or Recitation)
     if type:
-        recordings = [r for r in recordings if r["type"].lower() == type.lower()]
+        enriched = [r for r in enriched if r.get("type", "").lower() == type.lower()]
         
-    # Sort by published date desc (newest first)
-    recordings.sort(key=lambda r: r.get("published_date") or "", reverse=True)
-    return recordings
+    enriched.sort(key=lambda x: x.get("published_date", ""), reverse=True)
+    return enriched
 
 @router.get("/course/{course_id}")
-async def get_course_recordings(course_id: str, current_user: dict = Depends(get_current_user)):
-    """Retrieve recordings for a specific course."""
-    return await get_recordings(course_id=course_id, current_user=current_user)
+def get_course_recordings(course_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    recordings = recordings_store.query({"user_id": user_id, "course_id": course_id})
+    enriched = [_enrich_recording(dict(r)) for r in recordings]
+    enriched.sort(key=lambda x: x.get("published_date", ""), reverse=True)
+    return enriched

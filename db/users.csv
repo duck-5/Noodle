@@ -1,2 +1,1 @@
 user_id,username,email,password_hash,moodle_token_encrypted,sso_username_encrypted,sso_password_encrypted,sso_student_id_encrypted,created_at,last_login,settings_json
-36a1990b-7fef-4ba1-b12a-edae91315bb1,apiuser,api@example.com,$2b$12$OSZe/3h0SJr/vYIqCAcVVu0l/zQfM1S1aBiF6fdesnX3J/bQZ1V8m,,,,,2026-06-09T09:38:10.055360,2026-06-09T09:38:10.055360,{}

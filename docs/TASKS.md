@@ -12,9 +12,9 @@
 - [x] 2.2 Assignments API
 - [x] 2.3 Grades API
 - [x] 2.4 Files API
-- [/] 2.5 Recordings API
-- [ ] 2.6 Meetings (Zoom) API
-- [ ] 2.7 Sync/Refresh API
+- [x] 2.5 Recordings API
+- [x] 2.6 Meetings (Zoom) API
+- [x] 2.7 Sync/Refresh API
 
 ## Stage 3: Web Frontend — Core UI
 - [ ] 3.1 Frontend Project Structure & Design System
