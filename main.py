@@ -60,8 +60,8 @@ def main():
         logging.info("GitHub Actions environment detected. Exiting after single sync cycle.")
         return
         
-    # Otherwise, assume local daemon and schedule to run every 12 hours automatically
-    schedule.every(12).hours.do(job)
+    # Otherwise, assume local daemon and schedule to run every 5 hours automatically
+    schedule.every(5).hours.do(job)
     
     logging.info("TauTracker Daemon is now running in the background. Waiting for next scheduled run...")
     while True:

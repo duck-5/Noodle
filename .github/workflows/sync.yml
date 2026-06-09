@@ -2,7 +2,7 @@ name: TauTracker Sync
 
 on:
   schedule:
-    - cron: '0 */12 * * *' # Run every 12 hours
+    - cron: '0 */5 * * *' # Run every 5 hours
   workflow_dispatch: # Allow manual trigger
 
 jobs:

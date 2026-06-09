@@ -144,6 +144,7 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None, gr
 
     def format_grade(grade_info):
         """Return a human-readable grade string, or '' if not yet graded / hidden."""
+        import re
         if not grade_info:
             return ''
         if grade_info.get('gradeishidden'):
@@ -151,7 +152,11 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None, gr
         raw = grade_info.get('graderaw')
         if raw is None:
             return ''
+        
         formatted = grade_info.get('gradeformatted', str(raw))
+        # Strip any HTML tags that Moodle might inject (e.g. checkmark icons for 'pass')
+        formatted = re.sub(r'<[^>]+>', '', str(formatted)).strip()
+        
         grademax = grade_info.get('grademax', 100)
         return f"{formatted} / {int(grademax)}"
 
@@ -429,7 +434,12 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None, gr
                         row[3] = dt.strftime("%m/%d/%Y %H:%M:%S").lstrip("0").replace("/0", "/")
 
                 # Sort by Course (0), Type (1), then Date Descending (3)
-                data_rows.sort(key=lambda x: (x[0], x[1], -parse_date(x[3]).timestamp()))
+                def sort_key(x):
+                    dt = parse_date(x[3])
+                    # Return negated tuple components for descending date sort, completely avoiding .timestamp()
+                    return (x[0], x[1], (-dt.year, -dt.month, -dt.day, -dt.hour, -dt.minute, -dt.second))
+
+                data_rows.sort(key=sort_key)
                 
                 # Convert numeric column index to letter (e.g. 7 -> G, 9 -> I)
                 def col_letter(n):
@@ -442,7 +452,7 @@ def sync_data(gc, tasks_service, assignments, lectures, course_metadata=None, gr
                 end_col = col_letter(max_col_count)
                 
                 # Write the sorted data back to the sheet
-                ws.update(f'A2:{end_col}{len(data_rows)+1}', data_rows)
+                ws.update(values=data_rows, range_name=f'A2:{end_col}{len(data_rows)+1}')
                 logging.info(f"[{sheet_name}] Sorted spreadsheet in-place by Course, Type, and Date.")
                 
                 # Update the last sync date in I1 so we know exactly when we last successfully ran
