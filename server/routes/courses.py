@@ -173,3 +173,24 @@ async def get_course_details(course_id: str, current_user: dict = Depends(get_cu
         
     contents = get_course_contents(course_id, moodle_url=MOODLE_URL, moodle_token=moodle_token)
     return contents
+
+class UpdateCourseRequest(BaseModel):
+    course_name: str
+
+@router.patch("/{course_id}")
+async def update_course(course_id: str, req: UpdateCourseRequest, current_user: dict = Depends(get_current_user)):
+    """Update a tracked course's display name."""
+    existing = user_courses_store.query({
+        "user_id": current_user["user_id"],
+        "course_id": course_id
+    })
+    if not existing:
+        raise HTTPException(status_code=404, detail="Course not tracked")
+        
+    updated_record = None
+    for item in existing:
+        user_courses_store.update(item["id"], {"course_name": req.course_name})
+        updated_record = {**item, "course_name": req.course_name}
+        
+    return {"status": "ok", "updated": updated_record}
+
