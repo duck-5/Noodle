@@ -11,8 +11,8 @@
 - [x] 2.1 Courses API
 - [x] 2.2 Assignments API
 - [x] 2.3 Grades API
-- [ ] 2.4 Files API
-- [ ] 2.5 Recordings API
+- [x] 2.4 Files API
+- [/] 2.5 Recordings API
 - [ ] 2.6 Meetings (Zoom) API
 - [ ] 2.7 Sync/Refresh API
 

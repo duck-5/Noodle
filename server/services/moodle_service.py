@@ -33,3 +33,11 @@ def get_assignment_grades(user_id: str, enrolled_courses):
 def get_course_contents(user_id: str, course_id: int):
     token = get_user_moodle_token(user_id)
     return moodle_client.get_course_contents(course_id, moodle_token=token)
+
+def get_course_files(user_id: str, course_id: int):
+    token = get_user_moodle_token(user_id)
+    return moodle_client.get_course_files(course_id, moodle_token=token)
+
+def download_file(user_id: str, file_url: str):
+    token = get_user_moodle_token(user_id)
+    return moodle_client.download_file(file_url, moodle_token=token)
