@@ -1,15 +1,19 @@
 import * as Notifications from 'expo-notifications';
 import { Assignment } from '@tautracker/moodle-client';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (e) {
+  console.warn('expo-notifications: failed to set notification handler:', e);
+}
 
 export async function scheduleDeadlineNotifications(assignments: Assignment[]): Promise<void> {
   try {

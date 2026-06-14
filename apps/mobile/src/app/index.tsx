@@ -12,9 +12,84 @@ import {
 } from 'react-native';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference } from '../services/database';
-import { MoodleClient } from '@tautracker/moodle-client';
+import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+
+interface GroupedCourses {
+  semesterKey: string;
+  year: string;
+  semester: 'SemesterA' | 'SemesterB' | 'Yearly' | 'Other';
+  label: string;
+  courses: any[];
+}
+
+function groupAndSortCourses(courses: any[], lang: string): GroupedCourses[] {
+  const groups: Record<string, any[]> = {};
+  
+  courses.forEach(c => {
+    const idNum = c.idnumber || c.shortname || '';
+    const meta = parseTauCourseMetadata(idNum);
+    const year = meta?.year || '';
+    const semester = meta?.semester || 'Other';
+    
+    const key = year ? `${year}-${semester}` : 'Other';
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(c);
+  });
+  
+  const result: GroupedCourses[] = [];
+  
+  Object.keys(groups).forEach(key => {
+    if (key === 'Other') {
+      result.push({
+        semesterKey: 'Other',
+        year: '',
+        semester: 'Other',
+        label: lang === 'he' ? 'אחר' : 'Other',
+        courses: groups[key]
+      });
+    } else {
+      const [year, semester] = key.split('-');
+      let label = '';
+      if (lang === 'he') {
+        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "אחר";
+        label = `${semName} (${year})`;
+      } else {
+        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "Other";
+        label = `${semName} (${year})`;
+      }
+      result.push({
+        semesterKey: key,
+        year,
+        semester: semester as any,
+        label,
+        courses: groups[key]
+      });
+    }
+  });
+  
+  result.sort((a, b) => {
+    if (a.semesterKey === 'Other') return 1;
+    if (b.semesterKey === 'Other') return -1;
+    
+    const yearDiff = parseInt(b.year) - parseInt(a.year);
+    if (yearDiff !== 0) return yearDiff;
+    
+    const getSemValue = (sem: string) => {
+      if (sem === 'SemesterB') return 3;
+      if (sem === 'SemesterA') return 2;
+      if (sem === 'Yearly') return 1;
+      return 0;
+    };
+    
+    return getSemValue(b.semester) - getSemValue(a.semester);
+  });
+  
+  return result;
+}
 
 export default function DashboardScreen() {
   const scheme = useColorScheme();
@@ -225,25 +300,44 @@ export default function DashboardScreen() {
           {t('select_courses_title')}
         </Text>
         <ScrollView style={styles.scrollList}>
-          {availableCourses.map((c) => {
-            const isSelected = selectedCourseIds.includes(c.id);
-            return (
-              <Pressable
-                key={c.id}
-                style={[
-                  styles.courseSelectItem,
-                  {
-                    backgroundColor: isSelected ? theme.backgroundSelected : theme.backgroundElement,
-                    borderColor: isSelected ? '#6366f1' : 'transparent',
-                  },
-                ]}
-                onPress={() => handleCourseToggle(c.id)}
+          {groupAndSortCourses(availableCourses, lang).map((group) => (
+            <View key={group.semesterKey} style={{ marginBottom: 20 }}>
+              <Text
+                style={{
+                  color: theme.text,
+                  fontSize: 16,
+                  fontWeight: 'bold',
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+                  paddingBottom: 6,
+                  marginBottom: 10,
+                  marginHorizontal: 16,
+                  textAlign: isRtl ? 'right' : 'left',
+                }}
               >
-                <Text style={[styles.courseSelectName, { color: theme.text, writingDirection: 'auto', textAlign: isRtl ? 'right' : 'left' }]}>{c.fullname}</Text>
-                <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{c.shortname}</Text>
-              </Pressable>
-            );
-          })}
+                {group.label}
+              </Text>
+              {group.courses.map((c) => {
+                const isSelected = selectedCourseIds.includes(c.id);
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[
+                      styles.courseSelectItem,
+                      {
+                        backgroundColor: isSelected ? theme.backgroundSelected : theme.backgroundElement,
+                        borderColor: isSelected ? '#6366f1' : 'transparent',
+                      },
+                    ]}
+                    onPress={() => handleCourseToggle(c.id)}
+                  >
+                    <Text style={[styles.courseSelectName, { color: theme.text, writingDirection: 'auto', textAlign: isRtl ? 'right' : 'left' }]}>{c.fullname}</Text>
+                    <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{c.shortname}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
         </ScrollView>
         <View style={styles.actionFooter}>
           <Pressable style={styles.primaryBtn} onPress={handleSaveCourses}>
