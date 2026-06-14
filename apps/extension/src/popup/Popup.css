@@ -165,13 +165,18 @@
 .footer-link-btn {
   background: none;
   border: none;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  font-weight: 500;
+  color: var(--primary);
+  font-size: 0.9rem;
+  font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
 }
 
 .footer-link-btn:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
+  color: #818cf8;
+  transform: translateY(-1px);
+  text-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
 }

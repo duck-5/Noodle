@@ -3,19 +3,25 @@ import type { SyncResult } from '@tautracker/moodle-client';
 export interface ExtensionSettings {
   googleTasksEnabled: boolean;
   googleTasksListName: string;
+  googleClientId?: string | null;
   notificationsEnabled: boolean;
   coursesColorMap: Record<number, string>;
   coursesCustomNames: Record<number, string>;
   language: 'he' | 'en';
+  assignmentGreenDaysThreshold?: number;
+  assignmentYellowDaysThreshold?: number;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   googleTasksEnabled: false,
   googleTasksListName: 'TauTracker',
+  googleClientId: null,
   notificationsEnabled: true,
   coursesColorMap: {},
   coursesCustomNames: {},
   language: 'he',
+  assignmentGreenDaysThreshold: 7,
+  assignmentYellowDaysThreshold: 3,
 };
 
 export async function getStoredToken(): Promise<string | null> {

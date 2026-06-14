@@ -25,5 +25,11 @@
   "action": {
     "default_popup": "index.html"
   },
+  "oauth2": {
+    "client_id": "510394355212-qq5n37h1ijrp28ge71gm51v722hsstpg.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/tasks"
+    ]
+  },
   "options_page": "options.html"
 }

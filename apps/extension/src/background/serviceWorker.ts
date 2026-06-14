@@ -228,6 +228,55 @@ async function performBackgroundSync() {
   return result;
 }
 
+async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean): Promise<string> {
+  const cached = (await chrome.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
+    googleAccessToken?: string;
+    googleTokenExpiry?: number;
+  };
+  if (cached.googleAccessToken && cached.googleTokenExpiry && cached.googleTokenExpiry > Date.now() + 60000) {
+    return cached.googleAccessToken;
+  }
+
+  if (!interactive) {
+    throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
+  }
+
+  const redirectUrl = `https://${chrome.runtime.id}.chromiumapp.org/`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
+
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (responseUrl) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      if (!responseUrl) {
+        return reject(new Error('OAuth flow canceled or returned empty response.'));
+      }
+
+      try {
+        const urlObj = new URL(responseUrl);
+        const params = new URLSearchParams(urlObj.hash.substring(1));
+        const token = params.get('access_token');
+        const expiresIn = params.get('expires_in');
+
+        if (!token) {
+          return reject(new Error('Access token not found in Google OAuth response.'));
+        }
+
+        const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
+        chrome.storage.local.set({
+          googleAccessToken: token,
+          googleTokenExpiry: expiryTime
+        }).then(() => {
+          resolve(token);
+        });
+      } catch (err: any) {
+        reject(new Error(`Failed to parse Google Tasks token: ${err.message}`));
+      }
+    });
+  });
+}
+
 async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   const settings = await getSettings();
   if (!settings.googleTasksEnabled) {
@@ -239,35 +288,48 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
     return 'No assignments found to sync';
   }
 
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive }, async (result: any) => {
-      if (chrome.runtime.lastError) {
-        return reject(new Error(chrome.runtime.lastError.message));
-      }
-      const accessToken = result && typeof result === 'object' ? result.token : result;
-      if (!accessToken) {
-        return reject(new Error('Failed to obtain Google access token'));
-      }
-
-      try {
-        const listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName);
-        const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
-          accessToken,
-          listId,
-          cachedResult.assignments
-        );
-
-        if (errors.length > 0) {
-          console.warn('Google Tasks sync encountered errors:', errors);
-          resolve(`Synced ${syncedCount} tasks with ${errors.length} errors.`);
-        } else {
-          resolve(`Successfully synced ${syncedCount} tasks to Google Tasks.`);
+  let accessToken: string;
+  if (settings.googleClientId && settings.googleClientId.trim()) {
+    accessToken = await getLaunchWebAuthFlowToken(settings.googleClientId.trim(), interactive);
+  } else {
+    accessToken = await new Promise<string>((resolve, reject) => {
+      chrome.identity.getAuthToken({ interactive }, (result: any) => {
+        if (chrome.runtime.lastError) {
+          return reject(new Error(chrome.runtime.lastError.message));
         }
-      } catch (err: any) {
-        reject(err);
-      }
+        const token = result && typeof result === 'object' ? result.token : result;
+        if (!token) {
+          return reject(new Error('Failed to obtain Google access token'));
+        }
+        resolve(token);
+      });
     });
+  }
+
+  const syncErrors: string[] = [];
+  const listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
+    syncErrors.push(err);
   });
+
+  const mappedAssignments = cachedResult.assignments.map((a) => {
+    const nickname = settings.coursesCustomNames?.[a.courseId];
+    return nickname && nickname.trim() ? { ...a, courseName: nickname.trim() } : a;
+  });
+
+  const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+    accessToken,
+    listId,
+    mappedAssignments
+  );
+
+  const allErrors = [...syncErrors, ...errors];
+
+  if (allErrors.length > 0) {
+    console.warn('Google Tasks sync encountered errors:', allErrors);
+    return `Synced ${syncedCount} tasks with ${allErrors.length} errors.`;
+  } else {
+    return `Successfully synced ${syncedCount} tasks to Google Tasks.`;
+  }
 }
 
 async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {

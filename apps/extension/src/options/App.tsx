@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { SyncResult, Assignment, CourseFile, ZoomMeeting } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata } from '@tautracker/moodle-client';
 import {
   getStoredToken,
   setStoredToken,
@@ -21,6 +22,81 @@ import {
 import { translations } from '../shared/i18n';
 
 import './App.css';
+
+interface GroupedCourses {
+  semesterKey: string;
+  year: string;
+  semester: 'SemesterA' | 'SemesterB' | 'Yearly' | 'Other';
+  label: string;
+  courses: any[];
+}
+
+function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[] {
+  const groups: Record<string, any[]> = {};
+  
+  courses.forEach(c => {
+    const idNum = c.idnumber || c.shortname || '';
+    const meta = parseTauCourseMetadata(idNum);
+    const year = meta?.year || '';
+    const semester = meta?.semester || 'Other';
+    
+    const key = year ? `${year}-${semester}` : 'Other';
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(c);
+  });
+  
+  const result: GroupedCourses[] = [];
+  
+  Object.keys(groups).forEach(key => {
+    if (key === 'Other') {
+      result.push({
+        semesterKey: 'Other',
+        year: '',
+        semester: 'Other',
+        label: lang === 'he' ? 'אחר' : 'Other',
+        courses: groups[key]
+      });
+    } else {
+      const [year, semester] = key.split('-');
+      let label = '';
+      if (lang === 'he') {
+        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "אחר";
+        label = `${semName} (${year})`;
+      } else {
+        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "Other";
+        label = `${semName} (${year})`;
+      }
+      result.push({
+        semesterKey: key,
+        year,
+        semester: semester as any,
+        label,
+        courses: groups[key]
+      });
+    }
+  });
+  
+  result.sort((a, b) => {
+    if (a.semesterKey === 'Other') return 1;
+    if (b.semesterKey === 'Other') return -1;
+    
+    const yearDiff = parseInt(b.year) - parseInt(a.year);
+    if (yearDiff !== 0) return yearDiff;
+    
+    const getSemValue = (sem: string) => {
+      if (sem === 'SemesterB') return 3;
+      if (sem === 'SemesterA') return 2;
+      if (sem === 'Yearly') return 1;
+      return 0;
+    };
+    
+    return getSemValue(b.semester) - getSemValue(a.semester);
+  });
+  
+  return result;
+}
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -46,6 +122,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [fileSearchQuery, setFileSearchQuery] = useState<string>('');
 
+  // Backup and custom disconnect states
+  const [backupExists, setBackupExists] = useState<boolean>(false);
+  const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
+  const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
+
   useEffect(() => {
     loadData();
 
@@ -57,6 +138,20 @@ export default function App() {
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
+
+  useEffect(() => {
+    if (token && trackedCourseIds && trackedCourseIds.length > 0 && settings) {
+      const backup = {
+        version: "TauTrackerConfig-v1",
+        wstoken: token,
+        trackedCourseIds: trackedCourseIds,
+        settings: settings
+      };
+      chrome.storage.local.set({ config_backup: backup }).then(() => {
+        setBackupExists(true);
+      });
+    }
+  }, [token, trackedCourseIds, settings]);
 
   async function loadData() {
     setLoading(true);
@@ -73,8 +168,19 @@ export default function App() {
       const cached = await getCachedSyncResult();
       setSyncResult(cached);
 
+      // Load cached enrolled courses if available
+      const cachedCoursesRes = (await chrome.storage.local.get('enrolledCoursesCache')) as { enrolledCoursesCache?: any[] };
+      if (cachedCoursesRes.enrolledCoursesCache) {
+        setAvailableCourses(cachedCoursesRes.enrolledCoursesCache);
+      }
+
+      // Check if config backup exists
+      const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
+      setBackupExists(!!backupRes.config_backup);
+
       if (storedToken && ids.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
+        fetchEnrolledCoursesInBackground(storedToken);
       } else if (storedToken) {
         // Token exists but courses might not be tracked yet
         setOnboardingStep(2);
@@ -95,6 +201,18 @@ export default function App() {
       console.error('Error loading extension data:', e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchEnrolledCoursesInBackground(t: string) {
+    try {
+      const res = await fetchEnrolledCoursesOnBackground(t);
+      if (res.success && res.courses) {
+        setAvailableCourses(res.courses);
+        await chrome.storage.local.set({ enrolledCoursesCache: res.courses });
+      }
+    } catch (e) {
+      console.warn('Failed to background fetch enrolled courses:', e);
     }
   }
 
@@ -178,22 +296,125 @@ export default function App() {
     }
   }
 
-  async function handleDisconnect() {
-    if (confirm('Are you sure you want to disconnect your Moodle account? All local caches will be cleared.')) {
-      setLoading(true);
+  async function handleDisconnectClick() {
+    setDeletePermanently(false);
+    setShowDisconnectModal(true);
+  }
+
+  async function confirmDisconnect() {
+    setLoading(true);
+    setShowDisconnectModal(false);
+    try {
+      await setStoredToken(null);
+      await setTrackedCourseIds([]);
+      await chrome.storage.local.remove('cachedSyncResult');
+      await chrome.storage.local.remove('enrolledCoursesCache');
+      
+      if (deletePermanently) {
+        await chrome.storage.local.remove('config_backup');
+        setBackupExists(false);
+      }
+      
+      setToken(null);
+      setTrackedCourseIdsState([]);
+      setSyncResult(null);
+      setOnboardingStep(1);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleExportConfig() {
+    if (!token || !settings) {
+      alert('No configuration found to export.');
+      return;
+    }
+    const config = {
+      version: "TauTrackerConfig-v1",
+      wstoken: token,
+      trackedCourseIds: trackedCourseIds,
+      settings: settings
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tau_tracker_config_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportConfig(file: File) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
       try {
-        await setStoredToken(null);
-        await setTrackedCourseIds([]);
-        await chrome.storage.local.remove('cachedSyncResult');
-        setToken(null);
-        setTrackedCourseIdsState([]);
-        setSyncResult(null);
-        setOnboardingStep(1);
-      } catch (e) {
-        console.error(e);
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+        if (data.version !== "TauTrackerConfig-v1" || !data.wstoken || !data.trackedCourseIds || !data.settings) {
+          throw new Error('Invalid file format');
+        }
+
+        setLoading(true);
+        await setStoredToken(data.wstoken);
+        await setTrackedCourseIds(data.trackedCourseIds);
+        await setSettings(data.settings);
+
+        setToken(data.wstoken);
+        setTrackedCourseIdsState(data.trackedCourseIds);
+        setSettingsState(data.settings);
+
+        const syncRes = await syncNowOnBackground();
+        if (syncRes && syncRes.success && syncRes.result) {
+          setSyncResult(syncRes.result);
+        }
+
+        alert(t('import_success'));
+        loadData();
+      } catch (err: any) {
+        alert(`${t('import_failed')}: ${err.message}`);
       } finally {
         setLoading(false);
       }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleRestoreBackup() {
+    setLoading(true);
+    try {
+      const backupRes = (await chrome.storage.local.get('config_backup')) as {
+        config_backup?: {
+          wstoken: string;
+          trackedCourseIds: number[];
+          settings: any;
+        };
+      };
+      const data = backupRes.config_backup;
+      if (!data || !data.wstoken || !data.trackedCourseIds || !data.settings) {
+        throw new Error('No valid backup found.');
+      }
+
+      await setStoredToken(data.wstoken);
+      await setTrackedCourseIds(data.trackedCourseIds);
+      await setSettings(data.settings);
+
+      setToken(data.wstoken);
+      setTrackedCourseIdsState(data.trackedCourseIds);
+      setSettingsState(data.settings);
+
+      const syncRes = await syncNowOnBackground();
+      if (syncRes && syncRes.success && syncRes.result) {
+        setSyncResult(syncRes.result);
+      }
+
+      alert(currentLang === 'he' ? 'הגדרות שוחזרו בהצלחה!' : 'Backup restored successfully!');
+      loadData();
+    } catch (err: any) {
+      alert(`Restore failed: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -210,6 +431,8 @@ export default function App() {
     setSettingsState(updated);
     await setSettings(updated);
   }
+
+
 
   async function handleSyncGoogleTasks() {
     setGoogleSyncLoading(true);
@@ -281,22 +504,33 @@ export default function App() {
 
           <div className="form-section" style={{ textAlign: 'center', marginTop: '2rem' }}>
             {!waitingForLogin ? (
-              <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
                 <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
                   {t('moodle_token_connection_desc')}
                 </p>
-                <button
-                  className="primary-btn"
-                  style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
-                  onClick={() => {
-                    // Open login page in a new tab, then switch button state.
-                    window.open('https://moodle.tau.ac.il/login/index.php', '_blank');
-                    setWaitingForLogin(true);
-                  }}
-                >
-                  {t('login_via_tau_moodle')}
-                </button>
-              </>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    className="primary-btn"
+                    style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
+                    onClick={() => {
+                      // Open login page in a new tab, then switch button state.
+                      window.open('https://moodle.tau.ac.il/login/index.php', '_blank');
+                      setWaitingForLogin(true);
+                    }}
+                  >
+                    {t('login_via_tau_moodle')}
+                  </button>
+                  <button
+                    className="secondary-btn"
+                    style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
+                    onClick={() => {
+                      captureTokenViaTabOnBackground();
+                    }}
+                  >
+                    🔑 {t('already_connected_btn')}
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
                 <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
@@ -322,6 +556,31 @@ export default function App() {
               </>
             )}
           </div>
+
+          <div className="onboarding-actions-extra" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
+            {backupExists && (
+              <button
+                className="secondary-btn btn-sm"
+                onClick={handleRestoreBackup}
+                style={{ width: '100%', maxWidth: '280px' }}
+              >
+                💾 {t('restore_backup_btn')}
+              </button>
+            )}
+            <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
+              📁 {t('import_config_btn')}
+              <input
+                type="file"
+                accept=".json"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleImportConfig(e.target.files[0]);
+                  }
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
         </div>
       </div>
     );
@@ -344,37 +603,66 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="courses-grid-selection">
-                {availableCourses.map((c) => {
-                  const isChecked = trackedCourseIds.includes(c.id);
-                  return (
-                    <div
-                      key={c.id}
-                      className={`course-selection-item glass-panel ${isChecked ? 'selected' : ''}`}
-                      onClick={() => handleOnboardingCourseToggle(c.id)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        readOnly
-                      />
-                      <div className="course-info-selection">
-                        <span className="course-code">{c.shortname.split('-')[0]}</span>
-                        <h4 className="course-fullname">{c.fullname}</h4>
-                      </div>
+              <div className="courses-grid-selection-grouped" style={{ width: '100%', maxHeight: '450px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                {groupAndSortCourses(availableCourses, currentLang).map((group) => (
+                  <div key={group.semesterKey} className="semester-group-section" style={{ marginBottom: '2rem' }}>
+                    <h3 className="semester-group-title" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', marginBottom: '1rem', color: 'var(--text-primary)', textAlign: currentLang === 'he' ? 'right' : 'left' }}>
+                      {group.label}
+                    </h3>
+                    <div className="courses-grid-selection">
+                      {[...group.courses].sort((a, b) => {
+                        const isCheckedA = trackedCourseIds.includes(a.id);
+                        const isCheckedB = trackedCourseIds.includes(b.id);
+                        if (isCheckedA && !isCheckedB) return -1;
+                        if (!isCheckedA && isCheckedB) return 1;
+                        return 0;
+                      }).map((c) => {
+                        const isChecked = trackedCourseIds.includes(c.id);
+                        return (
+                          <div
+                            key={c.id}
+                            className={`course-selection-item glass-panel ${isChecked ? 'selected' : ''}`}
+                            onClick={() => handleOnboardingCourseToggle(c.id)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              readOnly
+                            />
+                            <div className="course-info-selection">
+                              <span className="course-code">{c.shortname.split('-')[0]}</span>
+                              <h4 className="course-fullname">{c.fullname}</h4>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
 
-              <div className="action-row" style={{ marginTop: '2rem' }}>
+              <div className="action-row" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
                 <button
                   className="primary-btn"
                   onClick={handleSaveOnboardingCourses}
                   disabled={trackedCourseIds.length === 0}
+                  style={{ width: '100%', maxWidth: '280px' }}
                 >
                   Start Tracking ({trackedCourseIds.length} Courses)
                 </button>
+                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
+                  📁 {t('import_config_btn')}
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleImportConfig(e.target.files[0]);
+                      }
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               </div>
             </>
           )}
@@ -431,7 +719,7 @@ export default function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <button className="text-btn danger-text" onClick={handleDisconnect}>
+          <button className="text-btn danger-text" onClick={handleDisconnectClick}>
             {t('disconnect_account')}
           </button>
         </div>
@@ -464,6 +752,7 @@ export default function App() {
               getCourseDisplayName={getCourseDisplayName}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
+              settings={settings}
               t={t}
               lang={currentLang}
             />
@@ -485,6 +774,8 @@ export default function App() {
             <CoursesTab
               trackedCourseIds={trackedCourseIds}
               syncResult={syncResult}
+              enrolledCourses={availableCourses}
+              token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
               onUpdateColor={handleUpdateCourseColor}
@@ -541,10 +832,54 @@ export default function App() {
                 setSettingsState(updated);
                 await setSettings(updated);
               }}
+              onUpdateGoogleClientId={async (cid: string) => {
+                if (!settings) return;
+                const updated = { ...settings, googleClientId: cid };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
+              onUpdateThresholds={async (green: number, yellow: number) => {
+                if (!settings) return;
+                const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
+              onExportConfig={handleExportConfig}
             />
           )}
         </div>
       </main>
+
+      {showDisconnectModal && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel" style={{ maxWidth: '450px', padding: '2rem' }}>
+            <h3 style={{ marginTop: 0 }}>⚠️ {t('disconnect_account')}</h3>
+            <p style={{ margin: '1rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.4' }}>
+              {t('disconnect_warning')}
+            </p>
+            <div className="modal-checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '1.5rem 0' }}>
+              <input
+                type="checkbox"
+                id="perm-delete-checkbox"
+                checked={deletePermanently}
+                onChange={(e) => setDeletePermanently(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <label htmlFor="perm-delete-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                {t('perm_delete_checkbox')}
+              </label>
+            </div>
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button className="secondary-btn btn-sm" onClick={() => setShowDisconnectModal(false)}>
+                {t('cancel_btn')}
+              </button>
+              <button className="primary-btn btn-sm" style={{ background: 'var(--error-color, #ef4444)' }} onClick={confirmDisconnect}>
+                {t('disconnect_confirm_btn')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -569,6 +904,7 @@ function DashboardTab({
   getCourseDisplayName,
   searchQuery,
   setSearchQuery,
+  settings,
   t,
   lang,
 }: {
@@ -577,6 +913,7 @@ function DashboardTab({
   token: string | null;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
+  settings: ExtensionSettings | null;
 } & TabProps) {
   const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
   
@@ -600,6 +937,19 @@ function DashboardTab({
     (a) => a.deadline && new Date(a.deadline) > now
   );
 
+  const greenThreshold = settings?.assignmentGreenDaysThreshold ?? 7;
+  const yellowThreshold = settings?.assignmentYellowDaysThreshold ?? 3;
+
+  let timeColorClass = 'due-red';
+  if (nextAssignment && nextAssignment.deadline) {
+    const diffDays = (new Date(nextAssignment.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    if (diffDays > greenThreshold) {
+      timeColorClass = 'due-green';
+    } else if (diffDays > yellowThreshold) {
+      timeColorClass = 'due-yellow';
+    }
+  }
+
   return (
     <div className="tab-dashboard">
       {/* Next Assignment Highlight Banner */}
@@ -614,7 +964,7 @@ function DashboardTab({
           </div>
           <div className="next-assign-action">
             {nextAssignment.deadline && (
-              <span className="next-assign-time">
+              <span className={`next-assign-time ${timeColorClass}`}>
                 {lang === 'he' ? 'הגשה ב-' : 'Due: '}{new Date(nextAssignment.deadline).toLocaleString()}
               </span>
             )}
@@ -758,6 +1108,8 @@ function DashboardTab({
 function CoursesTab({
   trackedCourseIds,
   syncResult,
+  enrolledCourses,
+  token,
   getCourseColor,
   getCourseDisplayName,
   onUpdateColor,
@@ -769,30 +1121,33 @@ function CoursesTab({
 }: {
   trackedCourseIds: number[];
   syncResult: SyncResult | null;
+  enrolledCourses: any[];
+  token: string | null;
   onUpdateColor: (id: number, color: string) => void;
   onUpdateCustomName: (id: number, name: string) => void;
   onSaveTrackedCourses: (newIds: number[]) => void;
   onSelectCourse: (id: number) => void;
 } & TabProps) {
-  // We collect all unique courses that are available in the syncResult or cached
-  const coursesMap = new Map<number, string>();
-  if (syncResult) {
-    // Collect from assignments
-    syncResult.assignments.forEach((a) => {
-      coursesMap.set(a.courseId, a.courseName);
+  const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
+  
+  if (enrolledCourses && enrolledCourses.length > 0) {
+    enrolledCourses.forEach(c => {
+      coursesMap.set(c.id, { id: c.id, name: c.fullname || c.shortname || `Course ${c.id}`, idnumber: c.idnumber || c.shortname || '' });
     });
-    // Collect from files
+  } else if (syncResult) {
+    syncResult.assignments.forEach((a) => {
+      coursesMap.set(a.courseId, { id: a.courseId, name: a.courseName, idnumber: '' });
+    });
     syncResult.files.forEach((f) => {
-      coursesMap.set(f.courseId, f.courseName);
+      coursesMap.set(f.courseId, { id: f.courseId, name: f.courseName, idnumber: '' });
     });
   }
 
-  const coursesList = Array.from(coursesMap.entries()).map(([id, name]) => ({
-    id,
-    name,
-  }));
+  const coursesList = Array.from(coursesMap.values());
 
   const [activeTrackedIds, setActiveTrackedIds] = useState<number[]>(trackedCourseIds);
+  const [configExpanded, setConfigExpanded] = useState<boolean>(false);
+  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setActiveTrackedIds(trackedCourseIds);
@@ -806,81 +1161,255 @@ function CoursesTab({
     }
   };
 
+  const toggleCourseExpand = (courseId: number) => {
+    setExpandedCourses(prev => ({
+      ...prev,
+      [courseId]: !prev[courseId]
+    }));
+  };
+
+  const getCourseSectionsList = (courseId: number) => {
+    const courseAssignments = (syncResult?.assignments || []).filter((a) => a.courseId === courseId);
+    const courseFiles = (syncResult?.files || []).filter((f) => f.courseId === courseId);
+
+    const sectionsMap = new Map<string, { files: CourseFile[]; assignments: Assignment[] }>();
+    const getSection = (name: string) => {
+      const sName = name || 'General';
+      if (!sectionsMap.has(sName)) {
+        sectionsMap.set(sName, { files: [], assignments: [] });
+      }
+      return sectionsMap.get(sName)!;
+    };
+
+    courseFiles.forEach((f) => {
+      getSection(f.sectionName).files.push(f);
+    });
+
+    courseAssignments.forEach((a) => {
+      getSection(a.sectionName || 'General').assignments.push(a);
+    });
+
+    return Array.from(sectionsMap.entries());
+  };
+
   return (
-    <div className="dashboard-section glass-panel">
-      <h3>{t('tracked_courses_config')}</h3>
-      <p className="subtitle" style={{ marginBottom: '1.5rem' }}>
-        {lang === 'he' 
-          ? 'בחר אילו קורסים ברצונך לסנכרן מהמודל, הגדר להם כינוי מותאם אישית ובחר צבע עבור לוח הבקרה.'
-          : 'Select which courses you want to fetch Moodle data for, customize their nickname (display name), and assign colors for dashboard tags.'}
-      </p>
+    <div className="courses-tab-container" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      {/* 1. Configuration Button & Expandable Panel */}
+      <div className="dashboard-section glass-panel" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
+          <button
+            className="secondary-btn"
+            onClick={() => setConfigExpanded(!configExpanded)}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+          >
+            {t('courses_configuration_btn')} {configExpanded ? '▲' : '▼'}
+          </button>
+        </div>
 
-      {coursesList.length === 0 ? (
-        <div className="empty-state">{lang === 'he' ? 'לא נטענו קורסים עדיין. הרץ סנכרון תחילה.' : 'No courses loaded yet. Run a sync first.'}</div>
-      ) : (
-        <>
-          <div className="courses-settings-table">
-            <div className="table-header">
-              <div>{t('track')}</div>
-              <div>{t('course_code_name')}</div>
-              <div>{t('display_nickname')}</div>
-              <div>{t('theme_color_label')}</div>
-              <div>{t('action')}</div>
-            </div>
-            {coursesList.map((c) => {
-              const isTracked = activeTrackedIds.includes(c.id);
-              return (
-                <div key={c.id} className="table-row">
-                  <div>
-                    <input
-                      type="checkbox"
-                      checked={isTracked}
-                      onChange={() => handleToggle(c.id)}
-                    />
-                  </div>
-                  <div>
-                    <span className="course-code-span">{c.name.split('-')[0]}</span>
-                    <p className="course-full-p">{c.name}</p>
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      className="nickname-input"
-                      defaultValue={getCourseDisplayName(c.id, '')}
-                      placeholder={t('nickname_placeholder')}
-                      onBlur={(e) => onUpdateCustomName(c.id, e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="color"
-                      className="color-picker"
-                      value={getCourseColor(c.id)}
-                      onChange={(e) => onUpdateColor(c.id, e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <button
-                      className="primary-btn btn-sm"
-                      onClick={() => onSelectCourse(c.id)}
-                      disabled={!isTracked}
-                      style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                    >
-                      📖 {lang === 'he' ? 'ניווט' : 'Navigate'}
-                    </button>
-                  </div>
+        {configExpanded && (
+          <div className="config-expanded-content" style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
+            {coursesList.length === 0 ? (
+              <div className="empty-state">{lang === 'he' ? 'לא נטענו קורסים עדיין. הרץ סנכרון תחילה.' : 'No courses loaded yet. Run a sync first.'}</div>
+            ) : (
+              <>
+                <div className="courses-grouped-container" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                  {groupAndSortCourses(coursesList, lang).map((group) => (
+                    <div key={group.semesterKey} className="semester-group-section" style={{ marginBottom: '2rem' }}>
+                      <h4 className="semester-group-title" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.4rem', marginBottom: '0.8rem', color: 'var(--text-primary)', textAlign: lang === 'he' ? 'right' : 'left' }}>
+                        {group.label}
+                      </h4>
+                      <div className="courses-settings-table">
+                        <div className="table-header">
+                          <div>{t('track')}</div>
+                          <div>{t('course_code_name')}</div>
+                          <div>{t('display_nickname')}</div>
+                          <div>{t('theme_color_label')}</div>
+                        </div>
+                        {[...group.courses].sort((a, b) => {
+                          const isA = activeTrackedIds.includes(a.id);
+                          const isB = activeTrackedIds.includes(b.id);
+                          if (isA && !isB) return -1;
+                          if (!isA && isB) return 1;
+                          return 0;
+                        }).map((c) => {
+                          return (
+                            <div key={c.id} className="table-row">
+                              <div>
+                                <input
+                                  type="checkbox"
+                                  checked={activeTrackedIds.includes(c.id)}
+                                  onChange={() => handleToggle(c.id)}
+                                />
+                              </div>
+                              <div>
+                                <span className="course-code-span">{c.name.split('-')[0]}</span>
+                                <p className="course-full-p">{c.name}</p>
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  className="nickname-input"
+                                  defaultValue={getCourseDisplayName(c.id, '')}
+                                  placeholder={t('nickname_placeholder')}
+                                  onBlur={(e) => onUpdateCustomName(c.id, e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="color"
+                                  className="color-picker"
+                                  value={getCourseColor(c.id)}
+                                  onChange={(e) => onUpdateColor(c.id, e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
 
-          <div className="action-row" style={{ marginTop: '1.5rem' }}>
-            <button className="primary-btn" onClick={() => onSaveTrackedCourses(activeTrackedIds)}>
-              {t('save_tracking_options')}
-            </button>
+                <div className="action-row" style={{ marginTop: '1.5rem' }}>
+                  <button className="primary-btn" onClick={() => onSaveTrackedCourses(activeTrackedIds)}>
+                    {t('save_tracking_options')}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/* 2. Navigation Pane */}
+      <div className="dashboard-section glass-panel">
+        <h3>{t('navigation_pane_title')}</h3>
+        
+        {activeTrackedIds.length === 0 ? (
+          <div className="empty-state">
+            {lang === 'he' 
+              ? 'אנא בחר קורסים למעקב בהגדרות למעלה.' 
+              : 'Please select courses to track in the configuration menu above.'}
+          </div>
+        ) : (
+          <div className="navigation-pane-list" style={{ marginTop: '1.5rem' }}>
+            {coursesList
+              .filter(c => activeTrackedIds.includes(c.id))
+              .map(c => {
+                const color = getCourseColor(c.id);
+                const displayName = getCourseDisplayName(c.id, c.name);
+                const sectionsList = getCourseSectionsList(c.id);
+                const isExpanded = !!expandedCourses[c.id];
+                const displayedSections = isExpanded ? sectionsList : sectionsList.slice(-2);
+
+                return (
+                  <div key={c.id} className="nav-course-card glass-panel" style={{ borderLeft: lang !== 'he' ? `4px solid ${color}` : undefined, borderRight: lang === 'he' ? `4px solid ${color}` : undefined, marginBottom: '1.2rem', padding: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 
+                        className="nav-course-title" 
+                        onClick={() => onSelectCourse(c.id)}
+                        style={{ color: color, cursor: 'pointer', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                      >
+                        📖 {displayName}
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
+                      </h4>
+                      <button
+                        className="icon-btn"
+                        onClick={() => toggleCourseExpand(c.id)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1.1rem', padding: '0.2rem' }}
+                      >
+                        {isExpanded ? '▲' : '▼'}
+                      </button>
+                    </div>
+
+                    <div className="nav-course-sections sections-tree" style={{ marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {displayedSections.length === 0 ? (
+                        <p className="no-content-text" style={{ fontSize: '0.85rem' }}>{lang === 'he' ? 'אין נושאים או קבצים' : 'No sections or files'}</p>
+                      ) : (
+                        displayedSections.map(([secName, content], sIdx) => (
+                          <div key={sIdx} className="section-node glass-panel" style={{ padding: '0.8rem', gap: '0.5rem' }}>
+                            <h5 className="section-node-title" style={{ fontSize: '0.95rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.3rem', marginBottom: '0.2rem' }}>{secName}</h5>
+                            
+                            {content.assignments.length > 0 && (
+                              <div className="section-assignments-list" style={{ gap: '0.5rem' }}>
+                                {content.assignments.map((a) => {
+                                  const deadline = a.deadline ? new Date(a.deadline) : null;
+                                  const hoursLeft = deadline ? (deadline.getTime() - Date.now()) / (1000 * 60 * 60) : null;
+                                  
+                                  let badgeClass = 'badge-muted';
+                                  let deadlineText = lang === 'he' ? 'אין מועד הגשה' : 'No deadline';
+                                  if (hoursLeft !== null) {
+                                    if (hoursLeft < 0) {
+                                      badgeClass = 'badge-danger';
+                                      deadlineText = lang === 'he' ? 'עבר המועד' : 'Overdue';
+                                    } else if (hoursLeft <= 24) {
+                                      badgeClass = 'badge-danger';
+                                      deadlineText = lang === 'he' ? `נותרו ${Math.round(hoursLeft)} שעות` : `${Math.round(hoursLeft)}h left`;
+                                    } else {
+                                      badgeClass = 'badge-success';
+                                      deadlineText = deadline?.toLocaleDateString() || '';
+                                    }
+                                  }
+
+                                  return (
+                                    <div key={a.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem' }}>
+                                      <div className="item-meta-row">
+                                        <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
+                                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                                      </div>
+                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>{a.name}</span>
+                                      <div className="item-actions">
+                                        <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                          {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
+                                        </a>
+                                        {a.attachments && a.attachments.map((att, attIdx) => {
+                                          const downloadUrl = token
+                                            ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                                            : att.url;
+                                          return (
+                                            <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                              📄 {att.name}
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {content.files.length > 0 && (
+                              <div className="section-files-list" style={{ gap: '0.5rem' }}>
+                                {content.files.map((f, fIdx) => {
+                                  const downloadUrl = token
+                                    ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                                    : f.fileUrl;
+                                  return (
+                                    <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
+                                      <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                        <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                          {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1058,23 +1587,29 @@ function SettingsTab({
   token,
   onToggleGoogle,
   onUpdateListName,
+  onUpdateGoogleClientId,
   onSyncGoogle,
   onUpdateToken,
+  onExportConfig,
   googleSyncLoading,
   googleSyncStatus,
   t,
   lang,
   onUpdateLanguage,
+  onUpdateThresholds,
 }: {
   settings: ExtensionSettings | null;
   token: string | null;
   onToggleGoogle: (e: boolean) => void;
   onUpdateListName: (name: string) => void;
+  onUpdateGoogleClientId: (cid: string) => void;
   onSyncGoogle: () => void;
   onUpdateToken: (t: string) => void;
+  onExportConfig: () => void;
   googleSyncLoading: boolean;
   googleSyncStatus: string | null;
   onUpdateLanguage: (l: 'he' | 'en') => void;
+  onUpdateThresholds: (green: number, yellow: number) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
 }) {
@@ -1126,17 +1661,34 @@ function SettingsTab({
         </div>
 
         {settings.googleTasksEnabled && (
-          <div className="google-subsettings">
-            <label htmlFor="tasks-list-name">{t('google_tasks_list_name_label')}</label>
-            <input
-              type="text"
-              id="tasks-list-name"
-              className="settings-text-input"
-              value={settings.googleTasksListName}
-              onChange={(e) => onUpdateListName(e.target.value)}
-            />
+          <div className="google-subsettings" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+            <div>
+              <label htmlFor="tasks-list-name" style={{ display: 'block', marginBottom: '0.3rem' }}>{t('google_tasks_list_name_label')}</label>
+              <input
+                type="text"
+                id="tasks-list-name"
+                className="settings-text-input"
+                value={settings.googleTasksListName}
+                onChange={(e) => onUpdateListName(e.target.value)}
+              />
+            </div>
 
-            <div className="tasks-action-row" style={{ marginTop: '1rem' }}>
+            <div>
+              <label htmlFor="tasks-client-id" style={{ display: 'block', marginBottom: '0.3rem' }}>{t('google_tasks_client_id_label')}</label>
+              <input
+                type="text"
+                id="tasks-client-id"
+                className="settings-text-input"
+                value={settings.googleClientId || ''}
+                placeholder="e.g. 123456-abcdef.apps.googleusercontent.com"
+                onChange={(e) => onUpdateGoogleClientId(e.target.value)}
+              />
+              <p className="subtitle" style={{ marginTop: '0.2rem', fontSize: '0.8rem' }}>
+                {t('google_tasks_client_id_help')}
+              </p>
+            </div>
+
+            <div className="tasks-action-row">
               <button className="primary-btn btn-sm" onClick={onSyncGoogle} disabled={googleSyncLoading}>
                 {googleSyncLoading ? t('syncing') : `🔗 ${t('auth_sync_google')}`}
               </button>
@@ -1166,6 +1718,52 @@ function SettingsTab({
             />
             <span className="slider round"></span>
           </label>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Threshold configuration section */}
+      <div className="settings-section">
+        <h4>{lang === 'he' ? 'צבעי מועדי הגשה (מטלה הבאה)' : 'Due Date Colors (Next Assignment)'}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {lang === 'he'
+            ? 'הגדר את סף הימים לשינוי צבעי ההתראה של המטלה הבאה.'
+            : 'Configure the day thresholds for the next assignment due date alerts.'}
+        </p>
+        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+          <div>
+            <label htmlFor="green-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {lang === 'he' ? 'ירוק - יותר מ-X ימים (X):' : 'Green - more than X days (X):'}
+            </label>
+            <input
+              type="number"
+              id="green-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentGreenDaysThreshold ?? 7}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(val, settings.assignmentYellowDaysThreshold ?? 3);
+              }}
+            />
+          </div>
+          <div>
+            <label htmlFor="yellow-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {lang === 'he' ? 'צהוב - יותר מ-Y ימים (Y):' : 'Yellow - more than Y days (Y):'}
+            </label>
+            <input
+              type="number"
+              id="yellow-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentYellowDaysThreshold ?? 3}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(settings.assignmentGreenDaysThreshold ?? 7, val);
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -1205,6 +1803,21 @@ function SettingsTab({
             {t('save_token_btn')}
           </button>
         </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Configuration Backup Section */}
+      <div className="settings-section">
+        <h4>{lang === 'he' ? 'גיבוי ושחזור הגדרות' : 'Configuration Backup'}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {lang === 'he'
+            ? 'ייצא את כל הגדרות התוסף, הצבעים והאסימונים לקובץ JSON במחשב שלך, כדי שתוכל לשחזר אותם מאוחר יותר.'
+            : 'Export all extension settings, course colors, nicknames, and tokens to a JSON file on your computer to restore them later.'}
+        </p>
+        <button className="primary-btn btn-sm" onClick={onExportConfig}>
+          📥 {t('export_config_btn')}
+        </button>
       </div>
     </div>
   );

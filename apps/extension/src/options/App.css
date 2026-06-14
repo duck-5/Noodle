@@ -1221,4 +1221,123 @@ input:checked + .slider:before {
   border-left: none;
 }
 
+/* Custom Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  background: rgba(26, 26, 46, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Semester grouping styles */
+.semester-group-section {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.semester-group-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.courses-grouped-container {
+  padding-right: 0.5rem;
+}
+
+/* Navigation Pane custom styles */
+.courses-tab-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.nav-course-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nav-course-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+}
+
+.nav-course-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  transition: opacity 0.2s ease;
+}
+
+.nav-course-title:hover {
+  opacity: 0.85;
+}
+
+.nav-item-link {
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.nav-item-link:hover {
+  color: var(--primary) !important;
+  text-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.icon-btn {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.icon-btn:hover {
+  color: var(--primary);
+  transform: scale(1.1);
+}
+
+/* Next Assignment Threshold Colors */
+.next-assign-time.due-green {
+  color: var(--secondary);
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.next-assign-time.due-yellow {
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.next-assign-time.due-red {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+
 

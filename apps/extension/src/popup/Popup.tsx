@@ -138,7 +138,7 @@ export default function Popup() {
 
       <footer className="popup-footer">
         <button className="footer-link-btn" onClick={handleOpenDashboard}>
-          ⚙️ Open Full Dashboard
+          🚀 Open Full Dashboard
         </button>
       </footer>
     </div>
