@@ -6,18 +6,26 @@ import { Assignment } from './types.js';
  */
 export async function getOrCreateTaskList(
   accessToken: string,
-  listName: string
+  listName: string,
+  errorCallback?: (err: string) => void
 ): Promise<string> {
   try {
     // 1. List existing task lists
-    const response = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/tasklists?maxResults=100', {
+    const response = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
 
     if (!response.ok) {
-      throw new Error(`Google API returned status ${response.status}: ${response.statusText}`);
+      let errMsg = `Google API returned status ${response.status}: ${response.statusText}`;
+      try {
+        const errJson = await response.json() as any;
+        if (errJson?.error?.message) {
+          errMsg += ` - ${errJson.error.message}`;
+        }
+      } catch {}
+      throw new Error(errMsg);
     }
 
     const data = (await response.json()) as { items?: Array<{ id: string; title: string }> };
@@ -32,7 +40,7 @@ export async function getOrCreateTaskList(
     }
 
     // 2. Create the task list if not found
-    const createResponse = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/tasklists', {
+    const createResponse = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -42,14 +50,25 @@ export async function getOrCreateTaskList(
     });
 
     if (!createResponse.ok) {
-      throw new Error(`Failed to create tasklist: ${createResponse.statusText}`);
+      let errMsg = `Failed to create tasklist: ${createResponse.statusText}`;
+      try {
+        const errJson = await createResponse.json() as any;
+        if (errJson?.error?.message) {
+          errMsg += ` - ${errJson.error.message}`;
+        }
+      } catch {}
+      throw new Error(errMsg);
     }
 
     const newList = (await createResponse.json()) as { id: string };
     return newList.id;
   } catch (error: any) {
-    console.warn(`Could not resolve tasklist '${listName}': ${error.message}. Falling back to @default.`);
-    return '@default';
+    const errMsg = `Could not resolve tasklist '${listName}': ${error.message}`;
+    console.error(errMsg);
+    if (errorCallback) {
+      errorCallback(errMsg);
+    }
+    throw new Error(errMsg);
   }
 }
 
