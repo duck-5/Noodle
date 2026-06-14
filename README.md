@@ -1,56 +1,88 @@
 # TauTracker
 
-TauTracker is a custom, modern, dark-themed replacement for the Tel Aviv University Moodle platform. It bypasses the traditional Moodle UI and provides a fast, offline-capable, and premium frontend experience.
+TauTracker is a custom, modern, dark-themed replacement frontend for the Tel Aviv University Moodle platform.
 
-## Features
+Historically built as a client-server application, TauTracker has transitioned into a fully decentralized, client-only architecture packaged as:
+1. **Chrome Browser Extension** (`apps/extension`)
+2. **React Native Mobile App** (`apps/mobile`) via Expo
 
-- **Modern Dashboard**: Track your upcoming deadlines, recent grades, and live Zoom meetings at a glance.
-- **Fast, Offline-first architecture**: Data is synced from Moodle and stored locally in CSV files for lightning-fast retrieval without waiting for Moodle to load.
-- **Secure Multi-user Support**: Uses JWT authentication. Multiple students can use the same instance with their own isolated data.
-- **Panopto Video Syncing**: Connect your SSO credentials to securely fetch and track your Panopto lecture recordings.
-- **Zoom Meeting Detection**: Automatically parses your Moodle course contents to find and present Zoom links.
-- **Grade Transparency**: Shows your real grade percentages and calculates class averages.
+By communicating directly with Moodle from your device and saving tokens locally, TauTracker eliminates external databases, protects sensitive user credentials, and avoids IP blockages.
 
-## Installation & Setup
+---
 
-1. Install requirements:
+## Project Structure
+
+This project is organized as a monorepo utilizing **pnpm** workspaces:
+- `apps/extension`: Vite + React + TypeScript Chrome Extension (Manifest V3)
+- `apps/mobile`: Expo SDK 56 + React Native client
+- `packages/moodle-client`: Shared API integration layer with Moodle
+
+---
+
+## Prerequisites
+
+Ensure you have the following installed on your machine:
+- **Node.js** (v18+ recommended)
+- **pnpm** (Required; do not use standard npm/yarn to avoid workspace link mismatches)
+  ```bash
+  npm install -g pnpm
+  ```
+
+---
+
+## Installation
+
+1. Clone the repository:
    ```bash
-   pip install -r requirements.txt
+   git clone <repository-url>
+   cd TauTracker
    ```
 
-2. Run the server:
+2. Install all dependencies:
    ```bash
-   python run.py
-   ```
-   Or using uvicorn directly:
-   ```bash
-   uvicorn server.app:app --reload
+   pnpm install
    ```
 
-3. Open the UI:
-   Navigate to `http://localhost:8000` in your web browser.
+---
 
-4. Register an account and configure your settings!
+## Browser Extension
 
-## Docker Deployment
+### 1. Dev Mode (Hot Reloading)
+Run Vite in development mode to test local interface changes:
+```bash
+pnpm --filter extension run dev
+```
 
-To deploy TauTracker with Docker:
+### 2. Build for Chrome
+To build the extension package:
+```bash
+pnpm --filter extension run build
+```
+This compiles the code and assets into the `apps/extension/dist` folder.
 
-1. Build and start the container:
-   ```bash
-   docker-compose up --build -d
-   ```
-2. Access the web interface at `http://localhost:8000`.
-3. All user databases will persist inside the `./db` directory on the host machine.
+### 3. Loading in Chrome
+1. Open Google Chrome and navigate to `chrome://extensions/`.
+2. Toggle **Developer mode** in the top-right corner.
+3. Click **Load unpacked** in the top-left.
+4. Select the `apps/extension/dist` directory.
 
-## Development
+### 4. Moodle Authentication
+When loaded, click the TauTracker icon to open the popup. Click **Connect Moodle** to open the TAU login page. Once logged in, the extension automatically intercepts the temporary token and logs you in.
 
-- Frontend uses vanilla HTML/JS/CSS with ES6 modules (no build step required).
-- Backend is powered by FastAPI.
-- Data is stored in `server/db/*.csv`.
+---
 
-## Stages Completed
-- Stage 1: Backend Foundation & Authentication
-- Stage 2: Moodle API Wrappers
-- Stage 3: Web Frontend & Core UI
-- Stage 4: Polish & Documentation
+## Mobile App
+
+The mobile application is built using React Native and Expo (SDK 56).
+
+### 1. Start the Expo Dev Server
+```bash
+pnpm --filter mobile run start
+```
+
+### 2. Running the App
+Once the dev server is active, you can interact with it via the command line interface:
+- **Expo Go App (Physical Device)**: Download **Expo Go** from the iOS App Store or Google Play Store. Scan the QR code printed in your terminal.
+- **Android Emulator**: Press `a` in the terminal to launch the app on a connected Android Virtual Device (AVD).
+- **iOS Simulator**: Press `i` in the terminal (macOS required) to launch the app on an iOS simulator.
+- **Web Browser**: Press `w` to run a web-compatible version of the app in your browser.

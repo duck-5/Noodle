@@ -63,3 +63,18 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ==========================================
+# JS / Monorepo / React Native / Expo
+# ==========================================
+node_modules/
+.turbo/
+dist/
+build/
+.expo/
+web-build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
