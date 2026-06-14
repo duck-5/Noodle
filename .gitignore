@@ -4,7 +4,11 @@
 .env
 credentials.json
 token.json
-
+.agents
+*.secret
+*.kotlin
+.gradle/
+.idea/
 # ==========================================
 # Runtime Caches, Logs & Dumps
 # ==========================================
