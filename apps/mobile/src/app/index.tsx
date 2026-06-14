@@ -8,13 +8,13 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  useColorScheme,
 } from 'react-native';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+import { useTheme } from '../hooks/use-theme';
 
 interface GroupedCourses {
   semesterKey: string;
@@ -92,8 +92,7 @@ function groupAndSortCourses(courses: any[], lang: string): GroupedCourses[] {
 }
 
 export default function DashboardScreen() {
-  const scheme = useColorScheme();
-  const theme = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -379,15 +378,23 @@ export default function DashboardScreen() {
             const cName = courseMap[a.course_moodle_id]?.name || a.course_name;
             const hoursLeft = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : null;
             let deadlineText = t('no_deadline');
-            if (hoursLeft !== null) {
+            if (hoursLeft !== null && a.deadline) {
               if (hoursLeft < 0) {
                 deadlineText = t('overdue');
-              } else if (hoursLeft <= 24) {
-                deadlineText = t('due_in_hours', { hours: Math.round(hoursLeft) });
-              } else if (hoursLeft <= 72) {
-                deadlineText = t('due_in_days', { days: Math.round(hoursLeft / 24) });
               } else {
-                deadlineText = t('due_date_label', { date: new Date(a.deadline).toLocaleDateString() });
+                const diffMs = new Date(a.deadline).getTime() - Date.now();
+                const diffMins = Math.floor(diffMs / (1000 * 60));
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                
+                if (diffDays >= 1) {
+                  deadlineText = diffDays === 1 ? t('due_in_day') : t('due_in_days', { days: diffDays });
+                } else if (diffHours >= 1) {
+                  deadlineText = diffHours === 1 ? t('due_in_hour') : t('due_in_hours', { hours: diffHours });
+                } else {
+                  const mins = diffMins > 0 ? diffMins : 1;
+                  deadlineText = mins === 1 ? t('due_in_minute') : t('due_in_minutes', { minutes: mins });
+                }
               }
             }
             return (

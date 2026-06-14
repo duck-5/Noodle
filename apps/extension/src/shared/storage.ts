@@ -10,11 +10,12 @@ export interface ExtensionSettings {
   language: 'he' | 'en';
   assignmentGreenDaysThreshold?: number;
   assignmentYellowDaysThreshold?: number;
+  theme?: 'dark' | 'noodle';
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   googleTasksEnabled: false,
-  googleTasksListName: 'TauTracker',
+  googleTasksListName: 'Noodle',
   googleClientId: null,
   notificationsEnabled: true,
   coursesColorMap: {},
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   language: 'he',
   assignmentGreenDaysThreshold: 7,
   assignmentYellowDaysThreshold: 3,
+  theme: 'dark',
 };
 
 export async function getStoredToken(): Promise<string | null> {

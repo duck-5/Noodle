@@ -4,16 +4,15 @@ import {
   View,
   Text,
   ScrollView,
-  useColorScheme,
   ActivityIndicator,
 } from 'react-native';
 import { getDb } from '../services/database';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+import { useTheme } from '../hooks/use-theme';
 
 export default function GradesScreen() {
-  const scheme = useColorScheme();
-  const theme = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   const [loading, setLoading] = useState<boolean>(true);
   const [courses, setCourses] = useState<any[]>([]);

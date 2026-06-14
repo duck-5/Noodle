@@ -8,7 +8,6 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  useColorScheme,
 } from 'react-native';
 import { Paths, File } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -16,10 +15,10 @@ import { getDb } from '../services/database';
 import { getMoodleToken } from '../services/backgroundSync';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+import { useTheme } from '../hooks/use-theme';
 
 export default function FilesScreen() {
-  const scheme = useColorScheme();
-  const theme = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);

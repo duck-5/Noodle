@@ -44,6 +44,19 @@
   margin-bottom: 2rem;
 }
 
+.logo-image-large {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  margin-bottom: 1rem;
+}
+
+.sidebar-logo-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
 .logo-icon {
   display: inline-flex;
   align-items: center;

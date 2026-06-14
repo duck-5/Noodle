@@ -8,17 +8,16 @@ import {
   TextInput,
   Switch,
   Alert,
-  useColorScheme,
 } from 'react-native';
 import { getMoodleToken, setMoodleToken } from '../services/backgroundSync';
 import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync } from '../services/googleTasks';
 import { getDb, getPreference, setPreference, removePreference } from '../services/database';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+import { useTheme } from '../hooks/use-theme';
 
 export default function SettingsScreen() {
-  const scheme = useColorScheme();
-  const theme = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   const [loading, setLoading] = useState<boolean>(false);
   const [googleTasksEnabled, setGoogleTasksEnabled] = useState<boolean>(false);
@@ -26,6 +25,7 @@ export default function SettingsScreen() {
   const [googleTokenInput, setGoogleTokenInput] = useState<string>('');
   const [googleStatus, setGoogleStatus] = useState<string | null>(null);
   const [lang, setLang] = useState<'he' | 'en'>('he');
+  const [activeTheme, setActiveTheme] = useState<'system' | 'light' | 'dark' | 'noodle'>('system');
 
   const isRtl = lang === 'he';
 
@@ -48,10 +48,28 @@ export default function SettingsScreen() {
 
       const activeLang = getLanguage();
       setLang(activeLang);
+
+      const themeVal = getPreference('theme') || 'system';
+      setActiveTheme(themeVal as any);
     } catch (e) {
       console.error('loadSettings error:', e);
     }
   }
+
+  const handleUpdateTheme = (tChoice: 'system' | 'light' | 'dark' | 'noodle') => {
+    try {
+      setPreference('theme', tChoice);
+      setActiveTheme(tChoice);
+      Alert.alert(
+        lang === 'he' ? 'ערכת הנושא שונתה' : 'Theme Changed',
+        lang === 'he'
+          ? 'אנא הפעל מחדש את האפליקציה להחלת ערכת הנושא במלוא עמודי האפליקציה.'
+          : 'Please restart the app to apply the theme change fully.'
+      );
+    } catch (e) {
+      console.error('handleUpdateTheme error:', e);
+    }
+  };
 
   const handleToggleGoogleTasks = (val: boolean) => {
     try {
@@ -178,6 +196,36 @@ export default function SettingsScreen() {
             >
               <Text style={{ color: lang === 'en' ? '#ffffff' : theme.text, fontWeight: 'bold' }}>English</Text>
             </Pressable>
+          </View>
+        </View>
+
+        {/* Theme Selection */}
+        <View style={[styles.section, { backgroundColor: theme.backgroundElement, marginBottom: 20 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
+            {lang === 'he' ? 'ערכת נושא' : 'Theme'}
+          </Text>
+          <View style={[styles.row, { flexDirection: isRtl ? 'row-reverse' : 'row', justifyContent: 'flex-start', flexWrap: 'wrap', gap: 10 }]}>
+            {(['system', 'light', 'dark', 'noodle'] as const).map((tChoice) => (
+              <Pressable
+                key={tChoice}
+                style={[
+                  styles.langBtn,
+                  {
+                    backgroundColor: activeTheme === tChoice ? '#6366f1' : 'transparent',
+                    borderColor: '#6366f1',
+                    borderWidth: 1,
+                  }
+                ]}
+                onPress={() => handleUpdateTheme(tChoice)}
+              >
+                <Text style={{ color: activeTheme === tChoice ? '#ffffff' : theme.text, fontWeight: 'bold' }}>
+                  {tChoice === 'system' ? (lang === 'he' ? 'ברירת מחדל' : 'System') :
+                   tChoice === 'light' ? (lang === 'he' ? 'בהיר' : 'Light') :
+                   tChoice === 'dark' ? (lang === 'he' ? 'כהה' : 'Dark') :
+                   (lang === 'he' ? 'נודל 🍜' : 'Noodle 🍜')}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
 

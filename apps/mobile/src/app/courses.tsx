@@ -7,17 +7,16 @@ import {
   Pressable,
   TextInput,
   Alert,
-  useColorScheme,
 } from 'react-native';
 import { getDb } from '../services/database';
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
+import { useTheme } from '../hooks/use-theme';
 
 const PRESETS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4'];
 
 export default function CoursesScreen() {
-  const scheme = useColorScheme();
-  const theme = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   const [courses, setCourses] = useState<any[]>([]);
 

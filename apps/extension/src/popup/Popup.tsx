@@ -14,6 +14,14 @@ export default function Popup() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (settings?.theme) {
+      document.body.className = `theme-${settings.theme}`;
+    } else {
+      document.body.className = 'theme-dark';
+    }
+  }, [settings]);
+
   async function loadData() {
     try {
       const storedToken = await getStoredToken();
@@ -58,7 +66,6 @@ export default function Popup() {
   if (!token) {
     return (
       <div className="popup-container unauth">
-        <div className="popup-logo">N</div>
         <h3>Noodle</h3>
         <p className="subtitle" style={{ margin: '0.5rem 0 1.5rem', textAlign: 'center' }}>
           Track Moodle assignments directly on Google Tasks
@@ -76,7 +83,6 @@ export default function Popup() {
     <div className="popup-container">
       <header className="popup-header">
         <div className="popup-brand" onClick={handleOpenDashboard}>
-          <span className="logo-badge">N</span>
           <span>Noodle</span>
         </div>
         <button className="sync-icon-btn" onClick={handleSync} disabled={loading}>
@@ -100,14 +106,20 @@ export default function Popup() {
 
               let dueText = 'No deadline';
               if (a.deadline) {
-                const diff = new Date(a.deadline).getTime() - Date.now();
-                const hours = diff / (1000 * 60 * 60);
-                if (hours < 0) {
+                const diffMs = new Date(a.deadline).getTime() - Date.now();
+                const diffMins = Math.floor(diffMs / (1000 * 60));
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                
+                if (diffMs < 0) {
                   dueText = 'Overdue!';
-                } else if (hours <= 24) {
-                  dueText = `Due in ${Math.round(hours)}h`;
+                } else if (diffDays >= 1) {
+                  dueText = `${diffDays}d`;
+                } else if (diffHours >= 1) {
+                  dueText = `${diffHours}h`;
                 } else {
-                  dueText = `Due in ${Math.round(hours / 24)}d`;
+                  const mins = diffMins > 0 ? diffMins : 1;
+                  dueText = `${mins}m`;
                 }
               }
 

@@ -97,3 +97,150 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Noodle Theme - Cream/Brown and Pastel colors (less futuristic) */
+body.theme-noodle {
+  --bg-dark: #faf5eb;
+  --bg-card: rgba(255, 253, 249, 0.95);
+  --bg-card-hover: rgba(255, 250, 240, 1);
+  
+  --primary: #c27044; /* Terracotta - contrast-adjusted */
+  --primary-glow: rgba(194, 112, 68, 0.12);
+  --secondary: #48785e; /* Sage Green - contrast-adjusted */
+  --secondary-glow: rgba(72, 120, 94, 0.12);
+  --warning: #b36b1d; /* Warm Amber - contrast-adjusted */
+  --danger: #b33c30; /* Pastel Red - contrast-adjusted */
+  
+  --text-primary: #3d405b; /* Dark warm brown/slate */
+  --text-secondary: #5f6585; /* Soft dark slate/purple */
+  --text-muted: #8d93ab;
+  
+  --border: rgba(194, 112, 68, 0.18);
+  --border-focus: rgba(194, 112, 68, 0.4);
+  
+  --shadow: 0 8px 30px -10px rgba(194, 112, 68, 0.12);
+  --shadow-glow: 0 0 15px rgba(194, 112, 68, 0.15);
+  
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(242, 204, 143, 0.3) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(129, 178, 154, 0.25) 0px, transparent 50%) !important;
+}
+
+/* Noodle theme input color fixes */
+body.theme-noodle .settings-text-input,
+body.theme-noodle input[type="text"],
+body.theme-noodle input[type="password"],
+body.theme-noodle select,
+body.theme-noodle textarea,
+body.theme-noodle .search-input {
+  color: var(--text-primary) !important;
+  background: rgba(194, 112, 68, 0.05) !important;
+  border-color: var(--border) !important;
+}
+
+body.theme-noodle .settings-text-input::placeholder,
+body.theme-noodle input[type="text"]::placeholder,
+body.theme-noodle input[type="password"]::placeholder,
+body.theme-noodle .search-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+body.theme-noodle .logo-section h1 {
+  background: linear-gradient(to right, #8b5a2b, #b87d4b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Override hardcoded white/bright text colors */
+body.theme-noodle .item-name,
+body.theme-noodle .file-name-span,
+body.theme-noodle .settings-section h4,
+body.theme-noodle .stat-val,
+body.theme-noodle h1,
+body.theme-noodle h2,
+body.theme-noodle h3,
+body.theme-noodle h4,
+body.theme-noodle h5,
+body.theme-noodle h6 {
+  color: var(--text-primary) !important;
+}
+
+body.theme-noodle .file-size-cell,
+body.theme-noodle .file-section-tag {
+  color: var(--text-secondary) !important;
+}
+
+body.theme-noodle .badge-muted {
+  background: rgba(194, 112, 68, 0.12) !important;
+  color: var(--text-secondary) !important;
+}
+
+body.theme-noodle .badge-success {
+  background: rgba(72, 120, 94, 0.12) !important;
+  color: var(--secondary) !important;
+}
+
+body.theme-noodle .badge-warning {
+  background: rgba(179, 107, 29, 0.12) !important;
+  color: var(--warning) !important;
+}
+
+body.theme-noodle .badge-danger {
+  background: rgba(179, 60, 48, 0.12) !important;
+  color: var(--danger) !important;
+}
+
+body.theme-noodle .glass-panel:hover {
+  border-color: rgba(194, 112, 68, 0.3);
+}
+
+body.theme-noodle .active-row,
+body.theme-noodle .semester-group-title {
+  border-color: var(--border) !important;
+}
+
+/* Make sure header icons and text buttons look nice and warm */
+body.theme-noodle .secondary-btn,
+body.theme-noodle .secondaryBtn {
+  background: rgba(194, 112, 68, 0.08) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+}
+
+body.theme-noodle .secondary-btn:hover,
+body.theme-noodle .secondaryBtn:hover {
+  background: rgba(194, 112, 68, 0.15) !important;
+}
+
+body.theme-noodle .action-icon-link {
+  color: var(--primary) !important;
+}
+
+body.theme-noodle .action-icon-link:hover {
+  color: var(--text-primary) !important;
+}
+
+/* Disable glow pulse animations for less futuristic feel */
+body.theme-noodle .pulse-glow-effect {
+  animation: none !important;
+  box-shadow: var(--shadow) !important;
+}
+
+
+/* Next Assignment Banner color overrides for Noodle theme */
+body.theme-noodle .next-assignment-banner {
+  background: linear-gradient(135deg, rgba(194, 112, 68, 0.08) 0%, rgba(242, 204, 143, 0.15) 100%) !important;
+  border-color: rgba(194, 112, 68, 0.3) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+/* Noodle theme active hover states for action buttons */
+body.theme-noodle .action-link-btn.file-btn:hover {
+  background: var(--secondary) !important;
+  color: white !important;
+}
+
+body.theme-noodle .action-link-btn:hover {
+  background: var(--primary) !important;
+  color: white !important;
+}

@@ -22,9 +22,16 @@ export const Colors = {
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
   },
+  noodle: {
+    text: '#3d405b',
+    background: '#faf5eb',
+    backgroundElement: '#fffdf9',
+    backgroundSelected: '#ebdcb9',
+    textSecondary: '#5f6585',
+  },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark & keyof typeof Colors.noodle;
 
 export const Fonts = Platform.select({
   ios: {

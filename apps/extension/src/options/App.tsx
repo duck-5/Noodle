@@ -22,6 +22,7 @@ import {
 import { translations } from '../shared/i18n';
 
 import './App.css';
+import logoImg from '../assets/logo.png';
 
 interface GroupedCourses {
   semesterKey: string;
@@ -138,6 +139,14 @@ export default function App() {
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
+
+  useEffect(() => {
+    if (settings?.theme) {
+      document.body.className = `theme-${settings.theme}`;
+    } else {
+      document.body.className = 'theme-dark';
+    }
+  }, [settings]);
 
   useEffect(() => {
     if (token && trackedCourseIds && trackedCourseIds.length > 0 && settings) {
@@ -497,7 +506,7 @@ export default function App() {
       <div className="onboarding-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
         <div className="onboarding-card glass-panel">
           <div className="logo-section">
-            <span className="logo-icon">N</span>
+            <img src={logoImg} alt="Noodle Logo" className="logo-image-large" />
             <h1>Noodle</h1>
             <p className="subtitle">Sync Moodle Directly to Google Tasks</p>
           </div>
@@ -680,8 +689,8 @@ export default function App() {
     <div className="dashboard-layout" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
       {/* Sidebar Navigation */}
       <aside className="sidebar glass-panel">
-        <div className="sidebar-logo">
-          <span className="logo-badge">N</span>
+        <div className="sidebar-logo" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center', marginBottom: '2rem' }}>
+          <img src={logoImg} alt="Noodle Logo" className="sidebar-logo-img" />
           <span>Noodle</span>
         </div>
 
@@ -832,6 +841,12 @@ export default function App() {
                 setSettingsState(updated);
                 await setSettings(updated);
               }}
+              onUpdateTheme={async (theme: 'dark' | 'noodle') => {
+                if (!settings) return;
+                const updated = { ...settings, theme };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
               onUpdateGoogleClientId={async (cid: string) => {
                 if (!settings) return;
                 const updated = { ...settings, googleClientId: cid };
@@ -961,11 +976,55 @@ function DashboardTab({
             <span className="next-assign-course" style={{ color: getCourseColor(nextAssignment.courseId) }}>
               {getCourseDisplayName(nextAssignment.courseId, nextAssignment.courseName)}
             </span>
+            {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
+              <div className="attachment-button-row" style={{ marginTop: '0.6rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {nextAssignment.attachments.map((att, attIdx) => {
+                  const downloadUrl = token
+                    ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                    : att.url;
+                  return (
+                    <a
+                      key={attIdx}
+                      href={downloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="action-link-btn file-btn btn-xs"
+                    >
+                      📄 {att.name}
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="next-assign-action">
             {nextAssignment.deadline && (
               <span className={`next-assign-time ${timeColorClass}`}>
-                {lang === 'he' ? 'הגשה ב-' : 'Due: '}{new Date(nextAssignment.deadline).toLocaleString()}
+                {(() => {
+                  const deadlineDate = new Date(nextAssignment.deadline);
+                  const diffMs = deadlineDate.getTime() - Date.now();
+                  const diffMins = Math.floor(diffMs / (1000 * 60));
+                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  
+                  if (diffMs < 0) {
+                    return lang === 'he' ? 'עבר המועד!' : 'Overdue!';
+                  }
+                  if (diffDays >= 1) {
+                    return lang === 'he' 
+                      ? `${diffDays === 1 ? 'יום' : `${diffDays} ימים`}` 
+                      : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+                  }
+                  if (diffHours >= 1) {
+                    return lang === 'he' 
+                      ? `${diffHours === 1 ? 'שעה' : `${diffHours} שעות`}` 
+                      : `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'}`;
+                  }
+                  const mins = diffMins > 0 ? diffMins : 1;
+                  return lang === 'he' 
+                    ? `${mins === 1 ? 'דקה' : `${mins} דקות`}` 
+                    : `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+                })()}
               </span>
             )}
             <a href={nextAssignment.link} target="_blank" rel="noreferrer" className="primary-btn btn-sm">
@@ -1015,19 +1074,38 @@ function DashboardTab({
 
                 let badgeClass = 'badge-muted';
                 let deadlineText = lang === 'he' ? 'אין מועד הגשה' : 'No deadline';
-                if (hoursLeft !== null) {
+                if (hoursLeft !== null && deadline) {
                   if (hoursLeft < 0) {
                     badgeClass = 'badge-danger';
                     deadlineText = lang === 'he' ? 'עבר המועד!' : 'Overdue!';
-                  } else if (hoursLeft <= 24) {
-                    badgeClass = 'badge-danger';
-                    deadlineText = lang === 'he' ? `הגשה בעוד ${Math.round(hoursLeft)} שעות` : `Due in ${Math.round(hoursLeft)} hours`;
-                  } else if (hoursLeft <= 72) {
-                    badgeClass = 'badge-warning';
-                    deadlineText = lang === 'he' ? `הגשה בעוד ${Math.round(hoursLeft / 24)} ימים` : `Due in ${Math.round(hoursLeft / 24)} days`;
                   } else {
-                    badgeClass = 'badge-success';
-                    deadlineText = lang === 'he' ? `הגשה ב-${deadline?.toLocaleDateString()}` : `Due ${deadline?.toLocaleDateString()}`;
+                    if (hoursLeft <= 24) {
+                      badgeClass = 'badge-danger';
+                    } else if (hoursLeft <= 72) {
+                      badgeClass = 'badge-warning';
+                    } else {
+                      badgeClass = 'badge-success';
+                    }
+                    
+                    const diffMs = deadline.getTime() - Date.now();
+                    const diffMins = Math.floor(diffMs / (1000 * 60));
+                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays >= 1) {
+                      deadlineText = lang === 'he' 
+                        ? `${diffDays === 1 ? 'יום' : `${diffDays} ימים`}` 
+                        : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+                    } else if (diffHours >= 1) {
+                      deadlineText = lang === 'he' 
+                        ? `${diffHours === 1 ? 'שעה' : `${diffHours} שעות`}` 
+                        : `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'}`;
+                    } else {
+                      const mins = diffMins > 0 ? diffMins : 1;
+                      deadlineText = lang === 'he' 
+                        ? `${mins === 1 ? 'דקה' : `${mins} דקות`}` 
+                        : `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+                    }
                   }
                 }
 
@@ -1596,6 +1674,7 @@ function SettingsTab({
   t,
   lang,
   onUpdateLanguage,
+  onUpdateTheme,
   onUpdateThresholds,
 }: {
   settings: ExtensionSettings | null;
@@ -1609,6 +1688,7 @@ function SettingsTab({
   googleSyncLoading: boolean;
   googleSyncStatus: string | null;
   onUpdateLanguage: (l: 'he' | 'en') => void;
+  onUpdateTheme: (theme: 'dark' | 'noodle') => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
@@ -1636,6 +1716,22 @@ function SettingsTab({
           >
             <option value="he">עברית (Hebrew)</option>
             <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Theme Selection Section */}
+      <div className="settings-section" style={{ marginTop: '1.5rem' }}>
+        <h4>{lang === 'he' ? 'ערכת נושא' : 'Theme'}</h4>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+          <select
+            className="settings-text-input"
+            value={settings.theme || 'dark'}
+            onChange={(e) => onUpdateTheme(e.target.value as 'dark' | 'noodle')}
+            style={{ maxWidth: '200px', cursor: 'pointer' }}
+          >
+            <option value="dark">{lang === 'he' ? 'כהה (Dark)' : 'Dark'}</option>
+            <option value="noodle">{lang === 'he' ? 'נודל 🍜 (Noodle)' : 'Noodle 🍜'}</option>
           </select>
         </div>
       </div>
