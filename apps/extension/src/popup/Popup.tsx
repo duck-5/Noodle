@@ -58,8 +58,8 @@ export default function Popup() {
   if (!token) {
     return (
       <div className="popup-container unauth">
-        <div className="popup-logo">T</div>
-        <h3>TauTracker</h3>
+        <div className="popup-logo">N</div>
+        <h3>Noodle</h3>
         <p className="subtitle" style={{ margin: '0.5rem 0 1.5rem', textAlign: 'center' }}>
           Track Moodle assignments directly on Google Tasks
         </p>
@@ -76,8 +76,8 @@ export default function Popup() {
     <div className="popup-container">
       <header className="popup-header">
         <div className="popup-brand" onClick={handleOpenDashboard}>
-          <span className="logo-badge">T</span>
-          <span>TauTracker</span>
+          <span className="logo-badge">N</span>
+          <span>Noodle</span>
         </div>
         <button className="sync-icon-btn" onClick={handleSync} disabled={loading}>
           {loading ? '⏳' : '🔄'}

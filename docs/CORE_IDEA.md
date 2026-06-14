@@ -1,6 +1,6 @@
-# TauTracker — Core Idea
+# Noodle — Core Idea
 
-TauTracker is a modern, privacy-first, productivity-focused dashboard designed specifically for students at Tel Aviv University (TAU). It serves as a custom front-end replacement for the university's Moodle learning management system, enhancing the student experience with a unified workspace, task management, and seamless integrations.
+Noodle is a modern, privacy-first, productivity-focused dashboard designed specifically for students at Tel Aviv University (TAU). It serves as a custom front-end replacement for the university's Moodle learning management system, enhancing the student experience with a unified workspace, task management, and seamless integrations.
 
 ---
 
@@ -14,9 +14,9 @@ The default university Moodle platform is functional but presents several usabil
 
 ---
 
-## 2. The Solution: TauTracker
+## 2. The Solution: Noodle
 
-TauTracker consolidates a student's academic life into a single, cohesive, and visually stunning workspace available as:
+Noodle consolidates a student's academic life into a single, cohesive, and visually stunning workspace available as:
 1.  **A Browser Extension** (`apps/extension`): A Manifest V3 Chrome extension providing a quick-access popup and a full-page options dashboard.
 2.  **A Mobile Application** (`apps/mobile`): A native React Native app (built with Expo) for iOS and Android.
 
@@ -31,7 +31,7 @@ TauTracker consolidates a student's academic life into a single, cohesive, and v
 
 ## 3. Why We Are Doing It: The Client-Side Pivot
 
-Historically, TauTracker (v2.0.0) was built as a traditional client-server application with a centralized Python server, a shared CSV/SQLite database, and a centralized sync worker. 
+Historically, Noodle (formerly TauTracker v2.0.0) was built as a traditional client-server application with a centralized Python server, a shared CSV/SQLite database, and a centralized sync worker. 
 
 To ensure the long-term sustainability, privacy, and reliability of the project, the architecture has transitioned to a **fully decentralized, client-only model**.
 

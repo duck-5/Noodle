@@ -1,4 +1,4 @@
-# E2E Test Infra: TauTracker
+# E2E Test Infra: Noodle
 
 ## Test Philosophy
 - Opaque-box, requirement-driven. No dependency on implementation design.

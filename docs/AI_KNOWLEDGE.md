@@ -1,13 +1,13 @@
 # AI Onboarding & Project Knowledge Base
 
-Welcome, AI Agent! This document compiles the core knowledge, implementation patterns, features, and design constraints of TauTracker. Read this document carefully before making changes to the codebase.
+Welcome, AI Agent! This document compiles the core knowledge, implementation patterns, features, and design constraints of Noodle. Read this document carefully before making changes to the codebase.
 
 ---
 
 ## 1. Project Map & Core Directory Structure
 
 ```
-TauTracker/
+Noodle/
 ├── apps/
 │   ├── mobile/                     # Expo SDK 56 Mobile App (React Native)
 │   └── extension/                  # Chrome Extension SPA (Vite + React + TS, Manifest V3)
@@ -67,7 +67,7 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   Google Tasks does not have custom metadata storage.
     *   *Rule:* Insert a structured metadata string into the task's `notes` (description) field:
         ```
-        tautracker:assignId:{moodle_assign_id}
+        Noodle:assignId:{moodle_assign_id}
         ```
     *   *Rule:* During sync, scan existing tasks' descriptions using this prefix to find matches. Do not match tasks by title, as the user might rename them.
     *   *Rule:* If a task is marked `completed` in Google Tasks by the user, **do not** change it back to `needsAction` even if Moodle reports it is not submitted. Respect user overrides.

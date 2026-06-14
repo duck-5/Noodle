@@ -127,7 +127,7 @@ export const translations = {
     desktop_notifications_title: "Notifications",
     desktop_notifications_desc: "Show Chrome browser alerts when new assignments are posted or deadlines are near (24h/1h)",
     manual_master_token_title: "Manual Master Token",
-    manual_master_token_desc: "By default, TauTracker uses a temporary token generated upon login. If you experience issues, you can provide a permanent Master Token.",
+    manual_master_token_desc: "By default, Noodle uses a temporary token generated upon login. If you experience issues, you can provide a permanent Master Token.",
     how_to_get_token_title: "How to get your master token:",
     how_to_get_token_step1: "Log in to TAU Moodle.",
     how_to_get_token_step2: "Click your profile picture (top right) & select Preferences.",

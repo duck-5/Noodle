@@ -1,12 +1,12 @@
-# TauTracker
+# Noodle
 
-TauTracker is a custom, modern, dark-themed replacement frontend for the Tel Aviv University Moodle platform.
+Noodle is a custom, modern, dark-themed replacement frontend for the Tel Aviv University Moodle platform.
 
-Historically built as a client-server application, TauTracker has transitioned into a fully decentralized, client-only architecture packaged as:
+Historically built as a client-server application, Noodle has transitioned into a fully decentralized, client-only architecture packaged as:
 1. **Chrome Browser Extension** (`apps/extension`)
 2. **React Native Mobile App** (`apps/mobile`) via Expo
 
-By communicating directly with Moodle from your device and saving tokens locally, TauTracker eliminates external databases, protects sensitive user credentials, and avoids IP blockages.
+By communicating directly with Moodle from your device and saving tokens locally, Noodle eliminates external databases, protects sensitive user credentials, and avoids IP blockages.
 
 ---
 
@@ -35,7 +35,7 @@ Ensure you have the following installed on your machine:
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd TauTracker
+   cd Noodle
    ```
 
 2. Install all dependencies:
@@ -67,7 +67,7 @@ This compiles the code and assets into the `apps/extension/dist` folder.
 4. Select the `apps/extension/dist` directory.
 
 ### 4. Moodle Authentication
-When loaded, click the TauTracker icon to open the popup. Click **Connect Moodle** to open the TAU login page. Once logged in, the extension automatically intercepts the temporary token and logs you in.
+When loaded, click the Noodle icon to open the popup. Click **Connect Moodle** to open the TAU login page. Once logged in, the extension automatically intercepts the temporary token and logs you in.
 
 ---
 

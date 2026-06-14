@@ -48,7 +48,7 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
       return nickname && nickname.trim() ? { ...a, courseName: nickname.trim() } : a;
     });
 
-    const listName = getPreference('google_tasks_list_name') || 'TauTracker';
+    const listName = getPreference('google_tasks_list_name') || 'Noodle';
     const syncErrors: string[] = [];
     const listId = await getOrCreateTaskList(accessToken, listName, (err: string) => {
       syncErrors.push(err);

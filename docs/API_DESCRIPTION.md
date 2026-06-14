@@ -1,12 +1,12 @@
-# TauTracker — API & Interface Descriptions
+# Noodle — API & Interface Descriptions
 
-This document describes all the web services, interfaces, APIs, and client-side storage systems utilized by TauTracker to synchronize data, perform authentication, and manage state.
+This document describes all the web services, interfaces, APIs, and client-side storage systems utilized by Noodle to synchronize data, perform authentication, and manage state.
 
 ---
 
 ## 1. Moodle Web Service REST API
 
-TauTracker communicates directly with Tel Aviv University's Moodle server using standard HTTP REST requests. Because Moodle uses Web Services, we bypass session authentication for data synchronization and instead use a Web Service token (`wstoken`).
+Noodle communicates directly with Tel Aviv University's Moodle server using standard HTTP REST requests. Because Moodle uses Web Services, we bypass session authentication for data synchronization and instead use a Web Service token (`wstoken`).
 
 ### Base Request Protocol
 All API requests must target the Moodle REST server:
@@ -101,7 +101,7 @@ All requests must include the following query parameters:
 
 ## 2. Google Tasks REST API
 
-TauTracker synchronizes pending assignments to the user's Google Tasks account using direct HTTP endpoints.
+Noodle synchronizes pending assignments to the user's Google Tasks account using direct HTTP endpoints.
 
 ### Authentication
 *   **Type:** OAuth 2.0 (Bearer JWT Token in `Authorization: Bearer <TOKEN>` header).
@@ -119,9 +119,9 @@ TauTracker synchronizes pending assignments to the user's Google Tasks account u
 ### Data Synchronization Mapping
 *   **Task Title:** Constructed as `[Course Code] Assignment Title` (e.g. `[03681118] Assignment 1`).
 *   **Task Due Date:** Set to the Moodle assignment's True Deadline in ISO 8601 format (date-only: `YYYY-MM-DD`).
-*   **Stable Identifier (Metadata):** Google Tasks has no custom field metadata. TauTracker injects a deterministic string into the `notes` (description) field of the task:
+*   **Stable Identifier (Metadata):** Google Tasks has no custom field metadata. Noodle injects a deterministic string into the `notes` (description) field of the task:
     ```
-    tautracker:assignId:{moodle_assign_id}
+    Noodle:assignId:{moodle_assign_id}
     ```
     This allow the sync engine to identify existing tasks without relying on unstable title matching.
 *   **Status Mapping:**

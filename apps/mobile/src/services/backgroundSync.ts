@@ -6,7 +6,7 @@ import { getDb, saveSyncResultToDatabase } from './database';
 import { scheduleDeadlineNotifications } from './notifications';
 import { performGoogleTasksSync } from './googleTasks';
 
-const BACKGROUND_SYNC_TASK = 'TAUTRACKER_BACKGROUND_SYNC';
+const BACKGROUND_SYNC_TASK = 'NOODLE_BACKGROUND_SYNC';
 
 export async function getMoodleToken(): Promise<string | null> {
   try {

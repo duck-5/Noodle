@@ -22,7 +22,7 @@ export default function SettingsScreen() {
 
   const [loading, setLoading] = useState<boolean>(false);
   const [googleTasksEnabled, setGoogleTasksEnabled] = useState<boolean>(false);
-  const [googleListName, setGoogleListName] = useState<string>('TauTracker');
+  const [googleListName, setGoogleListName] = useState<string>('Noodle');
   const [googleTokenInput, setGoogleTokenInput] = useState<string>('');
   const [googleStatus, setGoogleStatus] = useState<string | null>(null);
   const [lang, setLang] = useState<'he' | 'en'>('he');
@@ -38,7 +38,7 @@ export default function SettingsScreen() {
       const enabled = getPreference('google_tasks_enabled') === 'true';
       setGoogleTasksEnabled(enabled);
 
-      const listName = getPreference('google_tasks_list_name') || 'TauTracker';
+      const listName = getPreference('google_tasks_list_name') || 'Noodle';
       setGoogleListName(listName);
 
       const googleToken = await getGoogleAccessToken();
@@ -201,7 +201,7 @@ export default function SettingsScreen() {
                 style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
                 value={googleListName}
                 onChangeText={handleUpdateListName}
-                placeholder="TauTracker"
+                placeholder="Noodle"
                 placeholderTextColor={theme.textSecondary}
               />
 

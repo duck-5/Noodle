@@ -486,7 +486,7 @@ export default function App() {
     return (
       <div className="center-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
         <div className="spinner"></div>
-        <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading TauTracker...</p>
+        <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading Noodle...</p>
       </div>
     );
   }
@@ -497,8 +497,8 @@ export default function App() {
       <div className="onboarding-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
         <div className="onboarding-card glass-panel">
           <div className="logo-section">
-            <span className="logo-icon">T</span>
-            <h1>TauTracker</h1>
+            <span className="logo-icon">N</span>
+            <h1>Noodle</h1>
             <p className="subtitle">Sync Moodle Directly to Google Tasks</p>
           </div>
 
@@ -681,8 +681,8 @@ export default function App() {
       {/* Sidebar Navigation */}
       <aside className="sidebar glass-panel">
         <div className="sidebar-logo">
-          <span className="logo-badge">T</span>
-          <span>TauTracker</span>
+          <span className="logo-badge">N</span>
+          <span>Noodle</span>
         </div>
 
         <nav className="sidebar-nav">

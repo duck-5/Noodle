@@ -1,12 +1,12 @@
-# TauTracker — Architecture & Design Specifications
+# Noodle — Architecture & Design Specifications
 
-This document defines the system design, data isolation model, platform mechanics, and architectural rationale for the decentralized TauTracker application.
+This document defines the system design, data isolation model, platform mechanics, and architectural rationale for the decentralized Noodle application.
 
 ---
 
 ## 1. System Architecture Overview
 
-TauTracker is built as a **fully decentralized, client-only application**. It does not routing requests through a centralized backend server, nor does it store user credentials in a shared cloud database. Instead, every user device (phone or browser) is its own independent API client.
+Noodle is built as a **fully decentralized, client-only application**. It does not routing requests through a centralized backend server, nor does it store user credentials in a shared cloud database. Instead, every user device (phone or browser) is its own independent API client.
 
 ```mermaid
 graph TD
@@ -68,7 +68,7 @@ graph TD
 The project utilizes a **pnpm workspaces monorepo** to share TypeScript code between the browser extension and the mobile application.
 
 ```
-TauTracker/
+Noodle/
 ├── apps/
 │   ├── mobile/                     # React Native + Expo mobile application
 │   │   ├── app/                    # Expo Router file-based routing

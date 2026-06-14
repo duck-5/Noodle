@@ -4,7 +4,7 @@ let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 export function getDb(): SQLite.SQLiteDatabase {
   if (!dbInstance) {
-    dbInstance = SQLite.openDatabaseSync('tautracker.db');
+    dbInstance = SQLite.openDatabaseSync('noodle.db');
     initDb(dbInstance);
   }
   return dbInstance;
