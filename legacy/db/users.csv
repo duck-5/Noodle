@@ -1,0 +1,2 @@
+user_id,username,email,password_hash,moodle_token_encrypted,sso_username_encrypted,sso_password_encrypted,sso_student_id_encrypted,created_at,last_login,settings_json
+c1aea3ff-2cd8-4548-a063-22cf44b99739,testuser,test@example.com,$2b$12$BQ8PUe1FOKoVfTir66R.sexNRWLeAZPhLeM3yu35Qhdl5pgp/H2YK,gAAAAABqKBq5zJGIyW5Yg3DcPYtyENY8Z5st2ZjZMoMaEqRPKW5EOXb34_wIrQ8TuIl24tfVE6VT-S7X2bpMGWVaYnu5Su6TOw==,,,,2026-06-09T13:52:56.421797,2026-06-09T13:52:57.698192,{}

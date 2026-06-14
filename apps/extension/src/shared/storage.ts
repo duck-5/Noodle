@@ -1,0 +1,66 @@
+import type { SyncResult } from '@tautracker/moodle-client';
+
+export interface ExtensionSettings {
+  googleTasksEnabled: boolean;
+  googleTasksListName: string;
+  googleClientId?: string | null;
+  notificationsEnabled: boolean;
+  coursesColorMap: Record<number, string>;
+  coursesCustomNames: Record<number, string>;
+  language: 'he' | 'en';
+  assignmentGreenDaysThreshold?: number;
+  assignmentYellowDaysThreshold?: number;
+}
+
+export const DEFAULT_SETTINGS: ExtensionSettings = {
+  googleTasksEnabled: false,
+  googleTasksListName: 'TauTracker',
+  googleClientId: null,
+  notificationsEnabled: true,
+  coursesColorMap: {},
+  coursesCustomNames: {},
+  language: 'he',
+  assignmentGreenDaysThreshold: 7,
+  assignmentYellowDaysThreshold: 3,
+};
+
+export async function getStoredToken(): Promise<string | null> {
+  const res = (await chrome.storage.local.get('wstoken')) as { wstoken?: string };
+  return res.wstoken || null;
+}
+
+export async function setStoredToken(token: string | null): Promise<void> {
+  if (token === null) {
+    await chrome.storage.local.remove('wstoken');
+  } else {
+    await chrome.storage.local.set({ wstoken: token });
+  }
+}
+
+export async function getTrackedCourseIds(): Promise<number[]> {
+  const res = (await chrome.storage.sync.get('trackedCourseIds')) as { trackedCourseIds?: number[] };
+  return res.trackedCourseIds || [];
+}
+
+export async function setTrackedCourseIds(ids: number[]): Promise<void> {
+  await chrome.storage.sync.set({ trackedCourseIds: ids });
+}
+
+export async function getCachedSyncResult(): Promise<SyncResult | null> {
+  const res = (await chrome.storage.local.get('cachedSyncResult')) as { cachedSyncResult?: SyncResult };
+  return res.cachedSyncResult || null;
+}
+
+export async function setCachedSyncResult(result: SyncResult): Promise<void> {
+  await chrome.storage.local.set({ cachedSyncResult: result });
+}
+
+export async function getSettings(): Promise<ExtensionSettings> {
+  const res = (await chrome.storage.sync.get('settings')) as { settings?: Partial<ExtensionSettings> };
+  return { ...DEFAULT_SETTINGS, ...res.settings };
+}
+
+export async function setSettings(settings: Partial<ExtensionSettings>): Promise<void> {
+  const current = await getSettings();
+  await chrome.storage.sync.set({ settings: { ...current, ...settings } });
+}

@@ -1,0 +1,2 @@
+id,user_id,sync_type,started_at,finished_at,status,items_synced,error_message
+86bfef1c-ccd4-4014-a5df-579f430229a9,3a95f090-376b-45ef-a53c-3707cd3ac196,full_refresh,2026-06-09T09:45:41.547797,2026-06-09T09:45:41.571579,completed,3,

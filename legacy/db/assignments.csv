@@ -1,0 +1,2 @@
+id,user_id,course_id,course_name,assignment_name,moodle_assign_id,cmid,deadline,opened,status,link,grade,grade_max,last_synced
+99361f47-8711-4223-a8c8-f35416adc4c9,3a95f090-376b-45ef-a53c-3707cd3ac196,1001,Discrete Math,Homework 1,555,201,2026-06-15 23:59:59,,Assigned,http://moodle/homework1,90.0,100,2026-06-09T09:45:41.568057

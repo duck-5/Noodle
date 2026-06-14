@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "TauTracker",
+  "version": "3.0.0",
+  "description": "Direct client-side sync of Moodle assignments and grades to Google Tasks",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "cookies",
+    "identity",
+    "webRequest",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://moodle.tau.ac.il/*",
+    "https://accounts.google.com/*",
+    "https://tasks.googleapis.com/*",
+    "https://www.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "index.html"
+  },
+  "oauth2": {
+    "client_id": "510394355212-qq5n37h1ijrp28ge71gm51v722hsstpg.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/tasks"
+    ]
+  },
+  "options_page": "options.html"
+}
