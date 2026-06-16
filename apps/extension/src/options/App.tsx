@@ -416,16 +416,15 @@ export default function App() {
       try {
         const text = e.target?.result as string;
         const data = JSON.parse(text);
-        if (data.version !== "TauTrackerConfig-v1" || !data.wstoken || !data.trackedCourseIds || !data.settings) {
+        if (data.version !== "TauTrackerConfig-v1" || !data.trackedCourseIds || !data.settings) {
           throw new Error('Invalid file format');
         }
 
         setLoading(true);
-        await setStoredToken(data.wstoken);
+        // We do NOT overwrite the wstoken during manual config import since the user is already signed in.
         await setTrackedCourseIds(data.trackedCourseIds);
         await setSettings(data.settings);
 
-        setToken(data.wstoken);
         setTrackedCourseIdsState(data.trackedCourseIds);
         setSettingsState(data.settings);
 
@@ -585,22 +584,6 @@ export default function App() {
               </button>
             </form>
           </div>
-
-          <div className="onboarding-actions-extra" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
-            <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
-              📁 {t('import_config_btn')}
-              <input
-                type="file"
-                accept=".json"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleImportConfig(e.target.files[0]);
-                  }
-                }}
-                style={{ display: 'none' }}
-              />
-            </label>
-          </div>
         </div>
       </div>
     );
@@ -670,19 +653,6 @@ export default function App() {
                 >
                   Start Tracking ({trackedCourseIds.length} Courses)
                 </button>
-                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
-                  📁 {t('import_config_btn')}
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        handleImportConfig(e.target.files[0]);
-                      }
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
               </div>
             </>
           )}
@@ -869,6 +839,7 @@ export default function App() {
                 await setSettings(updated);
               }}
               onExportConfig={handleExportConfig}
+              onImportConfig={handleImportConfig}
             />
           )}
         </div>
@@ -1676,6 +1647,7 @@ function SettingsTab({
   onUpdateGoogleClientId,
   onSyncGoogle,
   onExportConfig,
+  onImportConfig,
   googleSyncLoading,
   googleSyncStatus,
   t,
@@ -1690,6 +1662,7 @@ function SettingsTab({
   onUpdateGoogleClientId: (cid: string) => void;
   onSyncGoogle: () => void;
   onExportConfig: () => void;
+  onImportConfig: (file: File) => void;
   googleSyncLoading: boolean;
   googleSyncStatus: string | null;
   onUpdateLanguage: (l: 'he' | 'en') => void;
@@ -1880,9 +1853,24 @@ function SettingsTab({
             ? 'ייצא את כל הגדרות התוסף, הצבעים והאסימונים לקובץ JSON במחשב שלך, כדי שתוכל לשחזר אותם מאוחר יותר.'
             : 'Export all extension settings, course colors, nicknames, and tokens to a JSON file on your computer to restore them later.'}
         </p>
-        <button className="primary-btn btn-sm" onClick={onExportConfig}>
-          📥 {t('export_config_btn')}
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="primary-btn btn-sm" onClick={onExportConfig}>
+            📥 {t('export_config_btn')}
+          </button>
+          <label className="secondary-btn btn-sm" style={{ cursor: 'pointer', display: 'inline-block', margin: 0 }}>
+            📁 {t('import_config_btn')}
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  onImportConfig(e.target.files[0]);
+                }
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
+        </div>
       </div>
     </div>
   );
