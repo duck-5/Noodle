@@ -126,7 +126,6 @@ export default function App() {
   const [fileSearchQuery, setFileSearchQuery] = useState<string>('');
 
   // Backup and custom disconnect states
-  const [backupExists, setBackupExists] = useState<boolean>(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
   const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
 
@@ -161,9 +160,7 @@ export default function App() {
         if (creds) {
           backup.wstoken = token;
         }
-        chrome.storage.local.set({ config_backup: backup }).then(() => {
-          setBackupExists(true);
-        });
+        chrome.storage.local.set({ config_backup: backup });
       });
     }
   }, [token, trackedCourseIds, settings]);
@@ -172,13 +169,42 @@ export default function App() {
     setLoading(true);
     try {
       const storedToken = await getStoredToken();
-      setToken(storedToken);
-
       const ids = await getTrackedCourseIds();
-      setTrackedCourseIdsState(ids);
-
       const extensionSettings = await getSettings();
-      setSettingsState(extensionSettings);
+
+      // Check if config backup exists
+      const backupRes = (await chrome.storage.local.get('config_backup')) as {
+        config_backup?: {
+          wstoken?: string;
+          trackedCourseIds?: number[];
+          settings?: any;
+        };
+      };
+      const data = backupRes.config_backup;
+
+      let activeToken = storedToken;
+      let activeIds = ids;
+      let activeSettings = extensionSettings;
+
+      // Automatically restore config backup settings and course preferences on startup if current state is empty
+      if (data) {
+        if (activeIds.length === 0 && data.trackedCourseIds && data.trackedCourseIds.length > 0) {
+          await setTrackedCourseIds(data.trackedCourseIds);
+          activeIds = data.trackedCourseIds;
+        }
+        if (data.settings) {
+          await setSettings(data.settings);
+          activeSettings = { ...activeSettings, ...data.settings };
+        }
+        if (data.wstoken && !activeToken) {
+          activeToken = data.wstoken;
+          await setStoredToken(activeToken);
+        }
+      }
+
+      setToken(activeToken);
+      setTrackedCourseIdsState(activeIds);
+      setSettingsState(activeSettings);
 
       const cached = await getCachedSyncResult();
       setSyncResult(cached);
@@ -189,10 +215,6 @@ export default function App() {
         setAvailableCourses(cachedCoursesRes.enrolledCoursesCache);
       }
 
-      // Check if config backup exists
-      const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
-      setBackupExists(!!backupRes.config_backup);
-
       // Prefill credentials if they exist
       const credentials = await getMoodleCredentials();
       if (credentials) {
@@ -201,7 +223,6 @@ export default function App() {
         if (credentials.password) setMoodlePassword(credentials.password);
       }
 
-      let activeToken = storedToken;
       if (!activeToken && credentials?.username && credentials?.idNumber && credentials?.password) {
         // Attempt auto-login
         try {
@@ -216,7 +237,7 @@ export default function App() {
         }
       }
 
-      if (activeToken && ids.length > 0 && cached) {
+      if (activeToken && activeIds.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
         fetchEnrolledCoursesInBackground(activeToken);
       } else if (activeToken) {
@@ -348,7 +369,6 @@ export default function App() {
       
       if (deletePermanently) {
         await chrome.storage.local.remove('config_backup');
-        setBackupExists(false);
       } else {
         // Clear wstoken from the backup so that restoring backup later does not auto-login
         const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
@@ -425,48 +445,7 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  async function handleRestoreBackup() {
-    setLoading(true);
-    try {
-      const backupRes = (await chrome.storage.local.get('config_backup')) as {
-        config_backup?: {
-          wstoken?: string;
-          trackedCourseIds: number[];
-          settings: any;
-        };
-      };
-      const data = backupRes.config_backup;
-      if (!data || !data.trackedCourseIds || !data.settings) {
-        throw new Error('No valid backup found.');
-      }
 
-      await setTrackedCourseIds(data.trackedCourseIds);
-      await setSettings(data.settings);
-
-      setTrackedCourseIdsState(data.trackedCourseIds);
-      setSettingsState(data.settings);
-
-      if (data.wstoken) {
-        await setStoredToken(data.wstoken);
-        setToken(data.wstoken);
-
-        const syncRes = await syncNowOnBackground();
-        if (syncRes && syncRes.success && syncRes.result) {
-          setSyncResult(syncRes.result);
-        }
-      } else {
-        await setStoredToken(null);
-        setToken(null);
-      }
-
-      alert(currentLang === 'he' ? 'הגדרות שוחזרו בהצלחה!' : 'Backup restored successfully!');
-      loadData();
-    } catch (err: any) {
-      alert(`Restore failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleToggleGoogleTasks(enabled: boolean) {
     if (!settings) return;
@@ -608,15 +587,6 @@ export default function App() {
           </div>
 
           <div className="onboarding-actions-extra" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
-            {backupExists && (
-              <button
-                className="secondary-btn btn-sm"
-                onClick={handleRestoreBackup}
-                style={{ width: '100%', maxWidth: '280px' }}
-              >
-                💾 {t('restore_backup_btn')}
-              </button>
-            )}
             <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
               📁 {t('import_config_btn')}
               <input
