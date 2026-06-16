@@ -653,6 +653,19 @@ export default function App() {
                 >
                   Start Tracking ({trackedCourseIds.length} Courses)
                 </button>
+                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
+                  📁 {t('import_config_btn')}
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleImportConfig(e.target.files[0]);
+                      }
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               </div>
             </>
           )}
