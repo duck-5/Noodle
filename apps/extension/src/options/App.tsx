@@ -19,6 +19,7 @@ import {
   syncGoogleTasksOnBackground,
   loginTauSsoOnBackground,
 } from '../shared/messaging.js';
+import { getDueTextAndClass } from '../shared/dateUtils.js';
 import { translations } from '../shared/i18n';
 
 import './App.css';
@@ -107,6 +108,44 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+
+  // Toast and Tour States
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [showTour, setShowTour] = useState<boolean>(false);
+  const [tourStep, setTourStep] = useState<number>(-1);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const id = setTimeout(() => setToast(null), 5000);
+      return () => clearTimeout(id);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (tourStep === 0 || tourStep === 1 || tourStep === 2) {
+      setActiveTab('dashboard');
+      setSelectedCourseId(null);
+    } else if (tourStep === 3 || tourStep === 4) {
+      setActiveTab('courses');
+      setSelectedCourseId(null);
+    } else if (tourStep === 5 || tourStep === 6) {
+      setActiveTab('settings');
+      setSelectedCourseId(null);
+    } else if (tourStep === 7) {
+      setActiveTab('dashboard');
+      setSelectedCourseId(null);
+    }
+  }, [tourStep]);
+
+  const handleCloseTour = async () => {
+    setShowTour(false);
+    setTourStep(-1);
+    await chrome.storage.local.set({ hasSeenTour: true });
+  };
 
   // Onboarding States
   const [moodleUsername, setMoodleUsername] = useState<string>('');
@@ -220,26 +259,16 @@ export default function App() {
       if (credentials) {
         if (credentials.username) setMoodleUsername(credentials.username);
         if (credentials.idNumber) setMoodleId(credentials.idNumber);
-        if (credentials.password) setMoodlePassword(credentials.password);
       }
 
-      if (!activeToken && credentials?.username && credentials?.idNumber && credentials?.password) {
-        // Attempt auto-login
-        try {
-          const res = await loginTauSsoOnBackground(credentials.username, credentials.idNumber, credentials.password);
-          if (res?.success && res.token) {
-            activeToken = res.token;
-            await setStoredToken(activeToken);
-            setToken(activeToken);
-          }
-        } catch (err) {
-          console.error('Auto-login failed:', err);
-        }
-      }
-
+      const tourSeenRes = await chrome.storage.local.get('hasSeenTour');
       if (activeToken && activeIds.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
         fetchEnrolledCoursesInBackground(activeToken);
+        if (!tourSeenRes.hasSeenTour) {
+          setShowTour(true);
+          setTourStep(0);
+        }
       } else if (activeToken) {
         // Token exists but courses might not be tracked yet
         setOnboardingStep(2);
@@ -266,14 +295,14 @@ export default function App() {
       const fetchedToken = res.token;
       await setStoredToken(fetchedToken);
       if (rememberMe) {
-        await setMoodleCredentials({ username: moodleUsername, idNumber: moodleId, password: moodlePassword });
+        await setMoodleCredentials({ username: moodleUsername, idNumber: moodleId });
       } else {
         await setMoodleCredentials(null);
       }
       setToken(fetchedToken);
       fetchEnrolledCoursesForOnboarding(fetchedToken);
     } catch (err: any) {
-      alert(`Login failed: ${err.message}`);
+      showToast(`Login failed: ${err.message}`, 'error');
       setLoading(false);
     }
   }
@@ -298,11 +327,11 @@ export default function App() {
         setAvailableCourses(res.courses);
         setOnboardingStep(2);
       } else {
-        alert(res.error || 'Failed to fetch enrolled courses.');
+        showToast(res.error || 'Failed to fetch enrolled courses.', 'error');
         setOnboardingStep(1);
       }
     } catch (e: any) {
-      alert(e.message);
+      showToast(e.message, 'error');
       setOnboardingStep(1);
     } finally {
       setValidatingToken(false);
@@ -343,10 +372,10 @@ export default function App() {
       if (res?.success && res.result) {
         setSyncResult(res.result);
       } else if (res && !res.success) {
-        alert(`Sync failed: ${res.error}`);
+        showToast(`Sync failed: ${res.error}`, 'error');
       }
     } catch (e: any) {
-      alert(`Sync failed: ${e.message}`);
+      showToast(`Sync failed: ${e.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -392,12 +421,11 @@ export default function App() {
 
   function handleExportConfig() {
     if (!token || !settings) {
-      alert('No configuration found to export.');
+      showToast('No configuration found to export.', 'error');
       return;
     }
     const config = {
       version: "TauTrackerConfig-v1",
-      wstoken: token,
       trackedCourseIds: trackedCourseIds,
       settings: settings
     };
@@ -433,10 +461,10 @@ export default function App() {
           setSyncResult(syncRes.result);
         }
 
-        alert(t('import_success'));
+        showToast(t('import_success'), 'success');
         loadData();
       } catch (err: any) {
-        alert(`${t('import_failed')}: ${err.message}`);
+        showToast(`${t('import_failed')}: ${err.message}`, 'error');
       } finally {
         setLoading(false);
       }
@@ -585,6 +613,12 @@ export default function App() {
             </form>
           </div>
         </div>
+        {toast && (
+          <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToast(null)}>×</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -622,7 +656,7 @@ export default function App() {
                       }).map((c) => {
                         const isChecked = trackedCourseIds.includes(c.id);
                         return (
-                          <div
+                           <div
                             key={c.id}
                             className={`course-selection-item glass-panel ${isChecked ? 'selected' : ''}`}
                             onClick={() => handleOnboardingCourseToggle(c.id)}
@@ -670,6 +704,12 @@ export default function App() {
             </>
           )}
         </div>
+        {toast && (
+          <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToast(null)}>×</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -719,6 +759,12 @@ export default function App() {
           >
             ⚙️ {t('settings')}
           </button>
+          <button
+            className={`nav-item ${activeTab === 'about' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
+          >
+            ℹ️ {t('about')}
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -758,6 +804,7 @@ export default function App() {
               settings={settings}
               t={t}
               lang={currentLang}
+              tourStep={tourStep}
             />
           )}
 
@@ -791,6 +838,8 @@ export default function App() {
               onSelectCourse={setSelectedCourseId}
               t={t}
               lang={currentLang}
+              tourStep={tourStep}
+              settings={settings}
             />
           )}
 
@@ -839,12 +888,6 @@ export default function App() {
                 setSettingsState(updated);
                 await setSettings(updated);
               }}
-              onUpdateGoogleClientId={async (cid: string) => {
-                if (!settings) return;
-                const updated = { ...settings, googleClientId: cid };
-                setSettingsState(updated);
-                await setSettings(updated);
-              }}
               onUpdateThresholds={async (green: number, yellow: number) => {
                 if (!settings) return;
                 const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
@@ -853,6 +896,15 @@ export default function App() {
               }}
               onExportConfig={handleExportConfig}
               onImportConfig={handleImportConfig}
+              tourStep={tourStep}
+            />
+          )}
+
+          {activeTab === 'about' && (
+            <AboutTab
+              t={t}
+              lang={currentLang}
+              onStartTour={() => { setShowTour(true); setTourStep(0); }}
             />
           )}
         </div>
@@ -888,6 +940,23 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showTour && (
+        <TourOverlay
+          step={tourStep}
+          setStep={setTourStep}
+          onClose={handleCloseTour}
+          t={t}
+          lang={currentLang}
+        />
+      )}
+
+      {toast && (
+        <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+          <span className="toast-message">{toast.message}</span>
+          <button className="toast-close" onClick={() => setToast(null)}>×</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -915,6 +984,7 @@ function DashboardTab({
   settings,
   t,
   lang,
+  tourStep,
 }: {
   assignments: Assignment[];
   meetings: ZoomMeeting[];
@@ -922,6 +992,7 @@ function DashboardTab({
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   settings: ExtensionSettings | null;
+  tourStep?: number;
 } & TabProps) {
   const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
   
@@ -962,7 +1033,7 @@ function DashboardTab({
     <div className="tab-dashboard">
       {/* Next Assignment Highlight Banner */}
       {nextAssignment && (
-        <div className="next-assignment-banner">
+        <div className={`next-assignment-banner ${tourStep === 1 ? 'tour-highlight' : ''}`}>
           <div className="next-assign-info">
             <span className="next-assign-label">{t('next_assignment')}</span>
             <span className="next-assign-title">{nextAssignment.name}</span>
@@ -993,31 +1064,14 @@ function DashboardTab({
           <div className="next-assign-action">
             {nextAssignment.deadline && (
               <span className={`next-assign-time ${timeColorClass}`}>
-                {(() => {
-                  const deadlineDate = new Date(nextAssignment.deadline);
-                  const diffMs = deadlineDate.getTime() - Date.now();
-                  const diffMins = Math.floor(diffMs / (1000 * 60));
-                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                  
-                  if (diffMs < 0) {
-                    return lang === 'he' ? 'עבר המועד!' : 'Overdue!';
-                  }
-                  if (diffDays >= 1) {
-                    return lang === 'he' 
-                      ? `${diffDays === 1 ? 'יום' : `${diffDays} ימים`}` 
-                      : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
-                  }
-                  if (diffHours >= 1) {
-                    return lang === 'he' 
-                      ? `${diffHours === 1 ? 'שעה' : `${diffHours} שעות`}` 
-                      : `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'}`;
-                  }
-                  const mins = diffMins > 0 ? diffMins : 1;
-                  return lang === 'he' 
-                    ? `${mins === 1 ? 'דקה' : `${mins} דקות`}` 
-                    : `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
-                })()}
+                {
+                  getDueTextAndClass(
+                    nextAssignment.deadline,
+                    lang,
+                    settings?.assignmentGreenDaysThreshold,
+                    settings?.assignmentYellowDaysThreshold
+                  ).deadlineText
+                }
               </span>
             )}
             <a href={nextAssignment.link} target="_blank" rel="noreferrer" className="primary-btn btn-sm">
@@ -1044,7 +1098,7 @@ function DashboardTab({
 
       <div className="dashboard-grids">
         {/* Assignments Section */}
-        <div className="dashboard-section glass-panel">
+        <div className={`dashboard-section glass-panel ${tourStep === 2 ? 'tour-highlight' : ''}`}>
           <div className="section-header-row">
             <h3>{t('assignments_calendar')}</h3>
             <input
@@ -1062,45 +1116,12 @@ function DashboardTab({
             ) : (
               filteredAssigns.map((a) => {
                 const color = getCourseColor(a.courseId);
-                const deadline = a.deadline ? new Date(a.deadline) : null;
-                const hoursLeft = deadline ? (deadline.getTime() - Date.now()) / (1000 * 60 * 60) : null;
-
-                let badgeClass = 'badge-muted';
-                let deadlineText = lang === 'he' ? 'אין מועד הגשה' : 'No deadline';
-                if (hoursLeft !== null && deadline) {
-                  if (hoursLeft < 0) {
-                    badgeClass = 'badge-danger';
-                    deadlineText = lang === 'he' ? 'עבר המועד!' : 'Overdue!';
-                  } else {
-                    if (hoursLeft <= 24) {
-                      badgeClass = 'badge-danger';
-                    } else if (hoursLeft <= 72) {
-                      badgeClass = 'badge-warning';
-                    } else {
-                      badgeClass = 'badge-success';
-                    }
-                    
-                    const diffMs = deadline.getTime() - Date.now();
-                    const diffMins = Math.floor(diffMs / (1000 * 60));
-                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                    
-                    if (diffDays >= 1) {
-                      deadlineText = lang === 'he' 
-                        ? `${diffDays === 1 ? 'יום' : `${diffDays} ימים`}` 
-                        : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
-                    } else if (diffHours >= 1) {
-                      deadlineText = lang === 'he' 
-                        ? `${diffHours === 1 ? 'שעה' : `${diffHours} שעות`}` 
-                        : `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'}`;
-                    } else {
-                      const mins = diffMins > 0 ? diffMins : 1;
-                      deadlineText = lang === 'he' 
-                        ? `${mins === 1 ? 'דקה' : `${mins} דקות`}` 
-                        : `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
-                    }
-                  }
-                }
+                const { badgeClass, deadlineText } = getDueTextAndClass(
+                  a.deadline || null,
+                  lang,
+                  settings?.assignmentGreenDaysThreshold,
+                  settings?.assignmentYellowDaysThreshold
+                );
 
                 return (
                   <div key={a.id} className="assignment-card glass-panel" style={{ borderRight: `4px solid ${color}` }}>
@@ -1189,6 +1210,8 @@ function CoursesTab({
   onSelectCourse,
   t,
   lang,
+  tourStep,
+  settings,
 }: {
   trackedCourseIds: number[];
   syncResult: SyncResult | null;
@@ -1198,6 +1221,8 @@ function CoursesTab({
   onUpdateCustomName: (id: number, name: string) => void;
   onSaveTrackedCourses: (newIds: number[]) => void;
   onSelectCourse: (id: number) => void;
+  tourStep?: number;
+  settings: ExtensionSettings | null;
 } & TabProps) {
   const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
   
@@ -1266,11 +1291,11 @@ function CoursesTab({
   return (
     <div className="courses-tab-container" dir={lang === 'he' ? 'rtl' : 'ltr'}>
       {/* 1. Configuration Button & Expandable Panel */}
-      <div className="dashboard-section glass-panel" style={{ marginBottom: '1.5rem' }}>
+      <div className={`dashboard-section glass-panel ${tourStep === 3 ? 'tour-highlight' : ''}`} style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
           <button
-            className="secondary-btn"
+            className="courses-config-toggle-btn"
             onClick={() => setConfigExpanded(!configExpanded)}
             style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
           >
@@ -1354,7 +1379,7 @@ function CoursesTab({
       </div>
 
       {/* 2. Navigation Pane */}
-      <div className="dashboard-section glass-panel">
+      <div className={`dashboard-section glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}>
         <h3>{t('navigation_pane_title')}</h3>
         
         {activeTrackedIds.length === 0 ? (
@@ -1405,23 +1430,12 @@ function CoursesTab({
                             {content.assignments.length > 0 && (
                               <div className="section-assignments-list" style={{ gap: '0.5rem' }}>
                                 {content.assignments.map((a) => {
-                                  const deadline = a.deadline ? new Date(a.deadline) : null;
-                                  const hoursLeft = deadline ? (deadline.getTime() - Date.now()) / (1000 * 60 * 60) : null;
-                                  
-                                  let badgeClass = 'badge-muted';
-                                  let deadlineText = lang === 'he' ? 'אין מועד הגשה' : 'No deadline';
-                                  if (hoursLeft !== null) {
-                                    if (hoursLeft < 0) {
-                                      badgeClass = 'badge-danger';
-                                      deadlineText = lang === 'he' ? 'עבר המועד' : 'Overdue';
-                                    } else if (hoursLeft <= 24) {
-                                      badgeClass = 'badge-danger';
-                                      deadlineText = lang === 'he' ? `נותרו ${Math.round(hoursLeft)} שעות` : `${Math.round(hoursLeft)}h left`;
-                                    } else {
-                                      badgeClass = 'badge-success';
-                                      deadlineText = deadline?.toLocaleDateString() || '';
-                                    }
-                                  }
+                                  const { badgeClass, deadlineText } = getDueTextAndClass(
+                                    a.deadline || null,
+                                    lang,
+                                    settings?.assignmentGreenDaysThreshold,
+                                    settings?.assignmentYellowDaysThreshold
+                                  );
 
                                   return (
                                     <div key={a.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem' }}>
@@ -1657,7 +1671,6 @@ function SettingsTab({
   settings,
   onToggleGoogle,
   onUpdateListName,
-  onUpdateGoogleClientId,
   onSyncGoogle,
   onExportConfig,
   onImportConfig,
@@ -1668,11 +1681,11 @@ function SettingsTab({
   onUpdateLanguage,
   onUpdateTheme,
   onUpdateThresholds,
+  tourStep,
 }: {
   settings: ExtensionSettings | null;
   onToggleGoogle: (e: boolean) => void;
   onUpdateListName: (name: string) => void;
-  onUpdateGoogleClientId: (cid: string) => void;
   onSyncGoogle: () => void;
   onExportConfig: () => void;
   onImportConfig: (file: File) => void;
@@ -1683,6 +1696,7 @@ function SettingsTab({
   onUpdateThresholds: (green: number, yellow: number) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
+  tourStep?: number;
 }) {
   if (!settings) return null;
 
@@ -1730,7 +1744,7 @@ function SettingsTab({
       <hr className="settings-divider" />
 
       {/* Google Tasks Section */}
-      <div className="settings-section">
+      <div className={`settings-section ${tourStep === 5 ? 'tour-highlight' : ''}`}>
         <h4>{t('google_tasks_sync_title')}</h4>
         <div className="toggle-row">
           <div>
@@ -1760,20 +1774,7 @@ function SettingsTab({
               />
             </div>
 
-            <div>
-              <label htmlFor="tasks-client-id" style={{ display: 'block', marginBottom: '0.3rem' }}>{t('google_tasks_client_id_label')}</label>
-              <input
-                type="text"
-                id="tasks-client-id"
-                className="settings-text-input"
-                value={settings.googleClientId || ''}
-                placeholder="e.g. 123456-abcdef.apps.googleusercontent.com"
-                onChange={(e) => onUpdateGoogleClientId(e.target.value)}
-              />
-              <p className="subtitle" style={{ marginTop: '0.2rem', fontSize: '0.8rem' }}>
-                {t('google_tasks_client_id_help')}
-              </p>
-            </div>
+
 
             <div className="tasks-action-row">
               <button className="primary-btn btn-sm" onClick={onSyncGoogle} disabled={googleSyncLoading}>
@@ -1811,7 +1812,7 @@ function SettingsTab({
       <hr className="settings-divider" />
 
       {/* Threshold configuration section */}
-      <div className="settings-section">
+      <div className={`settings-section ${tourStep === 6 ? 'tour-highlight' : ''}`}>
         <h4>{lang === 'he' ? 'צבעי מועדי הגשה (מטלה הבאה)' : 'Due Date Colors (Next Assignment)'}</h4>
         <p className="subtitle" style={{ marginBottom: '1rem' }}>
           {lang === 'he'
@@ -1976,23 +1977,10 @@ function CourseDetailView({
                   {content.assignments.length > 0 && (
                     <div className="section-assignments-list">
                       {content.assignments.map((a) => {
-                        const deadline = a.deadline ? new Date(a.deadline) : null;
-                        const hoursLeft = deadline ? (deadline.getTime() - Date.now()) / (1000 * 60 * 60) : null;
-                        
-                        let badgeClass = 'badge-muted';
-                        let deadlineText = lang === 'he' ? 'אין מועד הגשה' : 'No deadline';
-                        if (hoursLeft !== null) {
-                          if (hoursLeft < 0) {
-                            badgeClass = 'badge-danger';
-                            deadlineText = lang === 'he' ? 'עבר המועד' : 'Overdue';
-                          } else if (hoursLeft <= 24) {
-                            badgeClass = 'badge-danger';
-                            deadlineText = lang === 'he' ? `נותרו ${Math.round(hoursLeft)} שעות` : `${Math.round(hoursLeft)}h left`;
-                          } else {
-                            badgeClass = 'badge-success';
-                            deadlineText = deadline?.toLocaleDateString() || '';
-                          }
-                        }
+                        const { badgeClass, deadlineText } = getDueTextAndClass(
+                          a.deadline || null,
+                          lang
+                        );
 
                         return (
                           <div key={a.id} className="section-assignment-item">
@@ -2084,6 +2072,202 @@ function CourseDetailView({
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 7. ABOUT TAB
+function AboutTab({ t, lang, onStartTour }: { t: (key: any) => string; lang: 'he' | 'en'; onStartTour: () => void }) {
+  return (
+    <div className="tab-about glass-panel" style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <h3 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>{t('about')}</h3>
+      
+      {lang === 'he' ? (
+        <>
+          <p style={{ lineHeight: '1.8', fontSize: '1.25rem', color: 'var(--text-secondary)' }}>
+            <strong>Noodle 🍜</strong> הוא כלי עזר לסטודנטים באוניברסיטת תל אביב, המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל.
+          </p>
+          
+          <div style={{ marginTop: '1.2rem' }}>
+            <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>מדריך שימוש מהיר 📖</h4>
+            <ul style={{ paddingRight: '1.8rem', lineHeight: '2.0', color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
+              <li><strong>חיבור ראשוני:</strong> הזן את פרטי ההתחברות שלך למודל של אוניברסיטת תל אביב. הסיסמה נשמרת באופן מקומי ומאובטח.</li>
+              <li><strong>בחירת קורסים:</strong> בחר אילו קורסים ברצונך לנטר. תוכל לשנות זאת תמיד בלשונית הקורסים.</li>
+              <li><strong>התאמה אישית:</strong> בלשונית הקורסים תוכל לתת כינוי מקוצר וצבע לכל קורס לנוחות מירבית.</li>
+              <li><strong>סנכרון לגוגל:</strong> בהגדרות תוכל לחבר את חשבון הגוגל שלך ולסנכרן את המשימות אוטומטית.</li>
+            </ul>
+          </div>
+          
+          <div style={{ marginTop: '1.2rem' }}>
+            <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>צריכים עזרה נוספת? 💡</h4>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: '1.8' }}>
+              תוכל להפעיל מחדש את הסיור המודרך בכל עת כדי לראות סקירה של תכונות המערכת.
+            </p>
+            <button className="primary-btn" onClick={onStartTour} style={{ marginTop: '1rem', padding: '0.8rem 1.6rem', fontSize: '1.15rem' }}>
+              🚀 הפעל את המדריך למשתמש החדש
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={{ lineHeight: '1.8', fontSize: '1.25rem', color: 'var(--text-secondary)' }}>
+            <strong>Noodle 🍜</strong> is a utility for Tel Aviv University students, helping you sync Moodle deadlines directly with Google Tasks and Google Calendar.
+          </p>
+          
+          <div style={{ marginTop: '1.2rem' }}>
+            <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>Quick User Manual 📖</h4>
+            <ul style={{ paddingLeft: '1.8rem', lineHeight: '2.0', color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
+              <li><strong>Initial Connection:</strong> Enter your TAU Moodle login details. Your credentials are saved securely and locally to refresh your token.</li>
+              <li><strong>Select Courses:</strong> Pick which courses to track. You can update your selection at any time under the Courses tab.</li>
+              <li><strong>Personalization:</strong> Set custom nicknames and tab colors for each course in the Courses tab.</li>
+              <li><strong>Google Sync:</strong> Under Settings, connect your Google Account to automatically push deadlines to your tasks.</li>
+            </ul>
+          </div>
+          
+          <div style={{ marginTop: '1.2rem' }}>
+            <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>Need More Help? 💡</h4>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: '1.8' }}>
+              You can restart the interactive onboarding tour at any time to get a quick overview of Noodle's interface.
+            </p>
+            <button className="primary-btn" onClick={onStartTour} style={{ marginTop: '1rem', padding: '0.8rem 1.6rem', fontSize: '1.15rem' }}>
+              🚀 Launch Onboarding Tour
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// 8. TOUR OVERLAY
+interface TourOverlayProps {
+  step: number;
+  setStep: (s: number) => void;
+  onClose: () => void;
+  t: (key: any) => string;
+  lang: 'he' | 'en';
+}
+
+function TourOverlay({ step, setStep, onClose, t, lang }: TourOverlayProps) {
+  const steps = [
+    {
+      title: t('tour_welcome_title'),
+      desc: t('tour_welcome_desc'),
+    },
+    {
+      title: lang === 'he' ? 'המטלה הקרובה ביותר 🚀' : 'Next Assignment 🚀',
+      desc: lang === 'he'
+        ? 'באנר זה מציג בהבלטה את המטלה הקרובה ביותר להגשה, עם ספירה לאחור, קישור למודל ומשאבים להורדה מהירה.'
+        : 'This banner highlights your closest upcoming deadline, showing a countdown, direct Moodle link, and quick attachment downloads.',
+    },
+    {
+      title: lang === 'he' ? 'לוח הגשות 📅' : 'Assignments List 📅',
+      desc: lang === 'he'
+        ? 'רשימה מפורטת של כל המטלות הפתוחות שלכם, ממוינות לפי תאריך הגשה וצבועות לפי דחיפות.'
+        : 'A detailed list of all your pending Moodle assignments, sorted by due date and color-coded by urgency.',
+    },
+    {
+      title: lang === 'he' ? 'הגדרות קורסים וצבעים 🎨' : 'Course Colors & Nicknames 🎨',
+      desc: lang === 'he'
+        ? 'לחצו על "הגדרות קורסים וצבעים" כדי לפתוח את תפריט ההתאמה האישית ולתת לכל קורס כינוי מקוצר וצבע ייחודי.'
+        : 'Click "Course Settings & Colors" to open the personalization menu where you can set custom nicknames and colors.',
+    },
+    {
+      title: lang === 'he' ? 'חומר לימודי וקישורים 📚' : 'Course Files & Zoom 📚',
+      desc: lang === 'he'
+        ? 'כאן תוכלו לנוווט במהירות בין נושאי הקורסים, להוריד קבצים ולמצוא קישורי זום מתוזמנים.'
+        : 'Quickly browse course sections, download uploaded files, and find scheduled Zoom class links.',
+    },
+    {
+      title: lang === 'he' ? 'סנכרון Google Tasks 🔄' : 'Google Tasks Sync 🔄',
+      desc: lang === 'he'
+        ? 'חברו את חשבון הגוגל שלכם כדי שמועדי ההגשה יסתנכרנו אוטומטית ישירות ללוח השנה ולרשימת המשימות.'
+        : 'Connect your Google account to automatically push and sync deadlines directly to your tasks.',
+    },
+    {
+      title: lang === 'he' ? 'צבעי התרעות מועדי הגשה ⚙️' : 'Urgency Thresholds ⚙️',
+      desc: lang === 'he'
+        ? 'הגדירו את סף הימים לשינוי צבעי ההתראה (אדום/צהוב/ירוק) במטלה הבאה לפי העדפתכם.'
+        : 'Configure the day thresholds to adjust when task countdowns turn red, yellow, or green.',
+    },
+    {
+      title: lang === 'he' ? 'מוכנים לדרך! 🎉' : 'All Set! 🎉',
+      desc: lang === 'he'
+        ? 'זהו זה! תוכלו להפעיל את המדריך מחדש תמיד דרך לשונית "אודות". לימודים פוריים!'
+        : 'You are all set! You can relaunch this guide at any time from the "About" tab. Happy studying!',
+    },
+  ];
+
+  const currentStep = steps[step];
+
+  useEffect(() => {
+    if (step >= 1 && step <= 6) {
+      const timer = setTimeout(() => {
+        const highlightedEl = document.querySelector('.tour-highlight');
+        if (highlightedEl) {
+          highlightedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
+  const handleNext = () => {
+    if (step < steps.length - 1) {
+      setStep(step + 1);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleBack = () => {
+    if (step > 0) {
+      setStep(step - 1);
+    }
+  };
+
+  const isHighlightStep = step >= 1 && step <= 6;
+
+  return (
+    <div className={`tour-overlay ${isHighlightStep ? 'highlight-mode' : ''}`} dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <div className="tour-card">
+        <div className="tour-header">
+          <h3>{currentStep.title}</h3>
+          <span className="tour-step-indicator">
+            {step + 1} / {steps.length}
+          </span>
+        </div>
+        
+        <div className="tour-body">
+          <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{currentStep.desc}</p>
+        </div>
+
+        <div className="tour-bullets">
+          {steps.map((_, idx) => (
+            <span
+              key={idx}
+              className={`tour-bullet ${idx === step ? 'active' : ''}`}
+            />
+          ))}
+        </div>
+
+        <div className="tour-footer">
+          <button className="secondary-btn btn-sm" onClick={onClose}>
+            {t('tour_skip')}
+          </button>
+          
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {step > 0 && (
+              <button className="secondary-btn btn-sm" onClick={handleBack}>
+                {t('tour_back')}
+              </button>
+            )}
+            <button className="primary-btn btn-sm" onClick={handleNext}>
+              {step === steps.length - 1 ? t('tour_finish') : t('tour_next')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

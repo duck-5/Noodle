@@ -1,8 +1,6 @@
 import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient } from '@tautracker/moodle-client';
 import {
   getStoredToken,
-  setStoredToken,
-  getMoodleCredentials,
   getTrackedCourseIds,
   setCachedSyncResult,
   getSettings,
@@ -87,21 +85,10 @@ async function fetchEnrolledCourses(token: string) {
 
 async function performBackgroundSync() {
   let token = await getStoredToken();
-  const credentials = await getMoodleCredentials();
 
   if (!token) {
-    if (credentials?.username && credentials?.password && credentials?.idNumber) {
-      console.log('No token found, attempting to authenticate via SSO...');
-      try {
-        token = await loginTauSso(credentials.username, credentials.idNumber, credentials.password);
-        await setStoredToken(token);
-      } catch (err: any) {
-        throw new Error('Authentication failed: ' + err.message);
-      }
-    } else {
-      console.log('Sync skipped: No Moodle token or credentials stored.');
-      throw new Error('Not authenticated with Moodle');
-    }
+    console.log('Sync skipped: No Moodle token stored.');
+    throw new Error('Not authenticated with Moodle');
   }
 
   const trackedCourseIds = await getTrackedCourseIds();
@@ -115,17 +102,15 @@ async function performBackgroundSync() {
     });
   } catch (err: any) {
     if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
-      if (credentials?.username && credentials?.password && credentials?.idNumber) {
-        console.log('Token invalid/expired, attempting refresh via SSO...');
-        token = await loginTauSso(credentials.username, credentials.idNumber, credentials.password);
-        await setStoredToken(token);
-        
-        result = await runSync(token, trackedCourseIds, (msg) => {
-          console.log(`[Sync Progress Retry] ${msg}`);
-        });
-      } else {
-        throw err;
-      }
+      console.log('Token invalid/expired. Prompting user to re-login.');
+      chrome.notifications.create('moodle_token_expired', {
+        type: 'basic',
+        iconUrl: 'favicon.svg',
+        title: 'Moodle Session Expired',
+        message: 'Your Moodle session has expired. Please open Noodle to log in again.',
+        requireInteraction: true,
+      });
+      throw new Error('Moodle session expired');
     } else {
       throw err;
     }
@@ -234,7 +219,7 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
     syncErrors.push(err);
   });
 
-  const mappedAssignments = cachedResult.assignments.map((a) => {
+  const mappedAssignments = cachedResult.assignments.map((a: any) => {
     const nickname = settings.coursesCustomNames?.[a.courseId];
     return nickname && nickname.trim() ? { ...a, courseName: nickname.trim() } : a;
   });
@@ -327,6 +312,7 @@ async function markNotified(assignId: number, type: '24h' | '1h') {
 
 let capturedTokenResolve: ((token: string) => void) | null = null;
 let capturedTokenReject: ((err: Error) => void) | null = null;
+let activeLoginTimeout: ReturnType<typeof setTimeout> | null = null;
 
 chrome.webRequest.onBeforeRedirect.addListener(
   (details) => {
@@ -338,6 +324,10 @@ chrome.webRequest.onBeforeRedirect.addListener(
           const parts = atob(match[1]).split(':::');
           const token = parts.length > 1 ? parts[1] : parts[0];
           console.log('Captured token from SSO redirect via webRequest');
+          if (activeLoginTimeout) {
+            clearTimeout(activeLoginTimeout);
+            activeLoginTimeout = null;
+          }
           if (capturedTokenResolve) {
             capturedTokenResolve(token);
             capturedTokenResolve = null;
@@ -367,7 +357,8 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     capturedTokenReject = reject;
     
     // Set a global timeout for the entire login process
-    const timeout = setTimeout(() => {
+    if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
+    activeLoginTimeout = setTimeout(() => {
       if (capturedTokenReject) {
         capturedTokenReject(new Error('Timeout waiting for Moodle token redirect'));
         capturedTokenResolve = null;
@@ -463,7 +454,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
         console.log('Expected fetch error on custom protocol redirect:', e);
       }
     } catch (error) {
-      clearTimeout(timeout);
+      if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
       if (capturedTokenReject) {
         capturedTokenReject(error instanceof Error ? error : new Error(String(error)));
         capturedTokenResolve = null;

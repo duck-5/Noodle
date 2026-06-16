@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { SyncResult } from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings } from '../shared/storage.js';
 import { syncNowOnBackground } from '../shared/messaging.js';
+import { getDueTextAndClass } from '../shared/dateUtils.js';
 import './Popup.css';
 
 export default function Popup() {
@@ -104,24 +105,13 @@ export default function Popup() {
               const color = settings?.coursesColorMap[a.courseId] || '#6366f1';
               const name = settings?.coursesCustomNames[a.courseId] || a.courseName;
 
-              let dueText = 'No deadline';
-              if (a.deadline) {
-                const diffMs = new Date(a.deadline).getTime() - Date.now();
-                const diffMins = Math.floor(diffMs / (1000 * 60));
-                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                
-                if (diffMs < 0) {
-                  dueText = 'Overdue!';
-                } else if (diffDays >= 1) {
-                  dueText = `${diffDays}d`;
-                } else if (diffHours >= 1) {
-                  dueText = `${diffHours}h`;
-                } else {
-                  const mins = diffMins > 0 ? diffMins : 1;
-                  dueText = `${mins}m`;
-                }
-              }
+              const { deadlineText: dueText } = getDueTextAndClass(
+                a.deadline || null,
+                settings?.language || 'en',
+                settings?.assignmentGreenDaysThreshold,
+                settings?.assignmentYellowDaysThreshold,
+                true
+              );
 
               return (
                 <div

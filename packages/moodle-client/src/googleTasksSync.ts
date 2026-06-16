@@ -233,5 +233,30 @@ export async function syncAssignmentsToGoogleTasks(
     }
   }
 
+  // 3. Delete orphaned tasks
+  const currentAssignIds = new Set(assignments.map(a => a.id));
+  for (const task of existingTasks) {
+    const taskId = getMoodleAssignIdFromNotes(task.notes);
+    // If it has a tautracker ID but it's not in our active assignments list, it was untracked/deleted
+    if (taskId !== null && !currentAssignIds.has(taskId)) {
+      try {
+        const deleteResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${task.id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+        if (!deleteResponse.ok) {
+          throw new Error(`Failed to delete orphaned task: ${deleteResponse.statusText}`);
+        }
+      } catch (error: any) {
+        errors.push(`Failed to delete orphaned task "${task.title}": ${error.message}`);
+      }
+    }
+  }
+
   return { syncedCount, errors };
 }
