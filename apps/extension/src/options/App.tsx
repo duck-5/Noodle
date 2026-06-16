@@ -152,14 +152,18 @@ export default function App() {
 
   useEffect(() => {
     if (token && trackedCourseIds && trackedCourseIds.length > 0 && settings) {
-      const backup = {
-        version: "TauTrackerConfig-v1",
-        wstoken: token,
-        trackedCourseIds: trackedCourseIds,
-        settings: settings
-      };
-      chrome.storage.local.set({ config_backup: backup }).then(() => {
-        setBackupExists(true);
+      getMoodleCredentials().then((creds) => {
+        const backup: any = {
+          version: "TauTrackerConfig-v1",
+          trackedCourseIds: trackedCourseIds,
+          settings: settings
+        };
+        if (creds) {
+          backup.wstoken = token;
+        }
+        chrome.storage.local.set({ config_backup: backup }).then(() => {
+          setBackupExists(true);
+        });
       });
     }
   }, [token, trackedCourseIds, settings]);
@@ -345,6 +349,14 @@ export default function App() {
       if (deletePermanently) {
         await chrome.storage.local.remove('config_backup');
         setBackupExists(false);
+      } else {
+        // Clear wstoken from the backup so that restoring backup later does not auto-login
+        const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
+        if (backupRes.config_backup) {
+          const updatedBackup = { ...backupRes.config_backup };
+          delete updatedBackup.wstoken;
+          await chrome.storage.local.set({ config_backup: updatedBackup });
+        }
       }
       
       setToken(null);
@@ -418,27 +430,33 @@ export default function App() {
     try {
       const backupRes = (await chrome.storage.local.get('config_backup')) as {
         config_backup?: {
-          wstoken: string;
+          wstoken?: string;
           trackedCourseIds: number[];
           settings: any;
         };
       };
       const data = backupRes.config_backup;
-      if (!data || !data.wstoken || !data.trackedCourseIds || !data.settings) {
+      if (!data || !data.trackedCourseIds || !data.settings) {
         throw new Error('No valid backup found.');
       }
 
-      await setStoredToken(data.wstoken);
       await setTrackedCourseIds(data.trackedCourseIds);
       await setSettings(data.settings);
 
-      setToken(data.wstoken);
       setTrackedCourseIdsState(data.trackedCourseIds);
       setSettingsState(data.settings);
 
-      const syncRes = await syncNowOnBackground();
-      if (syncRes && syncRes.success && syncRes.result) {
-        setSyncResult(syncRes.result);
+      if (data.wstoken) {
+        await setStoredToken(data.wstoken);
+        setToken(data.wstoken);
+
+        const syncRes = await syncNowOnBackground();
+        if (syncRes && syncRes.success && syncRes.result) {
+          setSyncResult(syncRes.result);
+        }
+      } else {
+        await setStoredToken(null);
+        setToken(null);
       }
 
       alert(currentLang === 'he' ? 'הגדרות שוחזרו בהצלחה!' : 'Backup restored successfully!');
