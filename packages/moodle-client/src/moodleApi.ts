@@ -106,6 +106,28 @@ export class MoodleClient {
     private baseUrl: string = 'https://moodle.tau.ac.il/webservice/rest/server.php'
   ) {}
 
+  public static async fetchToken(
+    username: string,
+    password: string,
+    baseUrl: string = 'https://moodle.tau.ac.il'
+  ): Promise<string> {
+    const url = `${baseUrl}/login/token.php?username=${encodeURIComponent(
+      username
+    )}&password=${encodeURIComponent(password)}&service=moodle_mobile_app`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    if (!data.token) {
+      throw new Error('Failed to retrieve token: unexpected response');
+    }
+    return data.token;
+  }
+
   private async apiCall(
     wsfunction: string,
     params: Record<string, any> = {},

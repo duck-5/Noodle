@@ -39,6 +39,21 @@ export async function setStoredToken(token: string | null): Promise<void> {
   }
 }
 
+export async function getMoodleCredentials(): Promise<{ username?: string; idNumber?: string; password?: string } | null> {
+  const res = (await chrome.storage.local.get('moodleCredentials')) as {
+    moodleCredentials?: { username?: string; idNumber?: string; password?: string };
+  };
+  return res.moodleCredentials || null;
+}
+
+export async function setMoodleCredentials(credentials: { username?: string; idNumber?: string; password?: string } | null): Promise<void> {
+  if (credentials === null) {
+    await chrome.storage.local.remove('moodleCredentials');
+  } else {
+    await chrome.storage.local.set({ moodleCredentials: credentials });
+  }
+}
+
 export async function getTrackedCourseIds(): Promise<number[]> {
   const res = (await chrome.storage.sync.get('trackedCourseIds')) as { trackedCourseIds?: number[] };
   return res.trackedCourseIds || [];

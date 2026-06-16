@@ -2,23 +2,15 @@ import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClien
 import {
   getStoredToken,
   setStoredToken,
+  getMoodleCredentials,
   getTrackedCourseIds,
   setCachedSyncResult,
   getSettings,
   getCachedSyncResult,
 } from '../shared/storage.js';
 
-const MOODLE_HOST = 'moodle.tau.ac.il';
 
-function getMoodleLaunchUrl(): string {
-  // Use a random passport per request so Moodle treats each capture as a new device
-  // and doesn't invalidate previously generated tokens for the same passport.
-  const passport = Math.random().toString(36).substring(2, 15);
-  return `https://${MOODLE_HOST}/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${passport}`;
-}
 
-// Track the background tab we open for token capture, so we can close it after.
-let captureTabId: number | null = null;
 
 // Setup periodic alarms on install / startup
 chrome.runtime.onInstalled.addListener(() => {
@@ -37,115 +29,17 @@ chrome.alarms.onAlarm.addListener(async (alarm: chrome.alarms.Alarm) => {
   }
 });
 
-// --------------------------------------------------------------------------
-// Cookie check: does the user have an active Moodle session?
-// --------------------------------------------------------------------------
-async function checkMoodleSession(): Promise<boolean> {
-  return new Promise((resolve) => {
-    chrome.cookies.getAll({ domain: MOODLE_HOST, name: 'MoodleSession' }, (cookies) => {
-      resolve(cookies.length > 0);
-    });
-  });
-}
 
-// --------------------------------------------------------------------------
-// Tab-based token capture
-// Opens a background (non-active) tab to the Moodle mobile launch URL.
-// Moodle redirects to moodlemobile://token=... which onBeforeRedirect catches.
-// --------------------------------------------------------------------------
-async function captureTokenViaTab(): Promise<void> {
-  // If a capture tab is already open, don't open another one.
-  if (captureTabId !== null) {
-    console.log('Capture tab already open, skipping duplicate.');
-    return;
-  }
-  console.log('Opening background tab for token capture...');
-  chrome.tabs.create({ url: getMoodleLaunchUrl(), active: false }, (tab) => {
-    if (tab.id !== undefined) {
-      captureTabId = tab.id;
-    }
-  });
-}
-
-// (Cookie onChanged listener removed to prevent infinite tab loops. Capture is only triggered explicitly.)
-
-// --------------------------------------------------------------------------
-// webRequest interceptors: catch the moodlemobile:// redirect from ANY tab.
-// --------------------------------------------------------------------------
-
-// Intercept requests that already carry a token= in a moodlemobile:// URL
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (details.url.startsWith('moodlemobile://') || details.url.startsWith('moodleapp://')) {
-      const match = details.url.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
-      if (match) {
-        try {
-          const parts = atob(match[1]).split(':::');
-          const token = parts.length > 1 ? parts[1] : parts[0];
-          console.log('Captured token from URL (onBeforeRequest)');
-          setStoredToken(token).then(() => {
-            performBackgroundSync();
-            closeCapturTab(details.tabId);
-          });
-        } catch (e) {
-          console.error('Error decoding token from URL', e);
-        }
-      }
-    }
-  },
-  { urls: ['*://*/*'] }
-);
-
-// Intercept the redirect response from moodle.tau.ac.il that points to moodlemobile://
-chrome.webRequest.onBeforeRedirect.addListener(
-  (details) => {
-    const redirectUrl = details.redirectUrl || '';
-    if (redirectUrl.startsWith('moodlemobile://') || redirectUrl.startsWith('moodleapp://')) {
-      const match = redirectUrl.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
-      if (match) {
-        try {
-          const parts = atob(match[1]).split(':::');
-          const token = parts.length > 1 ? parts[1] : parts[0];
-          console.log('Captured token from HTTP redirect (onBeforeRedirect)');
-          setStoredToken(token).then(() => {
-            performBackgroundSync();
-            closeCapturTab(details.tabId);
-          });
-        } catch (e) {
-          console.error('Error decoding token from HTTP redirect', e);
-        }
-      }
-    }
-  },
-  { urls: ['https://moodle.tau.ac.il/*'] }
-);
-
-function closeCapturTab(tabId?: number) {
-  const idToClose = tabId ?? captureTabId;
-  if (idToClose !== null && idToClose !== undefined) {
-    chrome.tabs.remove(idToClose, () => {
-      if (chrome.runtime.lastError) {
-        // Tab may have already been closed, ignore error
-      }
-    });
-    if (idToClose === captureTabId) captureTabId = null;
-  }
-}
 
 // --------------------------------------------------------------------------
 // Message listeners
 // --------------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
-  if (message.type === 'CHECK_MOODLE_SESSION') {
-    checkMoodleSession()
-      .then((hasSession) => sendResponse({ hasSession }))
-      .catch(() => sendResponse({ hasSession: false }));
-    return true;
-  }
 
-  if (message.type === 'CAPTURE_TOKEN_VIA_TAB') {
-    captureTokenViaTab()
-      .then(() => sendResponse({ success: true }))
+
+  if (message.type === 'LOGIN_TAU_SSO') {
+    loginTauSso(message.username, message.idNumber, message.pass)
+      .then((token) => sendResponse({ success: true, token }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
@@ -192,21 +86,50 @@ async function fetchEnrolledCourses(token: string) {
 }
 
 async function performBackgroundSync() {
-  const token = await getStoredToken();
+  let token = await getStoredToken();
+  const credentials = await getMoodleCredentials();
+
   if (!token) {
-    console.log('Sync skipped: No Moodle token stored.');
-    throw new Error('Not authenticated with Moodle');
+    if (credentials?.username && credentials?.password && credentials?.idNumber) {
+      console.log('No token found, attempting to authenticate via SSO...');
+      try {
+        token = await loginTauSso(credentials.username, credentials.idNumber, credentials.password);
+        await setStoredToken(token);
+      } catch (err: any) {
+        throw new Error('Authentication failed: ' + err.message);
+      }
+    } else {
+      console.log('Sync skipped: No Moodle token or credentials stored.');
+      throw new Error('Not authenticated with Moodle');
+    }
   }
 
   const trackedCourseIds = await getTrackedCourseIds();
   const settings = await getSettings();
-
   const prevResult = await getCachedSyncResult();
 
-  // Run sync
-  const result = await runSync(token, trackedCourseIds, (msg) => {
-    console.log(`[Sync Progress] ${msg}`);
-  });
+  let result;
+  try {
+    result = await runSync(token, trackedCourseIds, (msg) => {
+      console.log(`[Sync Progress] ${msg}`);
+    });
+  } catch (err: any) {
+    if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
+      if (credentials?.username && credentials?.password && credentials?.idNumber) {
+        console.log('Token invalid/expired, attempting refresh via SSO...');
+        token = await loginTauSso(credentials.username, credentials.idNumber, credentials.password);
+        await setStoredToken(token);
+        
+        result = await runSync(token, trackedCourseIds, (msg) => {
+          console.log(`[Sync Progress Retry] ${msg}`);
+        });
+      } else {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
 
   // Save results to storage
   await setCachedSyncResult(result);
@@ -396,4 +319,156 @@ async function wasAlreadyNotified(assignId: number, type: '24h' | '1h'): Promise
 async function markNotified(assignId: number, type: '24h' | '1h') {
   const key = `notified_${type}_${assignId}`;
   await chrome.storage.local.set({ [key]: true });
+}
+
+// --------------------------------------------------------------------------
+// Programmatic TAU SSO Login
+// --------------------------------------------------------------------------
+
+let capturedTokenResolve: ((token: string) => void) | null = null;
+let capturedTokenReject: ((err: Error) => void) | null = null;
+
+chrome.webRequest.onBeforeRedirect.addListener(
+  (details) => {
+    const redirectUrl = details.redirectUrl || '';
+    if (redirectUrl.startsWith('moodlemobile://') || redirectUrl.startsWith('moodleapp://')) {
+      const match = redirectUrl.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
+      if (match) {
+        try {
+          const parts = atob(match[1]).split(':::');
+          const token = parts.length > 1 ? parts[1] : parts[0];
+          console.log('Captured token from SSO redirect via webRequest');
+          if (capturedTokenResolve) {
+            capturedTokenResolve(token);
+            capturedTokenResolve = null;
+            capturedTokenReject = null;
+          }
+        } catch (e) {
+          console.error('Error decoding token', e);
+        }
+      }
+    }
+  },
+  { urls: ['https://moodle.tau.ac.il/*'] }
+);
+
+function decodeHTMLEntities(text: string) {
+  return text.replace(/&quot;/g, '"')
+             .replace(/&#x3d;/g, '=')
+             .replace(/&#x3D;/g, '=')
+             .replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>')
+             .replace(/&amp;/g, '&');
+}
+
+async function loginTauSso(username: string, idNumber: string, pass: string): Promise<string> {
+  return new Promise<string>(async (resolve, reject) => {
+    capturedTokenResolve = resolve;
+    capturedTokenReject = reject;
+    
+    // Set a global timeout for the entire login process
+    const timeout = setTimeout(() => {
+      if (capturedTokenReject) {
+        capturedTokenReject(new Error('Timeout waiting for Moodle token redirect'));
+        capturedTokenResolve = null;
+        capturedTokenReject = null;
+      }
+    }, 25000);
+
+    try {
+      const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
+      
+      // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
+      let res1;
+      try {
+        res1 = await fetch(launchUrl);
+      } catch (e) {
+        // If fetch throws on the very first request, it's likely because it hit the moodlemobile:// redirect!
+        // We just wait a bit for the webRequest listener to fire and resolve the promise.
+        console.log('fetch(launchUrl) threw, waiting for redirect interceptor...', e);
+        return;
+      }
+
+      let ssoUrl = res1.url;
+      if (!ssoUrl.includes('nidp.tau.ac.il')) {
+        throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
+      }
+
+      // 2. Parse the auto-submitting form that sets up the SAML session
+      const html1 = await res1.text();
+      const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
+      if (formActionMatch1) {
+        const action = formActionMatch1[1];
+        ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
+        // Submit the form (empty POST) to initialize the session
+        await fetch(ssoUrl, { method: 'POST' });
+      }
+
+      // 3. Initiate login sequence
+      await fetch(ssoUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'option=credential&initiateLoginSequence=true&isAjax=true'
+      });
+
+      // 4. Submit credentials
+      const credRes = await fetch(ssoUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
+      });
+      
+      const credText = await credRes.text();
+      
+      if (credText.replace(/\s/g, '').includes('"isError":true')) {
+        let errorCode = 'Invalid username, ID, or password';
+        try {
+          const credData = JSON.parse(credText);
+          errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש או סיסמה שהזנתם אינם תקינים' : credData.errorCode;
+        } catch (e) {}
+        throw new Error(errorCode);
+      }
+
+      // 5. Complete SSO. Fetching the SSO URL again yields the auto-submitting SAML form
+      const finalSsoRes = await fetch(ssoUrl);
+      const html2 = await finalSsoRes.text();
+
+      // Extract form action, SAMLResponse, and RelayState
+      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
+      const samlMatch = html2.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
+      const relayMatch = html2.match(/<input[^>]+name=["']RelayState["'][^>]+value=["']([^"']+)["']/i);
+
+      if (!actionMatch || !samlMatch) {
+        throw new Error('Failed to parse SAML response from SSO page');
+      }
+
+      const actionUrl = decodeHTMLEntities(actionMatch[1]);
+      const samlResponse = decodeHTMLEntities(samlMatch[1]);
+      const relayState = relayMatch ? decodeHTMLEntities(relayMatch[1]) : '';
+
+      const bodyParams = new URLSearchParams();
+      bodyParams.append('SAMLResponse', samlResponse);
+      if (relayState) {
+        bodyParams.append('RelayState', relayState);
+      }
+
+      // 6. Submit SAML response back to Moodle.
+      try {
+        await fetch(actionUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: bodyParams
+        });
+      } catch (e) {
+        console.log('Expected fetch error on custom protocol redirect:', e);
+      }
+    } catch (error) {
+      clearTimeout(timeout);
+      if (capturedTokenReject) {
+        capturedTokenReject(error instanceof Error ? error : new Error(String(error)));
+        capturedTokenResolve = null;
+        capturedTokenReject = null;
+      }
+    }
+  });
 }

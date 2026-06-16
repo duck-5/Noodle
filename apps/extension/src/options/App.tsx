@@ -9,15 +9,15 @@ import {
   getCachedSyncResult,
   getSettings,
   setSettings,
+  getMoodleCredentials,
+  setMoodleCredentials,
 } from '../shared/storage.js';
 import type { ExtensionSettings } from '../shared/storage.js';
 import {
-  validateTokenOnBackground,
   fetchEnrolledCoursesOnBackground,
   syncNowOnBackground,
   syncGoogleTasksOnBackground,
-  checkMoodleSessionDirect,
-  captureTokenViaTabOnBackground,
+  loginTauSsoOnBackground,
 } from '../shared/messaging.js';
 import { translations } from '../shared/i18n';
 
@@ -109,11 +109,13 @@ export default function App() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
 
   // Onboarding States
+  const [moodleUsername, setMoodleUsername] = useState<string>('');
+  const [moodleId, setMoodleId] = useState<string>('');
+  const [moodlePassword, setMoodlePassword] = useState<string>('');
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [validatingToken, setValidatingToken] = useState<boolean>(false);
   const [availableCourses, setAvailableCourses] = useState<any[]>([]);
   const [onboardingStep, setOnboardingStep] = useState<number>(1); // 1 = connect moodle, 2 = select courses
-  // true after user has pressed "Connect Moodle" and is waiting to confirm login
-  const [waitingForLogin, setWaitingForLogin] = useState<boolean>(false);
 
   // Settings tab states
   const [googleSyncStatus, setGoogleSyncStatus] = useState<string | null>(null);
@@ -187,28 +189,66 @@ export default function App() {
       const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
       setBackupExists(!!backupRes.config_backup);
 
-      if (storedToken && ids.length > 0 && cached) {
+      // Prefill credentials if they exist
+      const credentials = await getMoodleCredentials();
+      if (credentials) {
+        if (credentials.username) setMoodleUsername(credentials.username);
+        if (credentials.idNumber) setMoodleId(credentials.idNumber);
+        if (credentials.password) setMoodlePassword(credentials.password);
+      }
+
+      let activeToken = storedToken;
+      if (!activeToken && credentials?.username && credentials?.idNumber && credentials?.password) {
+        // Attempt auto-login
+        try {
+          const res = await loginTauSsoOnBackground(credentials.username, credentials.idNumber, credentials.password);
+          if (res?.success && res.token) {
+            activeToken = res.token;
+            await setStoredToken(activeToken);
+            setToken(activeToken);
+          }
+        } catch (err) {
+          console.error('Auto-login failed:', err);
+        }
+      }
+
+      if (activeToken && ids.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
-        fetchEnrolledCoursesInBackground(storedToken);
-      } else if (storedToken) {
+        fetchEnrolledCoursesInBackground(activeToken);
+      } else if (activeToken) {
         // Token exists but courses might not be tracked yet
         setOnboardingStep(2);
-        fetchEnrolledCoursesForOnboarding(storedToken);
+        fetchEnrolledCoursesForOnboarding(activeToken);
       } else {
         setOnboardingStep(1);
-        // Check for an active Moodle session cookie directly — no IPC, no port-closed risk.
-        const hasSession = await checkMoodleSessionDirect();
-        if (hasSession) {
-          // Session exists: request the background script to open a capture tab.
-          console.log('Moodle session cookie found – opening capture tab...');
-          captureTokenViaTabOnBackground();
-          // The storage.onChanged listener will fire when the token arrives and call loadData().
-        }
-        // If no session, show the Connect button — nothing else to do.
       }
     } catch (e) {
       console.error('Error loading extension data:', e);
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMoodleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!moodleUsername || !moodleId || !moodlePassword) return;
+    setLoading(true);
+    try {
+      const res = await loginTauSsoOnBackground(moodleUsername, moodleId, moodlePassword);
+      if (!res?.success || !res.token) {
+        throw new Error(res?.error || 'Failed to generate token from SSO');
+      }
+      const fetchedToken = res.token;
+      await setStoredToken(fetchedToken);
+      if (rememberMe) {
+        await setMoodleCredentials({ username: moodleUsername, idNumber: moodleId, password: moodlePassword });
+      } else {
+        await setMoodleCredentials(null);
+      }
+      setToken(fetchedToken);
+      fetchEnrolledCoursesForOnboarding(fetchedToken);
+    } catch (err: any) {
+      alert(`Login failed: ${err.message}`);
       setLoading(false);
     }
   }
@@ -244,25 +284,7 @@ export default function App() {
     }
   }
 
-  async function handleUpdateMasterToken(newToken: string) {
-    if (!newToken.trim()) return;
-    setLoading(true);
-    try {
-      const res = await validateTokenOnBackground(newToken.trim());
-      if (res.success) {
-        await setStoredToken(newToken.trim());
-        setToken(newToken.trim());
-        loadData();
-        alert('Master token saved and validated successfully!');
-      } else {
-        alert(res.error || 'Invalid token. Please check and try again.');
-      }
-    } catch (e: any) {
-      alert(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+
 
   async function handleOnboardingCourseToggle(courseId: number) {
     if (trackedCourseIds.includes(courseId)) {
@@ -315,6 +337,7 @@ export default function App() {
     setShowDisconnectModal(false);
     try {
       await setStoredToken(null);
+      await setMoodleCredentials(null);
       await setTrackedCourseIds([]);
       await chrome.storage.local.remove('cachedSyncResult');
       await chrome.storage.local.remove('enrolledCoursesCache');
@@ -512,58 +535,58 @@ export default function App() {
           </div>
 
           <div className="form-section" style={{ textAlign: 'center', marginTop: '2rem' }}>
-            {!waitingForLogin ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
-                <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
-                  {t('moodle_token_connection_desc')}
-                </p>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <button
-                    className="primary-btn"
-                    style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
-                    onClick={() => {
-                      // Open login page in a new tab, then switch button state.
-                      window.open('https://moodle.tau.ac.il/login/index.php', '_blank');
-                      setWaitingForLogin(true);
-                    }}
-                  >
-                    {t('login_via_tau_moodle')}
-                  </button>
-                  <button
-                    className="secondary-btn"
-                    style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
-                    onClick={() => {
-                      captureTokenViaTabOnBackground();
-                    }}
-                  >
-                    🔑 {t('already_connected_btn')}
-                  </button>
-                </div>
+            <form onSubmit={handleMoodleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', maxWidth: '300px', margin: '0 auto' }}>
+              <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                Please enter your Moodle credentials. Your password will be securely saved locally to auto-refresh your session.
+              </p>
+              <input
+                type="text"
+                placeholder="Username"
+                value={moodleUsername}
+                onChange={(e) => setMoodleUsername(e.target.value)}
+                className="noodle-input"
+                style={{ width: '100%' }}
+                required
+              />
+              <input
+                type="text"
+                placeholder="ID Number"
+                value={moodleId}
+                onChange={(e) => setMoodleId(e.target.value)}
+                className="noodle-input"
+                style={{ width: '100%' }}
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={moodlePassword}
+                onChange={(e) => setMoodlePassword(e.target.value)}
+                className="noodle-input"
+                style={{ width: '100%' }}
+                required
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', justifyContent: 'flex-start', margin: '0.2rem 0' }}>
+                <input
+                  type="checkbox"
+                  id="remember-me"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <label htmlFor="remember-me" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                  Remember me
+                </label>
               </div>
-            ) : (
-              <>
-                <p style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>
-                  {t('return_after_login_desc')}
-                </p>
-                <button
-                  className="primary-btn"
-                  style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem' }}
-                  onClick={async () => {
-                    // Request background tab directly — fire-and-forget.
-                    captureTokenViaTabOnBackground();
-                    // Storage listener auto-advances when token arrives.
-                  }}
-                >
-                  {t('i_have_logged_in')}
-                </button>
-                <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
-                   onClick={() => setWaitingForLogin(false)}
-                   role="button"
-                >
-                  ← {t('back')}
-                </p>
-              </>
-            )}
+              <button
+                type="submit"
+                className="primary-btn"
+                style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem', width: '100%' }}
+                disabled={loading}
+              >
+                {loading ? 'Connecting...' : 'Connect to Moodle'}
+              </button>
+            </form>
           </div>
 
           <div className="onboarding-actions-extra" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
@@ -826,11 +849,9 @@ export default function App() {
           {activeTab === 'settings' && (
             <SettingsTab
               settings={settings}
-              token={token}
               onToggleGoogle={handleToggleGoogleTasks}
               onUpdateListName={handleUpdateGoogleListName}
               onSyncGoogle={handleSyncGoogleTasks}
-              onUpdateToken={handleUpdateMasterToken}
               googleSyncLoading={googleSyncLoading}
               googleSyncStatus={googleSyncStatus}
               t={t}
@@ -1662,12 +1683,10 @@ function GradesTab({
 // 5. SETTINGS TAB
 function SettingsTab({
   settings,
-  token,
   onToggleGoogle,
   onUpdateListName,
   onUpdateGoogleClientId,
   onSyncGoogle,
-  onUpdateToken,
   onExportConfig,
   googleSyncLoading,
   googleSyncStatus,
@@ -1678,12 +1697,10 @@ function SettingsTab({
   onUpdateThresholds,
 }: {
   settings: ExtensionSettings | null;
-  token: string | null;
   onToggleGoogle: (e: boolean) => void;
   onUpdateListName: (name: string) => void;
   onUpdateGoogleClientId: (cid: string) => void;
   onSyncGoogle: () => void;
-  onUpdateToken: (t: string) => void;
   onExportConfig: () => void;
   googleSyncLoading: boolean;
   googleSyncStatus: string | null;
@@ -1865,43 +1882,7 @@ function SettingsTab({
 
       <hr className="settings-divider" />
 
-      {/* Manual Token Section */}
-      <div className="settings-section">
-        <h4>{t('manual_master_token_title')}</h4>
-        <p className="subtitle" style={{ marginBottom: '1rem' }}>
-          {t('manual_master_token_desc')}
-        </p>
-        <div className="help-section" style={{ fontSize: '0.85rem', marginBottom: '1rem', background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px' }}>
-          <h5 style={{ marginTop: 0 }}>{t('how_to_get_token_title')}</h5>
-          <ol style={{ paddingLeft: '1.2rem', marginBottom: 0 }}>
-            <li>{t('how_to_get_token_step1')}</li>
-            <li>{t('how_to_get_token_step2')}</li>
-            <li>{t('how_to_get_token_step3')}</li>
-            <li>{t('how_to_get_token_step4')}</li>
-          </ol>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <input
-            type="password"
-            className="settings-text-input"
-            placeholder={lang === 'he' ? 'הדבק אסימון ראשי...' : 'Paste Master Token...'}
-            defaultValue={token || ''}
-            id="master-token-input"
-            style={{ flex: 1, margin: 0 }}
-          />
-          <button 
-            className="primary-btn btn-sm"
-            onClick={() => {
-              const val = (document.getElementById('master-token-input') as HTMLInputElement).value;
-              onUpdateToken(val);
-            }}
-          >
-            {t('save_token_btn')}
-          </button>
-        </div>
-      </div>
 
-      <hr className="settings-divider" />
 
       {/* Configuration Backup Section */}
       <div className="settings-section">

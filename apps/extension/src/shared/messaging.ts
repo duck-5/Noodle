@@ -1,7 +1,5 @@
 import type { SyncResult } from '@tautracker/moodle-client';
 
-const MOODLE_HOST = 'moodle.tau.ac.il';
-
 export async function sendMessageToBackground(message: any): Promise<any> {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(message, (response: any) => {
@@ -39,28 +37,12 @@ export async function syncGoogleTasksOnBackground(
   return sendMessageToBackground({ type: 'SYNC_GOOGLE_TASKS', interactive });
 }
 
-/**
- * Check if the browser currently has an active Moodle session cookie.
- * Called directly via the cookies API — no service worker IPC needed.
- */
-export async function checkMoodleSessionDirect(): Promise<boolean> {
-  return new Promise((resolve) => {
-    chrome.cookies.getAll({ domain: MOODLE_HOST, name: 'MoodleSession' }, (cookies) => {
-      if (chrome.runtime.lastError) {
-        console.warn('[TauTracker] Cookie check error:', chrome.runtime.lastError.message);
-        resolve(false);
-        return;
-      }
-      resolve(cookies.length > 0);
-    });
-  });
+export async function loginTauSsoOnBackground(
+  username: string,
+  idNumber: string,
+  pass: string
+): Promise<{ success: boolean; token?: string; error?: string }> {
+  return sendMessageToBackground({ type: 'LOGIN_TAU_SSO', username, idNumber, pass });
 }
 
-/**
- * Request the background script to open a tab to the Moodle mobile launch URL.
- * The service worker will manage the tab lock and capture the token from the redirect.
- */
-export async function captureTokenViaTabOnBackground(): Promise<void> {
-  // Fire and forget, catching null in case port closes early
-  await sendMessageToBackground({ type: 'CAPTURE_TOKEN_VIA_TAB' });
-}
+
