@@ -45,4 +45,6 @@ export async function loginTauSsoOnBackground(
   return sendMessageToBackground({ type: 'LOGIN_TAU_SSO', username, idNumber, pass });
 }
 
-
+export async function logoutOnBackground(): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOGOUT' });
+}

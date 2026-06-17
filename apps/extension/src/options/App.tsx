@@ -18,6 +18,7 @@ import {
   syncNowOnBackground,
   syncGoogleTasksOnBackground,
   loginTauSsoOnBackground,
+  logoutOnBackground,
 } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
 import { translations } from '../shared/i18n';
@@ -390,6 +391,9 @@ export default function App() {
     setLoading(true);
     setShowDisconnectModal(false);
     try {
+      // Clear TAU browser session cookies so next login is always fresh
+      await logoutOnBackground();
+
       await setStoredToken(null);
       await setMoodleCredentials(null);
       await setTrackedCourseIds([]);

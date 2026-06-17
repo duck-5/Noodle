@@ -69,6 +69,13 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  if (message.type === 'LOGOUT') {
+    clearTauCookies()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 
@@ -367,6 +374,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     }, 25000);
 
     try {
+      await clearTauCookies();
       const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
       
       // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
@@ -463,3 +471,25 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     }
   });
 }
+
+async function clearTauCookies() {
+  const domains = ['moodle.tau.ac.il', 'nidp.tau.ac.il', '.tau.ac.il', 'tau.ac.il'];
+  for (const domain of domains) {
+    try {
+      const cookies = await chrome.cookies.getAll({ domain });
+      for (const cookie of cookies) {
+        const protocol = cookie.secure ? 'https://' : 'http://';
+        const cookieDomain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
+        const url = protocol + cookieDomain + cookie.path;
+        await chrome.cookies.remove({
+          url,
+          name: cookie.name,
+          storeId: cookie.storeId
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to clear cookies for domain ${domain}:`, e);
+    }
+  }
+}
+
