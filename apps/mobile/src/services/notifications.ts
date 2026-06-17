@@ -1,21 +1,39 @@
-import * as Notifications from 'expo-notifications';
 import { Assignment } from '@tautracker/moodle-client';
 
+// expo-notifications remote push support was removed from Expo Go in SDK 53.
+// All calls are wrapped so the app still runs in Expo Go (local/scheduled
+// notifications still work in a development build).
+let Notifications: typeof import('expo-notifications') | null = null;
+
 try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
+  // Dynamic require lets us catch the "removed from Expo Go" error at runtime
+  // instead of crashing the whole module graph at import time.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Notifications = require('expo-notifications');
 } catch (e) {
-  console.warn('expo-notifications: failed to set notification handler:', e);
+  console.warn('expo-notifications is not available in this environment:', e);
+}
+
+// Set up the foreground notification handler if the module loaded successfully.
+if (Notifications) {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  } catch (e) {
+    console.warn('expo-notifications: failed to set notification handler:', e);
+  }
 }
 
 export async function scheduleDeadlineNotifications(assignments: Assignment[]): Promise<void> {
+  if (!Notifications) return;
+
   try {
     // 1. Cancel all current scheduled notifications
     await Notifications.cancelAllScheduledNotificationsAsync();
@@ -68,6 +86,8 @@ export async function scheduleDeadlineNotifications(assignments: Assignment[]): 
 }
 
 export async function requestNotificationPermissions(): Promise<boolean> {
+  if (!Notifications) return false;
+
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
