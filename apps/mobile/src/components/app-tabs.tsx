@@ -1,4 +1,4 @@
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { Tabs } from 'expo-router';
 import { useTheme } from '@/hooks/use-theme';
 import { t } from '@/services/i18n';
 
@@ -6,29 +6,54 @@ export default function AppTabs() {
   const colors = useTheme();
 
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>{`📊 ${t('dashboard')}`}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="courses">
-        <NativeTabs.Trigger.Label>{`📚 ${t('courses')}`}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="files">
-        <NativeTabs.Trigger.Label>{`📁 ${t('files')}`}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="grades">
-        <NativeTabs.Trigger.Label>{`🎓 ${t('grades')}`}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Label>{`⚙️ ${t('settings')}`}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: {
+          backgroundColor: colors.backgroundElement,
+          borderTopColor: colors.border,
+          height: 60,
+          paddingBottom: 8,
+        },
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: t('dashboard'),
+          tabBarLabel: `📊 ${t('dashboard')}`,
+        }}
+      />
+      <Tabs.Screen
+        name="courses"
+        options={{
+          title: t('courses'),
+          tabBarLabel: `📚 ${t('courses')}`,
+        }}
+      />
+      <Tabs.Screen
+        name="files"
+        options={{
+          title: t('files'),
+          tabBarLabel: `📁 ${t('files')}`,
+        }}
+      />
+      <Tabs.Screen
+        name="grades"
+        options={{
+          title: t('grades'),
+          tabBarLabel: `🎓 ${t('grades')}`,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: t('settings'),
+          tabBarLabel: `⚙️ ${t('settings')}`,
+        }}
+      />
+    </Tabs>
   );
 }
