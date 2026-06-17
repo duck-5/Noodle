@@ -246,6 +246,27 @@ export default function DashboardScreen() {
     }
   }
 
+  async function handleDisconnect() {
+    setLoading(true);
+    try {
+      await setMoodleToken(null);
+      await clearCredentials();
+      const db = getDb();
+      db.withTransactionSync(() => {
+        db.runSync('DELETE FROM tracked_courses');
+        db.runSync('DELETE FROM assignments');
+        db.runSync('DELETE FROM meetings');
+        db.runSync('DELETE FROM preferences');
+      });
+      setToken(null);
+      setOnboardingStep(1);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to disconnect.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function loadDashboardData() {
     try {
       const db = getDb();
@@ -427,10 +448,21 @@ export default function DashboardScreen() {
           <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('dashboard')}</Text>
           {syncing && <Text style={{ color: theme.primary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{t('syncing')}</Text>}
         </View>
-        <Pressable style={[styles.syncBtn, { backgroundColor: theme.primary }]} onPress={handleManualSync} disabled={syncing}>
-          <Text style={styles.syncBtnText}>{syncing ? t('syncing') : t('sync_now')}</Text>
-        </Pressable>
+        <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', gap: 8 }}>
+          <Pressable style={[styles.syncBtn, { backgroundColor: theme.primary }]} onPress={handleManualSync} disabled={syncing}>
+            <Text style={styles.syncBtnText}>{syncing ? t('syncing') : t('sync_now')}</Text>
+          </Pressable>
+          <Pressable 
+            style={[styles.syncBtn, { backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: '#ef4444' }]} 
+            onPress={handleDisconnect}
+          >
+            <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>{isRtl ? 'התנתק' : 'Disconnect'}</Text>
+          </Pressable>
+        </View>
       </View>
+      <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#ef4444', textAlign: 'center', marginVertical: 15 }}>
+        ★ NOODLE ACTIVE VERSION v0.1 ★
+      </Text>
 
       <ScrollView style={styles.scrollView}>
         <Text style={[styles.sectionHeading, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
