@@ -236,7 +236,7 @@ export default function SettingsScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'application/json',
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: false,
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) {
@@ -245,7 +245,14 @@ export default function SettingsScreen() {
       }
 
       const fileUri = result.assets[0].uri;
-      const content = await FileSystem.readAsStringAsync(fileUri);
+      let content = '';
+      try {
+        content = await FileSystem.readAsStringAsync(fileUri);
+      } catch (fsError) {
+        console.warn('FileSystem readAsStringAsync failed, falling back to fetch:', fsError);
+        const response = await fetch(fileUri);
+        content = await response.text();
+      }
       const data = JSON.parse(content);
 
       if (data.version !== "TauTrackerConfig-v1" || !data.trackedCourseIds || !data.settings) {
