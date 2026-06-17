@@ -72,7 +72,7 @@ export default function CoursesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
           {t('courses')}
         </Text>
@@ -98,8 +98,8 @@ export default function CoursesScreen() {
                     style={[
                       styles.checkbox,
                       {
-                        backgroundColor: isTracked ? c.color || '#6366f1' : 'transparent',
-                        borderColor: c.color || '#6366f1',
+                        backgroundColor: isTracked ? c.color || theme.primary : 'transparent',
+                        borderColor: c.color || theme.primary,
                       },
                     ]}
                     onPress={() => handleToggleActive(c.id, c.is_active)}
@@ -115,11 +115,11 @@ export default function CoursesScreen() {
 
                 {/* Nickname Input */}
                 <TextInput
-                  style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}
+                  style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}
                   value={c.name}
                   onChangeText={(text) => handleUpdateName(c.id, text)}
                   placeholder={t('nickname_placeholder')}
-                  placeholderTextColor={theme.textSecondary}
+                  placeholderTextColor={theme.placeholder}
                 />
 
                 {/* Color Selector presets */}
@@ -159,7 +159,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   headerTitle: {
     fontSize: 24,
@@ -175,7 +174,7 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     marginBottom: 16,
   },
   cardHeader: {
@@ -187,7 +186,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderRadius: 6,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -202,8 +201,8 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderRadius: 6,
-    padding: 8,
+    borderRadius: 12,
+    padding: 10,
     fontSize: 14,
     marginBottom: 12,
   },

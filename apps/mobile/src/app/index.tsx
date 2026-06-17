@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync } from '../services/backgroundSync';
 import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } from '../services/auth';
@@ -275,19 +276,30 @@ export default function DashboardScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ScrollView contentContainerStyle={styles.onboardingCard} keyboardShouldPersistTaps="handled">
-          <Text style={[styles.onboardingTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={{
+              width: 80,
+              height: 80,
+              alignSelf: 'center',
+              marginBottom: 16,
+              borderRadius: 16,
+            }}
+            resizeMode="contain"
+          />
+          <Text style={[styles.onboardingTitle, { color: theme.text, textAlign: 'center', marginBottom: 8 }]}>
             {t('connect_moodle')}
           </Text>
-          <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+          <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary, textAlign: 'center', marginBottom: 24 }]}>
             {isRtl
               ? 'היכנס עם פרטי המשתמש שלך של מערכת TAU'
               : 'Sign in with your TAU Moodle credentials'}
           </Text>
 
           <TextInput
-            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+            style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
             placeholder={isRtl ? 'שם משתמש (אנגלית)' : 'Username'}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             value={inputUsername}
             onChangeText={setInputUsername}
             autoCapitalize="none"
@@ -296,9 +308,9 @@ export default function DashboardScreen() {
           />
 
           <TextInput
-            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+            style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
             placeholder={isRtl ? 'מספר תעודת זהות' : 'ID Number'}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             value={inputIdNumber}
             onChangeText={setInputIdNumber}
             keyboardType="numeric"
@@ -306,9 +318,9 @@ export default function DashboardScreen() {
           />
 
           <TextInput
-            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+            style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
             placeholder={isRtl ? 'סיסמה' : 'Password'}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             value={inputPassword}
             onChangeText={setInputPassword}
             secureTextEntry
@@ -322,7 +334,7 @@ export default function DashboardScreen() {
           >
             <View style={[
               styles.checkbox,
-              { borderColor: '#6366f1', backgroundColor: rememberMe ? '#6366f1' : 'transparent' }
+              { borderColor: theme.primary, backgroundColor: rememberMe ? theme.primary : 'transparent' }
             ]}>
               {rememberMe && <Text style={styles.checkmark}>✓</Text>}
             </View>
@@ -331,7 +343,7 @@ export default function DashboardScreen() {
             </Text>
           </Pressable>
 
-          <Pressable style={styles.primaryBtn} onPress={handleConnect} disabled={loading}>
+          <Pressable style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={handleConnect} disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
@@ -363,7 +375,7 @@ export default function DashboardScreen() {
                   fontSize: 16,
                   fontWeight: 'bold',
                   borderBottomWidth: 1,
-                  borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+                  borderBottomColor: theme.border,
                   paddingBottom: 6,
                   marginBottom: 10,
                   marginHorizontal: 16,
@@ -381,7 +393,7 @@ export default function DashboardScreen() {
                       styles.courseSelectItem,
                       {
                         backgroundColor: isSelected ? theme.backgroundSelected : theme.backgroundElement,
-                        borderColor: isSelected ? '#6366f1' : 'transparent',
+                        borderColor: isSelected ? theme.primary : 'transparent',
                       },
                     ]}
                     onPress={() => handleCourseToggle(c.id)}
@@ -395,7 +407,7 @@ export default function DashboardScreen() {
           ))}
         </ScrollView>
         <View style={styles.actionFooter}>
-          <Pressable style={styles.primaryBtn} onPress={handleSaveCourses}>
+          <Pressable style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={handleSaveCourses}>
             <Text style={styles.primaryBtnText}>
               {t('start_tracking_btn')} ({selectedCourseIds.length})
             </Text>
@@ -410,12 +422,12 @@ export default function DashboardScreen() {
   // ---------------------------------------------------------
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+      <View style={[styles.header, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
         <View>
           <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('dashboard')}</Text>
-          {syncing && <Text style={{ color: '#6366f1', fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{t('syncing')}</Text>}
+          {syncing && <Text style={{ color: theme.primary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{t('syncing')}</Text>}
         </View>
-        <Pressable style={styles.syncBtn} onPress={handleManualSync} disabled={syncing}>
+        <Pressable style={[styles.syncBtn, { backgroundColor: theme.primary }]} onPress={handleManualSync} disabled={syncing}>
           <Text style={styles.syncBtnText}>{syncing ? t('syncing') : t('sync_now')}</Text>
         </Pressable>
       </View>
@@ -430,7 +442,7 @@ export default function DashboardScreen() {
           </View>
         ) : (
           assignments.map((a) => {
-            const cColor = courseMap[a.course_moodle_id]?.color || '#6366f1';
+            const cColor = courseMap[a.course_moodle_id]?.color || theme.primary;
             const cName = courseMap[a.course_moodle_id]?.name || a.course_name;
             const hoursLeft = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : null;
             let deadlineText = t('no_deadline');
@@ -475,8 +487,10 @@ export default function DashboardScreen() {
                     {deadlineText}
                   </Text>
                 </View>
-                <View style={styles.statusBadge}>
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>{a.status}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: a.status === 'Submitted' ? theme.secondary : theme.primary }]}>
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
+                    {a.status === 'Submitted' ? (isRtl ? 'הוגש' : 'Submitted') : (isRtl ? 'מטלה' : 'Assigned')}
+                  </Text>
                 </View>
               </View>
             );
@@ -492,7 +506,7 @@ export default function DashboardScreen() {
           </View>
         ) : (
           meetings.map((m) => {
-            const cColor = courseMap[m.course_moodle_id]?.color || '#10b981';
+            const cColor = courseMap[m.course_moodle_id]?.color || theme.secondary;
             return (
               <View
                 key={m.id}
@@ -513,7 +527,7 @@ export default function DashboardScreen() {
                   <Text style={[styles.meetingTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{m.title}</Text>
                 </View>
                 <Pressable
-                  style={styles.joinBtn}
+                  style={[styles.joinBtn, { backgroundColor: theme.secondary }]}
                   onPress={() => {
                     Alert.alert(t('join_zoom'), `Redirecting to: ${m.meeting_url}`);
                   }}
@@ -551,7 +565,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     fontSize: 16,
     marginBottom: 16,
   },
@@ -564,7 +578,7 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 5,
+    borderRadius: 6,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -578,9 +592,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   primaryBtn: {
-    backgroundColor: '#6366f1',
     padding: 14,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   primaryBtnText: {
@@ -607,7 +620,7 @@ const styles = StyleSheet.create({
   },
   courseSelectItem: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 2,
     marginBottom: 8,
   },
@@ -631,10 +644,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   syncBtn: {
-    backgroundColor: '#6366f1',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 12,
   },
   syncBtnText: {
     color: '#ffffff',
@@ -651,12 +663,12 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     padding: 24,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
   },
   assignmentCard: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     borderLeftWidth: 4,
     marginBottom: 8,
     flexDirection: 'row',
@@ -673,14 +685,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusBadge: {
-    backgroundColor: '#3b82f6',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   meetingCard: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     borderLeftWidth: 4,
     marginBottom: 8,
     flexDirection: 'row',
@@ -692,10 +703,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   joinBtn: {
-    backgroundColor: '#10b981',
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 4,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   sectionTitle: {
     fontSize: 20,

@@ -29,11 +29,7 @@ export default function FilesScreen() {
   const lang = getLanguage();
   const isRtl = lang === 'he';
 
-  useEffect(() => {
-    loadFiles();
-  }, []);
-
-  function loadFiles() {
+  const loadFiles = () => {
     setLoading(true);
     try {
       const db = getDb();
@@ -47,11 +43,17 @@ export default function FilesScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    setTimeout(() => {
+      loadFiles();
+    }, 0);
+  }, []);
 
   const getCourseColor = (courseMoodleId: number) => {
     const course = courses.find((c) => c.moodle_id === courseMoodleId);
-    return course?.color || '#6366f1';
+    return course?.color || theme.primary;
   };
 
   const getCourseName = (courseMoodleId: number, fallback: string) => {
@@ -112,14 +114,14 @@ export default function FilesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
           {t('files')}
         </Text>
         <TextInput
-          style={[styles.searchInput, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+          style={[styles.searchInput, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
           placeholder={t('search_placeholder')}
-          placeholderTextColor={theme.textSecondary}
+          placeholderTextColor={theme.placeholder}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -127,7 +129,7 @@ export default function FilesScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : files.length === 0 ? (
         <View style={styles.center}>
@@ -163,7 +165,7 @@ export default function FilesScreen() {
                     const fileSizeMb = f.file_size ? (f.file_size / 1024 / 1024).toFixed(2) : '0';
 
                     return (
-                      <View key={f.id} style={[styles.fileRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                      <View key={f.id} style={[styles.fileRow, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}>
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.fileName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{f.file_name}</Text>
                           <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }}>
@@ -203,7 +205,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   headerTitle: {
     fontSize: 24,
@@ -212,8 +213,8 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     borderWidth: 1,
-    padding: 10,
-    borderRadius: 8,
+    padding: 12,
+    borderRadius: 12,
     fontSize: 14,
   },
   center: {
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
   },
   courseGroupCard: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     borderLeftWidth: 4,
     marginBottom: 16,
   },
@@ -245,7 +246,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
     paddingBottom: 8,
   },
   fileName: {
@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
   },
   downloadBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 8,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },

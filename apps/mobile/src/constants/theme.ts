@@ -9,18 +9,30 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#0f172a',
+    background: '#f8fafc',
+    backgroundElement: '#ffffff',
+    backgroundSelected: '#e2e8f0',
+    textSecondary: '#64748b',
+    primary: '#4f46e5',
+    secondary: '#10b981',
+    warning: '#f59e0b',
+    danger: '#ef4444',
+    border: '#cbd5e1',
+    placeholder: '#94a3b8',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#f8fafc',
+    background: '#0f111a',
+    backgroundElement: '#1a1d2e',
+    backgroundSelected: '#242840',
+    textSecondary: '#94a3b8',
+    primary: '#6366f1',
+    secondary: '#10b981',
+    warning: '#f59e0b',
+    danger: '#ef4444',
+    border: 'rgba(255, 255, 255, 0.08)',
+    placeholder: '#64748b',
   },
   noodle: {
     text: '#3d405b',
@@ -28,10 +40,16 @@ export const Colors = {
     backgroundElement: '#fffdf9',
     backgroundSelected: '#ebdcb9',
     textSecondary: '#5f6585',
+    primary: '#c27044',
+    secondary: '#48785e',
+    warning: '#b36b1d',
+    danger: '#b33c30',
+    border: 'rgba(194, 112, 68, 0.18)',
+    placeholder: '#8d93ab',
   },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark & keyof typeof Colors.noodle;
+export type ThemeColor = keyof typeof Colors.light;
 
 export const Fonts = Platform.select({
   ios: {

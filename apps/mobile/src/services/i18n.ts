@@ -59,6 +59,12 @@ export const translations = {
     course_sections: "נושאי הקורס",
     empty_state_files: "לא נמצאו קבצים. אנא בצע סנכרון.",
     course_average_label: "ממוצע",
+    config_backup_title: "גיבוי ושחזור הגדרות",
+    config_backup_desc: "ייצא את כל הגדרות האפליקציה, הצבעים, הכינויים והאסימונים לקובץ JSON במכשיר שלך, כדי שתוכל לשחזר אותם מאוחר יותר.",
+    export_config_btn: "ייצא הגדרות",
+    import_config_btn: "ייבא הגדרות",
+    import_success: "ההגדרות יובאו בהצלחה.",
+    import_failed: "ייבוא ההגדרות נכשל",
   },
   en: {
     dashboard: "Dashboard",
@@ -118,6 +124,12 @@ export const translations = {
     course_sections: "Course Sections",
     empty_state_files: "No files fetched yet. Please trigger a sync.",
     course_average_label: "Avg",
+    config_backup_title: "Configuration Backup",
+    config_backup_desc: "Export all app settings, course colors, nicknames, and tokens to a JSON file to restore them later.",
+    export_config_btn: "Export Config",
+    import_config_btn: "Import Config",
+    import_success: "Configuration imported successfully.",
+    import_failed: "Failed to import configuration",
   }
 };
 

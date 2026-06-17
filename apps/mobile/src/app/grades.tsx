@@ -21,11 +21,7 @@ export default function GradesScreen() {
   const lang = getLanguage();
   const isRtl = lang === 'he';
 
-  useEffect(() => {
-    loadGrades();
-  }, []);
-
-  function loadGrades() {
+  const loadGrades = () => {
     setLoading(true);
     try {
       const db = getDb();
@@ -41,11 +37,17 @@ export default function GradesScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    setTimeout(() => {
+      loadGrades();
+    }, 0);
+  }, []);
 
   const getCourseColor = (courseMoodleId: number) => {
     const course = courses.find((c) => c.moodle_id === courseMoodleId);
-    return course?.color || '#6366f1';
+    return course?.color || theme.primary;
   };
 
   const getCourseName = (courseMoodleId: number, fallback: string) => {
@@ -77,13 +79,13 @@ export default function GradesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('grades')}</Text>
       </View>
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : assignments.length === 0 ? (
         <View style={styles.center}>
@@ -131,7 +133,7 @@ export default function GradesScreen() {
 
                 <View style={styles.gradesList}>
                   {group.list.map((a) => (
-                    <View key={a.id} style={[styles.gradeRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                    <View key={a.id} style={[styles.gradeRow, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}>
                       <Text style={[styles.gradeName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
                       <Text style={[styles.gradeValLabel, { color: theme.text }]}>
                         {a.grade} / {a.grade_max}
@@ -156,7 +158,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   headerTitle: {
     fontSize: 24,
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
   },
   gpaCard: {
     padding: 20,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
     marginBottom: 24,
   },
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
   },
   courseGradesCard: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     borderLeftWidth: 4,
     marginBottom: 16,
   },
@@ -204,7 +205,7 @@ const styles = StyleSheet.create({
   avgBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   avgBadgeText: {
     color: '#ffffff',
@@ -219,7 +220,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
   },
   gradeName: {
     fontSize: 14,

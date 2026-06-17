@@ -16,6 +16,9 @@ import { getDb, getPreference, setPreference, removePreference } from '../servic
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -30,11 +33,7 @@ export default function SettingsScreen() {
 
   const isRtl = lang === 'he';
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
-  async function loadSettings() {
+  const loadSettings = async () => {
     try {
       const enabled = getPreference('google_tasks_enabled') === 'true';
       setGoogleTasksEnabled(enabled);
@@ -55,7 +54,13 @@ export default function SettingsScreen() {
     } catch (e) {
       console.error('loadSettings error:', e);
     }
-  }
+  };
+
+  useEffect(() => {
+    setTimeout(() => {
+      loadSettings();
+    }, 0);
+  }, []);
 
   const handleUpdateTheme = (tChoice: 'system' | 'light' | 'dark' | 'noodle') => {
     try {
@@ -169,9 +174,143 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleExportConfig = async () => {
+    setLoading(true);
+    try {
+      const db = getDb();
+      
+      const courseRows = db.getAllSync<{ moodle_id: number }>('SELECT moodle_id FROM tracked_courses WHERE is_active = 1');
+      const trackedCourseIds = courseRows.map(r => r.moodle_id);
+      
+      const coursesColorMap: Record<number, string> = {};
+      const coursesCustomNames: Record<number, string> = {};
+      
+      const allCourses = db.getAllSync<{ moodle_id: number; name: string; color: string }>('SELECT moodle_id, name, color FROM tracked_courses');
+      for (const course of allCourses) {
+        if (course.color) {
+          coursesColorMap[course.moodle_id] = course.color;
+        }
+        if (course.name) {
+          coursesCustomNames[course.moodle_id] = course.name;
+        }
+      }
+      
+      const gTasksEnabled = getPreference('google_tasks_enabled') === 'true';
+      const gListName = getPreference('google_tasks_list_name') || 'Noodle';
+      const themeVal = getPreference('theme') || 'system';
+      const langVal = getPreference('language') || 'he';
+      
+      const config = {
+        version: "TauTrackerConfig-v1",
+        trackedCourseIds,
+        settings: {
+          googleTasksEnabled: gTasksEnabled,
+          googleTasksListName: gListName,
+          notificationsEnabled: true,
+          coursesColorMap,
+          coursesCustomNames,
+          language: langVal,
+          theme: themeVal
+        }
+      };
+
+      const jsonString = JSON.stringify(config, null, 2);
+      const fileUri = FileSystem.cacheDirectory + `tau_tracker_config_${new Date().toISOString().slice(0, 10)}.json`;
+      
+      await FileSystem.writeAsStringAsync(fileUri, jsonString, { encoding: FileSystem.EncodingType.UTF8 });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+      } else {
+        Alert.alert('Sharing Unavailable', 'Sharing is not supported on this platform.');
+      }
+    } catch (e: any) {
+      Alert.alert('Export Failed', e.message || 'An error occurred during configuration export.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const fileUri = result.assets[0].uri;
+      const content = await FileSystem.readAsStringAsync(fileUri);
+      const data = JSON.parse(content);
+
+      if (data.version !== "TauTrackerConfig-v1" || !data.trackedCourseIds || !data.settings) {
+        throw new Error(lang === 'he' ? 'פורמט קובץ לא תקין' : 'Invalid file format');
+      }
+
+      const db = getDb();
+      
+      db.withTransactionSync(() => {
+        if (data.settings.theme) {
+          setPreference('theme', data.settings.theme);
+        }
+        if (data.settings.language) {
+          setPreference('language', data.settings.language);
+        }
+        if (data.settings.googleTasksEnabled !== undefined) {
+          setPreference('google_tasks_enabled', data.settings.googleTasksEnabled ? 'true' : 'false');
+        }
+        if (data.settings.googleTasksListName) {
+          setPreference('google_tasks_list_name', data.settings.googleTasksListName);
+        }
+
+        const importedTrackedIds = new Set<number>(data.trackedCourseIds);
+        
+        db.runSync('UPDATE tracked_courses SET is_active = 0');
+        
+        for (const moodleId of importedTrackedIds) {
+          const color = data.settings.coursesColorMap?.[moodleId] || '#6366f1';
+          const name = data.settings.coursesCustomNames?.[moodleId] || `Course ${moodleId}`;
+          
+          const existing = db.getFirstSync<{ moodle_id: number }>('SELECT moodle_id FROM tracked_courses WHERE moodle_id = ?', [moodleId]);
+          
+          if (existing) {
+            db.runSync(
+              'UPDATE tracked_courses SET is_active = 1, color = ?, name = ? WHERE moodle_id = ?',
+              [color, name, moodleId]
+            );
+          } else {
+            db.runSync(
+              'INSERT INTO tracked_courses (moodle_id, name, color, is_active) VALUES (?, ?, ?, 1)',
+              [moodleId, name, color]
+            );
+          }
+        }
+      });
+
+      setGoogleTasksEnabled(data.settings.googleTasksEnabled ?? false);
+      setGoogleListName(data.settings.googleTasksListName ?? 'Noodle');
+      setLang(data.settings.language ?? 'he');
+      setActiveTheme(data.settings.theme ?? 'system');
+
+      Alert.alert(
+        t('config_backup_title'),
+        t('import_success') + '\n' + (lang === 'he' ? 'אנא הפעל מחדש את האפליקציה להחלת שינויי שפה/ערכת נושא.' : 'Please restart the app to apply language/theme changes fully.')
+      );
+    } catch (e: any) {
+      Alert.alert(t('import_failed'), e.message || 'An error occurred during import.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('settings')}</Text>
       </View>
 
@@ -183,7 +322,7 @@ export default function SettingsScreen() {
             <Pressable
               style={[
                 styles.langBtn,
-                { backgroundColor: lang === 'he' ? '#6366f1' : 'transparent', borderColor: '#6366f1', borderWidth: 1 }
+                { backgroundColor: lang === 'he' ? theme.primary : 'transparent', borderColor: theme.primary, borderWidth: 1 }
               ]}
               onPress={() => handleUpdateLanguage('he')}
             >
@@ -192,7 +331,7 @@ export default function SettingsScreen() {
             <Pressable
               style={[
                 styles.langBtn,
-                { backgroundColor: lang === 'en' ? '#6366f1' : 'transparent', borderColor: '#6366f1', borderWidth: 1 }
+                { backgroundColor: lang === 'en' ? theme.primary : 'transparent', borderColor: theme.primary, borderWidth: 1 }
               ]}
               onPress={() => handleUpdateLanguage('en')}
             >
@@ -213,8 +352,8 @@ export default function SettingsScreen() {
                 style={[
                   styles.langBtn,
                   {
-                    backgroundColor: activeTheme === tChoice ? '#6366f1' : 'transparent',
-                    borderColor: '#6366f1',
+                    backgroundColor: activeTheme === tChoice ? theme.primary : 'transparent',
+                    borderColor: theme.primary,
                     borderWidth: 1,
                   }
                 ]}
@@ -245,14 +384,14 @@ export default function SettingsScreen() {
           </View>
 
           {googleTasksEnabled && (
-            <View style={styles.subsettings}>
+            <View style={[styles.subsettings, { borderTopColor: theme.border }]}>
               <Text style={[styles.label, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>{t('google_tasks_list_name_label')}</Text>
               <TextInput
                 style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
                 value={googleListName}
                 onChangeText={handleUpdateListName}
                 placeholder="Noodle"
-                placeholderTextColor={theme.textSecondary}
+                placeholderTextColor={theme.placeholder}
               />
 
               <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8, textAlign: isRtl ? 'right' : 'left' }]}>{t('google_token_label')}</Text>
@@ -261,16 +400,16 @@ export default function SettingsScreen() {
                 value={googleTokenInput}
                 onChangeText={setGoogleTokenInput}
                 placeholder={lang === 'he' ? 'הדבק אסימון OAuth של גוגל...' : 'Paste Google OAuth token...'}
-                placeholderTextColor={theme.textSecondary}
+                placeholderTextColor={theme.placeholder}
                 secureTextEntry
               />
 
               <View style={[styles.btnRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
-                <Pressable style={styles.secondaryBtn} onPress={handleSaveGoogleToken} disabled={loading}>
+                <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleSaveGoogleToken} disabled={loading}>
                   <Text style={styles.secondaryBtnText}>{t('save_token_btn')}</Text>
                 </Pressable>
 
-                <Pressable style={styles.secondaryBtn} onPress={handleManualGoogleSync} disabled={loading}>
+                <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleManualGoogleSync} disabled={loading}>
                   <Text style={styles.secondaryBtnText}>{t('sync_now')}</Text>
                 </Pressable>
               </View>
@@ -278,6 +417,24 @@ export default function SettingsScreen() {
               {googleStatus && <Text style={[styles.statusText, { textAlign: isRtl ? 'right' : 'left' }]}>{googleStatus}</Text>}
             </View>
           )}
+        </View>
+
+        {/* Backup & Restore */}
+        <View style={[styles.section, { backgroundColor: theme.backgroundElement, marginTop: 24 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
+            {t('config_backup_title')}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 13, marginBottom: 16, textAlign: isRtl ? 'right' : 'left' }}>
+            {t('config_backup_desc')}
+          </Text>
+          <View style={[styles.btnRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+            <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleExportConfig} disabled={loading}>
+              <Text style={styles.secondaryBtnText}>📥 {t('export_config_btn')}</Text>
+            </Pressable>
+            <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleImportConfig} disabled={loading}>
+              <Text style={styles.secondaryBtnText}>📁 {t('import_config_btn')}</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Danger Zone */}
@@ -303,7 +460,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   headerTitle: {
     fontSize: 24,
@@ -315,7 +471,7 @@ const styles = StyleSheet.create({
   },
   section: {
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 14,
   },
   sectionTitle: {
     fontSize: 16,
@@ -334,7 +490,6 @@ const styles = StyleSheet.create({
   subsettings: {
     marginTop: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
     paddingTop: 16,
     gap: 8,
   },
@@ -344,8 +499,8 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    padding: 8,
-    borderRadius: 6,
+    padding: 10,
+    borderRadius: 12,
     fontSize: 14,
   },
   btnRow: {
@@ -354,9 +509,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   secondaryBtn: {
-    backgroundColor: '#3b82f6',
-    padding: 10,
-    borderRadius: 6,
+    padding: 12,
+    borderRadius: 12,
     flex: 1,
     alignItems: 'center',
   },
@@ -372,11 +526,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   dangerBtn: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
+    backgroundColor: 'rgba(239,68,68,0.06)',
     borderWidth: 1,
     borderColor: '#ef4444',
     padding: 14,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
   },
   dangerBtnText: {
@@ -387,6 +541,6 @@ const styles = StyleSheet.create({
   langBtn: {
     paddingVertical: 8,
     paddingHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 12,
   },
 });
