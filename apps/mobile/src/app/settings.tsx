@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { getMoodleToken, setMoodleToken } from '../services/backgroundSync';
+import { clearCredentials } from '../services/auth';
 import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync } from '../services/googleTasks';
 import { getDb, getPreference, setPreference, removePreference } from '../services/database';
 import { Colors } from '../constants/theme';
@@ -143,9 +144,10 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear secure tokens
+              // Clear secure tokens and saved SSO credentials
               await setMoodleToken(null);
               await setGoogleAccessToken(null);
+              await clearCredentials();
 
               // Clear SQLite tables
               const db = getDb();

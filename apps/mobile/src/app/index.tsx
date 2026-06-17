@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync } from '../services/backgroundSync';
+import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } from '../services/auth';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
 import { Colors } from '../constants/theme';
@@ -100,7 +101,10 @@ export default function DashboardScreen() {
   const [onboardingStep, setOnboardingStep] = useState<number>(1); // 1 = token entry, 2 = select courses, 3 = dashboard
 
   // Inputs/Selection
-  const [inputToken, setInputToken] = useState<string>('');
+  const [inputUsername, setInputUsername] = useState<string>('');
+  const [inputIdNumber, setInputIdNumber] = useState<string>('');
+  const [inputPassword, setInputPassword] = useState<string>('');
+  const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [availableCourses, setAvailableCourses] = useState<any[]>([]);
   const [selectedCourseIds, setSelectedCourseIds] = useState<number[]>([]);
 
@@ -121,6 +125,15 @@ export default function DashboardScreen() {
     try {
       const storedToken = await getMoodleToken();
       setToken(storedToken);
+
+      // Pre-fill login form if credentials were saved
+      const creds = await getStoredCredentials();
+      if (creds) {
+        setInputUsername(creds.username);
+        setInputIdNumber(creds.idNumber);
+        setInputPassword(creds.password);
+        setRememberMe(true);
+      }
 
       const db = getDb();
       const trackedCourses = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
@@ -154,17 +167,30 @@ export default function DashboardScreen() {
   }
 
   async function handleConnect() {
-    if (!inputToken.trim()) return;
+    if (!inputUsername.trim() || !inputIdNumber.trim() || !inputPassword.trim()) {
+      Alert.alert(t('connect_moodle'), isRtl ? 'נא למלא את כל השדות.' : 'Please fill in all fields.');
+      return;
+    }
     setLoading(true);
     try {
-      const client = new MoodleClient(inputToken.trim());
-      const info = await client.getSiteInfo(); // Validate token
-      await setMoodleToken(inputToken.trim());
-      setToken(inputToken.trim());
-      await fetchEnrolledCourses(inputToken.trim());
+      const fetchedToken = await loginTauSso(
+        inputUsername.trim(),
+        inputIdNumber.trim(),
+        inputPassword.trim()
+      );
+      await setMoodleToken(fetchedToken);
+      setToken(fetchedToken);
+
+      if (rememberMe) {
+        await saveCredentials(inputUsername.trim(), inputIdNumber.trim(), inputPassword.trim());
+      } else {
+        await clearCredentials();
+      }
+
+      await fetchEnrolledCourses(fetchedToken);
       setOnboardingStep(2);
     } catch (e: any) {
-      Alert.alert('Connection Failed', e.message || 'Invalid token. Please check and try again.');
+      Alert.alert(isRtl ? 'כניסה נכשלה' : 'Login Failed', e.message || 'An error occurred during login.');
     } finally {
       setLoading(false);
     }
@@ -243,48 +269,78 @@ export default function DashboardScreen() {
   }
 
   // ---------------------------------------------------------
-  // Onboarding Step 1 View
+  // Onboarding Step 1 View — SSO Login
   // ---------------------------------------------------------
   if (onboardingStep === 1) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.onboardingCard}>
+        <ScrollView contentContainerStyle={styles.onboardingCard} keyboardShouldPersistTaps="handled">
           <Text style={[styles.onboardingTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
             {t('connect_moodle')}
           </Text>
           <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
-            {t('moodle_token_desc')}
+            {isRtl
+              ? 'היכנס עם פרטי המשתמש שלך של מערכת TAU'
+              : 'Sign in with your TAU Moodle credentials'}
           </Text>
 
           <TextInput
             style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
-            placeholder={t('paste_token_placeholder')}
+            placeholder={isRtl ? 'שם משתמש (אנגלית)' : 'Username'}
             placeholderTextColor={theme.textSecondary}
-            value={inputToken}
-            onChangeText={setInputToken}
-            secureTextEntry
+            value={inputUsername}
+            onChangeText={setInputUsername}
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="username"
           />
+
+          <TextInput
+            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+            placeholder={isRtl ? 'מספר תעודת זהות' : 'ID Number'}
+            placeholderTextColor={theme.textSecondary}
+            value={inputIdNumber}
+            onChangeText={setInputIdNumber}
+            keyboardType="numeric"
+            textContentType="none"
+          />
+
+          <TextInput
+            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+            placeholder={isRtl ? 'סיסמה' : 'Password'}
+            placeholderTextColor={theme.textSecondary}
+            value={inputPassword}
+            onChangeText={setInputPassword}
+            secureTextEntry
+            textContentType="password"
+          />
+
+          {/* Remember me */}
+          <Pressable
+            style={[styles.rememberMeRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}
+            onPress={() => setRememberMe(!rememberMe)}
+          >
+            <View style={[
+              styles.checkbox,
+              { borderColor: '#6366f1', backgroundColor: rememberMe ? '#6366f1' : 'transparent' }
+            ]}>
+              {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={[styles.rememberMeLabel, { color: theme.textSecondary }]}>
+              {isRtl ? 'זכור אותי' : 'Remember me'}
+            </Text>
+          </Pressable>
 
           <Pressable style={styles.primaryBtn} onPress={handleConnect} disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.primaryBtnText}>{t('connect_btn')}</Text>
+              <Text style={styles.primaryBtnText}>
+                {isRtl ? 'כניסה' : 'Sign In'}
+              </Text>
             )}
           </Pressable>
-
-          <ScrollView style={styles.helpBox}>
-            <Text style={[styles.helpTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
-              {t('token_help_title')}
-            </Text>
-            <Text style={[styles.helpText, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
-              {t('token_help_step1')}{'\n'}
-              {t('token_help_step2')}{'\n'}
-              {t('token_help_step3')}{'\n'}
-              {t('token_help_step4')}
-            </Text>
-          </ScrollView>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -480,7 +536,7 @@ const styles = StyleSheet.create({
   onboardingCard: {
     padding: 24,
     justifyContent: 'center',
-    flex: 1,
+    flexGrow: 1,
   },
   onboardingTitle: {
     fontSize: 28,
@@ -498,6 +554,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     fontSize: 16,
     marginBottom: 16,
+  },
+  rememberMeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkmark: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  rememberMeLabel: {
+    fontSize: 14,
   },
   primaryBtn: {
     backgroundColor: '#6366f1',
