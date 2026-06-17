@@ -19,6 +19,7 @@ export default function CoursesScreen() {
   const theme = useTheme();
 
   const [courses, setCourses] = useState<any[]>([]);
+  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
 
   const lang = getLanguage();
   const isRtl = lang === 'he';
@@ -91,8 +92,37 @@ export default function CoursesScreen() {
         ) : (
           courses.map((c) => {
             const isTracked = c.is_active === 1;
+            const isExpanded = expandedCourses[c.id] ?? false;
+
+            // Build sections for this course from DB
+            const db = getDb();
+            const courseAssignments = db.getAllSync<any>(
+              'SELECT * FROM assignments WHERE course_moodle_id = ? AND status != ?',
+              [c.moodle_id, 'Submitted']
+            );
+            const courseFiles = db.getAllSync<any>(
+              'SELECT * FROM files WHERE course_moodle_id = ?',
+              [c.moodle_id]
+            );
+            const sectionsMap: Record<string, { assignments: any[]; files: any[] }> = {};
+            const getSection = (name: string) => {
+              const n = name || (isRtl ? 'כללי' : 'General');
+              if (!sectionsMap[n]) sectionsMap[n] = { assignments: [], files: [] };
+              return sectionsMap[n];
+            };
+            courseFiles.forEach((f: any) => getSection(f.section_name).files.push(f));
+            courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General')).assignments.push(a));
+            const sectionEntries = Object.entries(sectionsMap);
+
             return (
-              <View key={c.id} style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+              <View key={c.id} style={[styles.card, {
+                backgroundColor: theme.backgroundElement,
+                borderLeftWidth: isRtl ? 0 : 4,
+                borderRightWidth: isRtl ? 4 : 0,
+                borderLeftColor: isRtl ? 'transparent' : (c.color || theme.primary),
+                borderRightColor: isRtl ? (c.color || theme.primary) : 'transparent',
+              }]}>
+                {/* Course header row */}
                 <View style={[styles.cardHeader, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                   <Pressable
                     style={[
@@ -111,6 +141,12 @@ export default function CoursesScreen() {
                       {c.course_id || 'Moodle ID: ' + c.moodle_id}
                     </Text>
                   </View>
+                  {/* Expand/Collapse toggle */}
+                  <Pressable onPress={() => setExpandedCourses(prev => ({ ...prev, [c.id]: !isExpanded }))}>
+                    <Text style={{ color: theme.textSecondary, fontSize: 18, paddingHorizontal: 8 }}>
+                      {isExpanded ? '▲' : '▼'}
+                    </Text>
+                  </Pressable>
                 </View>
 
                 {/* Nickname Input */}
@@ -142,6 +178,42 @@ export default function CoursesScreen() {
                     );
                   })}
                 </View>
+
+                {/* Sections Tree */}
+                {isExpanded && (
+                  <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 12 }}>
+                    {sectionEntries.length === 0 ? (
+                      <Text style={{ color: theme.textSecondary, fontSize: 13, textAlign: isRtl ? 'right' : 'left' }}>
+                        {t('empty_sections')}
+                      </Text>
+                    ) : (
+                      sectionEntries.map(([secName, content], secIdx) => (
+                        <View key={secIdx} style={[styles.sectionNode, { backgroundColor: theme.background }]}>
+                          <Text style={[styles.sectionNodeTitle, { color: theme.text, borderBottomColor: theme.border, textAlign: isRtl ? 'right' : 'left' }]}>
+                            {secName}
+                          </Text>
+                          {content.assignments.map((a) => (
+                            <View key={a.id} style={[styles.sectionItem, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              <Text style={{ fontSize: 13 }}>📝</Text>
+                              <Text style={{ color: theme.text, fontSize: 13, flex: 1, textAlign: isRtl ? 'right' : 'left' }}>{a.name}</Text>
+                              {a.deadline && (
+                                <Text style={{ color: theme.warning, fontSize: 11, fontWeight: 'bold' }}>
+                                  {new Date(a.deadline).toLocaleDateString(lang === 'he' ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' })}
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                          {content.files.map((f) => (
+                            <View key={f.id} style={[styles.sectionItem, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              <Text style={{ fontSize: 13 }}>📄</Text>
+                              <Text style={{ color: theme.textSecondary, fontSize: 13, flex: 1, textAlign: isRtl ? 'right' : 'left' }}>{f.file_name}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
               </View>
             );
           })
@@ -214,5 +286,24 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
+  },
+  sectionNode: {
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    gap: 6,
+  },
+  sectionNodeTitle: {
+    fontWeight: 'bold',
+    fontSize: 13,
+    borderBottomWidth: 1,
+    paddingBottom: 4,
+    marginBottom: 6,
+  },
+  sectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 2,
   },
 });

@@ -17,6 +17,10 @@ import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client'
 import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
+import CoursesScreen from './courses';
+import FilesScreen from './files';
+import GradesScreen from './grades';
+import SettingsScreen from './settings';
 
 interface GroupedCourses {
   semesterKey: string;
@@ -100,6 +104,8 @@ export default function DashboardScreen() {
   const [syncing, setSyncing] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<number>(1); // 1 = token entry, 2 = select courses, 3 = dashboard
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(false);
 
   // Inputs/Selection
   const [inputUsername, setInputUsername] = useState<string>('');
@@ -441,136 +447,280 @@ export default function DashboardScreen() {
   // ---------------------------------------------------------
   // Main Dashboard View (Step 3)
   // ---------------------------------------------------------
-  return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
-        <View>
-          <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('dashboard')}</Text>
-          {syncing && <Text style={{ color: theme.primary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{t('syncing')}</Text>}
+  function renderDashboard() {
+    // Find the closest future assignment
+    const now = new Date();
+    const nextAssignment = assignments.find(
+      (a) => a.deadline && new Date(a.deadline) > now
+    );
+
+    let timeColor = theme.danger;
+    let nextAssignDeadlineText = '';
+    if (nextAssignment && nextAssignment.deadline) {
+      const diffMs = new Date(nextAssignment.deadline).getTime() - Date.now();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      
+      if (diffDays > 7) {
+        timeColor = theme.secondary;
+      } else if (diffDays > 3) {
+        timeColor = theme.warning;
+      }
+      
+      const diffDaysInt = Math.floor(diffDays);
+      if (diffDaysInt >= 1) {
+        nextAssignDeadlineText = diffDaysInt === 1 ? t('due_in_day') : t('due_in_days', { days: diffDaysInt });
+      } else if (diffHours >= 1) {
+        nextAssignDeadlineText = diffHours === 1 ? t('due_in_hour') : t('due_in_hours', { hours: diffHours });
+      } else {
+        const mins = diffMins > 0 ? diffMins : 1;
+        nextAssignDeadlineText = mins === 1 ? t('due_in_minute') : t('due_in_minutes', { minutes: mins });
+      }
+    }
+
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={[styles.header, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border, borderBottomWidth: 1 }]}>
+          <View>
+            <Text style={[styles.headerTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>{t('dashboard')}</Text>
+            {syncing && <Text style={{ color: theme.primary, fontSize: 12, textAlign: isRtl ? 'right' : 'left' }}>{t('syncing')}</Text>}
+          </View>
+          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', gap: 8 }}>
+            <Pressable style={[styles.syncBtn, { backgroundColor: theme.primary }]} onPress={handleManualSync} disabled={syncing}>
+              <Text style={styles.syncBtnText}>{syncing ? t('syncing') : t('sync_now')}</Text>
+            </Pressable>
+          </View>
         </View>
-        <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', gap: 8 }}>
-          <Pressable style={[styles.syncBtn, { backgroundColor: theme.primary }]} onPress={handleManualSync} disabled={syncing}>
-            <Text style={styles.syncBtnText}>{syncing ? t('syncing') : t('sync_now')}</Text>
-          </Pressable>
-          <Pressable 
-            style={[styles.syncBtn, { backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: '#ef4444' }]} 
+
+        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* Next Assignment Banner */}
+          {nextAssignment && (
+            <View style={[styles.nextAssignmentBanner, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              <View style={{ flex: 1, alignItems: isRtl ? 'flex-end' : 'flex-start' }}>
+                <Text style={[styles.nextAssignLabel, { color: theme.textSecondary }]}>
+                  {isRtl ? '🚀 המטלה הקרובה ביותר' : '🚀 Next Assignment'}
+                </Text>
+                <Text style={[styles.nextAssignTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
+                  {nextAssignment.name}
+                </Text>
+                <Text style={[styles.nextAssignCourse, { color: courseMap[nextAssignment.course_moodle_id]?.color || theme.primary }]}>
+                  {courseMap[nextAssignment.course_moodle_id]?.name || nextAssignment.course_name}
+                </Text>
+              </View>
+              <View style={{ alignItems: isRtl ? 'flex-start' : 'flex-end', justifyContent: 'center' }}>
+                <Text style={[styles.nextAssignTime, { color: timeColor }]}>
+                  {nextAssignDeadlineText}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={[styles.sectionHeading, { color: theme.text, textAlign: isRtl ? 'right' : 'left', marginTop: nextAssignment ? 16 : 0 }]}>
+            {t('pending_tasks')} ({assignments.length})
+          </Text>
+          {assignments.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
+              <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>{t('no_pending_tasks')}</Text>
+            </View>
+          ) : (
+            assignments.map((a) => {
+              const cColor = courseMap[a.course_moodle_id]?.color || theme.primary;
+              const cName = courseMap[a.course_moodle_id]?.name || a.course_name;
+              const hoursLeft = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : null;
+              let deadlineText = t('no_deadline');
+              if (hoursLeft !== null && a.deadline) {
+                if (hoursLeft < 0) {
+                  deadlineText = t('overdue');
+                } else {
+                  const diffMs = new Date(a.deadline).getTime() - Date.now();
+                  const diffMins = Math.floor(diffMs / (1000 * 60));
+                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  
+                  if (diffDays >= 1) {
+                    deadlineText = diffDays === 1 ? t('due_in_day') : t('due_in_days', { days: diffDays });
+                  } else if (diffHours >= 1) {
+                    deadlineText = diffHours === 1 ? t('due_in_hour') : t('due_in_hours', { hours: diffHours });
+                  } else {
+                    const mins = diffMins > 0 ? diffMins : 1;
+                    deadlineText = mins === 1 ? t('due_in_minute') : t('due_in_minutes', { minutes: mins });
+                  }
+                }
+              }
+              return (
+                <View
+                  key={a.id}
+                  style={[
+                    styles.assignmentCard,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderLeftWidth: isRtl ? 0 : 4,
+                      borderRightWidth: isRtl ? 4 : 0,
+                      borderLeftColor: isRtl ? 'transparent' : cColor,
+                      borderRightColor: isRtl ? cColor : 'transparent',
+                      flexDirection: isRtl ? 'row-reverse' : 'row',
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.courseTag, { color: cColor, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{cName}</Text>
+                    <Text style={[styles.assignName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
+                    <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }}>
+                      {deadlineText}
+                    </Text>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: a.status === 'Submitted' ? theme.secondary : theme.primary }]}>
+                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
+                      {a.status === 'Submitted' ? (isRtl ? 'הוגש' : 'Submitted') : (isRtl ? 'מטלה' : 'Assigned')}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 24, textAlign: isRtl ? 'right' : 'left' }]}>
+            {t('zoom_links')} ({meetings.length})
+          </Text>
+          {meetings.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
+              <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>{t('no_zoom_links')}</Text>
+            </View>
+          ) : (
+            meetings.map((m) => {
+              const cColor = courseMap[m.course_moodle_id]?.color || theme.secondary;
+              return (
+                <View
+                  key={m.id}
+                  style={[
+                    styles.meetingCard,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderLeftWidth: isRtl ? 0 : 4,
+                      borderRightWidth: isRtl ? 4 : 0,
+                      borderLeftColor: isRtl ? 'transparent' : cColor,
+                      borderRightColor: isRtl ? cColor : 'transparent',
+                      flexDirection: isRtl ? 'row-reverse' : 'row',
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }}>{m.section_name}</Text>
+                    <Text style={[styles.meetingTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{m.title}</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.joinBtn, { backgroundColor: theme.secondary }]}
+                    onPress={() => {
+                      Alert.alert(t('join_zoom'), `Redirecting to: ${m.meeting_url}`);
+                    }}
+                  >
+                    <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 12 }}>{t('join_zoom')}</Text>
+                  </Pressable>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const navItems = [
+    { key: 'dashboard', label: t('dashboard'), icon: '📊' },
+    { key: 'courses', label: t('courses'), icon: '📚' },
+    { key: 'files', label: t('files'), icon: '📁' },
+    { key: 'grades', label: t('grades'), icon: '🎓' },
+    { key: 'settings', label: t('settings'), icon: '⚙️' },
+  ];
+
+  const renderActiveScreen = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return renderDashboard();
+      case 'courses':
+        return <CoursesScreen />;
+      case 'files':
+        return <FilesScreen />;
+      case 'grades':
+        return <GradesScreen />;
+      case 'settings':
+        return <SettingsScreen />;
+      default:
+        return renderDashboard();
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background, flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+      {/* Collapsible Sidebar Stripe */}
+      <View style={[
+        styles.sidebar, 
+        { 
+          backgroundColor: theme.backgroundElement, 
+          width: sidebarExpanded ? 160 : 60,
+          borderRightWidth: isRtl ? 0 : 1,
+          borderLeftWidth: isRtl ? 1 : 0,
+          borderColor: theme.border,
+        }
+      ]}>
+        {/* Toggle Button */}
+        <Pressable 
+          style={styles.sidebarToggle} 
+          onPress={() => setSidebarExpanded(!sidebarExpanded)}
+        >
+          <Text style={{ color: theme.text, fontSize: 22, fontWeight: 'bold' }}>
+            {sidebarExpanded ? (isRtl ? '→' : '←') : '☰'}
+          </Text>
+        </Pressable>
+
+        {/* Navigation Items */}
+        <View style={styles.sidebarNav}>
+          {navItems.map((item) => {
+            const isActive = activeTab === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                style={[
+                  styles.sidebarNavItem,
+                  { flexDirection: isRtl ? 'row-reverse' : 'row' },
+                  isActive && { backgroundColor: theme.backgroundSelected }
+                ]}
+                onPress={() => setActiveTab(item.key)}
+              >
+                <Text style={{ fontSize: 20 }}>{item.icon}</Text>
+                {sidebarExpanded && (
+                  <Text style={[
+                    styles.sidebarNavLabel, 
+                    { color: isActive ? theme.primary : theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }
+                  ]}>
+                    {item.label}
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Footer with Disconnect Button */}
+        <View style={styles.sidebarFooter}>
+          <Pressable
+            style={[styles.disconnectBtn, !sidebarExpanded && { padding: 8, borderRadius: 8 }]}
             onPress={handleDisconnect}
           >
-            <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>{isRtl ? 'התנתק' : 'Disconnect'}</Text>
+            {sidebarExpanded ? (
+              <Text style={styles.disconnectBtnText}>{isRtl ? 'התנתק' : 'Disconnect'}</Text>
+            ) : (
+              <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: 'bold' }}>✕</Text>
+            )}
           </Pressable>
         </View>
       </View>
-      <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#ef4444', textAlign: 'center', marginVertical: 15 }}>
-        ★ NOODLE ACTIVE VERSION v0.1 ★
-      </Text>
 
-      <ScrollView style={styles.scrollView}>
-        <Text style={[styles.sectionHeading, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
-          {t('pending_tasks')} ({assignments.length})
-        </Text>
-        {assignments.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
-            <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>{t('no_pending_tasks')}</Text>
-          </View>
-        ) : (
-          assignments.map((a) => {
-            const cColor = courseMap[a.course_moodle_id]?.color || theme.primary;
-            const cName = courseMap[a.course_moodle_id]?.name || a.course_name;
-            const hoursLeft = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : null;
-            let deadlineText = t('no_deadline');
-            if (hoursLeft !== null && a.deadline) {
-              if (hoursLeft < 0) {
-                deadlineText = t('overdue');
-              } else {
-                const diffMs = new Date(a.deadline).getTime() - Date.now();
-                const diffMins = Math.floor(diffMs / (1000 * 60));
-                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                
-                if (diffDays >= 1) {
-                  deadlineText = diffDays === 1 ? t('due_in_day') : t('due_in_days', { days: diffDays });
-                } else if (diffHours >= 1) {
-                  deadlineText = diffHours === 1 ? t('due_in_hour') : t('due_in_hours', { hours: diffHours });
-                } else {
-                  const mins = diffMins > 0 ? diffMins : 1;
-                  deadlineText = mins === 1 ? t('due_in_minute') : t('due_in_minutes', { minutes: mins });
-                }
-              }
-            }
-            return (
-              <View
-                key={a.id}
-                style={[
-                  styles.assignmentCard,
-                  {
-                    backgroundColor: theme.backgroundElement,
-                    borderLeftWidth: isRtl ? 0 : 4,
-                    borderRightWidth: isRtl ? 4 : 0,
-                    borderLeftColor: isRtl ? 'transparent' : cColor,
-                    borderRightColor: isRtl ? cColor : 'transparent',
-                    flexDirection: isRtl ? 'row-reverse' : 'row',
-                  },
-                ]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.courseTag, { color: cColor, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{cName}</Text>
-                  <Text style={[styles.assignName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
-                  <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                    {deadlineText}
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: a.status === 'Submitted' ? theme.secondary : theme.primary }]}>
-                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
-                    {a.status === 'Submitted' ? (isRtl ? 'הוגש' : 'Submitted') : (isRtl ? 'מטלה' : 'Assigned')}
-                  </Text>
-                </View>
-              </View>
-            );
-          })
-        )}
-
-        <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 24, textAlign: isRtl ? 'right' : 'left' }]}>
-          {t('zoom_links')} ({meetings.length})
-        </Text>
-        {meetings.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: theme.backgroundElement }]}>
-            <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>{t('no_zoom_links')}</Text>
-          </View>
-        ) : (
-          meetings.map((m) => {
-            const cColor = courseMap[m.course_moodle_id]?.color || theme.secondary;
-            return (
-              <View
-                key={m.id}
-                style={[
-                  styles.meetingCard,
-                  {
-                    backgroundColor: theme.backgroundElement,
-                    borderLeftWidth: isRtl ? 0 : 4,
-                    borderRightWidth: isRtl ? 4 : 0,
-                    borderLeftColor: isRtl ? 'transparent' : cColor,
-                    borderRightColor: isRtl ? cColor : 'transparent',
-                    flexDirection: isRtl ? 'row-reverse' : 'row',
-                  },
-                ]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }}>{m.section_name}</Text>
-                  <Text style={[styles.meetingTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{m.title}</Text>
-                </View>
-                <Pressable
-                  style={[styles.joinBtn, { backgroundColor: theme.secondary }]}
-                  onPress={() => {
-                    Alert.alert(t('join_zoom'), `Redirecting to: ${m.meeting_url}`);
-                  }}
-                >
-                  <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 12 }}>{t('join_zoom')}</Text>
-                </Pressable>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
+      {/* Screen Content Wrapper */}
+      <View style={{ flex: 1 }}>
+        {renderActiveScreen()}
+      </View>
     </View>
   );
 }
@@ -741,6 +891,88 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 20,
+    fontWeight: 'bold',
+  },
+  sidebar: {
+    flexShrink: 0,
+    paddingTop: 50,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  sidebarToggle: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  sidebarNav: {
+    flex: 1,
+    width: '100%',
+    gap: 4,
+    paddingHorizontal: 4,
+  },
+  sidebarNavItem: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 8,
+  },
+  sidebarNavLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  sidebarFooter: {
+    width: '100%',
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  disconnectBtn: {
+    width: '100%',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disconnectBtnText: {
+    color: '#ef4444',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  nextAssignmentBanner: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    gap: 12,
+    alignItems: 'center',
+  },
+  nextAssignLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  nextAssignTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  nextAssignCourse: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  nextAssignTime: {
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

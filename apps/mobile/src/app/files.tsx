@@ -103,13 +103,22 @@ export default function FilesScreen() {
       f.course_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group files by course
-  const filesByCourse: Record<number, { courseName: string; list: any[] }> = {};
+  // Group files by course and then by section
+  const filesByCourse: Record<number, { 
+    courseName: string; 
+    sections: Record<string, any[]>;
+  }> = {};
+
   filteredFiles.forEach((f) => {
-    if (!filesByCourse[f.course_moodle_id]) {
-      filesByCourse[f.course_moodle_id] = { courseName: f.course_name, list: [] };
+    const courseId = f.course_moodle_id;
+    if (!filesByCourse[courseId]) {
+      filesByCourse[courseId] = { courseName: f.course_name, sections: {} };
     }
-    filesByCourse[f.course_moodle_id].list.push(f);
+    const sectionName = f.section_name || (lang === 'he' ? 'כללי' : 'General');
+    if (!filesByCourse[courseId].sections[sectionName]) {
+      filesByCourse[courseId].sections[sectionName] = [];
+    }
+    filesByCourse[courseId].sections[sectionName].push(f);
   });
 
   return (
@@ -159,35 +168,52 @@ export default function FilesScreen() {
                 ]}
               >
                 <Text style={[styles.courseTitle, { color, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{getCourseName(moodleId, group.courseName)}</Text>
-                <View style={styles.fileList}>
-                  {group.list.map((f) => {
-                    const isDownloading = downloadingId === f.id;
-                    const fileSizeMb = f.file_size ? (f.file_size / 1024 / 1024).toFixed(2) : '0';
+                
+                {Object.entries(group.sections).map(([sectionName, sectionFiles], secIdx) => (
+                  <View key={secIdx} style={{ marginTop: 14 }}>
+                    <Text style={{
+                      color: theme.text,
+                      fontSize: 14,
+                      fontWeight: 'bold',
+                      borderBottomWidth: 1,
+                      borderBottomColor: theme.border,
+                      paddingBottom: 4,
+                      marginBottom: 8,
+                      textAlign: isRtl ? 'right' : 'left',
+                    }}>
+                      📁 {sectionName}
+                    </Text>
+                    <View style={styles.fileList}>
+                      {sectionFiles.map((f) => {
+                        const isDownloading = downloadingId === f.id;
+                        const fileSizeMb = f.file_size ? (f.file_size / 1024 / 1024).toFixed(2) : '0';
 
-                    return (
-                      <View key={f.id} style={[styles.fileRow, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.fileName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{f.file_name}</Text>
-                          <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }}>
-                            {f.section_name} • {fileSizeMb} MB
-                          </Text>
-                        </View>
+                        return (
+                          <View key={f.id} style={[styles.fileRow, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.fileName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{f.file_name}</Text>
+                              <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }}>
+                                {fileSizeMb} MB
+                              </Text>
+                            </View>
 
-                        <Pressable
-                          style={[styles.downloadBtn, { backgroundColor: color }]}
-                          onPress={() => handleDownload(f)}
-                          disabled={downloadingId !== null}
-                        >
-                          {isDownloading ? (
-                            <ActivityIndicator size="small" color="#ffffff" />
-                          ) : (
-                            <Text style={styles.downloadBtnText}>{isRtl ? 'הורד' : 'Get'}</Text>
-                          )}
-                        </Pressable>
-                      </View>
-                    );
-                  })}
-                </View>
+                            <Pressable
+                              style={[styles.downloadBtn, { backgroundColor: color }]}
+                              onPress={() => handleDownload(f)}
+                              disabled={downloadingId !== null}
+                            >
+                              {isDownloading ? (
+                                <ActivityIndicator size="small" color="#ffffff" />
+                              ) : (
+                                <Text style={styles.downloadBtnText}>{isRtl ? 'הורד' : 'Get'}</Text>
+                              )}
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
               </View>
             );
           })}
