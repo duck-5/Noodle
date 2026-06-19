@@ -11,10 +11,26 @@ import {
 
 
 // Setup periodic alarms on install / startup
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('TauTracker Extension Installed');
-  chrome.alarms.create('periodicSync', { periodInMinutes: 60 });
+  // Always recreate the alarm on install/update to ensure correct period (5 minutes)
+  await chrome.alarms.create('periodicSync', { periodInMinutes: 5 });
+  console.log('Forced creation of periodicSync alarm for 5 minutes onInstalled');
 });
+
+// Setup alarm checking function to register the alarm on startup without resetting it if it already exists
+async function setupAlarm() {
+  const alarm = await chrome.alarms.get('periodicSync');
+  if (!alarm || alarm.periodInMinutes !== 5) {
+    await chrome.alarms.create('periodicSync', { periodInMinutes: 5 });
+    console.log('Created periodicSync alarm for 5 minutes');
+  } else {
+    console.log('periodicSync alarm already exists with 5 minutes');
+  }
+}
+setupAlarm();
+
+chrome.runtime.onStartup.addListener(setupAlarm);
 
 chrome.alarms.onAlarm.addListener(async (alarm: chrome.alarms.Alarm) => {
   if (alarm.name === 'periodicSync') {
@@ -71,9 +87,7 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
   }
 
   if (message.type === 'LOGOUT') {
-    clearTauCookies()
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
+    sendResponse({ success: true });
     return true;
   }
 });
@@ -374,7 +388,6 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     }, 25000);
 
     try {
-      await clearTauCookies();
       const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
       
       // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
@@ -470,26 +483,5 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       }
     }
   });
-}
-
-async function clearTauCookies() {
-  const domains = ['moodle.tau.ac.il', 'nidp.tau.ac.il', '.tau.ac.il', 'tau.ac.il'];
-  for (const domain of domains) {
-    try {
-      const cookies = await chrome.cookies.getAll({ domain });
-      for (const cookie of cookies) {
-        const protocol = cookie.secure ? 'https://' : 'http://';
-        const cookieDomain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
-        const url = protocol + cookieDomain + cookie.path;
-        await chrome.cookies.remove({
-          url,
-          name: cookie.name,
-          storeId: cookie.storeId
-        });
-      }
-    } catch (e) {
-      console.error(`Failed to clear cookies for domain ${domain}:`, e);
-    }
-  }
 }
 
