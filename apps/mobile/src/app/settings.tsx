@@ -246,17 +246,79 @@ export default function SettingsScreen() {
 
       const fileUri = result.assets[0].uri;
       let content = '';
+      
+      // Try multiple methods to read the file content to bypass any permission or sandbox limits
       try {
-        content = await FileSystem.readAsStringAsync(fileUri);
-      } catch (fsError) {
-        console.warn('FileSystem readAsStringAsync failed, falling back to fetch:', fsError);
-        const response = await fetch(fileUri);
-        content = await response.text();
+        // Method 1: Copy picked URI to app cache root, read it, and delete temp file
+        const tempPath = FileSystem.cacheDirectory + 'temp_import_config.json';
+        await FileSystem.copyAsync({
+          from: fileUri,
+          to: tempPath,
+        });
+        content = await FileSystem.readAsStringAsync(tempPath);
+        try {
+          await FileSystem.deleteAsync(tempPath, { idempotent: true });
+        } catch (cleanupErr) {
+          console.warn('Failed to delete temp config file:', cleanupErr);
+        }
+      } catch (copyReadError: any) {
+        console.warn('Method 1 (copy to cache root) failed:', copyReadError);
+        try {
+          // Method 2: Direct read with decodeURIComponent
+          const decodedUri = decodeURIComponent(fileUri);
+          content = await FileSystem.readAsStringAsync(decodedUri);
+        } catch (directReadError1: any) {
+          console.warn('Method 2 (direct read decoded URI) failed:', directReadError1);
+          try {
+            // Method 3: Direct read with original URI
+            content = await FileSystem.readAsStringAsync(fileUri);
+          } catch (directReadError2: any) {
+            console.warn('Method 3 (direct read original URI) failed:', directReadError2);
+            try {
+              // Method 4: Fetch original URI
+              const response = await fetch(fileUri);
+              content = await response.text();
+            } catch (fetchError1: any) {
+              console.warn('Method 4 (fetch original URI) failed:', fetchError1);
+              try {
+                // Method 5: Fetch decoded URI
+                const response = await fetch(decodeURIComponent(fileUri));
+                content = await response.text();
+              } catch (fetchError2: any) {
+                console.error('All methods to read selected file failed.');
+                throw new Error(
+                  (lang === 'he' ? 'שגיאה בקריאת הקובץ:' : 'Error reading file:') +
+                  `\n- ${copyReadError.message || copyReadError}` +
+                  `\n- ${directReadError1.message || directReadError1}` +
+                  `\n- ${directReadError2.message || directReadError2}` +
+                  `\n- ${fetchError1.message || fetchError1}` +
+                  `\n- ${fetchError2.message || fetchError2}`
+                );
+              }
+            }
+          }
+        }
       }
-      const data = JSON.parse(content);
 
-      if (data.version !== "TauTrackerConfig-v1" || !data.trackedCourseIds || !data.settings) {
-        throw new Error(lang === 'he' ? 'פורמט קובץ לא תקין' : 'Invalid file format');
+      let data: any;
+      try {
+        data = JSON.parse(content);
+      } catch (jsonErr: any) {
+        throw new Error(
+          (lang === 'he' ? 'הקובץ אינו בפורמט JSON תקין: ' : 'File is not a valid JSON: ') +
+          (jsonErr.message || String(jsonErr))
+        );
+      }
+
+      // Check version and required fields (with informative message)
+      if (!data.trackedCourseIds || !data.settings) {
+        const foundKeys = Object.keys(data || {}).join(', ');
+        throw new Error(
+          (lang === 'he' 
+            ? 'קובץ תצורה לא תקין. הקובץ חייב להכיל הגדרות וקורסים.' 
+            : 'Invalid configuration file. Must contain settings and trackedCourseIds.') +
+          ` (Keys: ${foundKeys || 'none'})`
+        );
       }
 
       const db = getDb();
