@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   language: 'he',
   assignmentGreenDaysThreshold: 7,
   assignmentYellowDaysThreshold: 3,
-  theme: 'dark',
+  theme: 'noodle',
 };
 
 export async function getStoredToken(): Promise<string | null> {

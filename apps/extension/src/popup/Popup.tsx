@@ -19,7 +19,7 @@ export default function Popup() {
     if (settings?.theme) {
       document.body.className = `theme-${settings.theme}`;
     } else {
-      document.body.className = 'theme-dark';
+      document.body.className = 'theme-noodle';
     }
   }, [settings]);
 

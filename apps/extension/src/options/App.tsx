@@ -11,6 +11,7 @@ import {
   setSettings,
   getMoodleCredentials,
   setMoodleCredentials,
+  DEFAULT_SETTINGS,
 } from '../shared/storage.js';
 import type { ExtensionSettings } from '../shared/storage.js';
 import {
@@ -25,6 +26,11 @@ import { translations } from '../shared/i18n';
 
 import './App.css';
 import logoImg from '../assets/logo.png';
+import aboutIcon from '../assets/about-svgrepo-com.svg';
+import coursesIcon from '../assets/courses-logo.svg';
+import filesIcon from '../assets/files-folder-svgrepo-com.svg';
+import settingsIcon from '../assets/settings-logo.svg';
+import dashboardIcon from '../assets/dashboard-logo.svg';
 
 interface GroupedCourses {
   semesterKey: string;
@@ -109,6 +115,48 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+
+  useEffect(() => {
+    chrome.storage.local.get('sidebarCollapsed').then((res) => {
+      if (res && res.sidebarCollapsed !== undefined) {
+        setSidebarCollapsed(!!res.sidebarCollapsed);
+      }
+    });
+  }, []);
+
+  const toggleSidebarCollapse = async () => {
+    const val = !sidebarCollapsed;
+    setSidebarCollapsed(val);
+    await chrome.storage.local.set({ sidebarCollapsed: val });
+  };
+
+  const toggleCourseExpand = (courseId: number) => {
+    setExpandedCourses((prev) => ({
+      ...prev,
+      [courseId]: !prev[courseId],
+    }));
+  };
+
+  const handleViewSubject = (courseId: number, sectionName: string) => {
+    setActiveTab('courses');
+    setSelectedCourseId(null);
+    setExpandedCourses((prev) => ({ ...prev, [courseId]: true }));
+    
+    // Scroll into view after tab renders
+    setTimeout(() => {
+      const safeSectionName = encodeURIComponent(sectionName || 'General');
+      const el = document.getElementById(`section-${courseId}-${safeSectionName}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('pulse-glow-effect');
+        setTimeout(() => {
+          el.classList.remove('pulse-glow-effect');
+        }, 3000);
+      }
+    }, 200);
+  };
 
   // Toast and Tour States
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -185,7 +233,7 @@ export default function App() {
     if (settings?.theme) {
       document.body.className = `theme-${settings.theme}`;
     } else {
-      document.body.className = 'theme-dark';
+      document.body.className = 'theme-noodle';
     }
   }, [settings]);
 
@@ -551,25 +599,49 @@ export default function App() {
     );
   }
 
-  // Onboarding Step 1: Moodle Token Connection
   if (onboardingStep === 1) {
     return (
       <div className="onboarding-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
-        <div className="onboarding-card glass-panel">
+        <div className="onboarding-card glass-panel" style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem', position: 'absolute', top: '1rem', right: currentLang === 'he' ? 'auto' : '1rem', left: currentLang === 'he' ? '1rem' : 'auto' }}>
+            <select
+              value={currentLang}
+              onChange={async (e) => {
+                const newLang = e.target.value as 'he' | 'en';
+                const updated = { ...(settings || DEFAULT_SETTINGS), language: newLang };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
+              className="settings-select"
+              style={{
+                padding: '0.3rem 0.6rem',
+                fontSize: '0.85rem',
+                background: 'rgba(0,0,0,0.4)',
+                color: 'white',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="he" style={{ background: '#1e1b18', color: 'white' }}>עברית</option>
+              <option value="en" style={{ background: '#1e1b18', color: 'white' }}>English</option>
+            </select>
+          </div>
+
           <div className="logo-section">
             <img src={logoImg} alt="Noodle Logo" className="logo-image-large" />
             <h1>Noodle</h1>
-            <p className="subtitle">Sync Moodle Directly to Google Tasks</p>
+            <p className="subtitle">{t('moodle_credentials_title')}</p>
           </div>
 
           <div className="form-section" style={{ textAlign: 'center', marginTop: '2rem' }}>
             <form onSubmit={handleMoodleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', maxWidth: '300px', margin: '0 auto' }}>
-              <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-                Please enter your Moodle credentials. Your password will be securely saved locally to auto-refresh your session.
+              <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                {t('moodle_credentials_desc')}
               </p>
               <input
                 type="text"
-                placeholder="Username"
+                placeholder={t('username_placeholder')}
                 value={moodleUsername}
                 onChange={(e) => setMoodleUsername(e.target.value)}
                 className="noodle-input"
@@ -578,7 +650,7 @@ export default function App() {
               />
               <input
                 type="text"
-                placeholder="ID Number"
+                placeholder={t('id_placeholder')}
                 value={moodleId}
                 onChange={(e) => setMoodleId(e.target.value)}
                 className="noodle-input"
@@ -587,7 +659,7 @@ export default function App() {
               />
               <input
                 type="password"
-                placeholder="Password"
+                placeholder={t('password_placeholder')}
                 value={moodlePassword}
                 onChange={(e) => setMoodlePassword(e.target.value)}
                 className="noodle-input"
@@ -603,7 +675,7 @@ export default function App() {
                   style={{ cursor: 'pointer' }}
                 />
                 <label htmlFor="remember-me" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                  Remember me
+                  {t('remember_me')}
                 </label>
               </div>
               <button
@@ -612,7 +684,7 @@ export default function App() {
                 style={{ padding: '0.8rem 1.5rem', fontSize: '1.1rem', width: '100%' }}
                 disabled={loading}
               >
-                {loading ? 'Connecting...' : 'Connect to Moodle'}
+                {loading ? t('connecting') : t('connect_to_moodle')}
               </button>
             </form>
           </div>
@@ -631,16 +703,40 @@ export default function App() {
   if (onboardingStep === 2) {
     return (
       <div className="onboarding-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
-        <div className="onboarding-card glass-panel wide-card">
-          <h2>Select Courses to Track</h2>
+        <div className="onboarding-card glass-panel wide-card" style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem', position: 'absolute', top: '1rem', right: currentLang === 'he' ? 'auto' : '1rem', left: currentLang === 'he' ? '1rem' : 'auto' }}>
+            <select
+              value={currentLang}
+              onChange={async (e) => {
+                const newLang = e.target.value as 'he' | 'en';
+                const updated = { ...(settings || DEFAULT_SETTINGS), language: newLang };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
+              className="settings-select"
+              style={{
+                padding: '0.3rem 0.6rem',
+                fontSize: '0.85rem',
+                background: 'rgba(0,0,0,0.4)',
+                color: 'white',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="he" style={{ background: '#1e1b18', color: 'white' }}>עברית</option>
+              <option value="en" style={{ background: '#1e1b18', color: 'white' }}>English</option>
+            </select>
+          </div>
+          <h2>{t('select_courses_title')}</h2>
           <p className="subtitle" style={{ marginBottom: '1.5rem' }}>
-            Choose which courses you want to track deadlines, files, and grades for. You can change this later.
+            {t('select_courses_desc')}
           </p>
 
           {validatingToken ? (
             <div className="center-container">
               <div className="spinner"></div>
-              <p>Fetching enrolled courses...</p>
+              <p>{t('fetching_courses')}</p>
             </div>
           ) : (
             <>
@@ -689,7 +785,7 @@ export default function App() {
                   disabled={trackedCourseIds.length === 0}
                   style={{ width: '100%', maxWidth: '280px' }}
                 >
-                  Start Tracking ({trackedCourseIds.length} Courses)
+                  {t('start_tracking')} ({trackedCourseIds.length} {currentLang === 'he' ? 'קורסים' : 'Courses'})
                 </button>
                 <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
                   📁 {t('import_config_btn')}
@@ -724,9 +820,9 @@ export default function App() {
   const meetingsList = syncResult?.meetings || [];
 
   return (
-    <div className="dashboard-layout" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+    <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
       {/* Sidebar Navigation */}
-      <aside className="sidebar glass-panel">
+      <aside className={`sidebar glass-panel ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-logo" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center', marginBottom: '2rem' }}>
           <img src={logoImg} alt="Noodle Logo" className="sidebar-logo-img" />
           <span>Noodle</span>
@@ -737,37 +833,48 @@ export default function App() {
             className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); }}
           >
-            📊 {t('dashboard')}
+            <img src={dashboardIcon} alt="" className="nav-icon" /> <span>{t('dashboard')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'courses' ? 'active' : ''}`}
             onClick={() => { setActiveTab('courses'); setSelectedCourseId(null); }}
           >
-            📚 {t('courses')}
+            <img src={coursesIcon} alt="" className="nav-icon" /> <span>{t('courses')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'files' ? 'active' : ''}`}
             onClick={() => { setActiveTab('files'); setSelectedCourseId(null); }}
           >
-            📁 {t('files')}
+            <img src={filesIcon} alt="" className="nav-icon" /> <span>{t('files')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'grades' ? 'active' : ''}`}
             onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
           >
-            🎓 {t('grades')}
+            <span className="nav-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🎓</span> <span>{t('grades')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => { setActiveTab('settings'); setSelectedCourseId(null); }}
           >
-            ⚙️ {t('settings')}
+            <img src={settingsIcon} alt="" className="nav-icon" /> <span>{t('settings')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'about' ? 'active' : ''}`}
             onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
           >
-            ℹ️ {t('about')}
+            <img src={aboutIcon} alt="" className="nav-icon" /> <span>{t('about')}</span>
+          </button>
+
+          <button
+            className="nav-item collapse-toggle-btn"
+            onClick={toggleSidebarCollapse}
+            style={{ marginTop: 'auto' }}
+          >
+            <span className="toggle-arrow" style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', display: 'inline-block' }}>
+              {currentLang === 'he' ? '▶' : '◀'}
+            </span>
+            <span>{t('collapse_sidebar')}</span>
           </button>
         </nav>
 
@@ -799,6 +906,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <DashboardTab
               assignments={assignmentsList}
+              files={filesList}
               meetings={meetingsList}
               token={token}
               getCourseColor={getCourseColor}
@@ -809,6 +917,7 @@ export default function App() {
               t={t}
               lang={currentLang}
               tourStep={tourStep}
+              onViewSubject={handleViewSubject}
             />
           )}
 
@@ -844,6 +953,8 @@ export default function App() {
               lang={currentLang}
               tourStep={tourStep}
               settings={settings}
+              expandedCourses={expandedCourses}
+              onToggleExpand={toggleCourseExpand}
             />
           )}
 
@@ -979,6 +1090,7 @@ interface TabProps {
 // 1. DASHBOARD TAB
 function DashboardTab({
   assignments,
+  files,
   meetings,
   token,
   getCourseColor,
@@ -989,15 +1101,21 @@ function DashboardTab({
   t,
   lang,
   tourStep,
+  onViewSubject,
 }: {
   assignments: Assignment[];
+  files: CourseFile[];
   meetings: ZoomMeeting[];
   token: string | null;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   settings: ExtensionSettings | null;
   tourStep?: number;
+  onViewSubject: (courseId: number, sectionName: string) => void;
 } & TabProps) {
+  const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
+  const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
+
   const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
   
   // Sort assignments by due date ascending
@@ -1037,50 +1155,160 @@ function DashboardTab({
     <div className="tab-dashboard">
       {/* Next Assignment Highlight Banner */}
       {nextAssignment && (
-        <div className={`next-assignment-banner ${tourStep === 1 ? 'tour-highlight' : ''}`}>
-          <div className="next-assign-info">
-            <span className="next-assign-label">{t('next_assignment')}</span>
-            <span className="next-assign-title">{nextAssignment.name}</span>
-            <span className="next-assign-course" style={{ color: getCourseColor(nextAssignment.courseId) }}>
-              {getCourseDisplayName(nextAssignment.courseId, nextAssignment.courseName)}
-            </span>
-            {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
-              <div className="attachment-button-row" style={{ marginTop: '0.6rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                {nextAssignment.attachments.map((att, attIdx) => {
-                  const downloadUrl = token
-                    ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                    : att.url;
-                  return (
-                    <a
-                      key={attIdx}
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="action-link-btn file-btn btn-xs"
-                    >
-                      📄 {att.name}
-                    </a>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="next-assign-action">
-            {nextAssignment.deadline && (
-              <span className={`next-assign-time ${timeColorClass}`}>
-                {
-                  getDueTextAndClass(
-                    nextAssignment.deadline,
-                    lang,
-                    settings?.assignmentGreenDaysThreshold,
-                    settings?.assignmentYellowDaysThreshold
-                  ).deadlineText
-                }
+        <div
+          className={`next-assignment-banner ${tourStep === 1 ? 'tour-highlight' : ''} clickable-card ${isNextExpanded ? 'expanded' : ''}`}
+          style={{
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            gap: '1rem'
+          }}
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('a, button, input')) return;
+            setIsNextExpanded(!isNextExpanded);
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div className="next-assign-info">
+              <span className="next-assign-label">{t('next_assignment')}</span>
+              <span className="next-assign-title">{nextAssignment.name}</span>
+              <span className="next-assign-course" style={{ color: getCourseColor(nextAssignment.courseId) }}>
+                {getCourseDisplayName(nextAssignment.courseId, nextAssignment.courseName)}
               </span>
-            )}
-            <a href={nextAssignment.link} target="_blank" rel="noreferrer" className="primary-btn btn-sm">
-              {t('open_assignment')}
-            </a>
+              {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
+                <div className="attachment-button-row" style={{ marginTop: '0.6rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  {nextAssignment.attachments.map((att, attIdx) => {
+                    const downloadUrl = token
+                      ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                      : att.url;
+                    return (
+                      <a
+                        key={attIdx}
+                        href={downloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="action-link-btn file-btn btn-xs"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        📄 {att.name}
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="next-assign-action" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {nextAssignment.deadline && (
+                <span className={`next-assign-time ${timeColorClass}`}>
+                  {
+                    getDueTextAndClass(
+                      nextAssignment.deadline,
+                      lang,
+                      settings?.assignmentGreenDaysThreshold,
+                      settings?.assignmentYellowDaysThreshold
+                    ).deadlineText
+                  }
+                </span>
+              )}
+              <a
+                href={nextAssignment.link}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-btn btn-sm"
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                {t('open_assignment')}
+              </a>
+            </div>
+          </div>
+
+          {/* Expanding subject (section) element */}
+          <div
+            className={`expanded-subject-container ${isNextExpanded ? 'open' : ''}`}
+            onClick={(ev) => ev.stopPropagation()}
+            style={{
+              textAlign: lang === 'he' ? 'right' : 'left'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <h5 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>
+                📖 {lang === 'he' ? 'נושא' : 'Subject'}: {nextAssignment.sectionName || 'General'}
+              </h5>
+              <button
+                className="secondary-btn btn-sm"
+                onClick={() => onViewSubject(nextAssignment.courseId, nextAssignment.sectionName || 'General')}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              >
+                🔗 {t('go_to_course')}
+              </button>
+            </div>
+
+            {(() => {
+              const sectionFiles = files.filter(f => f.courseId === nextAssignment.courseId && (f.sectionName || 'General') === (nextAssignment.sectionName || 'General'));
+              const sectionAssignments = assignments.filter(assign => assign.courseId === nextAssignment.courseId && (assign.sectionName || 'General') === (nextAssignment.sectionName || 'General'));
+
+              return (
+                <>
+                  {sectionAssignments.length > 0 && (
+                    <div className="section-assignments-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        📝 {lang === 'he' ? 'מטלות בנושא' : 'Assignments in this subject'}
+                      </div>
+                      {sectionAssignments.map((sa) => {
+                        const { badgeClass, deadlineText } = getDueTextAndClass(
+                          sa.deadline || null,
+                          lang,
+                          settings?.assignmentGreenDaysThreshold,
+                          settings?.assignmentYellowDaysThreshold
+                        );
+                        return (
+                          <div key={sa.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                            <span className="item-name" style={{ fontSize: '0.85rem' }}>{sa.name}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                              <a href={sa.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                {lang === 'he' ? 'פתח ↗' : 'Open ↗'}
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {sectionFiles.length > 0 && (
+                    <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        📁 {lang === 'he' ? 'קבצים בנושא' : 'Files in this subject'}
+                      </div>
+                      {sectionFiles.map((f, fIdx) => {
+                        const downloadUrl = token
+                          ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                          : f.fileUrl;
+                        return (
+                          <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                            <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
+                            <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {sectionAssignments.length === 0 && sectionFiles.length === 0 && (
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      {lang === 'he' ? 'אין קבצים או מטלות נוספות בנושא זה' : 'No other files or assignments in this subject'}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1128,38 +1356,150 @@ function DashboardTab({
                 );
 
                 return (
-                  <div key={a.id} className="assignment-card glass-panel" style={{ borderRight: `4px solid ${color}` }}>
-                    <div className="assign-main">
-                      <span className="assign-course-tag" style={{ color }}>
-                        {getCourseDisplayName(a.courseId, a.courseName)}
-                      </span>
-                      <h4 className="assign-name">{a.name}</h4>
-                      {a.attachments && a.attachments.length > 0 && (
-                        <div className="attachment-button-row" style={{ marginTop: '0.5rem' }}>
-                          {a.attachments.map((att, attIdx) => {
-                            const downloadUrl = token
-                              ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                              : att.url;
-                            return (
-                              <a
-                                key={attIdx}
-                                href={downloadUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="action-link-btn file-btn btn-xs"
-                              >
-                                📄 {att.name}
-                              </a>
-                            );
-                          })}
-                        </div>
-                      )}
+                  <div
+                    key={a.id}
+                    className={`assignment-card glass-panel clickable-card ${expandedAssignId === a.id ? 'expanded' : ''}`}
+                    style={{
+                      borderRight: `4px solid ${color}`,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'stretch',
+                      gap: '1rem'
+                    }}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest('a, button, input')) return;
+                      setExpandedAssignId(expandedAssignId === a.id ? null : a.id);
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <div className="assign-main" style={{ textAlign: lang === 'he' ? 'right' : 'left' }}>
+                        <span className="assign-course-tag" style={{ color }}>
+                          {getCourseDisplayName(a.courseId, a.courseName)}
+                        </span>
+                        <h4 className="assign-name">{a.name}</h4>
+                        {a.attachments && a.attachments.length > 0 && (
+                          <div className="attachment-button-row" style={{ marginTop: '0.5rem' }}>
+                            {a.attachments.map((att, attIdx) => {
+                              const downloadUrl = token
+                                ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                                : att.url;
+                              return (
+                                <a
+                                  key={attIdx}
+                                  href={downloadUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="action-link-btn file-btn btn-xs"
+                                  onClick={(ev) => ev.stopPropagation()}
+                                >
+                                  📄 {att.name}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="assign-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                        <a
+                          href={a.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="action-icon-link"
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          ↗️ {lang === 'he' ? 'פתח' : 'Open'}
+                        </a>
+                      </div>
                     </div>
-                    <div className="assign-meta">
-                      <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                      <a href={a.link} target="_blank" rel="noreferrer" className="action-icon-link">
-                        ↗️ {lang === 'he' ? 'פתח' : 'Open'}
-                      </a>
+
+                    {/* Expanding subject (section) element */}
+                    <div
+                      className={`expanded-subject-container ${expandedAssignId === a.id ? 'open' : ''}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                      style={{
+                        textAlign: lang === 'he' ? 'right' : 'left'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <h5 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                          📖 {lang === 'he' ? 'נושא' : 'Subject'}: {a.sectionName || 'General'}
+                        </h5>
+                        <button
+                          className="secondary-btn btn-sm"
+                          onClick={() => onViewSubject(a.courseId, a.sectionName || 'General')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          🔗 {t('go_to_course')}
+                        </button>
+                      </div>
+
+                      {(() => {
+                        const sectionFiles = files.filter(f => f.courseId === a.courseId && (f.sectionName || 'General') === (a.sectionName || 'General'));
+                        const sectionAssignments = assignments.filter(assign => assign.courseId === a.courseId && (assign.sectionName || 'General') === (a.sectionName || 'General'));
+
+                        return (
+                          <>
+                            {sectionAssignments.length > 0 && (
+                              <div className="section-assignments-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                  📝 {lang === 'he' ? 'מטלות בנושא' : 'Assignments in this subject'}
+                                </div>
+                                {sectionAssignments.map((sa) => {
+                                  const { badgeClass, deadlineText } = getDueTextAndClass(
+                                    sa.deadline || null,
+                                    lang,
+                                    settings?.assignmentGreenDaysThreshold,
+                                    settings?.assignmentYellowDaysThreshold
+                                  );
+                                  return (
+                                    <div key={sa.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>{sa.name}</span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                                        <a href={sa.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                          {lang === 'he' ? 'פתח ↗' : 'Open ↗'}
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {sectionFiles.length > 0 && (
+                              <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                  📁 {lang === 'he' ? 'קבצים בנושא' : 'Files in this subject'}
+                                </div>
+                                {sectionFiles.map((f, fIdx) => {
+                                  const downloadUrl = token
+                                    ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                                    : f.fileUrl;
+                                  return (
+                                    <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
+                                      <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                        <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                          {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {sectionAssignments.length === 0 && sectionFiles.length === 0 && (
+                              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                {lang === 'he' ? 'אין קבצים או מטלות נוספות בנושא זה' : 'No other files or assignments in this subject'}
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -1216,6 +1556,8 @@ function CoursesTab({
   lang,
   tourStep,
   settings,
+  expandedCourses,
+  onToggleExpand,
 }: {
   trackedCourseIds: number[];
   syncResult: SyncResult | null;
@@ -1227,6 +1569,8 @@ function CoursesTab({
   onSelectCourse: (id: number) => void;
   tourStep?: number;
   settings: ExtensionSettings | null;
+  expandedCourses: Record<number, boolean>;
+  onToggleExpand: (id: number) => void;
 } & TabProps) {
   const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
   
@@ -1247,7 +1591,6 @@ function CoursesTab({
 
   const [activeTrackedIds, setActiveTrackedIds] = useState<number[]>(trackedCourseIds);
   const [configExpanded, setConfigExpanded] = useState<boolean>(false);
-  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setActiveTrackedIds(trackedCourseIds);
@@ -1259,13 +1602,6 @@ function CoursesTab({
     } else {
       setActiveTrackedIds([...activeTrackedIds, id]);
     }
-  };
-
-  const toggleCourseExpand = (courseId: number) => {
-    setExpandedCourses(prev => ({
-      ...prev,
-      [courseId]: !prev[courseId]
-    }));
   };
 
   const getCourseSectionsList = (courseId: number) => {
@@ -1414,13 +1750,22 @@ function CoursesTab({
                         📖 {displayName}
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
                       </h4>
-                      <button
-                        className="icon-btn"
-                        onClick={() => toggleCourseExpand(c.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1.1rem', padding: '0.2rem' }}
-                      >
-                        {isExpanded ? '▲' : '▼'}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <button
+                          className="secondary-btn btn-xs"
+                          onClick={() => onSelectCourse(c.id)}
+                          style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          {t('go_to_course_page')}
+                        </button>
+                        <button
+                          className="icon-btn"
+                          onClick={() => onToggleExpand(c.id)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1.1rem', padding: '0.2rem' }}
+                        >
+                          {isExpanded ? '▲' : '▼'}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="nav-course-sections sections-tree" style={{ marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -1428,7 +1773,7 @@ function CoursesTab({
                         <p className="no-content-text" style={{ fontSize: '0.85rem' }}>{lang === 'he' ? 'אין נושאים או קבצים' : 'No sections or files'}</p>
                       ) : (
                         displayedSections.map(([secName, content], sIdx) => (
-                          <div key={sIdx} className="section-node glass-panel" style={{ padding: '0.8rem', gap: '0.5rem' }}>
+                          <div key={sIdx} id={`section-${c.id}-${encodeURIComponent(secName || 'General')}`} className="section-node glass-panel" style={{ padding: '0.8rem', gap: '0.5rem' }}>
                             <h5 className="section-node-title" style={{ fontSize: '0.95rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.3rem', marginBottom: '0.2rem' }}>{secName}</h5>
                             
                             {content.assignments.length > 0 && (

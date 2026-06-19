@@ -7,7 +7,6 @@
     "storage",
     "alarms",
     "notifications",
-    "cookies",
     "identity",
     "webRequest"
   ],
