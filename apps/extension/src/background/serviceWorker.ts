@@ -87,10 +87,82 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
   }
 
   if (message.type === 'LOGOUT') {
-    sendResponse({ success: true });
+    clearUserSession()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 });
+
+
+// --------------------------------------------------------------------------
+// Session Teardown — clears ALL user-specific data on logout
+// --------------------------------------------------------------------------
+
+/**
+ * Clears all TAU SSO and Moodle session cookies so the next login always
+ * goes through a fresh credential challenge.  Without this, the SSO server
+ * recognises the existing browser session and returns the previous user's
+ * token regardless of what credentials are entered.
+ */
+async function clearTauCookies(): Promise<void> {
+  const domains = [
+    'moodle.tau.ac.il',
+    'nidp.tau.ac.il',
+    'tau.ac.il',
+  ];
+
+  for (const domain of domains) {
+    for (const protocol of ['https', 'http'] as const) {
+      const url = `${protocol}://${domain}/`;
+      let cookies: chrome.cookies.Cookie[] = [];
+      try {
+        cookies = await chrome.cookies.getAll({ domain });
+      } catch (_) {
+        // cookies API may not have access — continue
+      }
+      for (const cookie of cookies) {
+        try {
+          await chrome.cookies.remove({ url, name: cookie.name });
+        } catch (_) {
+          // ignore individual removal errors
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Full user-session teardown.  Removes every user-specific storage key
+ * while leaving general UI preferences (theme, language, sidebar) intact.
+ */
+async function clearUserSession(): Promise<void> {
+  // 1. Invalidate SSO/Moodle browser session
+  await clearTauCookies();
+
+  // 2. Wipe all user-specific local storage keys
+  const userLocalKeys = [
+    'wstoken',
+    'moodleCredentials',
+    'cachedSyncResult',
+    'enrolledCoursesCache',
+    'googleAccessToken',
+    'googleTokenExpiry',
+  ];
+  await chrome.storage.local.remove(userLocalKeys);
+
+  // Also remove dynamic notification-tracking keys (notified_24h_*, notified_1h_*)
+  const allLocal = await chrome.storage.local.get(null);
+  const notificationKeys = Object.keys(allLocal).filter(
+    (k) => k.startsWith('notified_')
+  );
+  if (notificationKeys.length > 0) {
+    await chrome.storage.local.remove(notificationKeys);
+  }
+
+  // 3. Wipe user-specific sync storage keys
+  await chrome.storage.sync.remove('trackedCourseIds');
+}
 
 
 async function validateToken(token: string) {

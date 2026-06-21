@@ -439,19 +439,18 @@ export default function App() {
     setLoading(true);
     setShowDisconnectModal(false);
     try {
-      // Clear TAU browser session cookies so next login is always fresh
+      // clearUserSession() in the service worker handles:
+      //   • Clearing all TAU/Moodle SSO cookies (so next login is always a fresh challenge)
+      //   • Removing wstoken, moodleCredentials, cachedSyncResult, enrolledCoursesCache,
+      //     googleAccessToken, googleTokenExpiry, and all notified_* keys from local storage
+      //   • Removing trackedCourseIds from sync storage
       await logoutOnBackground();
 
-      await setStoredToken(null);
-      await setMoodleCredentials(null);
-      await setTrackedCourseIds([]);
-      await chrome.storage.local.remove('cachedSyncResult');
-      await chrome.storage.local.remove('enrolledCoursesCache');
-      
+      // Handle config_backup separately (UI-layer concern not owned by the service worker)
       if (deletePermanently) {
         await chrome.storage.local.remove('config_backup');
       } else {
-        // Clear wstoken from the backup so that restoring backup later does not auto-login
+        // Strip the token from the backup so restoring it later doesn't auto-login
         const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
         if (backupRes.config_backup) {
           const updatedBackup = { ...backupRes.config_backup };
@@ -459,10 +458,15 @@ export default function App() {
           await chrome.storage.local.set({ config_backup: updatedBackup });
         }
       }
-      
+
+      // Reset ALL user-specific React state so the UI reflects a clean slate immediately
       setToken(null);
       setTrackedCourseIdsState([]);
       setSyncResult(null);
+      setAvailableCourses([]);
+      setMoodleUsername('');
+      setMoodleId('');
+      setMoodlePassword('');
       setOnboardingStep(1);
     } catch (e) {
       console.error(e);
@@ -936,6 +940,7 @@ export default function App() {
               tourStep={tourStep}
               onViewSubject={handleViewSubject}
               onToggleMeetingInterest={handleToggleMeetingInterest}
+              trackedCourseIds={trackedCourseIds}
             />
           )}
 
@@ -1153,6 +1158,7 @@ function DashboardTab({
   tourStep,
   onViewSubject,
   onToggleMeetingInterest,
+  trackedCourseIds,
 }: {
   assignments: Assignment[];
   files: CourseFile[];
@@ -1164,10 +1170,11 @@ function DashboardTab({
   tourStep?: number;
   onViewSubject: (courseId: number, sectionName: string) => void;
   onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
+  trackedCourseIds: number[];
 } & TabProps) {
   const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
-  const [expandedCourseMeetings, setExpandedCourseMeetings] = useState<Record<number, boolean>>({});
+  const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
 
   const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
   
@@ -1567,16 +1574,47 @@ function DashboardTab({
             {(() => {
               const allMeetingIds = meetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
 
-              // Group meetings by course
-              const meetingsByCourse = new Map<number, { courseName: string; courseId: number; meetings: ZoomMeeting[] }>();
-              meetings.forEach((m) => {
-                if (!meetingsByCourse.has(m.courseId)) {
-                  meetingsByCourse.set(m.courseId, { courseName: m.courseName, courseId: m.courseId, meetings: [] });
-                }
-                meetingsByCourse.get(m.courseId)!.meetings.push(m);
-              });
+              const coursesWithMeetings = trackedCourseIds.map((cid) => {
+                const courseMeetings = meetings.filter(m => m.courseId === cid);
+                
+                // Deduplicate recurring meetings by meetingNumber or meetingUrl
+                const now = new Date();
+                const groups = new Map<string, typeof meetings>();
+                courseMeetings.forEach(m => {
+                  const key = m.meetingNumber || m.meetingUrl;
+                  if (!key) return;
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(m);
+                });
 
-              const coursesWithMeetings = Array.from(meetingsByCourse.values());
+                const dedupedMeetings: typeof meetings = [];
+                for (const [, list] of groups.entries()) {
+                  if (list.length <= 1) {
+                    dedupedMeetings.push(list[0]);
+                    continue;
+                  }
+                  const future = list.filter(m => m.startTime && new Date(m.startTime!) >= now);
+                  const past = list.filter(m => m.startTime && new Date(m.startTime!) < now);
+                  const noTime = list.filter(m => !m.startTime);
+
+                  if (future.length > 0) {
+                    future.sort((a, b) => new Date(a.startTime!).getTime() - new Date(b.startTime!).getTime());
+                    dedupedMeetings.push(future[0]);
+                  } else if (past.length > 0) {
+                    past.sort((a, b) => new Date(b.startTime!).getTime() - new Date(a.startTime!).getTime());
+                    dedupedMeetings.push(past[0]);
+                  } else if (noTime.length > 0) {
+                    dedupedMeetings.push(noTime[0]);
+                  }
+                }
+
+                const courseName = courseMeetings[0]?.courseName || getCourseDisplayName(cid, `Course ${cid}`);
+                return {
+                  courseId: cid,
+                  courseName,
+                  meetings: dedupedMeetings
+                };
+              });
 
               if (coursesWithMeetings.length === 0) {
                 return <div className="empty-state">{t('empty_state_zoom')}</div>;
@@ -1590,24 +1628,24 @@ function DashboardTab({
 
               return coursesWithMeetings.map((c) => {
                 const color = getCourseColor(c.courseId);
-                const isExpanded = !!expandedCourseMeetings[c.courseId];
+                const isExpanded = expandedCourseId === c.courseId;
                 const markedMeetings = c.meetings.filter(isMarked);
 
                 return (
                   <div key={c.courseId} className="zoom-course-card glass-panel" style={{ borderLeft: lang === 'he' ? 'none' : `4px solid ${color}`, borderRight: lang === 'he' ? `4px solid ${color}` : 'none', padding: '1rem', marginBottom: '0.2rem' }}>
                     <div 
                       className="zoom-course-header" 
-                      onClick={() => setExpandedCourseMeetings(prev => ({ ...prev, [c.courseId]: !prev[c.courseId] }))}
+                      onClick={() => setExpandedCourseId(prev => prev === c.courseId ? null : c.courseId)}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', flex: 1 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, textAlign: lang === 'he' ? 'right' : 'left' }}>
                         <h4 style={{ margin: 0, fontSize: '1rem', color: color, fontWeight: 'bold' }}>
                           📖 {getCourseDisplayName(c.courseId, c.courseName)}
                         </h4>
                         
                         {/* Configured Quick buttons */}
                         {markedMeetings.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: lang === 'he' ? '0 12px 0 0' : '0 0 0 12px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
                             {markedMeetings.slice(0, 3).map((m, idx) => (
                               <a
                                 key={idx}
@@ -1649,10 +1687,10 @@ function DashboardTab({
                     <div 
                       className="zoom-course-meetings-dropdown" 
                       style={{ 
-                        maxHeight: isExpanded ? '1000px' : '0px',
+                        maxHeight: isExpanded ? '500px' : '0px',
                         opacity: isExpanded ? 1 : 0,
                         overflow: 'hidden',
-                        transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease',
+                        transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
                         marginTop: isExpanded ? '1rem' : '0px', 
                         borderTop: isExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
                         paddingTop: isExpanded ? '1rem' : '0px', 
@@ -1662,6 +1700,14 @@ function DashboardTab({
                       }}
                     >
                       {(() => {
+                        if (c.meetings.length === 0) {
+                          return (
+                            <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
+                              {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                            </div>
+                          );
+                        }
+
                         const sortedMeetings = [...c.meetings].sort((a, b) => {
                           const aMarked = isMarked(a);
                           const bMarked = isMarked(b);
@@ -1671,7 +1717,12 @@ function DashboardTab({
                           const statusA = getMeetingStatus(a.startTime);
                           const statusB = getMeetingStatus(b.startTime);
                           const priority = { active: 1, unknown: 2, inactive: 3 };
-                          return priority[statusA] - priority[statusB];
+                          if (priority[statusA] !== priority[statusB]) {
+                            return priority[statusA] - priority[statusB];
+                          }
+                          const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
+                          const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
+                          return timeB - timeA;
                         });
 
                         return sortedMeetings.map((m, idx) => {
@@ -2550,9 +2601,39 @@ function CourseDetailView({
         {/* Left column: Section Tree */}
         <div className="detail-main-tree">
           {(() => {
-            const courseMeetings = meetings.filter(m => m.courseId === courseId);
-            if (courseMeetings.length === 0) return null;
+            const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
             
+            // Deduplicate recurring meetings by meetingNumber or meetingUrl
+            const now = new Date();
+            const groups = new Map<string, typeof meetings>();
+            rawCourseMeetings.forEach(m => {
+              const key = m.meetingNumber || m.meetingUrl;
+              if (!key) return;
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key)!.push(m);
+            });
+
+            const courseMeetings: typeof meetings = [];
+            for (const [, list] of groups.entries()) {
+              if (list.length <= 1) {
+                courseMeetings.push(list[0]);
+                continue;
+              }
+              const future = list.filter(m => m.startTime && new Date(m.startTime!) >= now);
+              const past = list.filter(m => m.startTime && new Date(m.startTime!) < now);
+              const noTime = list.filter(m => !m.startTime);
+
+              if (future.length > 0) {
+                future.sort((a, b) => new Date(a.startTime!).getTime() - new Date(b.startTime!).getTime());
+                courseMeetings.push(future[0]);
+              } else if (past.length > 0) {
+                past.sort((a, b) => new Date(b.startTime!).getTime() - new Date(a.startTime!).getTime());
+                courseMeetings.push(past[0]);
+              } else if (noTime.length > 0) {
+                courseMeetings.push(noTime[0]);
+              }
+            }
+
             const isMarked = (m: ZoomMeeting) => {
               if (!settings?.interestedMeetings) return false;
               const id = m.meetingNumber || m.meetingUrl;
@@ -2567,14 +2648,14 @@ function CourseDetailView({
                   onClick={() => setExpandedZoom(!expandedZoom)}
                   style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', flex: 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, textAlign: lang === 'he' ? 'right' : 'left' }}>
                     <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold' }}>
                       📹 {t('zoom_links_found')}
                     </h4>
                     
                     {/* Configured Quick buttons */}
                     {markedMeetings.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: lang === 'he' ? '0 12px 0 0' : '0 0 0 12px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
                         {markedMeetings.slice(0, 3).map((m, idx) => (
                           <a
                             key={idx}
@@ -2616,10 +2697,10 @@ function CourseDetailView({
                 <div 
                   className="zoom-course-meetings-dropdown" 
                   style={{ 
-                    maxHeight: expandedZoom ? '1000px' : '0px',
+                    maxHeight: expandedZoom ? '500px' : '0px',
                     opacity: expandedZoom ? 1 : 0,
                     overflow: 'hidden',
-                    transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease',
+                    transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
                     marginTop: expandedZoom ? '1rem' : '0px', 
                     borderTop: expandedZoom ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
                     paddingTop: expandedZoom ? '1rem' : '0px', 
@@ -2629,6 +2710,13 @@ function CourseDetailView({
                   }}
                 >
                   {(() => {
+                    if (courseMeetings.length === 0) {
+                      return (
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
+                          {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                        </div>
+                      );
+                    }
                     const allMeetingIds = courseMeetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
                     const sortedMeetings = [...courseMeetings].sort((a, b) => {
                       const aMarked = isMarked(a);
@@ -2639,7 +2727,12 @@ function CourseDetailView({
                       const statusA = getMeetingStatus(a.startTime);
                       const statusB = getMeetingStatus(b.startTime);
                       const priority = { active: 1, unknown: 2, inactive: 3 };
-                      return priority[statusA] - priority[statusB];
+                      if (priority[statusA] !== priority[statusB]) {
+                        return priority[statusA] - priority[statusB];
+                      }
+                      const timeA = a.startTime ? new Date(a.startTime).getTime() : 0;
+                      const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
+                      return timeB - timeA;
                     });
 
                     return sortedMeetings.map((m, idx) => {

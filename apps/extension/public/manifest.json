@@ -8,11 +8,13 @@
     "alarms",
     "notifications",
     "identity",
-    "webRequest"
+    "webRequest",
+    "cookies"
   ],
   "host_permissions": [
     "*://moodle.tau.ac.il/*",
     "*://nidp.tau.ac.il/*",
+    "*://tau.ac.il/*",
     "https://accounts.google.com/*",
     "https://tasks.googleapis.com/*",
     "https://www.googleapis.com/*",
