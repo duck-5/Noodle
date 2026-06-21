@@ -1,7 +1,7 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
 import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials } from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
-import { CookieJar, performLogin, scrapeZoomMeetingsDirect } from './zoomScraper.js';
+import { CookieJar, performLogin, scrapeZoomMeetingsWithToken } from './zoomScraper.js';
 
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
@@ -283,39 +283,27 @@ export async function runSync(
           }
 
           // Zoom Meetings parsing
-          if (modname === 'lti' && nameLower.includes('zoom')) {
-            const jar = await getScrapeJar();
-            if (jar) {
-              try {
-                const ltiMeetings = await scrapeZoomMeetingsDirect(jar, module.id);
-                for (const lm of ltiMeetings) {
-                  meetings.push({
-                    title: lm.topic,
-                    meetingUrl: lm.joinUrl,
-                    sectionName,
-                    courseId,
-                    courseName,
-                    startTime: lm.startTime,
-                    meetingNumber: lm.meetingNumber,
-                    password: lm.password,
-                  });
-                }
-              } catch (err: any) {
-                errors.push({
-                  context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
-                  message: err.message,
-                });
-                // Fallback to Moodle LTI link
+          if (modname === 'lti' && nameLower.includes('zoom') && module.instance !== undefined) {
+            try {
+              const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, baseUrl);
+              for (const lm of ltiMeetings) {
                 meetings.push({
-                  title: name,
-                  meetingUrl: module.url || '',
+                  title: lm.topic,
+                  meetingUrl: lm.joinUrl,
                   sectionName,
                   courseId,
                   courseName,
+                  startTime: lm.startTime,
+                  meetingNumber: lm.meetingNumber,
+                  password: lm.password,
                 });
               }
-            } else {
-              // Fallback if no auth/jar available
+            } catch (err: any) {
+              errors.push({
+                context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
+                message: err.message,
+              });
+              // Fallback to Moodle LTI link
               meetings.push({
                 title: name,
                 meetingUrl: module.url || '',

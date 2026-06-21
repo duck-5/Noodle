@@ -313,33 +313,42 @@ export async function scrapeZoomMeetings(
     throw new Error(`Zoom LTI activity was not found in the course "${targetCourse.fullname}"`);
   }
 
-  return scrapeZoomMeetingsDirect(jar, zoomModule.id);
+  return scrapeZoomMeetingsWithToken(token, zoomModule.instance);
 }
 
-export async function scrapeZoomMeetingsDirect(
-  jar: CookieJar,
-  zoomModuleId: number
+export async function scrapeZoomMeetingsWithToken(
+  token: string,
+  instanceId: number,
+  baseUrl = 'https://moodle.tau.ac.il'
 ): Promise<LtiZoomMeeting[]> {
-  // 3. Request LTI view page and follow LTI frame redirects
-  const viewUrl = `https://moodle.tau.ac.il/mod/lti/view.php?id=${zoomModuleId}`;
-  let viewRes = await mfetch(jar, viewUrl);
-  let viewHtml = await viewRes.text();
+  const wsUrl = `${baseUrl}/webservice/rest/server.php`;
+  const urlParams = new URLSearchParams({
+    wstoken: token,
+    wsfunction: 'mod_lti_get_tool_launch_data',
+    moodlewsrestformat: 'json',
+    toolid: String(instanceId),
+  });
 
-  const iframeMatch = viewHtml.match(/<iframe[^>]+id=["']contentframe["'][^>]+src=["']([^"']+)["']/i)
-    || viewHtml.match(/<iframe[^>]+src=["']([^"']+)["'][^>]+id=["']contentframe["']/i)
-    || viewHtml.match(/<iframe[^>]+src=["']([^"']+)["']/i);
-
-  if (iframeMatch) {
-    const iframeSrc = decodeHTMLEntities(iframeMatch[1]);
-    viewRes = await mfetch(jar, iframeSrc);
-    viewHtml = await viewRes.text();
+  const res = await fetch(`${wsUrl}?${urlParams.toString()}`);
+  if (!res.ok) {
+    throw new Error(`Failed to call Moodle WS API mod_lti_get_tool_launch_data: ${res.statusText}`);
   }
 
-  // 4. Parse the LTI launch form and submit to Zoom tool provider
-  const { actionUrl, params: ltiParams } = parseLtiForm(viewHtml);
-  
+  const launchData = await res.json();
+  if (launchData.exception) {
+    throw new Error(`Moodle API Exception: ${launchData.message}`);
+  }
+
+  const endpoint = launchData.endpoint;
+  const ltiParams = new URLSearchParams();
+  if (Array.isArray(launchData.parameters)) {
+    launchData.parameters.forEach((p: any) => {
+      ltiParams.append(p.name, p.value);
+    });
+  }
+
   const zoomJar = new CookieJar();
-  const zoomRes = await mfetch(zoomJar, actionUrl, {
+  const zoomRes = await mfetch(zoomJar, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

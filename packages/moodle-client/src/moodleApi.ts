@@ -91,6 +91,7 @@ export interface RawCourseModule {
   name: string;
   modname: string;
   url?: string;
+  instance?: number;
   contents?: RawCourseFileContent[];
 }
 
