@@ -233,18 +233,24 @@ function parseLtiForm(html: string): { actionUrl: string; params: URLSearchParam
 }
 
 function parseAppConf(html: string): any {
-  const start = html.indexOf('window.appConf =');
-  if (start === -1) throw new Error('window.appConf script block not found in Zoom LTI HTML');
+  const headersBlockMatch = html.match(/ajaxHeaders\s*:\s*\[([\s\S]*?)\]/);
+  if (!headersBlockMatch) {
+    throw new Error('ajaxHeaders not found in Zoom LTI HTML');
+  }
+
+  const blockContent = headersBlockMatch[1];
+  const ajaxHeaders: { key: string; value: string }[] = [];
   
-  const end = html.indexOf('</script>', start);
-  const scriptContent = html.substring(start, end);
-  
-  // Safely evaluate window.appConf in a sandboxed context
-  const sandbox: any = {};
-  const fn = new Function('window', scriptContent);
-  fn(sandbox);
-  
-  return sandbox.appConf;
+  const regex = /\{\s*["']?key["']?\s*:\s*["']([^"']+)["']\s*,\s*["']?value["']?\s*:\s*["']([^"']+)["']\s*\}/g;
+  let match;
+  while ((match = regex.exec(blockContent)) !== null) {
+    ajaxHeaders.push({
+      key: match[1],
+      value: match[2]
+    });
+  }
+
+  return { ajaxHeaders };
 }
 
 export async function scrapeZoomMeetings(

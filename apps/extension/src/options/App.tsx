@@ -1569,6 +1569,28 @@ function DashboardTab({
           <div className="zoom-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ margin: 0 }}>{t('zoom_links_found')}</h3>
           </div>
+
+          {(() => {
+            const activeMeeting = meetings.find(m => getMeetingStatus(m.startTime) === 'active');
+            if (!activeMeeting) return null;
+            const courseDisplayName = getCourseDisplayName(activeMeeting.courseId, activeMeeting.courseName);
+            return (
+              <div className="current-zoom-banner" style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>{t('current_zoom')}</span>
+                <a 
+                  href={activeMeeting.meetingUrl} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  style={{ 
+                    color: getCourseColor(activeMeeting.courseId),
+                    textDecoration: 'underline'
+                  }}
+                >
+                  {courseDisplayName} - {activeMeeting.title}
+                </a>
+              </div>
+            );
+          })()}
           
           <div className="zoom-courses-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {(() => {
@@ -1645,8 +1667,8 @@ function DashboardTab({
                         
                         {/* Configured Quick buttons */}
                         {markedMeetings.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-                            {markedMeetings.slice(0, 3).map((m, idx) => (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', alignItems: lang === 'he' ? 'flex-end' : 'flex-start' }}>
+                            {markedMeetings.map((m, idx) => (
                               <a
                                 key={idx}
                                 href={m.meetingUrl}
@@ -1654,27 +1676,20 @@ function DashboardTab({
                                 rel="noreferrer"
                                 onClick={(ev) => ev.stopPropagation()}
                                 style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  backgroundColor: color,
-                                  color: '#fff',
-                                  textDecoration: 'none',
-                                  boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                                  transition: 'opacity 0.2s'
+                                  fontSize: '13px',
+                                  fontWeight: 500,
+                                  color: 'var(--text-primary)',
+                                  textDecoration: 'underline',
+                                  textDecorationColor: color,
+                                  transition: 'opacity 0.2s',
+                                  lineHeight: '1.4'
                                 }}
-                                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+                                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
                               >
-                                {m.title.length > 15 ? m.title.substring(0, 15) + '...' : m.title}
+                                {m.title}
                               </a>
                             ))}
-                            {markedMeetings.length > 3 && (
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                +{markedMeetings.length - 3}
-                              </span>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1687,9 +1702,9 @@ function DashboardTab({
                     <div 
                       className="zoom-course-meetings-dropdown" 
                       style={{ 
-                        maxHeight: isExpanded ? '500px' : '0px',
+                        maxHeight: isExpanded ? '300px' : '0px',
                         opacity: isExpanded ? 1 : 0,
-                        overflow: 'hidden',
+                        overflowY: isExpanded ? 'auto' : 'hidden',
                         transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
                         marginTop: isExpanded ? '1rem' : '0px', 
                         borderTop: isExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
@@ -2653,10 +2668,31 @@ function CourseDetailView({
                       📹 {t('zoom_links_found')}
                     </h4>
                     
+                    {(() => {
+                      const activeMeeting = courseMeetings.find(m => getMeetingStatus(m.startTime) === 'active');
+                      if (!activeMeeting) return null;
+                      return (
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{t('current_zoom')} </span>
+                          <a 
+                            href={activeMeeting.meetingUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            style={{ 
+                              color: courseColor,
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            {activeMeeting.title}
+                          </a>
+                        </div>
+                      );
+                    })()}
+                    
                     {/* Configured Quick buttons */}
                     {markedMeetings.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-                        {markedMeetings.slice(0, 3).map((m, idx) => (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', alignItems: lang === 'he' ? 'flex-end' : 'flex-start' }}>
+                        {markedMeetings.map((m, idx) => (
                           <a
                             key={idx}
                             href={m.meetingUrl}
@@ -2664,27 +2700,20 @@ function CourseDetailView({
                             rel="noreferrer"
                             onClick={(ev) => ev.stopPropagation()}
                             style={{
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              backgroundColor: courseColor,
-                              color: '#fff',
-                              textDecoration: 'none',
-                              boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                              transition: 'opacity 0.2s'
+                              fontSize: '13px',
+                              fontWeight: 500,
+                              color: 'var(--text-primary)',
+                              textDecoration: 'underline',
+                              textDecorationColor: courseColor,
+                              transition: 'opacity 0.2s',
+                              lineHeight: '1.4'
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
                           >
-                            {m.title.length > 15 ? m.title.substring(0, 15) + '...' : m.title}
+                            {m.title}
                           </a>
                         ))}
-                        {markedMeetings.length > 3 && (
-                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            +{markedMeetings.length - 3}
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -2697,9 +2726,9 @@ function CourseDetailView({
                 <div 
                   className="zoom-course-meetings-dropdown" 
                   style={{ 
-                    maxHeight: expandedZoom ? '500px' : '0px',
+                    maxHeight: expandedZoom ? '300px' : '0px',
                     opacity: expandedZoom ? 1 : 0,
-                    overflow: 'hidden',
+                    overflowY: expandedZoom ? 'auto' : 'hidden',
                     transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
                     marginTop: expandedZoom ? '1rem' : '0px', 
                     borderTop: expandedZoom ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 

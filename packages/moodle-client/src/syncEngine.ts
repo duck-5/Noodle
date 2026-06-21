@@ -299,36 +299,11 @@ export async function runSync(
                 });
               }
             } catch (err: any) {
+              console.warn(`[SyncEngine] Failed to scrape Zoom meetings for course ${courseName} (module ID: ${module.id}):`, err);
               errors.push({
                 context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
                 message: err.message,
               });
-              // Fallback to Moodle LTI link
-              meetings.push({
-                title: name,
-                meetingUrl: module.url || '',
-                sectionName,
-                courseId,
-                courseName,
-              });
-            }
-          } else if (modname === 'url' && module.contents) {
-            for (const content of module.contents) {
-              if (content.type === 'url') {
-                const mUrl = content.fileurl || '';
-                const mUrlLower = mUrl.toLowerCase();
-                const hasKeywords = ['zoom', 'meeting', 'שיעור', 'הרצאה'].some(kw => nameLower.includes(kw));
-                if (mUrlLower.includes('zoom.us') || mUrlLower.includes('zoom.') || hasKeywords) {
-                  meetings.push({
-                    title: name,
-                    meetingUrl: mUrl,
-                    sectionName,
-                    courseId,
-                    courseName,
-                  });
-                  break;
-                }
-              }
             }
           }
         }

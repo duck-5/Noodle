@@ -115,6 +115,7 @@ export default function DashboardScreen() {
   // Cached data
   const [assignments, setAssignments] = useState<any[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
+  const [trackedCourses, setTrackedCourses] = useState<any[]>([]);
 
 
   // UI details matching SPEC
@@ -129,7 +130,7 @@ export default function DashboardScreen() {
   const [expandedAssignments, setExpandedAssignments] = useState<Record<string, boolean>>({});
   const [dashboardFiles, setDashboardFiles] = useState<any[]>([]);
   const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
-  const [expandedCourseMeetings, setExpandedCourseMeetings] = useState<Record<number, boolean>>({});
+  const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
 
   const lang = langState;
   const isRtl = lang === 'he';
@@ -379,6 +380,10 @@ export default function DashboardScreen() {
       // Load user fullname
       const fullName = getPreference('user_fullname') || '';
       setUserFullname(fullName);
+
+      // Load active tracked courses
+      const trackedList = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
+      setTrackedCourses(trackedList);
 
       // Load assignments of active courses only
       const cachedAssigns = db.getAllSync<any>(
@@ -1110,22 +1115,77 @@ export default function DashboardScreen() {
           </Text>
 
           {(() => {
-            // Group meetings by course
-            const meetingsByCourse = new Map<number, { courseName: string; courseId: number; color: string; meetings: any[] }>();
-            meetings.forEach((m) => {
-              const cId = m.course_moodle_id;
-              if (!meetingsByCourse.has(cId)) {
-                meetingsByCourse.set(cId, { 
-                  courseName: m.custom_course_name || m.course_name, 
-                  courseId: cId, 
-                  color: m.course_color || theme.primary, 
-                  meetings: [] 
-                });
-              }
-              meetingsByCourse.get(cId)!.meetings.push(m);
+            const activeMeeting = meetings.find(m => {
+              if (!m.start_time) return false;
+              const startTime = new Date(m.start_time);
+              if (isNaN(startTime.getTime())) return false;
+              const now = new Date();
+              const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
+              return now >= startTime && now <= endTime;
             });
+            if (!activeMeeting) return null;
+            
+            // Get course color for the active meeting
+            const targetCourse = trackedCourses.find(c => c.moodle_id === activeMeeting.course_moodle_id);
+            const courseColor = targetCourse?.color || theme.primary;
+            const courseName = targetCourse?.name || activeMeeting.course_name || `Course ${activeMeeting.course_moodle_id}`;
+            
+            return (
+              <View style={{ marginBottom: 12, flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: theme.textSecondary, fontSize: 14, fontWeight: 'bold' }}>
+                  {isRtl ? 'זום נוכחי:' : 'Current Zoom:'}
+                </Text>
+                <Pressable onPress={() => activeMeeting.meeting_url && Linking.openURL(activeMeeting.meeting_url)}>
+                  <Text style={{ color: courseColor, fontSize: 14, fontWeight: 'bold', textDecorationLine: 'underline' }}>
+                    {courseName} - {activeMeeting.title || 'Zoom'}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })()}
 
-            const coursesWithMeetings = Array.from(meetingsByCourse.values());
+          {(() => {
+            const coursesWithMeetings = trackedCourses.map((c) => {
+              const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id);
+              
+              // Deduplicate recurring meetings by meeting_number or meeting_url
+              const now = new Date();
+              const groups = new Map<string, typeof meetings>();
+              courseMeetings.forEach(m => {
+                const key = m.meeting_number || m.meeting_url;
+                if (!key) return;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key)!.push(m);
+              });
+
+              const dedupedMeetings: typeof meetings = [];
+              for (const [, list] of groups.entries()) {
+                if (list.length <= 1) {
+                  dedupedMeetings.push(list[0]);
+                  continue;
+                }
+                const future = list.filter(m => m.start_time && new Date(m.start_time) >= now);
+                const past = list.filter(m => m.start_time && new Date(m.start_time) < now);
+                const noTime = list.filter(m => !m.start_time);
+
+                if (future.length > 0) {
+                  future.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+                  dedupedMeetings.push(future[0]);
+                } else if (past.length > 0) {
+                  past.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+                  dedupedMeetings.push(past[0]);
+                } else if (noTime.length > 0) {
+                  dedupedMeetings.push(noTime[0]);
+                }
+              }
+
+              return {
+                courseId: c.moodle_id,
+                courseName: c.name || `Course ${c.moodle_id}`,
+                color: c.color || theme.primary,
+                meetings: dedupedMeetings,
+              };
+            });
 
             if (coursesWithMeetings.length === 0) {
               return (
@@ -1156,7 +1216,7 @@ export default function DashboardScreen() {
             };
 
             return coursesWithMeetings.map((c) => {
-              const isExpanded = !!expandedCourseMeetings[c.courseId];
+              const isExpanded = expandedCourseId === c.courseId;
               const markedMeetings = c.meetings.filter(isMarked);
 
               return (
@@ -1169,39 +1229,41 @@ export default function DashboardScreen() {
                       alignItems: 'center',
                     }}
                     onPress={() => {
-                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                      setExpandedCourseMeetings(prev => ({ ...prev, [c.courseId]: !prev[c.courseId] }));
+                      LayoutAnimation.configureNext({
+                        duration: 200,
+                        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+                        update: { type: LayoutAnimation.Types.easeInEaseOut },
+                      });
+                      setExpandedCourseId(prev => prev === c.courseId ? null : c.courseId);
                     }}
                   >
-                    <View style={{ flex: 1, flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <View style={{ flex: 1, alignItems: isRtl ? 'flex-end' : 'flex-start', gap: 4 }}>
                       <Text style={{ color: c.color, fontWeight: 'bold', fontSize: 16, textAlign: isRtl ? 'right' : 'left' }}>
                         📖 {c.courseName}
                       </Text>
 
                       {/* Configured Quick buttons */}
                       {markedMeetings.length > 0 && (
-                        <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 6, marginHorizontal: 8 }}>
-                          {markedMeetings.slice(0, 2).map((m, idx) => (
+                        <View style={{ flexDirection: 'column', gap: 6, marginTop: 4, alignItems: isRtl ? 'flex-end' : 'flex-start' }}>
+                          {markedMeetings.map((m, idx) => (
                             <Pressable
                               key={idx}
-                              style={{
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 12,
-                                backgroundColor: c.color,
-                              }}
                               onPress={() => m.meeting_url && Linking.openURL(m.meeting_url)}
                             >
-                              <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>
-                                {m.title && m.title.length > 12 ? m.title.substring(0, 12) + '...' : m.title || 'Zoom'}
+                              <Text 
+                                style={{ 
+                                  color: theme.text, 
+                                  fontSize: 13, 
+                                  textDecorationLine: 'underline', 
+                                  textDecorationColor: c.color,
+                                  lineHeight: 18,
+                                  textAlign: isRtl ? 'right' : 'left'
+                                }}
+                              >
+                                {m.title || 'Zoom'}
                               </Text>
                             </Pressable>
                           ))}
-                          {markedMeetings.length > 2 && (
-                            <Text style={{ fontSize: 10, color: theme.textSecondary, alignSelf: 'center' }}>
-                              +{markedMeetings.length - 2}
-                            </Text>
-                          )}
                         </View>
                       )}
                     </View>
@@ -1214,6 +1276,16 @@ export default function DashboardScreen() {
                   {isExpanded && (
                     <View style={{ paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 12 }}>
                       {(() => {
+                        if (c.meetings.length === 0) {
+                          return (
+                            <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                              <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
+                                {isRtl ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                              </Text>
+                            </View>
+                          );
+                        }
+
                         const sortedMeetings = [...c.meetings].sort((a, b) => {
                           const aMarked = isMarked(a);
                           const bMarked = isMarked(b);
@@ -1223,7 +1295,12 @@ export default function DashboardScreen() {
                           const statusA = getMeetingStatusText(a.start_time);
                           const statusB = getMeetingStatusText(b.start_time);
                           const priority = { active: 1, unknown: 2, inactive: 3 };
-                          return priority[statusA] - priority[statusB];
+                          if (priority[statusA] !== priority[statusB]) {
+                            return priority[statusA] - priority[statusB];
+                          }
+                          const timeA = a.start_time ? new Date(a.start_time).getTime() : 0;
+                          const timeB = b.start_time ? new Date(b.start_time).getTime() : 0;
+                          return timeB - timeA;
                         });
 
                         return sortedMeetings.map((m) => {
