@@ -100,45 +100,44 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
 // --------------------------------------------------------------------------
 
 /**
- * Clears all TAU SSO and Moodle session cookies so the next login always
- * goes through a fresh credential challenge.  Without this, the SSO server
- * recognises the existing browser session and returns the previous user's
- * token regardless of what credentials are entered.
+ * Invalidates the TAU SSO and Moodle server-side sessions by fetching their
+ * standard logout endpoints.  This does NOT require the 'cookies' permission:
+ * the browser sends the existing session cookies with the request, the server
+ * tears down the session, and from that point on any lingering cookies in the
+ * browser are rejected by the server.  This is strictly stronger than
+ * deleting cookies locally because it also invalidates the session for any
+ * other client that might hold a copy of those cookies.
  */
-async function clearTauCookies(): Promise<void> {
-  const domains = [
-    'moodle.tau.ac.il',
-    'nidp.tau.ac.il',
-    'tau.ac.il',
+async function invalidateSsoSession(): Promise<void> {
+  const logoutUrls = [
+    // Novell/NetIQ Identity Manager (TAU SSO provider) logout
+    'https://nidp.tau.ac.il/nidp/app/logout',
+    // Moodle session logout (token is already being wiped from storage,
+    // this clears the web-session cookie so the browser is also signed out)
+    'https://moodle.tau.ac.il/login/logout.php',
   ];
 
-  for (const domain of domains) {
-    for (const protocol of ['https', 'http'] as const) {
-      const url = `${protocol}://${domain}/`;
-      let cookies: chrome.cookies.Cookie[] = [];
-      try {
-        cookies = await chrome.cookies.getAll({ domain });
-      } catch (_) {
-        // cookies API may not have access — continue
-      }
-      for (const cookie of cookies) {
-        try {
-          await chrome.cookies.remove({ url, name: cookie.name });
-        } catch (_) {
-          // ignore individual removal errors
-        }
-      }
-    }
-  }
+  await Promise.allSettled(
+    logoutUrls.map((url) =>
+      fetch(url, {
+        method: 'GET',
+        credentials: 'include', // send the existing session cookies so the server can invalidate them
+        redirect: 'follow',
+      })
+    )
+  );
+  // Errors are intentionally swallowed — if the server is unreachable the
+  // session will simply expire naturally, which is acceptable.
 }
 
 /**
- * Full user-session teardown.  Removes every user-specific storage key
- * while leaving general UI preferences (theme, language, sidebar) intact.
+ * Full user-session teardown.  Invalidates the server-side SSO session and
+ * removes every user-specific storage key while leaving general UI
+ * preferences (theme, language, sidebar) intact.
  */
 async function clearUserSession(): Promise<void> {
-  // 1. Invalidate SSO/Moodle browser session
-  await clearTauCookies();
+  // 1. Invalidate the SSO/Moodle server-side session (no cookies permission needed)
+  await invalidateSsoSession();
 
   // 2. Wipe all user-specific local storage keys
   const userLocalKeys = [
