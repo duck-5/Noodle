@@ -12,7 +12,7 @@ export const translations = {
     syncing: "מסתנכרן...",
     pending_tasks: "מטלות פתוחות",
     completed_assignments: "מטלות שהוגשו",
-    zoom_links_found: "קישורי זום שנמצאו",
+    zoom_links_found: "זום",
     assignments_calendar: "לוח הגשות",
     search_assignments: "חפש מטלות...",
     empty_state_pending: "אין מטלות פתוחות. עבודה יפה! 🎉",
@@ -109,6 +109,9 @@ export const translations = {
     connecting: "מתחבר...",
     show_subject: "הצג בנושאים",
     go_to_course_page: "לעמוד הקורס",
+    show_all_zoom_links: "הצג את כל הקישורים",
+    hide_from_dashboard: "הסתר מלוח הבקרה",
+    show_on_dashboard: "הצג בלוח הבקרה",
     collapse_sidebar: "צמצם תפריט",
   },
   en: {
@@ -124,7 +127,7 @@ export const translations = {
     syncing: "Syncing...",
     pending_tasks: "Pending Tasks",
     completed_assignments: "Completed Assignments",
-    zoom_links_found: "Zoom Links Found",
+    zoom_links_found: "Zoom",
     assignments_calendar: "Assignments Calendar",
     search_assignments: "Search assignments...",
     empty_state_pending: "No pending assignments. Well done! 🎉",
@@ -221,6 +224,9 @@ export const translations = {
     connecting: "Connecting...",
     show_subject: "Show Subject",
     go_to_course_page: "Course Page",
+    show_all_zoom_links: "Show all links",
+    hide_from_dashboard: "Hide from dashboard",
+    show_on_dashboard: "Show on dashboard",
     collapse_sidebar: "Collapse Sidebar",
   }
 };

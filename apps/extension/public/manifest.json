@@ -15,7 +15,8 @@
     "*://nidp.tau.ac.il/*",
     "https://accounts.google.com/*",
     "https://tasks.googleapis.com/*",
-    "https://www.googleapis.com/*"
+    "https://www.googleapis.com/*",
+    "https://applications.zoom.us/*"
   ],
   "background": {
     "service_worker": "background.js",

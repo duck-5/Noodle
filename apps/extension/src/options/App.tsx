@@ -540,6 +540,23 @@ export default function App() {
     await setSettings(updated);
   }
 
+  async function handleToggleMeetingInterest(meetingNumber: string, allMeetingNumbers: string[]) {
+    if (!settings) return;
+    let currentInterested = settings.interestedMeetings;
+    if (currentInterested === undefined) {
+      currentInterested = allMeetingNumbers;
+    }
+    let updatedInterested;
+    if (currentInterested.includes(meetingNumber)) {
+      updatedInterested = currentInterested.filter((num) => num !== meetingNumber);
+    } else {
+      updatedInterested = [...currentInterested, meetingNumber];
+    }
+    const updated = { ...settings, interestedMeetings: updatedInterested };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
 
 
   async function handleSyncGoogleTasks() {
@@ -918,6 +935,7 @@ export default function App() {
               lang={currentLang}
               tourStep={tourStep}
               onViewSubject={handleViewSubject}
+              onToggleMeetingInterest={handleToggleMeetingInterest}
             />
           )}
 
@@ -926,12 +944,15 @@ export default function App() {
               courseId={selectedCourseId}
               assignments={assignmentsList}
               files={filesList}
+              meetings={meetingsList}
               token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
               onBack={() => setSelectedCourseId(null)}
               t={t}
               lang={currentLang}
+              settings={settings}
+              onToggleMeetingInterest={handleToggleMeetingInterest}
             />
           ) : activeTab === 'courses' && (
             <CoursesTab
@@ -1080,6 +1101,35 @@ export default function App() {
 // TAB COMPONENTS
 // -------------------------------------------------------------------
 
+type MeetingStatus = 'active' | 'unknown' | 'inactive';
+
+function getMeetingStatus(startTimeStr?: string): MeetingStatus {
+  if (!startTimeStr) return 'unknown';
+  const startTime = new Date(startTimeStr);
+  if (isNaN(startTime.getTime())) return 'unknown';
+  const now = new Date();
+  const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2h duration
+  if (now >= startTime && now <= endTime) {
+    return 'active';
+  } else {
+    return 'inactive';
+  }
+}
+
+const EyeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const EyeOffIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+);
+
 interface TabProps {
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, def: string) => string;
@@ -1102,6 +1152,7 @@ function DashboardTab({
   lang,
   tourStep,
   onViewSubject,
+  onToggleMeetingInterest,
 }: {
   assignments: Assignment[];
   files: CourseFile[];
@@ -1112,9 +1163,11 @@ function DashboardTab({
   settings: ExtensionSettings | null;
   tourStep?: number;
   onViewSubject: (courseId: number, sectionName: string) => void;
+  onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
 } & TabProps) {
   const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
+  const [expandedCourseMeetings, setExpandedCourseMeetings] = useState<Record<number, boolean>>({});
 
   const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
   
@@ -1322,10 +1375,6 @@ function DashboardTab({
           <span className="stat-title">{t('completed_assignments')}</span>
           <span className="stat-val">{assignments.filter((a) => a.status === 'Submitted').length}</span>
         </div>
-        <div className="stat-card glass-panel border-left-warning">
-          <span className="stat-title">{t('zoom_links_found')}</span>
-          <span className="stat-val">{meetings.length}</span>
-        </div>
       </div>
 
       <div className="dashboard-grids">
@@ -1510,29 +1559,208 @@ function DashboardTab({
 
         {/* Zoom Meetings Section */}
         <div className="dashboard-section glass-panel">
-          <h3>{t('zoom_links_found')}</h3>
-          <div className="zoom-list">
-            {meetings.length === 0 ? (
-              <div className="empty-state">{t('empty_state_zoom')}</div>
-            ) : (
-              meetings.map((m, idx) => {
-                const color = getCourseColor(m.courseId);
+          <div className="zoom-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>{t('zoom_links_found')}</h3>
+          </div>
+          
+          <div className="zoom-courses-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {(() => {
+              const allMeetingIds = meetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
+
+              // Group meetings by course
+              const meetingsByCourse = new Map<number, { courseName: string; courseId: number; meetings: ZoomMeeting[] }>();
+              meetings.forEach((m) => {
+                if (!meetingsByCourse.has(m.courseId)) {
+                  meetingsByCourse.set(m.courseId, { courseName: m.courseName, courseId: m.courseId, meetings: [] });
+                }
+                meetingsByCourse.get(m.courseId)!.meetings.push(m);
+              });
+
+              const coursesWithMeetings = Array.from(meetingsByCourse.values());
+
+              if (coursesWithMeetings.length === 0) {
+                return <div className="empty-state">{t('empty_state_zoom')}</div>;
+              }
+
+              const isMarked = (m: ZoomMeeting) => {
+                if (!settings?.interestedMeetings) return false;
+                const id = m.meetingNumber || m.meetingUrl;
+                return settings.interestedMeetings.includes(id);
+              };
+
+              return coursesWithMeetings.map((c) => {
+                const color = getCourseColor(c.courseId);
+                const isExpanded = !!expandedCourseMeetings[c.courseId];
+                const markedMeetings = c.meetings.filter(isMarked);
+
                 return (
-                  <div key={idx} className="meeting-card glass-panel" style={{ borderLeft: `3px solid ${color}` }}>
-                    <div className="meeting-main">
-                      <span className="meeting-course" style={{ color }}>
-                        {getCourseDisplayName(m.courseId, m.courseName)}
+                  <div key={c.courseId} className="zoom-course-card glass-panel" style={{ borderLeft: lang === 'he' ? 'none' : `4px solid ${color}`, borderRight: lang === 'he' ? `4px solid ${color}` : 'none', padding: '1rem', marginBottom: '0.2rem' }}>
+                    <div 
+                      className="zoom-course-header" 
+                      onClick={() => setExpandedCourseMeetings(prev => ({ ...prev, [c.courseId]: !prev[c.courseId] }))}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', flex: 1 }}>
+                        <h4 style={{ margin: 0, fontSize: '1rem', color: color, fontWeight: 'bold' }}>
+                          📖 {getCourseDisplayName(c.courseId, c.courseName)}
+                        </h4>
+                        
+                        {/* Configured Quick buttons */}
+                        {markedMeetings.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: lang === 'he' ? '0 12px 0 0' : '0 0 0 12px' }}>
+                            {markedMeetings.slice(0, 3).map((m, idx) => (
+                              <a
+                                key={idx}
+                                href={m.meetingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(ev) => ev.stopPropagation()}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  backgroundColor: color,
+                                  color: '#fff',
+                                  textDecoration: 'none',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                                  transition: 'opacity 0.2s'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                              >
+                                {m.title.length > 15 ? m.title.substring(0, 15) + '...' : m.title}
+                              </a>
+                            ))}
+                            {markedMeetings.length > 3 && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                +{markedMeetings.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+                        {isExpanded ? '▲' : '▼'}
                       </span>
-                      <h4 className="meeting-title">{m.title}</h4>
-                      <p className="meeting-section text-muted">{m.sectionName}</p>
                     </div>
-                    <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="zoom-btn">
-                      {t('join_zoom')}
-                    </a>
+
+                    <div 
+                      className="zoom-course-meetings-dropdown" 
+                      style={{ 
+                        maxHeight: isExpanded ? '1000px' : '0px',
+                        opacity: isExpanded ? 1 : 0,
+                        overflow: 'hidden',
+                        transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease',
+                        marginTop: isExpanded ? '1rem' : '0px', 
+                        borderTop: isExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
+                        paddingTop: isExpanded ? '1rem' : '0px', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '0.75rem' 
+                      }}
+                    >
+                      {(() => {
+                        const sortedMeetings = [...c.meetings].sort((a, b) => {
+                          const aMarked = isMarked(a);
+                          const bMarked = isMarked(b);
+                          if (aMarked && !bMarked) return -1;
+                          if (!aMarked && bMarked) return 1;
+
+                          const statusA = getMeetingStatus(a.startTime);
+                          const statusB = getMeetingStatus(b.startTime);
+                          const priority = { active: 1, unknown: 2, inactive: 3 };
+                          return priority[statusA] - priority[statusB];
+                        });
+
+                        return sortedMeetings.map((m, idx) => {
+                          const status = getMeetingStatus(m.startTime);
+                          const isCurrentlyMarked = isMarked(m);
+
+                          let statusLabel = '';
+                          let statusColor = '';
+                          let itemStyle: React.CSSProperties = { 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            padding: '0.75rem', 
+                            background: 'rgba(255,255,255,0.02)', 
+                            borderRadius: 'var(--radius-sm)',
+                            borderLeft: lang === 'he' ? 'none' : `3px solid rgba(255,255,255,0.1)`,
+                            borderRight: lang === 'he' ? `3px solid rgba(255,255,255,0.1)` : 'none'
+                          };
+
+                          if (status === 'active') {
+                            itemStyle.borderLeft = lang === 'he' ? 'none' : `3px solid #28a745`;
+                            itemStyle.borderRight = lang === 'he' ? `3px solid #28a745` : 'none';
+                            statusLabel = lang === 'he' ? '● פעיל כעת' : '● Active Now';
+                            statusColor = '#28a745';
+                          } else if (status === 'inactive') {
+                            itemStyle.opacity = 0.5;
+                            itemStyle.borderLeft = lang === 'he' ? 'none' : `3px solid #888888`;
+                            itemStyle.borderRight = lang === 'he' ? `3px solid #888888` : 'none';
+                            statusLabel = m.startTime ? (lang === 'he' ? `הסתיים / לא פעיל` : `Finished / Inactive`) : '';
+                            statusColor = '#888888';
+                          }
+
+                          return (
+                            <div key={idx} className="meeting-row-item" style={itemStyle}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, textAlign: lang === 'he' ? 'right' : 'left' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{m.title}</span>
+                                  {statusLabel && (
+                                    <span style={{ fontSize: 11, color: statusColor, fontWeight: 'bold' }}>
+                                      {statusLabel}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.sectionName}</span>
+                                  {m.startTime && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                      📅 {new Date(m.startTime).toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                  onClick={() => {
+                                    const keyId = m.meetingNumber || m.meetingUrl;
+                                    if (keyId) {
+                                      onToggleMeetingInterest(keyId, allMeetingIds);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: 4,
+                                    color: isCurrentlyMarked ? 'var(--primary)' : 'var(--text-muted)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'color 0.2s'
+                                  }}
+                                  title={isCurrentlyMarked ? t('hide_from_dashboard') : t('show_on_dashboard')}
+                                >
+                                  {isCurrentlyMarked ? <EyeIcon /> : <EyeOffIcon />}
+                                </button>
+                                <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="zoom-btn" style={{ textDecoration: 'none', padding: '4px 10px', fontSize: '12px' }}>
+                                  {t('join_zoom')}
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
       </div>
@@ -2244,21 +2472,28 @@ function CourseDetailView({
   courseId,
   assignments,
   files,
+  meetings,
   token,
   getCourseColor,
   getCourseDisplayName,
   onBack,
   t,
   lang,
+  settings,
+  onToggleMeetingInterest,
 }: {
   courseId: number;
   assignments: Assignment[];
   files: CourseFile[];
+  meetings: ZoomMeeting[];
   token: string | null;
   onBack: () => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
+  settings: ExtensionSettings | null;
+  onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
 } & TabProps) {
+  const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const courseColor = getCourseColor(courseId);
   const rawCourseName = assignments.find(a => a.courseId === courseId)?.courseName || 
                     files.find(f => f.courseId === courseId)?.courseName || 
@@ -2314,6 +2549,186 @@ function CourseDetailView({
       <div className="detail-grid">
         {/* Left column: Section Tree */}
         <div className="detail-main-tree">
+          {(() => {
+            const courseMeetings = meetings.filter(m => m.courseId === courseId);
+            if (courseMeetings.length === 0) return null;
+            
+            const isMarked = (m: ZoomMeeting) => {
+              if (!settings?.interestedMeetings) return false;
+              const id = m.meetingNumber || m.meetingUrl;
+              return settings.interestedMeetings.includes(id);
+            };
+            const markedMeetings = courseMeetings.filter(isMarked);
+            
+            return (
+              <div className="zoom-section-card glass-panel" style={{ borderLeft: lang === 'he' ? 'none' : `4px solid ${courseColor}`, borderRight: lang === 'he' ? `4px solid ${courseColor}` : 'none', padding: '1rem', marginBottom: '1.5rem' }}>
+                <div 
+                  className="zoom-course-header" 
+                  onClick={() => setExpandedZoom(!expandedZoom)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', flex: 1 }}>
+                    <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold' }}>
+                      📹 {t('zoom_links_found')}
+                    </h4>
+                    
+                    {/* Configured Quick buttons */}
+                    {markedMeetings.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: lang === 'he' ? '0 12px 0 0' : '0 0 0 12px' }}>
+                        {markedMeetings.slice(0, 3).map((m, idx) => (
+                          <a
+                            key={idx}
+                            href={m.meetingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(ev) => ev.stopPropagation()}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              backgroundColor: courseColor,
+                              color: '#fff',
+                              textDecoration: 'none',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                              transition: 'opacity 0.2s'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                          >
+                            {m.title.length > 15 ? m.title.substring(0, 15) + '...' : m.title}
+                          </a>
+                        ))}
+                        {markedMeetings.length > 3 && (
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            +{markedMeetings.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+                    {expandedZoom ? '▲' : '▼'}
+                  </span>
+                </div>
+
+                <div 
+                  className="zoom-course-meetings-dropdown" 
+                  style={{ 
+                    maxHeight: expandedZoom ? '1000px' : '0px',
+                    opacity: expandedZoom ? 1 : 0,
+                    overflow: 'hidden',
+                    transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease',
+                    marginTop: expandedZoom ? '1rem' : '0px', 
+                    borderTop: expandedZoom ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
+                    paddingTop: expandedZoom ? '1rem' : '0px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '0.75rem' 
+                  }}
+                >
+                  {(() => {
+                    const allMeetingIds = courseMeetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
+                    const sortedMeetings = [...courseMeetings].sort((a, b) => {
+                      const aMarked = isMarked(a);
+                      const bMarked = isMarked(b);
+                      if (aMarked && !bMarked) return -1;
+                      if (!aMarked && bMarked) return 1;
+
+                      const statusA = getMeetingStatus(a.startTime);
+                      const statusB = getMeetingStatus(b.startTime);
+                      const priority = { active: 1, unknown: 2, inactive: 3 };
+                      return priority[statusA] - priority[statusB];
+                    });
+
+                    return sortedMeetings.map((m, idx) => {
+                      const status = getMeetingStatus(m.startTime);
+                      const isCurrentlyMarked = isMarked(m);
+
+                      let statusLabel = '';
+                      let statusColor = '';
+                      let itemStyle: React.CSSProperties = { 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.02)', 
+                        borderRadius: 'var(--radius-sm)',
+                        borderLeft: lang === 'he' ? 'none' : `3px solid rgba(255,255,255,0.1)`,
+                        borderRight: lang === 'he' ? `3px solid rgba(255,255,255,0.1)` : 'none'
+                      };
+
+                      if (status === 'active') {
+                        itemStyle.borderLeft = lang === 'he' ? 'none' : `3px solid #28a745`;
+                        itemStyle.borderRight = lang === 'he' ? `3px solid #28a745` : 'none';
+                        statusLabel = lang === 'he' ? '● פעיל כעת' : '● Active Now';
+                        statusColor = '#28a745';
+                      } else if (status === 'inactive') {
+                        itemStyle.opacity = 0.5;
+                        itemStyle.borderLeft = lang === 'he' ? 'none' : `3px solid #888888`;
+                        itemStyle.borderRight = lang === 'he' ? `3px solid #888888` : 'none';
+                        statusLabel = m.startTime ? (lang === 'he' ? `הסתיים / לא פעיל` : `Finished / Inactive`) : '';
+                        statusColor = '#888888';
+                      }
+
+                      return (
+                        <div key={idx} className="meeting-row-item" style={itemStyle}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, textAlign: lang === 'he' ? 'right' : 'left' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{m.title}</span>
+                              {statusLabel && (
+                                <span style={{ fontSize: 11, color: statusColor, fontWeight: 'bold' }}>
+                                  {statusLabel}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.sectionName}</span>
+                              {m.startTime && (
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                  📅 {new Date(m.startTime).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                              onClick={() => {
+                                const keyId = m.meetingNumber || m.meetingUrl;
+                                if (keyId) {
+                                  onToggleMeetingInterest(keyId, allMeetingIds);
+                                }
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: 4,
+                                color: isCurrentlyMarked ? 'var(--primary)' : 'var(--text-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'color 0.2s'
+                              }}
+                              title={isCurrentlyMarked ? t('hide_from_dashboard') : t('show_on_dashboard')}
+                            >
+                              {isCurrentlyMarked ? <EyeIcon /> : <EyeOffIcon />}
+                            </button>
+                            <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="zoom-btn" style={{ textDecoration: 'none', padding: '4px 10px', fontSize: '12px' }}>
+                              {t('join_zoom')}
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            );
+          })()}
+
           <h4>{t('course_sections')}</h4>
           {sectionsList.length === 0 ? (
             <div className="empty-state">{t('empty_sections')}</div>

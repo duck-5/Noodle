@@ -5,6 +5,7 @@ import { runSync } from '@tautracker/moodle-client';
 import { getDb, saveSyncResultToDatabase } from './database';
 import { scheduleDeadlineNotifications } from './notifications';
 import { performGoogleTasksSync } from './googleTasks';
+import { getStoredCredentials } from './auth';
 
 const BACKGROUND_SYNC_TASK = 'NOODLE_BACKGROUND_SYNC';
 
@@ -45,10 +46,11 @@ export async function triggerForegroundSync(): Promise<any> {
   if (!token) throw new Error('Moodle token not configured.');
 
   const trackedIds = await getTrackedCourseIdsFromDb();
+  const creds = await getStoredCredentials();
 
   const result = await runSync(token, trackedIds, (msg) => {
     console.log(`[Mobile Foreground Sync] ${msg}`);
-  });
+  }, undefined, creds || undefined);
 
   saveSyncResultToDatabase(result);
   await scheduleDeadlineNotifications(result.assignments);
@@ -70,9 +72,11 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
+    const creds = await getStoredCredentials();
+
     const result = await runSync(token, trackedIds, (msg) => {
       console.log(`[Mobile Background Sync] ${msg}`);
-    });
+    }, undefined, creds || undefined);
 
     saveSyncResultToDatabase(result);
     await scheduleDeadlineNotifications(result.assignments);
@@ -89,14 +93,15 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
 export async function registerBackgroundSyncTask(): Promise<void> {
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK);
-    if (!isRegistered) {
-      await BackgroundFetch.registerTaskAsync(BACKGROUND_SYNC_TASK, {
-        minimumInterval: 60 * 60, // 1 hour
-        stopOnTerminate: false,
-        startOnBoot: true,
-      });
-      console.log('Mobile background sync task registered.');
+    if (isRegistered) {
+      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_SYNC_TASK);
     }
+    await BackgroundFetch.registerTaskAsync(BACKGROUND_SYNC_TASK, {
+      minimumInterval: 5 * 60, // 5 minutes
+      stopOnTerminate: false,
+      startOnBoot: true,
+    });
+    console.log('Mobile background sync task registered with 5-minute interval.');
   } catch (e) {
     console.error('Failed to register background sync task:', e);
   }

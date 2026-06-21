@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,9 +11,9 @@ import {
 } from 'react-native';
 import { Paths, File } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { useFocusEffect } from 'expo-router';
 import { getDb } from '../services/database';
 import { getMoodleToken } from '../services/backgroundSync';
-import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 
@@ -33,10 +33,12 @@ export default function FilesScreen() {
     setLoading(true);
     try {
       const db = getDb();
-      const rows = db.getAllSync<any>('SELECT * FROM files ORDER BY section_name ASC');
+      const rows = db.getAllSync<any>(
+        'SELECT f.* FROM files f JOIN tracked_courses c ON f.course_moodle_id = c.moodle_id WHERE c.is_active = 1 ORDER BY f.section_name ASC'
+      );
       setFiles(rows);
 
-      const courseRows = db.getAllSync<any>('SELECT * FROM tracked_courses');
+      const courseRows = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
       setCourses(courseRows);
     } catch (e) {
       console.error('loadFiles error:', e);
@@ -45,11 +47,11 @@ export default function FilesScreen() {
     }
   };
 
-  useEffect(() => {
-    setTimeout(() => {
+  useFocusEffect(
+    useCallback(() => {
       loadFiles();
-    }, 0);
-  }, []);
+    }, [])
+  );
 
   const getCourseColor = (courseMoodleId: number) => {
     const course = courses.find((c) => c.moodle_id === courseMoodleId);
@@ -97,29 +99,33 @@ export default function FilesScreen() {
     }
   }
 
-  const filteredFiles = files.filter(
+  const filteredFiles = useMemo(() => files.filter(
     (f) =>
       f.file_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.course_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [files, searchQuery]);
 
   // Group files by course and then by section
-  const filesByCourse: Record<number, { 
-    courseName: string; 
-    sections: Record<string, any[]>;
-  }> = {};
+  const filesByCourse = useMemo(() => {
+    const result: Record<number, { 
+      courseName: string; 
+      sections: Record<string, any[]>;
+    }> = {};
 
-  filteredFiles.forEach((f) => {
-    const courseId = f.course_moodle_id;
-    if (!filesByCourse[courseId]) {
-      filesByCourse[courseId] = { courseName: f.course_name, sections: {} };
-    }
-    const sectionName = f.section_name || (lang === 'he' ? 'כללי' : 'General');
-    if (!filesByCourse[courseId].sections[sectionName]) {
-      filesByCourse[courseId].sections[sectionName] = [];
-    }
-    filesByCourse[courseId].sections[sectionName].push(f);
-  });
+    filteredFiles.forEach((f) => {
+      const courseId = f.course_moodle_id;
+      if (!result[courseId]) {
+        result[courseId] = { courseName: getCourseName(courseId, f.course_name), sections: {} };
+      }
+      const sectionName = f.section_name || (lang === 'he' ? 'כללי' : 'General');
+      if (!result[courseId].sections[sectionName]) {
+        result[courseId].sections[sectionName] = [];
+      }
+      result[courseId].sections[sectionName].push(f);
+    });
+
+    return result;
+  }, [filteredFiles, courses, lang, getCourseName]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

@@ -1,6 +1,7 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
-import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError } from './types.js';
+import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials } from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
+import { CookieJar, performLogin, scrapeZoomMeetingsDirect } from './zoomScraper.js';
 
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
@@ -21,13 +22,54 @@ export async function runSync(
   token: string,
   trackedCourseIds: number[],
   onProgress: (message: string) => void,
-  baseUrl?: string
+  baseUrl?: string,
+  creds?: MoodleCredentials,
+  moodleCookies?: string
 ): Promise<SyncResult> {
   const client = new MoodleClient(token, baseUrl);
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
   const meetings: ZoomMeeting[] = [];
+
+  let scrapedMeetingsJar: CookieJar | null = null;
+  let didAttemptLogin = false;
+
+  const getScrapeJar = async (): Promise<CookieJar | null> => {
+    if (scrapedMeetingsJar) return scrapedMeetingsJar;
+
+    const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
+    if (isBrowser) {
+      // In the browser/extension, we don't need programmatic login or to pass cookies; 
+      // the network stack handles cookies implicitly when credentials: 'include' is used.
+      const jar = new CookieJar();
+      scrapedMeetingsJar = jar;
+      return jar;
+    }
+
+    if (didAttemptLogin) return null;
+    
+    if (moodleCookies) {
+      const jar = new CookieJar();
+      jar.ingest(moodleCookies);
+      scrapedMeetingsJar = jar;
+      return jar;
+    } else if (creds) {
+      didAttemptLogin = true;
+      const jar = new CookieJar();
+      try {
+        await performLogin(jar, creds);
+        scrapedMeetingsJar = jar;
+        return jar;
+      } catch (err: any) {
+        errors.push({
+          context: 'SSO Login for Zoom Scraping',
+          message: err.message,
+        });
+      }
+    }
+    return null;
+  };
 
   onProgress('Fetching Moodle user info...');
   let userId: number;
@@ -241,12 +283,47 @@ export async function runSync(
           }
 
           // Zoom Meetings parsing
-          let isZoom = false;
-          let meetingUrl = '';
-
           if (modname === 'lti' && nameLower.includes('zoom')) {
-            isZoom = true;
-            meetingUrl = module.url || '';
+            const jar = await getScrapeJar();
+            if (jar) {
+              try {
+                const ltiMeetings = await scrapeZoomMeetingsDirect(jar, module.id);
+                for (const lm of ltiMeetings) {
+                  meetings.push({
+                    title: lm.topic,
+                    meetingUrl: lm.joinUrl,
+                    sectionName,
+                    courseId,
+                    courseName,
+                    startTime: lm.startTime,
+                    meetingNumber: lm.meetingNumber,
+                    password: lm.password,
+                  });
+                }
+              } catch (err: any) {
+                errors.push({
+                  context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
+                  message: err.message,
+                });
+                // Fallback to Moodle LTI link
+                meetings.push({
+                  title: name,
+                  meetingUrl: module.url || '',
+                  sectionName,
+                  courseId,
+                  courseName,
+                });
+              }
+            } else {
+              // Fallback if no auth/jar available
+              meetings.push({
+                title: name,
+                meetingUrl: module.url || '',
+                sectionName,
+                courseId,
+                courseName,
+              });
+            }
           } else if (modname === 'url' && module.contents) {
             for (const content of module.contents) {
               if (content.type === 'url') {
@@ -254,22 +331,17 @@ export async function runSync(
                 const mUrlLower = mUrl.toLowerCase();
                 const hasKeywords = ['zoom', 'meeting', 'שיעור', 'הרצאה'].some(kw => nameLower.includes(kw));
                 if (mUrlLower.includes('zoom.us') || mUrlLower.includes('zoom.') || hasKeywords) {
-                  isZoom = true;
-                  meetingUrl = mUrl;
+                  meetings.push({
+                    title: name,
+                    meetingUrl: mUrl,
+                    sectionName,
+                    courseId,
+                    courseName,
+                  });
                   break;
                 }
               }
             }
-          }
-
-          if (isZoom && meetingUrl) {
-            meetings.push({
-              title: name,
-              meetingUrl,
-              sectionName,
-              courseId,
-              courseName,
-            });
           }
         }
       }

@@ -45,6 +45,9 @@ export interface ZoomMeeting {
   sectionName: string;
   courseId: number;
   courseName: string;
+  startTime?: string;
+  meetingNumber?: string;
+  password?: string;
 }
 
 export interface SyncResult {
@@ -66,3 +69,10 @@ export interface TauCourseMetadata {
   year: string;
   semester: 'SemesterA' | 'SemesterB' | 'Yearly' | 'Other';
 }
+
+export interface MoodleCredentials {
+  username: string;
+  idNumber: string;
+  password: string;
+}
+

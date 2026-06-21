@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,8 +6,8 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { getDb } from '../services/database';
-import { Colors } from '../constants/theme';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 
@@ -25,12 +25,14 @@ export default function GradesScreen() {
     setLoading(true);
     try {
       const db = getDb();
-      // Load all graded assignments
-      const gradedRows = db.getAllSync<any>('SELECT * FROM assignments WHERE grade IS NOT NULL');
+      // Load all graded assignments for active courses only
+      const gradedRows = db.getAllSync<any>(
+        'SELECT a.* FROM assignments a JOIN tracked_courses c ON a.course_moodle_id = c.moodle_id WHERE c.is_active = 1 AND a.grade IS NOT NULL'
+      );
       setAssignments(gradedRows);
 
-      // Load all tracked courses
-      const courseRows = db.getAllSync<any>('SELECT * FROM tracked_courses');
+      // Load all tracked active courses
+      const courseRows = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
       setCourses(courseRows);
     } catch (e) {
       console.error('loadGrades error:', e);
@@ -39,11 +41,11 @@ export default function GradesScreen() {
     }
   };
 
-  useEffect(() => {
-    setTimeout(() => {
+  useFocusEffect(
+    useCallback(() => {
       loadGrades();
-    }, 0);
-  }, []);
+    }, [])
+  );
 
   const getCourseColor = (courseMoodleId: number) => {
     const course = courses.find((c) => c.moodle_id === courseMoodleId);

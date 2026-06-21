@@ -11,6 +11,8 @@ export interface ExtensionSettings {
   assignmentGreenDaysThreshold?: number;
   assignmentYellowDaysThreshold?: number;
   theme?: 'dark' | 'noodle';
+  interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
+  showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -24,6 +26,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   assignmentGreenDaysThreshold: 7,
   assignmentYellowDaysThreshold: 3,
   theme: 'noodle',
+  interestedMeetings: [],
+  showAllMeetings: false,
 };
 
 export async function getStoredToken(): Promise<string | null> {

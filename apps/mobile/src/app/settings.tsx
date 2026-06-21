@@ -9,18 +9,22 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { getMoodleToken, setMoodleToken } from '../services/backgroundSync';
+import { setMoodleToken } from '../services/backgroundSync';
 import { clearCredentials } from '../services/auth';
 import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync } from '../services/googleTasks';
-import { getDb, getPreference, setPreference, removePreference } from '../services/database';
-import { Colors } from '../constants/theme';
+import { getDb, getPreference, setPreference } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
-export default function SettingsScreen() {
+interface SettingsScreenProps {
+  onDisconnect?: () => void;
+  onSettingsChanged?: () => void;
+}
+
+export default function SettingsScreen({ onDisconnect, onSettingsChanged }: SettingsScreenProps) {
   const theme = useTheme();
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -66,6 +70,7 @@ export default function SettingsScreen() {
     try {
       setPreference('theme', tChoice);
       setActiveTheme(tChoice);
+      onSettingsChanged?.();
       Alert.alert(
         lang === 'he' ? 'ערכת הנושא שונתה' : 'Theme Changed',
         lang === 'he'
@@ -81,6 +86,7 @@ export default function SettingsScreen() {
     try {
       setGoogleTasksEnabled(val);
       setPreference('google_tasks_enabled', val ? 'true' : 'false');
+      onSettingsChanged?.();
     } catch (e) {
       console.error(e);
     }
@@ -90,6 +96,7 @@ export default function SettingsScreen() {
     try {
       setGoogleListName(text);
       setPreference('google_tasks_list_name', text);
+      onSettingsChanged?.();
     } catch (e) {
       console.error(e);
     }
@@ -99,6 +106,7 @@ export default function SettingsScreen() {
     try {
       setPreference('language', l);
       setLang(l);
+      onSettingsChanged?.();
       Alert.alert(l === 'he' ? 'השפה שונתה' : 'Language Changed', l === 'he' ? 'אנא הפעל מחדש את האפליקציה להחלת השינויים במלואם.' : 'Please restart the app to apply language changes fully.');
     } catch (e) {
       console.error(e);
@@ -116,6 +124,7 @@ export default function SettingsScreen() {
         await setGoogleAccessToken(null);
         setGoogleStatus(lang === 'he' ? 'האסימון נמחק' : 'Token cleared');
       }
+      onSettingsChanged?.();
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -164,7 +173,11 @@ export default function SettingsScreen() {
                 DELETE FROM preferences;
               `);
 
-              Alert.alert(lang === 'he' ? 'התנתק בהצלחה' : 'Disconnected', lang === 'he' ? 'הנתונים נמחקו. הפעל מחדש את האפליקציה כדי להתחבר.' : 'Account data has been successfully cleared. Restart the app to log in again.');
+              if (onDisconnect) {
+                onDisconnect();
+              } else {
+                Alert.alert(lang === 'he' ? 'התנתק בהצלחה' : 'Disconnected', lang === 'he' ? 'הנתונים נמחקו. הפעל מחדש את האפליקציה כדי להתחבר.' : 'Account data has been successfully cleared. Restart the app to log in again.');
+              }
             } catch (e: any) {
               Alert.alert('Error', e.message);
             }
@@ -365,6 +378,7 @@ export default function SettingsScreen() {
       setGoogleListName(data.settings.googleTasksListName ?? 'Noodle');
       setLang(data.settings.language ?? 'he');
       setActiveTheme(data.settings.theme ?? 'system');
+      onSettingsChanged?.();
 
       Alert.alert(
         t('config_backup_title'),

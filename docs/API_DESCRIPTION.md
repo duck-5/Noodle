@@ -147,3 +147,29 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
 *   `expo-background-fetch` & `expo-task-manager`: Registers OS-level background sync workers (using iOS background tasks and Android `WorkManager`) to trigger periodic syncing.
 *   `expo-notifications`: Handles scheduling, clearing, and triggering of local push alerts on the user's mobile device.
 *   `expo-file-system` & `expo-sharing`: Downloads authenticated course files (by appending `?token={wstoken}` to Moodle file URLs) to the local sandboxed storage and invokes native share dialogs to open them in other apps (e.g., PDF readers).
+
+---
+
+## 4. Zoom LTI Scraping Protocol
+
+To isolate and extract direct, session-free Zoom links (with their `pwd` passcodes) from Moodle courses, Noodle implements a multi-step scraping pipeline inside the `@tautracker/moodle-client` package.
+
+### Authentication & Cookies Handshake
+The scraper supports two authentication schemes depending on the execution context:
+1. **SSO Headless login (Mobile app)**:
+   Performs a programmatic SAML SSO handshake with `nidp.tau.ac.il` using the student's stored credentials. It builds a `CookieJar` which retains the `MoodleSessionMoodle2025` session cookie.
+2. **Browser-Implicit Authentication (Chrome Extension)**:
+   Leverages the browser's native cookie handling. By sending requests with `credentials: 'include'`, the browser automatically forwards the active `MoodleSession` session cookies and manages intermediate Zoom LTI cookies, bypassing any credential or custom cookie-injection requirements.
+
+### Scraping Pipeline
+For each tracked course:
+1. **Fetch LTI Module**: Locates the course section module where `modname === 'lti'` and the name contains "zoom".
+2. **Launch Verification**: Requests the LTI launch page `/mod/lti/view.php?id={moduleId}` using the session-authenticated connection.
+3. **Parse Launch Form**: Extracts the auto-submitting form `id="tool_launch_form"` containing OAuth launch credentials.
+4. **Submit LTI Launch**: Sends a `POST` request to the Zoom LTI provider (`https://applications.zoom.us/lti/rich`) with the launch credentials. This registers the Zoom session cookies in the browser's session or the mobile app's `CookieJar`.
+5. **Get Zoom Config**: Parses `window.appConf` from the response to extract request authorization headers (`ajaxHeaders`).
+6. **Fetch API Meetings**: Calls the Zoom LTI REST endpoints using the `ajaxHeaders`:
+   * Upcoming: `/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0`
+   * Previous: `/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0`
+7. **Extract Direct URLs**: Parses the meetings list and extracts the `m.joinUrl` field, which contains the direct Zoom URL with the password parameter (e.g., `https://tau-ac-il.zoom.us/j/{meetingNumber}?pwd={passcode}`). This direct URL is stored as `joinUrl` in the scraped results.
+

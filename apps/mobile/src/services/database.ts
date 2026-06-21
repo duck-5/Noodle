@@ -38,7 +38,8 @@ function initDb(db: SQLite.SQLiteDatabase) {
       link TEXT,
       grade REAL,
       grade_max REAL,
-      last_synced TEXT
+      last_synced TEXT,
+      attachments TEXT
     );
 
     CREATE TABLE IF NOT EXISTS files (
@@ -58,9 +59,12 @@ function initDb(db: SQLite.SQLiteDatabase) {
       course_moodle_id INTEGER NOT NULL,
       course_name TEXT,
       title TEXT,
-      meeting_url TEXT UNIQUE NOT NULL,
+      meeting_url TEXT NOT NULL,
       section_name TEXT,
-      last_synced TEXT
+      last_synced TEXT,
+      start_time TEXT,
+      meeting_number TEXT,
+      password TEXT
     );
 
     CREATE TABLE IF NOT EXISTS preferences (
@@ -68,6 +72,46 @@ function initDb(db: SQLite.SQLiteDatabase) {
       value TEXT
     );
   `);
+
+  try {
+    const row = db.getFirstSync<{ value: string }>("SELECT value FROM preferences WHERE key = 'migrated_zoom_unique_v2'");
+    if (!row) {
+      db.execSync('DROP TABLE IF EXISTS meetings;');
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS meetings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          course_moodle_id INTEGER NOT NULL,
+          course_name TEXT,
+          title TEXT,
+          meeting_url TEXT NOT NULL,
+          section_name TEXT,
+          last_synced TEXT,
+          start_time TEXT,
+          meeting_number TEXT,
+          password TEXT
+        );
+      `);
+      db.runSync("INSERT OR REPLACE INTO preferences (key, value) VALUES ('migrated_zoom_unique_v2', '1')");
+    }
+  } catch (e) {
+    // preferences table might not exist yet, or other error
+  }
+
+  try {
+    db.execSync('ALTER TABLE assignments ADD COLUMN attachments TEXT;');
+  } catch (e) {
+    // Column might already exist
+  }
+
+  try {
+    db.execSync('ALTER TABLE meetings ADD COLUMN start_time TEXT;');
+  } catch (e) {}
+  try {
+    db.execSync('ALTER TABLE meetings ADD COLUMN meeting_number TEXT;');
+  } catch (e) {}
+  try {
+    db.execSync('ALTER TABLE meetings ADD COLUMN password TEXT;');
+  } catch (e) {}
 }
 
 // Preference Helpers
@@ -110,9 +154,9 @@ export function saveSyncResultToDatabase(result: any): void {
       for (const a of result.assignments) {
         db.runSync(
           `INSERT OR REPLACE INTO assignments 
-          (moodle_assign_id, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [a.id, a.cmid, a.courseId, a.courseName, a.name, a.status, a.deadline, a.opened, a.link, a.grade, a.gradeMax, nowStr]
+          (moodle_assign_id, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [a.id, a.cmid, a.courseId, a.courseName, a.name, a.status, a.deadline, a.opened, a.link, a.grade, a.gradeMax, nowStr, JSON.stringify(a.attachments || [])]
         );
       }
 
@@ -127,12 +171,27 @@ export function saveSyncResultToDatabase(result: any): void {
       }
 
       // 3. Sync meetings
+      const courseIds = Array.from(new Set(result.meetings.map((m: any) => m.courseId))) as number[];
+      for (const cid of courseIds) {
+        db.runSync('DELETE FROM meetings WHERE course_moodle_id = ?', [cid]);
+      }
+
       for (const m of result.meetings) {
         db.runSync(
           `INSERT OR REPLACE INTO meetings 
-          (course_moodle_id, course_name, title, meeting_url, section_name, last_synced)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-          [m.courseId, m.courseName, m.title, m.meetingUrl, m.sectionName, nowStr]
+          (course_moodle_id, course_name, title, meeting_url, section_name, last_synced, start_time, meeting_number, password)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            m.courseId, 
+            m.courseName, 
+            m.title, 
+            m.meetingUrl, 
+            m.sectionName, 
+            nowStr, 
+            m.startTime || null, 
+            m.meetingNumber || null, 
+            m.password || null
+          ]
         );
       }
     });

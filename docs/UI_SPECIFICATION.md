@@ -57,23 +57,17 @@ Presented immediately after successful authentication or when manually triggered
 *   **Sidebar Collapse Toggle**:
     - Flat button at the bottom of the sidebar with an arrow icon.
     - Clicking toggles width state (`240px` expanded vs `72px` collapsed).
+    - (Mobile only) Clicking anywhere not on the sidebar collapses it
     - *Collapsed state styling*: Hides text labels, scales the logo to `40px` circular bounds, and formats navigation items as centered square buttons.
 *   **Footer**:
     - **Disconnect Button**: Shorthand power plug icon (`🔌`) that triggers log out.
-
-### B. Bottom Navigation Tab Bar (Mobile Port)
-*   Replicates the navigation hierarchy in a native tab bar pinned to the bottom of the device screen:
-    - **Dashboard Icon**: Chronological deadlines list.
-    - **Courses Icon**: Tracked courses.
-    - **Files Icon**: File manager.
-    - **Settings Icon**: System configurations.
+    - (Mobile only) The disconnect logo will appear only when the sidebar is expended
 
 ---
 
 ## 3. Dashboard Tab (Home View)
 
 ### A. Header Section
-*   **Greeting Message**: "Hello, [User Full Name]" based on Moodle profile data.
 *   **Search Bar**: Real-time filter input field. Filters matching items across Assignments, Courses, and Files.
 *   **Quick Stats Widget**: Horizontal row of 3 stat cards:
     1.  **Pending Assignments**: Count of untracked incomplete deadlines.
@@ -180,3 +174,31 @@ Presented immediately after successful authentication or when manually triggered
 
 *   **Credits Section**: Project details, developer credentials, and links to source code repositories.
 *   **Version Label**: Current version (e.g., `Version Beta-0.4`).
+
+---
+
+## 8. Zoom Links UI Integration & Filtering
+
+To manage the multiple Zoom meetings extracted per course (such as lectures, tutorials, and recitations), both the Chrome Extension options page and the React Native mobile app implement a dedicated **Zoom Links** section on the main Dashboard view.
+
+### A. Meeting Sorting & Color States
+Meetings are grouped and sorted dynamically based on their status and schedule:
+1. **Active State (Green)**: 
+   - *Condition*: `startTime <= CurrentTime <= startTime + 2 hours`
+   - *Styling*: Render card border or badge in vibrant Green.
+   - *Sorting*: Pinned to the very top of the list.
+2. **Unknown State (Standard Theme)**: 
+   - *Condition*: Meeting has no fixed schedule / no `startTime` (recurring links).
+   - *Styling*: Standard card color (blue/gray/dark theme color).
+   - *Sorting*: Placed in the middle of the list.
+3. **Inactive State (Grey)**: 
+   - *Condition*: Meeting is not currently active (either in the past or far in the future).
+   - *Styling*: Faded out with a grey accent color.
+   - *Sorting*: Pushed to the bottom of the list.
+
+### B. Interest & Custom Visibility Configuration
+Users can filter out Zoom links they are not interested in (e.g., hiding other recitation groups they do not attend):
+1. **Interest Toggle**: Each Zoom card features a toggle button (eye icon `👁` / `👁‍🗨`). Toggling it adds/removes the meeting's ID from the user's `interestedMeetings` storage list.
+2. **Show All Filter**:
+   - **Show All = OFF (Default)**: Uninterested Zoom links are hidden from the dashboard entirely.
+   - **Show All = ON**: All Zoom links are shown, but uninterested links are rendered in a faded/transparent state with a slashed eye icon.
