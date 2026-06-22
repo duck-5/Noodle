@@ -11,18 +11,6 @@ export default function Popup() {
   const [loading, setLoading] = useState<boolean>(true);
   const [settings, setSettings] = useState<any>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (settings?.theme) {
-      document.body.className = `theme-${settings.theme}`;
-    } else {
-      document.body.className = 'theme-noodle';
-    }
-  }, [settings]);
-
   async function loadData() {
     try {
       const storedToken = await getStoredToken();
@@ -37,6 +25,18 @@ export default function Popup() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (settings?.theme) {
+      document.body.className = `theme-${settings.theme}`;
+    } else {
+      document.body.className = 'theme-noodle';
+    }
+  }, [settings]);
 
   const handleOpenDashboard = () => {
     chrome.runtime.openOptionsPage();

@@ -134,7 +134,7 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
 ## 3. Client Platform APIs
 
 ### Chrome Extension APIs (Manifest V3)
-*   `chrome.cookies`: Scans for the HTTP-Only `MoodleSession` cookie on `moodle.tau.ac.il` to automate token retrieval.
+*   `chrome.webRequest`: Intercepts `onBeforeRedirect` events to catch custom URL schemes (like `moodlemobile://token=...`) during the SSO handshake, enabling silent wstoken retrieval without the high-privilege `cookies` permission.
 *   `chrome.storage.local`: Encrypted-at-rest local storage for caching Moodle data and storing the raw `wstoken` securely.
 *   `chrome.storage.sync`: Cloud-synchronized browser storage for lightweight user preferences (tracked course lists, colors, language settings).
 *   `chrome.alarms`: Triggers the background Service Worker once per hour to run the synchronization engine.

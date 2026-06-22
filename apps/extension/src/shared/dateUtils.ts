@@ -3,11 +3,19 @@ export function getDueTextAndClass(
   lang: 'he' | 'en',
   greenThreshold: number = 7,
   yellowThreshold: number = 3,
-  shortFormat: boolean = false
+  shortFormat: boolean = false,
+  status?: string
 ): { deadlineText: string; badgeClass: string; timeColorClass: string } {
   let badgeClass = 'badge-muted';
   let timeColorClass = 'due-red';
   let deadlineText = lang === 'he' ? (shortFormat ? 'אין מועד' : 'אין מועד הגשה') : 'No deadline';
+
+  if (status === 'Submitted') {
+    badgeClass = 'badge-success';
+    timeColorClass = 'due-green';
+    deadlineText = lang === 'he' ? 'הוגש' : 'Submitted';
+    return { deadlineText, badgeClass, timeColorClass };
+  }
 
   if (!deadlineString) {
     return { deadlineText, badgeClass, timeColorClass };

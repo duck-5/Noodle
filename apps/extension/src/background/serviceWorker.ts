@@ -190,6 +190,7 @@ async function performBackgroundSync() {
   let result;
   try {
     result = await runSync(token, trackedCourseIds, (msg) => {
+      chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => {});
       console.log(`[Sync Progress] ${msg}`);
     });
   } catch (err: any) {
@@ -224,6 +225,9 @@ async function performBackgroundSync() {
       console.error('Google Tasks sync failed:', e);
     }
   }
+
+  // Notify listeners that sync is fully complete
+  chrome.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => {});
 
   return result;
 }
@@ -483,8 +487,17 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       if (formActionMatch1) {
         const action = formActionMatch1[1];
         ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
-        // Submit the form (empty POST) to initialize the session
-        await fetch(ssoUrl, { method: 'POST' });
+        
+        const params = new URLSearchParams();
+        const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
+        inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
+
+        // Submit the form to initialize the session with SAML context
+        await fetch(ssoUrl, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params
+        });
       }
 
       // 3. Initiate login sequence

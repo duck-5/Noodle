@@ -115,7 +115,6 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
-  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   useEffect(() => {
@@ -132,31 +131,6 @@ export default function App() {
     await chrome.storage.local.set({ sidebarCollapsed: val });
   };
 
-  const toggleCourseExpand = (courseId: number) => {
-    setExpandedCourses((prev) => ({
-      ...prev,
-      [courseId]: !prev[courseId],
-    }));
-  };
-
-  const handleViewSubject = (courseId: number, sectionName: string) => {
-    setActiveTab('courses');
-    setSelectedCourseId(null);
-    setExpandedCourses((prev) => ({ ...prev, [courseId]: true }));
-    
-    // Scroll into view after tab renders
-    setTimeout(() => {
-      const safeSectionName = encodeURIComponent(sectionName || 'General');
-      const el = document.getElementById(`section-${courseId}-${safeSectionName}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('pulse-glow-effect');
-        setTimeout(() => {
-          el.classList.remove('pulse-glow-effect');
-        }, 3000);
-      }
-    }, 200);
-  };
 
   // Toast and Tour States
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -216,6 +190,33 @@ export default function App() {
   // Backup and custom disconnect states
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
   const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
+
+  const [nextSyncSecs, setNextSyncSecs] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!syncResult?.syncedAt) {
+        setNextSyncSecs(null);
+        return;
+      }
+      const nextSyncTime = new Date(syncResult.syncedAt).getTime() + 5 * 60 * 1000;
+      const diffMs = nextSyncTime - Date.now();
+      setNextSyncSecs(diffMs > 0 ? Math.floor(diffMs / 1000) : 0);
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [syncResult?.syncedAt]);
+
+  useEffect(() => {
+    const messageListener = (msg: any) => {
+      if (msg.type === 'SYNC_COMPLETE' && msg.result) {
+        setSyncResult(msg.result);
+      }
+    };
+    chrome.runtime.onMessage.addListener(messageListener);
+    return () => chrome.runtime.onMessage.removeListener(messageListener);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -911,8 +912,13 @@ export default function App() {
         <header className="content-header">
           <div className="header-title">
             <h2>{t(activeTab as any)}</h2>
-            <p className="subtitle">
-              {t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}
+            <p className="subtitle" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <span>{t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}</span>
+              {nextSyncSecs !== null && (
+                <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
+                  ⏱️ {nextSyncSecs > 0 ? `${Math.floor(nextSyncSecs / 60)}:${(nextSyncSecs % 60).toString().padStart(2, '0')}` : (currentLang === 'he' ? 'מסנכרן...' : 'Syncing...')}
+                </span>
+              )}
             </p>
           </div>
           <div className="header-actions">
@@ -927,7 +933,6 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <DashboardTab
               assignments={assignmentsList}
-              files={filesList}
               meetings={meetingsList}
               token={token}
               getCourseColor={getCourseColor}
@@ -938,9 +943,13 @@ export default function App() {
               t={t}
               lang={currentLang}
               tourStep={tourStep}
-              onViewSubject={handleViewSubject}
               onToggleMeetingInterest={handleToggleMeetingInterest}
               trackedCourseIds={trackedCourseIds}
+              onGoToCourse={(courseId) => {
+                setSelectedCourseId(courseId);
+                setActiveTab('courses');
+              }}
+              syncResult={syncResult}
             />
           )}
 
@@ -964,7 +973,6 @@ export default function App() {
               trackedCourseIds={trackedCourseIds}
               syncResult={syncResult}
               enrolledCourses={availableCourses}
-              token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
               onUpdateColor={handleUpdateCourseColor}
@@ -978,9 +986,6 @@ export default function App() {
               t={t}
               lang={currentLang}
               tourStep={tourStep}
-              settings={settings}
-              expandedCourses={expandedCourses}
-              onToggleExpand={toggleCourseExpand}
             />
           )}
 
@@ -1145,7 +1150,6 @@ interface TabProps {
 // 1. DASHBOARD TAB
 function DashboardTab({
   assignments,
-  files,
   meetings,
   token,
   getCourseColor,
@@ -1156,21 +1160,22 @@ function DashboardTab({
   t,
   lang,
   tourStep,
-  onViewSubject,
   onToggleMeetingInterest,
   trackedCourseIds,
+  onGoToCourse,
+  syncResult,
 }: {
   assignments: Assignment[];
-  files: CourseFile[];
   meetings: ZoomMeeting[];
   token: string | null;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   settings: ExtensionSettings | null;
   tourStep?: number;
-  onViewSubject: (courseId: number, sectionName: string) => void;
-  onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
+  onToggleMeetingInterest: (meetingNumber: string, allMeetingIds: string[]) => void;
   trackedCourseIds: number[];
+  onGoToCourse: (courseId: number) => void;
+  syncResult: SyncResult | null;
 } & TabProps) {
   const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
@@ -1266,7 +1271,9 @@ function DashboardTab({
                       nextAssignment.deadline,
                       lang,
                       settings?.assignmentGreenDaysThreshold,
-                      settings?.assignmentYellowDaysThreshold
+                      settings?.assignmentYellowDaysThreshold,
+                      false,
+                      nextAssignment.status
                     ).deadlineText
                   }
                 </span>
@@ -1277,6 +1284,7 @@ function DashboardTab({
                 rel="noreferrer"
                 className="primary-btn btn-sm"
                 onClick={(ev) => ev.stopPropagation()}
+                data-moodle-link="true"
               >
                 {t('open_assignment')}
               </a>
@@ -1293,11 +1301,11 @@ function DashboardTab({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
               <h5 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                📖 {lang === 'he' ? 'נושא' : 'Subject'}: {nextAssignment.sectionName || 'General'}
+                <strong>{lang === 'he' ? 'נושא' : 'Subject'}:</strong> {nextAssignment.sectionName || 'General'}
               </h5>
               <button
                 className="secondary-btn btn-sm"
-                onClick={() => onViewSubject(nextAssignment.courseId, nextAssignment.sectionName || 'General')}
+                onClick={() => onGoToCourse(nextAssignment.courseId)}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
               >
                 🔗 {t('go_to_course')}
@@ -1305,68 +1313,31 @@ function DashboardTab({
             </div>
 
             {(() => {
-              const sectionFiles = files.filter(f => f.courseId === nextAssignment.courseId && (f.sectionName || 'General') === (nextAssignment.sectionName || 'General'));
-              const sectionAssignments = assignments.filter(assign => assign.courseId === nextAssignment.courseId && (assign.sectionName || 'General') === (nextAssignment.sectionName || 'General'));
-
+              const subjectFiles = (syncResult?.files || []).filter(
+                (f) => f.courseId === nextAssignment.courseId && f.sectionName === (nextAssignment.sectionName || 'General')
+              );
+              if (subjectFiles.length === 0) return null;
               return (
-                <>
-                  {sectionAssignments.length > 0 && (
-                    <div className="section-assignments-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                        📝 {lang === 'he' ? 'מטלות בנושא' : 'Assignments in this subject'}
+                <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  {subjectFiles.map((f, fIdx) => {
+                    const downloadUrl = token
+                      ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                      : f.fileUrl;
+                    return (
+                      <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px' }}>
+                        <span className="item-name" style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>📄 {f.fileName}</span>
+                        <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {f.fileSize > 0 && (
+                            <span className="file-size" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                          )}
+                          <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                            {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                          </a>
+                        </div>
                       </div>
-                      {sectionAssignments.map((sa) => {
-                        const { badgeClass, deadlineText } = getDueTextAndClass(
-                          sa.deadline || null,
-                          lang,
-                          settings?.assignmentGreenDaysThreshold,
-                          settings?.assignmentYellowDaysThreshold
-                        );
-                        return (
-                          <div key={sa.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-                            <span className="item-name" style={{ fontSize: '0.85rem' }}>{sa.name}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                              <a href={sa.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                {lang === 'he' ? 'פתח ↗' : 'Open ↗'}
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {sectionFiles.length > 0 && (
-                    <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                        📁 {lang === 'he' ? 'קבצים בנושא' : 'Files in this subject'}
-                      </div>
-                      {sectionFiles.map((f, fIdx) => {
-                        const downloadUrl = token
-                          ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                          : f.fileUrl;
-                        return (
-                          <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-                            <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
-                            <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {sectionAssignments.length === 0 && sectionFiles.length === 0 && (
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      {lang === 'he' ? 'אין קבצים או מטלות נוספות בנושא זה' : 'No other files or assignments in this subject'}
-                    </p>
-                  )}
-                </>
+                    );
+                  })}
+                </div>
               );
             })()}
           </div>
@@ -1383,6 +1354,27 @@ function DashboardTab({
           <span className="stat-val">{assignments.filter((a) => a.status === 'Submitted').length}</span>
         </div>
       </div>
+
+      {assignments.length > 0 && (
+        <div className="progress-container" style={{ marginBottom: '2rem', padding: '0 0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            <span>{lang === 'he' ? 'התקדמות העונה' : 'Semester Progress'}</span>
+            <span>{Math.round((assignments.filter(a => a.status === 'Submitted').length / assignments.length) * 100)}%</span>
+          </div>
+          <div className="progress-bar-bg" style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div 
+              className="progress-bar-fill" 
+              style={{ 
+                width: `${(assignments.filter(a => a.status === 'Submitted').length / assignments.length) * 100}%`,
+                height: '100%',
+                background: (assignments.filter(a => a.status === 'Submitted').length / assignments.length) >= 0.7 ? '#10b981' : 
+                            (assignments.filter(a => a.status === 'Submitted').length / assignments.length) >= 0.3 ? '#f59e0b' : 'var(--primary)',
+                transition: 'width 0.5s ease-out'
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="dashboard-grids">
         {/* Assignments Section */}
@@ -1408,7 +1400,9 @@ function DashboardTab({
                   a.deadline || null,
                   lang,
                   settings?.assignmentGreenDaysThreshold,
-                  settings?.assignmentYellowDaysThreshold
+                  settings?.assignmentYellowDaysThreshold,
+                  false,
+                  a.status
                 );
 
                 return (
@@ -1464,6 +1458,7 @@ function DashboardTab({
                           rel="noreferrer"
                           className="action-icon-link"
                           onClick={(ev) => ev.stopPropagation()}
+                          data-moodle-link="true"
                         >
                           ↗️ {lang === 'he' ? 'פתח' : 'Open'}
                         </a>
@@ -1480,11 +1475,11 @@ function DashboardTab({
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <h5 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                          📖 {lang === 'he' ? 'נושא' : 'Subject'}: {a.sectionName || 'General'}
+                          <strong>{lang === 'he' ? 'נושא' : 'Subject'}:</strong> {a.sectionName || 'General'}
                         </h5>
                         <button
                           className="secondary-btn btn-sm"
-                          onClick={() => onViewSubject(a.courseId, a.sectionName || 'General')}
+                          onClick={() => onGoToCourse(a.courseId)}
                           style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                         >
                           🔗 {t('go_to_course')}
@@ -1492,68 +1487,31 @@ function DashboardTab({
                       </div>
 
                       {(() => {
-                        const sectionFiles = files.filter(f => f.courseId === a.courseId && (f.sectionName || 'General') === (a.sectionName || 'General'));
-                        const sectionAssignments = assignments.filter(assign => assign.courseId === a.courseId && (assign.sectionName || 'General') === (a.sectionName || 'General'));
-
+                        const subjectFiles = (syncResult?.files || []).filter(
+                          (f) => f.courseId === a.courseId && f.sectionName === (a.sectionName || 'General')
+                        );
+                        if (subjectFiles.length === 0) return null;
                         return (
-                          <>
-                            {sectionAssignments.length > 0 && (
-                              <div className="section-assignments-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                  📝 {lang === 'he' ? 'מטלות בנושא' : 'Assignments in this subject'}
+                          <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
+                            {subjectFiles.map((f, fIdx) => {
+                              const downloadUrl = token
+                                ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                                : f.fileUrl;
+                              return (
+                                <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px' }}>
+                                  <span className="item-name" style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>📄 {f.fileName}</span>
+                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {f.fileSize > 0 && (
+                                      <span className="file-size" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                    )}
+                                    <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                                      {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                                    </a>
+                                  </div>
                                 </div>
-                                {sectionAssignments.map((sa) => {
-                                  const { badgeClass, deadlineText } = getDueTextAndClass(
-                                    sa.deadline || null,
-                                    lang,
-                                    settings?.assignmentGreenDaysThreshold,
-                                    settings?.assignmentYellowDaysThreshold
-                                  );
-                                  return (
-                                    <div key={sa.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>{sa.name}</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                                        <a href={sa.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                          {lang === 'he' ? 'פתח ↗' : 'Open ↗'}
-                                        </a>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {sectionFiles.length > 0 && (
-                              <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                  📁 {lang === 'he' ? 'קבצים בנושא' : 'Files in this subject'}
-                                </div>
-                                {sectionFiles.map((f, fIdx) => {
-                                  const downloadUrl = token
-                                    ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                                    : f.fileUrl;
-                                  return (
-                                    <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
-                                      <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                        <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                          {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
-                                        </a>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {sectionAssignments.length === 0 && sectionFiles.length === 0 && (
-                              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                {lang === 'he' ? 'אין קבצים או מטלות נוספות בנושא זה' : 'No other files or assignments in this subject'}
-                              </p>
-                            )}
-                          </>
+                              );
+                            })}
+                          </div>
                         );
                       })()}
                     </div>
@@ -1839,7 +1797,6 @@ function CoursesTab({
   trackedCourseIds,
   syncResult,
   enrolledCourses,
-  token,
   getCourseColor,
   getCourseDisplayName,
   onUpdateColor,
@@ -1849,22 +1806,15 @@ function CoursesTab({
   t,
   lang,
   tourStep,
-  settings,
-  expandedCourses,
-  onToggleExpand,
 }: {
   trackedCourseIds: number[];
   syncResult: SyncResult | null;
   enrolledCourses: any[];
-  token: string | null;
   onUpdateColor: (id: number, color: string) => void;
   onUpdateCustomName: (id: number, name: string) => void;
   onSaveTrackedCourses: (newIds: number[]) => void;
   onSelectCourse: (id: number) => void;
   tourStep?: number;
-  settings: ExtensionSettings | null;
-  expandedCourses: Record<number, boolean>;
-  onToggleExpand: (id: number) => void;
 } & TabProps) {
   const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
   
@@ -1896,30 +1846,6 @@ function CoursesTab({
     } else {
       setActiveTrackedIds([...activeTrackedIds, id]);
     }
-  };
-
-  const getCourseSectionsList = (courseId: number) => {
-    const courseAssignments = (syncResult?.assignments || []).filter((a) => a.courseId === courseId);
-    const courseFiles = (syncResult?.files || []).filter((f) => f.courseId === courseId);
-
-    const sectionsMap = new Map<string, { files: CourseFile[]; assignments: Assignment[] }>();
-    const getSection = (name: string) => {
-      const sName = name || 'General';
-      if (!sectionsMap.has(sName)) {
-        sectionsMap.set(sName, { files: [], assignments: [] });
-      }
-      return sectionsMap.get(sName)!;
-    };
-
-    courseFiles.forEach((f) => {
-      getSection(f.sectionName).files.push(f);
-    });
-
-    courseAssignments.forEach((a) => {
-      getSection(a.sectionName || 'General').assignments.push(a);
-    });
-
-    return Array.from(sectionsMap.entries());
   };
 
   return (
@@ -2029,12 +1955,8 @@ function CoursesTab({
               .map(c => {
                 const color = getCourseColor(c.id);
                 const displayName = getCourseDisplayName(c.id, c.name);
-                const sectionsList = getCourseSectionsList(c.id);
-                const isExpanded = !!expandedCourses[c.id];
-                const displayedSections = isExpanded ? sectionsList : sectionsList.slice(-2);
-
                 return (
-                  <div key={c.id} className="nav-course-card glass-panel" style={{ borderLeft: lang !== 'he' ? `4px solid ${color}` : undefined, borderRight: lang === 'he' ? `4px solid ${color}` : undefined, marginBottom: '1.2rem', padding: '1rem' }}>
+                  <div key={c.id} className="nav-course-card glass-panel" style={{ borderLeft: lang !== 'he' ? `4px solid ${color}` : undefined, borderRight: lang === 'he' ? `4px solid ${color}` : undefined, marginBottom: '0.8rem', padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h4 
                         className="nav-course-title" 
@@ -2048,89 +1970,11 @@ function CoursesTab({
                         <button
                           className="secondary-btn btn-xs"
                           onClick={() => onSelectCourse(c.id)}
-                          style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
                         >
                           {t('go_to_course_page')}
                         </button>
-                        <button
-                          className="icon-btn"
-                          onClick={() => onToggleExpand(c.id)}
-                          style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1.1rem', padding: '0.2rem' }}
-                        >
-                          {isExpanded ? '▲' : '▼'}
-                        </button>
                       </div>
-                    </div>
-
-                    <div className="nav-course-sections sections-tree" style={{ marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {displayedSections.length === 0 ? (
-                        <p className="no-content-text" style={{ fontSize: '0.85rem' }}>{lang === 'he' ? 'אין נושאים או קבצים' : 'No sections or files'}</p>
-                      ) : (
-                        displayedSections.map(([secName, content], sIdx) => (
-                          <div key={sIdx} id={`section-${c.id}-${encodeURIComponent(secName || 'General')}`} className="section-node glass-panel" style={{ padding: '0.8rem', gap: '0.5rem' }}>
-                            <h5 className="section-node-title" style={{ fontSize: '0.95rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.3rem', marginBottom: '0.2rem' }}>{secName}</h5>
-                            
-                            {content.assignments.length > 0 && (
-                              <div className="section-assignments-list" style={{ gap: '0.5rem' }}>
-                                {content.assignments.map((a) => {
-                                  const { badgeClass, deadlineText } = getDueTextAndClass(
-                                    a.deadline || null,
-                                    lang,
-                                    settings?.assignmentGreenDaysThreshold,
-                                    settings?.assignmentYellowDaysThreshold
-                                  );
-
-                                  return (
-                                    <div key={a.id} className="section-assignment-item" style={{ padding: '0.5rem 0.75rem' }}>
-                                      <div className="item-meta-row">
-                                        <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
-                                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                                      </div>
-                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>{a.name}</span>
-                                      <div className="item-actions">
-                                        <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                          {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
-                                        </a>
-                                        {a.attachments && a.attachments.map((att, attIdx) => {
-                                          const downloadUrl = token
-                                            ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                                            : att.url;
-                                          return (
-                                            <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                              📄 {att.name}
-                                            </a>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            {content.files.length > 0 && (
-                              <div className="section-files-list" style={{ gap: '0.5rem' }}>
-                                {content.files.map((f, fIdx) => {
-                                  const downloadUrl = token
-                                    ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                                    : f.fileUrl;
-                                  return (
-                                    <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
-                                      <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                        <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                                          {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
-                                        </a>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
                     </div>
                   </div>
                 );
@@ -2560,6 +2404,21 @@ function CourseDetailView({
   onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
+  const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
+
+  const handleSectionSelect = (secName: string | null) => {
+    setActiveSectionName(secName);
+    if (secName) {
+      setTimeout(() => {
+        const elementId = `section-node-${encodeURIComponent(secName)}`;
+        const el = document.getElementById(elementId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
+  };
+
   const courseColor = getCourseColor(courseId);
   const rawCourseName = assignments.find(a => a.courseId === courseId)?.courseName || 
                     files.find(f => f.courseId === courseId)?.courseName || 
@@ -2852,76 +2711,181 @@ function CourseDetailView({
           })()}
 
           <h4>{t('course_sections')}</h4>
+
+          {/* Subjects Navigation Tree */}
+          {sectionsList.length > 0 && (
+            <div className="subjects-nav-tree glass-panel" style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '0.5rem',
+              padding: '0.75rem',
+              marginBottom: '1.5rem',
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderRadius: '8px',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: '0.5rem' }}>
+                {lang === 'he' ? 'נווּט נושאים:' : 'Navigate Subjects:'}
+              </span>
+              <button
+                className="secondary-btn btn-sm"
+                onClick={() => handleSectionSelect(null)}
+                style={{
+                  background: activeSectionName === null ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                  color: activeSectionName === null ? '#fff' : 'var(--text-primary)',
+                  borderColor: activeSectionName === null ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                  fontWeight: activeSectionName === null ? 'bold' : 'normal',
+                  padding: '0.3rem 0.75rem',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem'
+                }}
+              >
+                {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
+              </button>
+              {sectionsList.map(([secName]) => {
+                const isActive = activeSectionName === secName;
+                return (
+                  <button
+                    key={secName}
+                    className="secondary-btn btn-sm"
+                    onClick={() => handleSectionSelect(secName)}
+                    style={{
+                      background: isActive ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                      color: isActive ? '#fff' : 'var(--text-primary)',
+                      borderColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                      fontWeight: isActive ? 'bold' : 'normal',
+                      padding: '0.3rem 0.75rem',
+                      borderRadius: '16px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    {secName}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {sectionsList.length === 0 ? (
             <div className="empty-state">{t('empty_sections')}</div>
           ) : (
             <div className="sections-tree">
-              {sectionsList.map(([secName, content], sIdx) => (
-                <div key={sIdx} className="section-node glass-panel">
-                  <h5 className="section-node-title">{secName}</h5>
-                  
-                  {content.assignments.length > 0 && (
-                    <div className="section-assignments-list">
-                      {content.assignments.map((a) => {
-                        const { badgeClass, deadlineText } = getDueTextAndClass(
-                          a.deadline || null,
-                          lang
-                        );
+              {sectionsList.map(([secName, content], sIdx) => {
+                const isCollapsed = activeSectionName !== null && activeSectionName !== secName;
+                return (
+                  <div
+                    key={sIdx}
+                    id={`section-node-${encodeURIComponent(secName)}`}
+                    className={`section-node glass-panel ${isCollapsed ? 'collapsed' : 'expanded'}`}
+                    style={{
+                      transition: 'all 0.3s ease',
+                      opacity: isCollapsed ? 0.7 : 1,
+                      cursor: isCollapsed ? 'pointer' : 'default',
+                      padding: isCollapsed ? '0.75rem 1rem' : '1rem'
+                    }}
+                    onClick={() => {
+                      if (isCollapsed) {
+                        handleSectionSelect(secName);
+                      }
+                    }}
+                  >
+                    <h5
+                      className="section-node-title"
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        margin: 0,
+                        cursor: 'pointer',
+                        paddingBottom: isCollapsed ? '0' : '0.5rem',
+                        borderBottom: isCollapsed ? 'none' : '1px solid rgba(255,255,255,0.08)'
+                      }}
+                      onClick={(e) => {
+                        if (!isCollapsed && activeSectionName !== null) {
+                          handleSectionSelect(null);
+                          e.stopPropagation();
+                        }
+                      }}
+                    >
+                      <span>{secName}</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        {isCollapsed ? '▼' : '▲'}
+                      </span>
+                    </h5>
+                    
+                    {!isCollapsed && (
+                      <div className="section-node-body" style={{ marginTop: '1rem' }}>
+                        {content.assignments.length > 0 && (
+                          <div className="section-assignments-list">
+                            {content.assignments.map((a) => {
+                              const { badgeClass, deadlineText } = getDueTextAndClass(
+                                a.deadline || null,
+                                lang,
+                                settings?.assignmentGreenDaysThreshold,
+                                settings?.assignmentYellowDaysThreshold,
+                                false,
+                                a.status
+                              );
 
-                        return (
-                          <div key={a.id} className="section-assignment-item">
-                            <div className="item-meta-row">
-                              <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
-                              <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                            </div>
-                            <span className="item-name">{a.name}</span>
-                            <div className="item-actions">
-                              <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn">
-                                {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
-                              </a>
-                              {a.attachments && a.attachments.map((att, attIdx) => {
-                                const downloadUrl = token
-                                  ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                                  : att.url;
-                                return (
-                                  <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn">
-                                    📄 {att.name}
-                                  </a>
-                                );
-                              })}
-                            </div>
+                              return (
+                                <div key={a.id} className="section-assignment-item">
+                                  <div className="item-meta-row">
+                                    <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
+                                    <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                                  </div>
+                                  <span className="item-name">{a.name}</span>
+                                  <div className="item-actions">
+                                    <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
+                                      {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
+                                    </a>
+                                    {a.attachments && a.attachments.map((att, attIdx) => {
+                                      const downloadUrl = token
+                                        ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                                        : att.url;
+                                      return (
+                                        <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn">
+                                          📄 {att.name}
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
 
-                  {content.files.length > 0 && (
-                    <div className="section-files-list">
-                      {content.files.map((f, fIdx) => {
-                        const downloadUrl = token
-                          ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                          : f.fileUrl;
-                        return (
-                          <div key={fIdx} className="section-file-item">
-                            <span className="item-name">📄 {f.fileName}</span>
-                            <div className="file-meta">
-                              <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn">
-                                {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
-                              </a>
-                            </div>
+                        {content.files.length > 0 && (
+                          <div className="section-files-list">
+                            {content.files.map((f, fIdx) => {
+                              const downloadUrl = token
+                                ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
+                                : f.fileUrl;
+                              return (
+                                <div key={fIdx} className="section-file-item">
+                                  <span className="item-name">📄 {f.fileName}</span>
+                                  <div className="file-meta">
+                                    <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                    <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn">
+                                      {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
 
-                  {content.assignments.length === 0 && content.files.length === 0 && (
-                    <p className="no-content-text">{lang === 'he' ? 'נושא ריק' : 'Empty section'}</p>
-                  )}
-                </div>
-              ))}
+                        {content.assignments.length === 0 && content.files.length === 0 && (
+                          <p className="no-content-text">{lang === 'he' ? 'נושא ריק' : 'Empty section'}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -2937,9 +2901,21 @@ function CourseDetailView({
                 <div key={a.id} className="sidebar-assign-card" style={{ borderLeft: `3px solid ${a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` }}>
                   <h6>{a.name}</h6>
                   <p className="assign-status">{t('status_label')}: {a.status}</p>
-                  {a.deadline && (
-                    <p className="assign-deadline">{lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}</p>
-                  )}
+                  {a.deadline && (() => {
+                    const { timeColorClass } = getDueTextAndClass(
+                      a.deadline,
+                      lang,
+                      settings?.assignmentGreenDaysThreshold,
+                      settings?.assignmentYellowDaysThreshold,
+                      false,
+                      a.status
+                    );
+                    return (
+                      <p className={`assign-deadline ${timeColorClass}`}>
+                        {lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}
+                      </p>
+                    );
+                  })()}
                   {a.attachments && a.attachments.length > 0 && (
                     <div className="attachment-button-row" style={{ marginTop: '0.5rem' }}>
                       {a.attachments.map((att, attIdx) => {

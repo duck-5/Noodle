@@ -72,6 +72,19 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
     *   *Rule:* During sync, scan existing tasks' descriptions using this prefix to find matches. Do not match tasks by title, as the user might rename them.
     *   *Rule:* If a task is marked `completed` in Google Tasks by the user, **do not** change it back to `needsAction` even if Moodle reports it is not submitted. Respect user overrides.
 
+### F. Cookie-less Token Interception
+*   **No Cookies Permission:** Do not use `chrome.cookies` or request the `"cookies"` permission in the extension manifest.
+*   **Redirect Interception:** The background service worker must use `chrome.webRequest.onBeforeRedirect` to capture the final `moodlemobile://token=...` redirect URL generated during the SSO flow, programmatically extracting the Web Service token (`wstoken`).
+*   **Implicit Session Sharing:** Rely on the browser's implicit cookie management by using `credentials: 'include'` for all fetch requests within the extension scope to carry over the Moodle and Zoom LTI session credentials automatically.
+
+### G. SAML SSO Login Parsing
+*   **Form Extraction:** During programmatic login, the initial redirect to `nidp.tau.ac.il` returns an auto-submitting HTML form containing parameters like `SAMLRequest` and `RelayState`.
+*   **SAML Context Propagation:** The login flow must extract **all** hidden `<input>` tag name-value pairs from this form and post them back to the form's action URL as form-urlencoded body data. Simply sending an empty POST to the action URL fails to associate the SAML request context, causing subsequent login credentials to succeed at the identity provider but fail to generate a valid `SAMLResponse` for Moodle.
+
+### H. Session Purging & Invalidation on Disconnect
+*   **Local Storage Purge:** When a user logs out or disconnects their account, all personal cached data (moodle data, assignments, grades, courses, OAuth/Moodle tokens) must be completely wiped from the local client databases (`chrome.storage.local` or mobile SQLite/SecureStore). Only general app configurations (e.g., dark mode preferences) should be kept.
+*   **Server-Side Invalidation:** A local storage wipe is insufficient. The app must perform server-side session invalidation by invoking Moodle and SSO logout endpoints (`https://moodle.tau.ac.il/login/logout.php` and `https://nidp.tau.ac.il/nidp/app/logout`) with `credentials: 'include'` to tear down active server sessions. This prevents account crossover (where a subsequent user gets automatically logged in to the previous user's SSO session).
+
 ---
 
 ## 4. Current Roadmap & Outstanding Milestones

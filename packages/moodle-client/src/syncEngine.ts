@@ -144,48 +144,119 @@ export async function runSync(
     });
   }
 
-  // 3. Fetch Submission Status for each tracked assignment
-  onProgress(`Checking submission status for ${rawAssignments.length} assignments...`);
-  const submissionsMap = new Map<number, { status: string; extensionDueDate: number }>();
+  // 3. Parallelize fetching submissions, grades, and course contents
+  onProgress(`Fetching details for ${rawAssignments.length} assignments and ${trackedCourseIds.length} courses...`);
   
-  await batchPromises(rawAssignments, 4, async (assign) => {
-    try {
-      const statusResp = await client.getSubmissionStatus(assign.id);
-      const subStatus = statusResp.lastattempt?.submission?.status || 'new';
-      const status = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
-      const extensionDueDate = statusResp.lastattempt?.extensionduedate || 0;
-      submissionsMap.set(assign.id, { status, extensionDueDate });
-    } catch (err: any) {
-      errors.push({
-        context: `Fetching submission status for assignment ${assign.name} (id: ${assign.id})`,
-        message: err.message,
-      });
-      submissionsMap.set(assign.id, { status: 'Assigned', extensionDueDate: 0 });
-    }
-  });
-
-  // 4. Fetch Grades (one API call per course)
-  onProgress(`Fetching grades for ${trackedCourseIds.length} courses...`);
+  const submissionsMap = new Map<number, { status: string; extensionDueDate: number }>();
   const gradesByCmid = new Map<number, RawGradeItem>();
+  const cmidToSectionMap = new Map<number, string>();
 
-  await batchPromises(trackedCourseIds, 3, async (courseId) => {
-    try {
-      const gradesResp = await client.getGradeItems(courseId, userId);
-      for (const userGrade of gradesResp.usergrades) {
-        for (const item of userGrade.gradeitems) {
-          if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
-            gradesByCmid.set(Number(item.cmid), item);
+  await Promise.all([
+    // A: Submissions
+    batchPromises(rawAssignments, 100, async (assign) => {
+      try {
+        const statusResp = await client.getSubmissionStatus(assign.id);
+        const subStatus = statusResp.lastattempt?.submission?.status || 'new';
+        const status = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
+        const extensionDueDate = statusResp.lastattempt?.extensionduedate || 0;
+        submissionsMap.set(assign.id, { status, extensionDueDate });
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching submission status for assignment ${assign.name} (id: ${assign.id})`,
+          message: err.message,
+        });
+        submissionsMap.set(assign.id, { status: 'Assigned', extensionDueDate: 0 });
+      }
+    }),
+
+    // B: Grades
+    batchPromises(trackedCourseIds, 100, async (courseId) => {
+      try {
+        const gradesResp = await client.getGradeItems(courseId, userId);
+        for (const userGrade of gradesResp.usergrades) {
+          for (const item of userGrade.gradeitems) {
+            if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
+              gradesByCmid.set(Number(item.cmid), item);
+            }
           }
         }
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching grades for course ${courseId}`,
+          message: err.message,
+        });
       }
-    } catch (err: any) {
-      // Some courses may not have gradebook access
-      errors.push({
-        context: `Fetching grades for course ${courseId}`,
-        message: err.message,
-      });
-    }
-  });
+    }),
+
+    // C: Course Contents
+    batchPromises(trackedCourseIds, 100, async (courseId) => {
+      const courseName = getCourseDisplayName(courseId);
+      try {
+        const sections = await client.getCourseContents(courseId);
+        for (const section of sections) {
+          const sectionName = section.name || '';
+          for (const module of section.modules) {
+            const modname = module.modname;
+            const name = module.name || '';
+            const nameLower = name.toLowerCase();
+
+            // Store mapping of assign modules (which are assignments)
+            if (modname === 'assign') {
+              cmidToSectionMap.set(module.id, sectionName);
+            }
+
+            // Files parsing
+            if (modname === 'resource' && module.contents) {
+              for (const content of module.contents) {
+                if (content.type === 'file') {
+                  files.push({
+                    fileName: content.filename || '',
+                    fileUrl: content.fileurl || '',
+                    fileSize: content.filesize || 0,
+                    mimeType: content.mimetype || 'application/octet-stream',
+                    sectionName,
+                    timeModified: content.timemodified || 0,
+                    courseId,
+                    courseName,
+                  });
+                }
+              }
+            }
+
+            // Zoom Meetings parsing
+            if (modname === 'lti' && nameLower.includes('zoom') && module.instance !== undefined) {
+              try {
+                const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, baseUrl);
+                for (const lm of ltiMeetings) {
+                  meetings.push({
+                    title: lm.topic,
+                    meetingUrl: lm.joinUrl,
+                    sectionName,
+                    courseId,
+                    courseName,
+                    startTime: lm.startTime,
+                    meetingNumber: lm.meetingNumber,
+                    password: lm.password,
+                  });
+                }
+              } catch (err: any) {
+                console.warn(`[SyncEngine] Failed to scrape Zoom meetings for course ${courseName} (module ID: ${module.id}):`, err);
+                errors.push({
+                  context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
+                  message: err.message,
+                });
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching contents for course ${courseName} (id: ${courseId})`,
+          message: err.message,
+        });
+      }
+    })
+  ]);
 
   // Assemble Assignments
   const now = new Date();
@@ -243,78 +314,6 @@ export async function runSync(
       attachments,
     });
   }
-
-  // 5. Fetch Course Contents (Files & Meetings) per course
-  onProgress(`Fetching files & meetings for ${trackedCourseIds.length} courses...`);
-  const cmidToSectionMap = new Map<number, string>();
-
-  await batchPromises(trackedCourseIds, 3, async (courseId) => {
-    const courseName = getCourseDisplayName(courseId);
-    try {
-      const sections = await client.getCourseContents(courseId);
-      for (const section of sections) {
-        const sectionName = section.name || '';
-        for (const module of section.modules) {
-          const modname = module.modname;
-          const name = module.name || '';
-          const nameLower = name.toLowerCase();
-
-          // Store mapping of assign modules (which are assignments)
-          if (modname === 'assign') {
-            cmidToSectionMap.set(module.id, sectionName);
-          }
-
-          // Files parsing
-          if (modname === 'resource' && module.contents) {
-            for (const content of module.contents) {
-              if (content.type === 'file') {
-                files.push({
-                  fileName: content.filename || '',
-                  fileUrl: content.fileurl || '',
-                  fileSize: content.filesize || 0,
-                  mimeType: content.mimetype || 'application/octet-stream',
-                  sectionName,
-                  timeModified: content.timemodified || 0,
-                  courseId,
-                  courseName,
-                });
-              }
-            }
-          }
-
-          // Zoom Meetings parsing
-          if (modname === 'lti' && nameLower.includes('zoom') && module.instance !== undefined) {
-            try {
-              const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, baseUrl);
-              for (const lm of ltiMeetings) {
-                meetings.push({
-                  title: lm.topic,
-                  meetingUrl: lm.joinUrl,
-                  sectionName,
-                  courseId,
-                  courseName,
-                  startTime: lm.startTime,
-                  meetingNumber: lm.meetingNumber,
-                  password: lm.password,
-                });
-              }
-            } catch (err: any) {
-              console.warn(`[SyncEngine] Failed to scrape Zoom meetings for course ${courseName} (module ID: ${module.id}):`, err);
-              errors.push({
-                context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
-                message: err.message,
-              });
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      errors.push({
-        context: `Fetching contents for course ${courseName} (id: ${courseId})`,
-        message: err.message,
-      });
-    }
-  });
 
   // Assign sectionName to assignments
   for (const assign of assignments) {
