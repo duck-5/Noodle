@@ -1384,6 +1384,13 @@ input:checked + .slider:before {
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+body.theme-noodle .modal-content {
+  background: rgba(253, 246, 240, 0.95);
+  border: 1px solid rgba(194, 112, 68, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(194, 112, 68, 0.15);
+  color: var(--text-primary);
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

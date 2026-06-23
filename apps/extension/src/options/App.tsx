@@ -1967,6 +1967,7 @@ function CoursesTab({
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
                       </h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${c.id}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
                         <button
                           className="secondary-btn btn-xs"
                           onClick={() => onSelectCourse(c.id)}
@@ -2405,10 +2406,12 @@ function CourseDetailView({
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string> | null>(null);
 
   const handleSectionSelect = (secName: string | null) => {
     setActiveSectionName(secName);
     if (secName) {
+      setExpandedSections(new Set([secName]));
       setTimeout(() => {
         const elementId = `section-node-${encodeURIComponent(secName)}`;
         const el = document.getElementById(elementId);
@@ -2416,6 +2419,8 @@ function CourseDetailView({
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
+    } else {
+      setExpandedSections(null);
     }
   };
 
@@ -2773,7 +2778,7 @@ function CourseDetailView({
           ) : (
             <div className="sections-tree">
               {sectionsList.map(([secName, content], sIdx) => {
-                const isCollapsed = activeSectionName !== null && activeSectionName !== secName;
+                const isCollapsed = expandedSections !== null ? !expandedSections.has(secName) : false;
                 return (
                   <div
                     key={sIdx}
@@ -2782,13 +2787,7 @@ function CourseDetailView({
                     style={{
                       transition: 'all 0.3s ease',
                       opacity: isCollapsed ? 0.7 : 1,
-                      cursor: isCollapsed ? 'pointer' : 'default',
                       padding: isCollapsed ? '0.75rem 1rem' : '1rem'
-                    }}
-                    onClick={() => {
-                      if (isCollapsed) {
-                        handleSectionSelect(secName);
-                      }
                     }}
                   >
                     <h5
@@ -2803,13 +2802,25 @@ function CourseDetailView({
                         borderBottom: isCollapsed ? 'none' : '1px solid rgba(255,255,255,0.08)'
                       }}
                       onClick={(e) => {
-                        if (!isCollapsed && activeSectionName !== null) {
-                          handleSectionSelect(null);
-                          e.stopPropagation();
+                        if (activeSectionName !== null) {
+                          setActiveSectionName(null);
                         }
+                        setExpandedSections(prev => {
+                          const newSet = new Set(prev === null ? sectionsList.map(s => s[0]) : prev);
+                          if (newSet.has(secName)) {
+                            newSet.delete(secName);
+                          } else {
+                            newSet.add(secName);
+                          }
+                          return newSet;
+                        });
+                        e.stopPropagation();
                       }}
                     >
-                      <span>{secName}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span>{secName}</span>
+                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${courseId}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
+                      </div>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                         {isCollapsed ? '▼' : '▲'}
                       </span>
@@ -2833,7 +2844,11 @@ function CourseDetailView({
                                 <div key={a.id} className="section-assignment-item">
                                   <div className="item-meta-row">
                                     <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
-                                    <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                                    {a.status === 'Submitted' ? (
+                                      <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
+                                    ) : (
+                                      <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                                    )}
                                   </div>
                                   <span className="item-name">{a.name}</span>
                                   <div className="item-actions">
@@ -2901,7 +2916,11 @@ function CourseDetailView({
                 <div key={a.id} className="sidebar-assign-card" style={{ borderLeft: `3px solid ${a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` }}>
                   <h6>{a.name}</h6>
                   <p className="assign-status">{t('status_label')}: {a.status}</p>
-                  {a.deadline && (() => {
+                  {a.status === 'Submitted' ? (
+                    <p className="assign-deadline due-green" style={{ color: '#10b981' }}>
+                      {lang === 'he' ? 'הוגש!' : 'Submitted!'} {a.grade !== null && a.gradeMax ? `(${a.grade}/${a.gradeMax})` : ''}
+                    </p>
+                  ) : a.deadline && (() => {
                     const { timeColorClass } = getDueTextAndClass(
                       a.deadline,
                       lang,
