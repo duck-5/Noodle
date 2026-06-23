@@ -111,10 +111,10 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
 async function invalidateSsoSession(): Promise<void> {
   const logoutUrls = [
     // Novell/NetIQ Identity Manager (TAU SSO provider) logout
-    'https://nidp.tau.ac.il/nidp/app/logout',
+    `https://nidp.tau.ac.il/nidp/app/logout?_t=${Date.now()}`,
     // Moodle session logout (token is already being wiped from storage,
     // this clears the web-session cookie so the browser is also signed out)
-    'https://moodle.tau.ac.il/login/logout.php',
+    `https://moodle.tau.ac.il/login/logout.php?_t=${Date.now()}`,
   ];
 
   await Promise.allSettled(
@@ -123,6 +123,7 @@ async function invalidateSsoSession(): Promise<void> {
         method: 'GET',
         credentials: 'include', // send the existing session cookies so the server can invalidate them
         redirect: 'follow',
+        cache: 'no-store' // IMPORTANT: ensure the browser doesn't return a cached response
       })
     )
   );
@@ -463,6 +464,15 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     }, 25000);
 
     try {
+      // 0. Force a clean session state. This prevents an issue where a user logs out in the extension
+      // but their browser retains the TAU SSO cookies, causing the next login to bypass the credential
+      // check and log them back in as the previous user.
+      try {
+        await invalidateSsoSession();
+      } catch (e) {
+        console.log('Failed to invalidate existing SSO session before login', e);
+      }
+
       const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
       
       // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
