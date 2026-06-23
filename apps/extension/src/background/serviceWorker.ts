@@ -100,35 +100,15 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
 // --------------------------------------------------------------------------
 
 /**
- * Invalidates the TAU SSO and Moodle server-side sessions by fetching their
- * standard logout endpoints.  This does NOT require the 'cookies' permission:
- * the browser sends the existing session cookies with the request, the server
- * tears down the session, and from that point on any lingering cookies in the
- * browser are rejected by the server.  This is strictly stronger than
- * deleting cookies locally because it also invalidates the session for any
- * other client that might hold a copy of those cookies.
+ * Invalidates the TAU SSO and Moodle server-side sessions, and clears local cookies.
+ * We must use credentials: 'include' to ensure the server receives the active JSESSIONID
+ * and destroys the session. After the server invalidates the session, it sends back
+ * a "dead" cookie. We then use chrome.cookies to completely clear the browser's cookie jar,
+ * so the next login starts with a clean slate.
  */
 async function invalidateSsoSession(): Promise<void> {
-  // Step 1: Physically delete all NIDP and Moodle cookies so our local jar is completely clean.
-  // This MUST happen before the logout fetch calls.
-  try {
-    const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il'];
-    for (const domain of domains) {
-      const cookies = await chrome.cookies.getAll({ domain });
-      for (const cookie of cookies) {
-        const cleanDomain = cookie.domain.replace(/^\./, '');
-        const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
-        await chrome.cookies.remove({ url, name: cookie.name });
-      }
-    }
-  } catch (e) {
-    console.error('Failed to clear cookies:', e);
-  }
-
-  // Step 2: Fire-and-forget logout requests WITHOUT credentials ('omit').
-  // We must NOT use credentials:'include' here — doing so would cause NIDP to issue a brand
-  // new JSESSIONID for the logout request, which would then sit in our cookie jar and
-  // poison the subsequent login flow with a dead session cookie.
+  // Step 1: Invalidate server-side session. We must send the active cookies (credentials: 'include')
+  // so the server knows which session to destroy.
   const logoutUrls = [
     `https://nidp.tau.ac.il/nidp/app/logout?_t=${Date.now()}`,
     `https://moodle.tau.ac.il/login/logout.php?_t=${Date.now()}`,
@@ -138,12 +118,32 @@ async function invalidateSsoSession(): Promise<void> {
     logoutUrls.map((url) =>
       fetch(url, {
         method: 'GET',
-        credentials: 'omit',
+        credentials: 'include',
         redirect: 'follow',
         cache: 'no-store'
       })
     )
   );
+
+  // Step 2: Physically delete all NIDP and Moodle cookies so our local jar is completely clean.
+  // This removes both the active session (if the fetch failed) and the "dead" session cookie
+  // issued by the logout endpoint, preventing SAML poisoning on the next login.
+  try {
+    const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il', 'tau.ac.il'];
+    for (const domain of domains) {
+      const cookies = await chrome.cookies.getAll({ domain });
+      for (const cookie of cookies) {
+        let cleanDomain = cookie.domain;
+        if (cleanDomain.startsWith('.')) {
+          cleanDomain = cleanDomain.substring(1);
+        }
+        const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
+        await chrome.cookies.remove({ url, name: cookie.name });
+      }
+    }
+  } catch (e) {
+    console.error('Failed to clear cookies:', e);
+  }
 }
 
 /**
