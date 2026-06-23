@@ -478,7 +478,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
       let res1;
       try {
-        res1 = await fetch(launchUrl);
+        res1 = await fetch(launchUrl, { credentials: 'include' });
       } catch (e) {
         // If fetch throws on the very first request, it's likely because it hit the moodlemobile:// redirect!
         // We just wait a bit for the webRequest listener to fire and resolve the promise.
@@ -506,6 +506,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
         await fetch(ssoUrl, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          credentials: 'include',
           body: params
         });
       }
@@ -514,6 +515,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       await fetch(ssoUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'include',
         body: 'option=credential&initiateLoginSequence=true&isAjax=true'
       });
 
@@ -521,6 +523,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       const credRes = await fetch(ssoUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'include',
         body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
       });
       
@@ -536,7 +539,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       }
 
       // 5. Complete SSO. Fetching the SSO URL again yields the auto-submitting SAML form
-      const finalSsoRes = await fetch(ssoUrl);
+      const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
       const html2 = await finalSsoRes.text();
 
       // Extract form action, SAMLResponse, and RelayState
@@ -563,6 +566,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
         await fetch(actionUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          credentials: 'include',
           body: bodyParams
         });
       } catch (e) {
