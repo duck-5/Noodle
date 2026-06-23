@@ -109,11 +109,28 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
  * other client that might hold a copy of those cookies.
  */
 async function invalidateSsoSession(): Promise<void> {
+  // Step 1: Physically delete all NIDP and Moodle cookies so our local jar is completely clean.
+  // This MUST happen before the logout fetch calls.
+  try {
+    const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il'];
+    for (const domain of domains) {
+      const cookies = await chrome.cookies.getAll({ domain });
+      for (const cookie of cookies) {
+        const cleanDomain = cookie.domain.replace(/^\./, '');
+        const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
+        await chrome.cookies.remove({ url, name: cookie.name });
+      }
+    }
+  } catch (e) {
+    console.error('Failed to clear cookies:', e);
+  }
+
+  // Step 2: Fire-and-forget logout requests WITHOUT credentials ('omit').
+  // We must NOT use credentials:'include' here — doing so would cause NIDP to issue a brand
+  // new JSESSIONID for the logout request, which would then sit in our cookie jar and
+  // poison the subsequent login flow with a dead session cookie.
   const logoutUrls = [
-    // Novell/NetIQ Identity Manager (TAU SSO provider) logout
     `https://nidp.tau.ac.il/nidp/app/logout?_t=${Date.now()}`,
-    // Moodle session logout (token is already being wiped from storage,
-    // this clears the web-session cookie so the browser is also signed out)
     `https://moodle.tau.ac.il/login/logout.php?_t=${Date.now()}`,
   ];
 
@@ -121,14 +138,12 @@ async function invalidateSsoSession(): Promise<void> {
     logoutUrls.map((url) =>
       fetch(url, {
         method: 'GET',
-        credentials: 'include', // send the existing session cookies so the server can invalidate them
+        credentials: 'omit',
         redirect: 'follow',
-        cache: 'no-store' // IMPORTANT: ensure the browser doesn't return a cached response
+        cache: 'no-store'
       })
     )
   );
-  // Errors are intentionally swallowed — if the server is unreachable the
-  // session will simply expire naturally, which is acceptable.
 }
 
 /**
@@ -542,18 +557,29 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
       const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
       const html2 = await finalSsoRes.text();
 
-      // Extract form action, SAMLResponse, and RelayState
-      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
-      const samlMatch = html2.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
-      const relayMatch = html2.match(/<input[^>]+name=["']RelayState["'][^>]+value=["']([^"']+)["']/i);
+      // Extract SAMLResponse and RelayState robustly (attribute order may vary in NIDP's HTML)
+      let samlResponse = '';
+      let relayState = '';
+      const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
+      for (const m of finalInputs) {
+        const nMatch = m[1].match(/name=["']([^"']+)["']/i);
+        const vMatch = m[1].match(/value=["']([^"']+)["']/i);
+        if (nMatch && vMatch) {
+          if (nMatch[1] === 'SAMLResponse') samlResponse = vMatch[1];
+          if (nMatch[1] === 'RelayState') relayState = vMatch[1];
+        }
+      }
 
-      if (!actionMatch || !samlMatch) {
-        throw new Error('Failed to parse SAML response from SSO page');
+      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
+
+      if (!actionMatch || !samlResponse) {
+        const debugHtml = html2.length > 500 ? html2.substring(0, 500) + '...' : html2;
+        throw new Error('SAML Parsing Failed. HTML: ' + debugHtml);
       }
 
       const actionUrl = decodeHTMLEntities(actionMatch[1]);
-      const samlResponse = decodeHTMLEntities(samlMatch[1]);
-      const relayState = relayMatch ? decodeHTMLEntities(relayMatch[1]) : '';
+      samlResponse = decodeHTMLEntities(samlResponse);
+      relayState = relayState ? decodeHTMLEntities(relayState) : '';
 
       const bodyParams = new URLSearchParams();
       bodyParams.append('SAMLResponse', samlResponse);

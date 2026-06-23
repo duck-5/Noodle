@@ -484,7 +484,8 @@ export default function App() {
     const config = {
       version: "TauTrackerConfig-v1",
       trackedCourseIds: trackedCourseIds,
-      settings: settings
+      settings: settings,
+      zoomLinks: settings.interestedMeetings || []
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -508,6 +509,14 @@ export default function App() {
         setLoading(true);
         // We do NOT overwrite the wstoken during manual config import since the user is already signed in.
         await setTrackedCourseIds(data.trackedCourseIds);
+        
+        if (data.zoomLinks && Array.isArray(data.zoomLinks)) {
+           data.settings.interestedMeetings = Array.from(new Set([
+             ...(data.settings.interestedMeetings || []),
+             ...data.zoomLinks
+           ]));
+        }
+
         await setSettings(data.settings);
 
         setTrackedCourseIdsState(data.trackedCourseIds);
@@ -1552,7 +1561,7 @@ function DashboardTab({
           
           <div className="zoom-courses-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {(() => {
-              const allMeetingIds = meetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
+              const allMeetingIds = meetings.map(m => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
 
               const coursesWithMeetings = trackedCourseIds.map((cid) => {
                 const courseMeetings = meetings.filter(m => m.courseId === cid);
@@ -1602,7 +1611,7 @@ function DashboardTab({
 
               const isMarked = (m: ZoomMeeting) => {
                 if (!settings?.interestedMeetings) return false;
-                const id = m.meetingNumber || m.meetingUrl;
+                const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
                 return settings.interestedMeetings.includes(id);
               };
 
@@ -1752,7 +1761,7 @@ function DashboardTab({
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <button
                                   onClick={() => {
-                                    const keyId = m.meetingNumber || m.meetingUrl;
+                                    const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
                                     if (keyId) {
                                       onToggleMeetingInterest(keyId, allMeetingIds);
                                     }
@@ -2515,7 +2524,7 @@ function CourseDetailView({
 
             const isMarked = (m: ZoomMeeting) => {
               if (!settings?.interestedMeetings) return false;
-              const id = m.meetingNumber || m.meetingUrl;
+              const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
               return settings.interestedMeetings.includes(id);
             };
             const markedMeetings = courseMeetings.filter(isMarked);
@@ -2610,7 +2619,7 @@ function CourseDetailView({
                         </div>
                       );
                     }
-                    const allMeetingIds = courseMeetings.map(m => m.meetingNumber || m.meetingUrl).filter(Boolean) as string[];
+                    const allMeetingIds = courseMeetings.map(m => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
                     const sortedMeetings = [...courseMeetings].sort((a, b) => {
                       const aMarked = isMarked(a);
                       const bMarked = isMarked(b);
@@ -2682,7 +2691,7 @@ function CourseDetailView({
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button
                               onClick={() => {
-                                const keyId = m.meetingNumber || m.meetingUrl;
+                                const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
                                 if (keyId) {
                                   onToggleMeetingInterest(keyId, allMeetingIds);
                                 }

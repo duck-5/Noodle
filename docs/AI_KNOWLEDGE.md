@@ -84,6 +84,8 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 ### H. Session Purging & Invalidation on Disconnect
 *   **Local Storage Purge:** When a user logs out or disconnects their account, all personal cached data (moodle data, assignments, grades, courses, OAuth/Moodle tokens) must be completely wiped from the local client databases (`chrome.storage.local` or mobile SQLite/SecureStore). Only general app configurations (e.g., dark mode preferences) should be kept.
 *   **Server-Side Invalidation:** A local storage wipe is insufficient. The app must perform server-side session invalidation by invoking Moodle and SSO logout endpoints (`https://moodle.tau.ac.il/login/logout.php` and `https://nidp.tau.ac.il/nidp/app/logout`) with `credentials: 'include'` to tear down active server sessions. This prevents account crossover (where a subsequent user gets automatically logged in to the previous user's SSO session).
+*   **Cache-Busting for Logout:** When invalidating the session via `fetch`, ALWAYS append a cache-busting query parameter (e.g. `?_t=${Date.now()}`) and specify `cache: 'no-store'`. Without this, the browser may silently return a cached `200 OK` response for the logout URL, causing the server-side session to remain active and leading to critical login bypass vulnerabilities.
+*   **Pre-emptive Invalidation:** Always perform a server-side logout *before* initiating a new SSO login sequence. This guarantees a clean session state and avoids parsing errors if the user was already authenticated via the browser's persistent cookie jar.
 
 ---
 
