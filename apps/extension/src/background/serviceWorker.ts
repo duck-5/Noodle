@@ -1,3 +1,4 @@
+import browser from 'webextension-polyfill';
 import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -11,18 +12,18 @@ import {
 
 
 // Setup periodic alarms on install / startup
-chrome.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async () => {
   console.log('TauTracker Extension Installed');
   // Always recreate the alarm on install/update to ensure correct period (5 minutes)
-  await chrome.alarms.create('periodicSync', { periodInMinutes: 5 });
+  await browser.alarms.create('periodicSync', { periodInMinutes: 5 });
   console.log('Forced creation of periodicSync alarm for 5 minutes onInstalled');
 });
 
 // Setup alarm checking function to register the alarm on startup without resetting it if it already exists
 async function setupAlarm() {
-  const alarm = await chrome.alarms.get('periodicSync');
+  const alarm = await browser.alarms.get('periodicSync');
   if (!alarm || alarm.periodInMinutes !== 5) {
-    await chrome.alarms.create('periodicSync', { periodInMinutes: 5 });
+    await browser.alarms.create('periodicSync', { periodInMinutes: 5 });
     console.log('Created periodicSync alarm for 5 minutes');
   } else {
     console.log('periodicSync alarm already exists with 5 minutes');
@@ -30,9 +31,9 @@ async function setupAlarm() {
 }
 setupAlarm();
 
-chrome.runtime.onStartup.addListener(setupAlarm);
+browser.runtime.onStartup.addListener(setupAlarm);
 
-chrome.alarms.onAlarm.addListener(async (alarm: chrome.alarms.Alarm) => {
+browser.alarms.onAlarm.addListener(async (alarm: any) => {
   if (alarm.name === 'periodicSync') {
     console.log('Periodic sync alarm fired');
     try {
@@ -48,7 +49,7 @@ chrome.alarms.onAlarm.addListener(async (alarm: chrome.alarms.Alarm) => {
 // --------------------------------------------------------------------------
 // Message listeners
 // --------------------------------------------------------------------------
-chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse: (response?: any) => void) => {
 
 
   if (message.type === 'LOGIN_TAU_SSO') {
@@ -92,7 +93,7 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
-});
+}) as any);
 
 
 // --------------------------------------------------------------------------
@@ -103,7 +104,7 @@ chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.Mess
  * Invalidates the TAU SSO and Moodle server-side sessions, and clears local cookies.
  * We must use credentials: 'include' to ensure the server receives the active JSESSIONID
  * and destroys the session. After the server invalidates the session, it sends back
- * a "dead" cookie. We then use chrome.cookies to completely clear the browser's cookie jar,
+ * a "dead" cookie. We then use browser.cookies to completely clear the browser's cookie jar,
  * so the next login starts with a clean slate.
  */
 async function invalidateSsoSession(): Promise<void> {
@@ -131,14 +132,14 @@ async function invalidateSsoSession(): Promise<void> {
   try {
     const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il', 'tau.ac.il'];
     for (const domain of domains) {
-      const cookies = await chrome.cookies.getAll({ domain });
+      const cookies = await browser.cookies.getAll({ domain });
       for (const cookie of cookies) {
         let cleanDomain = cookie.domain;
         if (cleanDomain.startsWith('.')) {
           cleanDomain = cleanDomain.substring(1);
         }
         const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
-        await chrome.cookies.remove({ url, name: cookie.name });
+        await browser.cookies.remove({ url, name: cookie.name });
       }
     }
   } catch (e) {
@@ -164,19 +165,19 @@ async function clearUserSession(): Promise<void> {
     'googleAccessToken',
     'googleTokenExpiry',
   ];
-  await chrome.storage.local.remove(userLocalKeys);
+  await browser.storage.local.remove(userLocalKeys);
 
   // Also remove dynamic notification-tracking keys (notified_24h_*, notified_1h_*)
-  const allLocal = await chrome.storage.local.get(null);
+  const allLocal = await browser.storage.local.get(null);
   const notificationKeys = Object.keys(allLocal).filter(
     (k) => k.startsWith('notified_')
   );
   if (notificationKeys.length > 0) {
-    await chrome.storage.local.remove(notificationKeys);
+    await browser.storage.local.remove(notificationKeys);
   }
 
   // 3. Wipe user-specific sync storage keys
-  await chrome.storage.sync.remove('trackedCourseIds');
+  await browser.storage.sync.remove('trackedCourseIds');
 }
 
 
@@ -206,18 +207,17 @@ async function performBackgroundSync() {
   let result;
   try {
     result = await runSync(token, trackedCourseIds, (msg) => {
-      chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => {});
+      browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => {});
       console.log(`[Sync Progress] ${msg}`);
     });
   } catch (err: any) {
     if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
       console.log('Token invalid/expired. Prompting user to re-login.');
-      chrome.notifications.create('moodle_token_expired', {
+      browser.notifications.create('moodle_token_expired', {
         type: 'basic',
         iconUrl: 'favicon.svg',
         title: 'Moodle Session Expired',
         message: 'Your Moodle session has expired. Please open Noodle to log in again.',
-        requireInteraction: true,
       });
       throw new Error('Moodle session expired');
     } else {
@@ -243,13 +243,13 @@ async function performBackgroundSync() {
   }
 
   // Notify listeners that sync is fully complete
-  chrome.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => {});
+  browser.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => {});
 
   return result;
 }
 
 async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean): Promise<string> {
-  const cached = (await chrome.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
+  const cached = (await browser.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
     googleAccessToken?: string;
     googleTokenExpiry?: number;
   };
@@ -261,17 +261,15 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean)
     throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
   }
 
-  const redirectUrl = `https://${chrome.runtime.id}.chromiumapp.org/`;
+  const redirectUrl = `https://${browser.runtime.id}.chromiumapp.org/`;
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
 
   return new Promise((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (responseUrl) => {
-      if (chrome.runtime.lastError) {
-        return reject(new Error(chrome.runtime.lastError.message));
-      }
-      if (!responseUrl) {
-        return reject(new Error('OAuth flow canceled or returned empty response.'));
-      }
+    browser.identity.launchWebAuthFlow({ url: authUrl, interactive: true })
+      .then((responseUrl) => {
+        if (!responseUrl) {
+          return reject(new Error('OAuth flow canceled or returned empty response.'));
+        }
 
       try {
         const urlObj = new URL(responseUrl);
@@ -284,15 +282,17 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean)
         }
 
         const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
-        chrome.storage.local.set({
+        browser.storage.local.set({
           googleAccessToken: token,
           googleTokenExpiry: expiryTime
         }).then(() => {
           resolve(token);
         });
       } catch (err: any) {
-        reject(new Error(`Failed to parse Google Tasks token: ${err.message}`));
+        reject(new Error(err.message || String(err)));
       }
+    }).catch((err: any) => {
+      reject(new Error(err.message || String(err)));
     });
   });
 }
@@ -313,16 +313,20 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
     accessToken = await getLaunchWebAuthFlowToken(settings.googleClientId.trim(), interactive);
   } else {
     accessToken = await new Promise<string>((resolve, reject) => {
-      chrome.identity.getAuthToken({ interactive }, (result: any) => {
-        if (chrome.runtime.lastError) {
-          return reject(new Error(chrome.runtime.lastError.message));
-        }
-        const token = result && typeof result === 'object' ? result.token : result;
-        if (!token) {
-          return reject(new Error('Failed to obtain Google access token'));
-        }
-        resolve(token);
-      });
+      if (typeof chrome !== 'undefined' && chrome.identity && chrome.identity.getAuthToken) {
+        chrome.identity.getAuthToken({ interactive }, (result: any) => {
+          if (chrome.runtime.lastError) {
+            return reject(new Error(chrome.runtime.lastError.message));
+          }
+          const token = result && typeof result === 'object' ? result.token : result;
+          if (!token) {
+            return reject(new Error('Failed to obtain Google access token'));
+          }
+          resolve(token);
+        });
+      } else {
+        reject(new Error('Google getAuthToken is not supported in this browser. Please configure Google Client ID in settings.'));
+      }
     });
   }
 
@@ -363,12 +367,11 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
         deadlineText = `Due: ${new Date(assign.deadline).toLocaleString()}`;
       }
 
-      chrome.notifications.create(`new_assign_${assign.id}`, {
+      browser.notifications.create(`new_assign_${assign.id}`, {
         type: 'basic',
         iconUrl: 'favicon.svg', // Fallback icon path in public
         title: 'New Moodle Assignment',
         message: `${assign.name}\n${assign.courseName}\n${deadlineText}`,
-        requireInteraction: true,
       });
     }
 
@@ -383,7 +386,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
       // or 1-2 hours left, to avoid double notification on every sync).
       const wasNotified24h = await wasAlreadyNotified(assign.id, '24h');
       if (hoursLeft <= 24 && hoursLeft > 23 && !wasNotified24h) {
-        chrome.notifications.create(`upcoming_24h_${assign.id}`, {
+        browser.notifications.create(`upcoming_24h_${assign.id}`, {
           type: 'basic',
           iconUrl: 'favicon.svg',
           title: 'Assignment Due Tomorrow',
@@ -394,12 +397,11 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
 
       const wasNotified1h = await wasAlreadyNotified(assign.id, '1h');
       if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
-        chrome.notifications.create(`upcoming_1h_${assign.id}`, {
+        browser.notifications.create(`upcoming_1h_${assign.id}`, {
           type: 'basic',
           iconUrl: 'favicon.svg',
           title: 'Assignment Due In 1 Hour!',
           message: `${assign.name}\n${assign.courseName}\nDue soon!`,
-          requireInteraction: true,
         });
         await markNotified(assign.id, '1h');
       }
@@ -409,13 +411,13 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
 
 async function wasAlreadyNotified(assignId: number, type: '24h' | '1h'): Promise<boolean> {
   const key = `notified_${type}_${assignId}`;
-  const res = await chrome.storage.local.get(key);
+  const res = await browser.storage.local.get(key);
   return !!res[key];
 }
 
 async function markNotified(assignId: number, type: '24h' | '1h') {
   const key = `notified_${type}_${assignId}`;
-  await chrome.storage.local.set({ [key]: true });
+  await browser.storage.local.set({ [key]: true });
 }
 
 // --------------------------------------------------------------------------
@@ -426,7 +428,7 @@ let capturedTokenResolve: ((token: string) => void) | null = null;
 let capturedTokenReject: ((err: Error) => void) | null = null;
 let activeLoginTimeout: ReturnType<typeof setTimeout> | null = null;
 
-chrome.webRequest.onBeforeRedirect.addListener(
+browser.webRequest.onBeforeRedirect.addListener(
   (details) => {
     const redirectUrl = details.redirectUrl || '';
     if (redirectUrl.startsWith('moodlemobile://') || redirectUrl.startsWith('moodleapp://')) {

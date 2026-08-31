@@ -1,3 +1,4 @@
+import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult } from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings } from '../shared/storage.js';
@@ -39,7 +40,7 @@ export default function Popup() {
   }, [settings]);
 
   const handleOpenDashboard = () => {
-    chrome.runtime.openOptionsPage();
+    browser.runtime.openOptionsPage();
   };
 
   const handleSync = async () => {
