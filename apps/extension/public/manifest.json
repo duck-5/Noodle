@@ -21,11 +21,33 @@
     "https://applications.zoom.us/*"
   ],
   "background": {
+    "scripts": ["background.js"],
     "service_worker": "background.js",
     "type": "module"
   },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "noodle@tau",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
   "action": {
-    "default_popup": "index.html"
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
   },
   "oauth2": {
     "client_id": "510394355212-qq5n37h1ijrp28ge71gm51v722hsstpg.apps.googleusercontent.com",

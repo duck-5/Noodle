@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:zip": "tsc -b && vite build && python scripts/zip.py",
+    "package:source": "python ../../scripts/package-source.py",
+    "zip": "python scripts/zip.py",
     "lint": "eslint .",
     "preview": "vite preview"
   },

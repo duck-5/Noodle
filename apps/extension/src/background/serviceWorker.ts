@@ -261,7 +261,9 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean)
     throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
   }
 
-  const redirectUrl = `https://${chrome.runtime.id}.chromiumapp.org/`;
+  const redirectUrl = typeof chrome.identity.getRedirectURL === 'function' 
+    ? chrome.identity.getRedirectURL() 
+    : `https://${chrome.runtime.id}.chromiumapp.org/`;
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
 
   return new Promise((resolve, reject) => {
@@ -309,9 +311,11 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   }
 
   let accessToken: string;
-  if (settings.googleClientId && settings.googleClientId.trim()) {
-    accessToken = await getLaunchWebAuthFlowToken(settings.googleClientId.trim(), interactive);
-  } else {
+  const customClientId = settings.googleClientId?.trim();
+  
+  if (customClientId) {
+    accessToken = await getLaunchWebAuthFlowToken(customClientId, interactive);
+  } else if (chrome.identity.getAuthToken) {
     accessToken = await new Promise<string>((resolve, reject) => {
       chrome.identity.getAuthToken({ interactive }, (result: any) => {
         if (chrome.runtime.lastError) {
@@ -324,6 +328,12 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
         resolve(token);
       });
     });
+  } else {
+    const manifestClientId = chrome.runtime.getManifest().oauth2?.client_id;
+    if (!manifestClientId) {
+      throw new Error('No Google Client ID provided and getAuthToken is not supported in this browser.');
+    }
+    accessToken = await getLaunchWebAuthFlowToken(manifestClientId, interactive);
   }
 
   const syncErrors: string[] = [];
