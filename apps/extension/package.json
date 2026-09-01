@@ -8,9 +8,6 @@
     "build": "tsc -b && vite build",
     "build:chrome": "tsc -b && vite build --mode chrome",
     "build:firefox": "tsc -b && vite build --mode firefox",
-    "build:zip": "tsc -b && vite build --mode firefox && python scripts/zip.py",
-    "package:source": "python ../../scripts/package-source.py",
-    "zip": "python scripts/zip.py",
     "lint": "eslint .",
     "preview": "vite preview"
   },

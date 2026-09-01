@@ -64,33 +64,22 @@ with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
 ## Prerequisites
 - Node.js >= 20.x
 - pnpm >= 10.x
-- Python >= 3.10 (used for the zip packaging step)
+- Python >= 3.10
 
-## How to Build the Extension
+## How to Build and Package the Extension
 1. Install dependencies from the repository root:
    ```bash
    pnpm install
    ```
 
-2. Build the shared Moodle client package:
+2. Run the fully automated release build:
    ```bash
-   pnpm --filter @tautracker/moodle-client run build
+   pnpm run release
    ```
 
-3. Build the extension package:
-   ```bash
-   pnpm --filter extension run build
-   ```
-
-4. The built distribution files will be located in:
-   `apps/extension/dist/`
-
-## How to Package the Extension ZIP
-To generate the final extension zip (`noodle-firefox.zip`):
-```bash
-cd apps/extension
-pnpm run build:zip
-```
+3. The generated release archives will be located in the `releases/` directory at the project root:
+   - `releases/noodle-firefox.zip`
+   - `releases/noodle-chrome.zip`
 """
     zipf.writestr('BUILD.md', instructions)
 
