@@ -215,7 +215,7 @@ async function performBackgroundSync() {
       console.log('Token invalid/expired. Prompting user to re-login.');
       browser.notifications.create('moodle_token_expired', {
         type: 'basic',
-        iconUrl: 'favicon.svg',
+        iconUrl: 'icon-128.png',
         title: 'Moodle Session Expired',
         message: 'Your Moodle session has expired. Please open Noodle to log in again.',
       });
@@ -312,25 +312,23 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
 
   let accessToken: string;
   const customClientId = settings.googleClientId?.trim();
+  const isEdge = navigator.userAgent.includes('Edg/');
+  const isFirefox = navigator.userAgent.includes('Firefox/');
   
   if (customClientId) {
     accessToken = await getLaunchWebAuthFlowToken(customClientId, interactive);
-  } else if (chrome.identity.getAuthToken) {
+  } else if (typeof chrome !== 'undefined' && chrome.identity && chrome.identity.getAuthToken && !isEdge && !isFirefox) {
     accessToken = await new Promise<string>((resolve, reject) => {
-      if (typeof chrome !== 'undefined' && chrome.identity && chrome.identity.getAuthToken) {
-        chrome.identity.getAuthToken({ interactive }, (result: any) => {
-          if (chrome.runtime.lastError) {
-            return reject(new Error(chrome.runtime.lastError.message));
-          }
-          const token = result && typeof result === 'object' ? result.token : result;
-          if (!token) {
-            return reject(new Error('Failed to obtain Google access token'));
-          }
-          resolve(token);
-        });
-      } else {
-        reject(new Error('Google getAuthToken is not supported in this browser. Please configure Google Client ID in settings.'));
-      }
+      chrome.identity.getAuthToken({ interactive }, (result: any) => {
+        if (chrome.runtime.lastError) {
+          return reject(new Error(chrome.runtime.lastError.message));
+        }
+        const token = result && typeof result === 'object' ? result.token : result;
+        if (!token) {
+          return reject(new Error('Failed to obtain Google access token'));
+        }
+        resolve(token);
+      });
     });
   } else {
     const manifestClientId = chrome.runtime.getManifest().oauth2?.client_id;
@@ -379,7 +377,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
 
       browser.notifications.create(`new_assign_${assign.id}`, {
         type: 'basic',
-        iconUrl: 'favicon.svg', // Fallback icon path in public
+        iconUrl: 'icon-128.png', // Fallback icon path in public
         title: 'New Moodle Assignment',
         message: `${assign.name}\n${assign.courseName}\n${deadlineText}`,
       });
@@ -398,7 +396,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
       if (hoursLeft <= 24 && hoursLeft > 23 && !wasNotified24h) {
         browser.notifications.create(`upcoming_24h_${assign.id}`, {
           type: 'basic',
-          iconUrl: 'favicon.svg',
+          iconUrl: 'icon-128.png',
           title: 'Assignment Due Tomorrow',
           message: `${assign.name}\n${assign.courseName}\nDue in ${Math.round(hoursLeft)} hours`,
         });
@@ -409,7 +407,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
       if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
         browser.notifications.create(`upcoming_1h_${assign.id}`, {
           type: 'basic',
-          iconUrl: 'favicon.svg',
+          iconUrl: 'icon-128.png',
           title: 'Assignment Due In 1 Hour!',
           message: `${assign.name}\n${assign.courseName}\nDue soon!`,
         });
