@@ -1,3 +1,4 @@
+import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult, Assignment, CourseFile, ZoomMeeting } from '@tautracker/moodle-client';
 import { parseTauCourseMetadata } from '@tautracker/moodle-client';
@@ -118,7 +119,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   useEffect(() => {
-    chrome.storage.local.get('sidebarCollapsed').then((res) => {
+    browser.storage.local.get('sidebarCollapsed').then((res) => {
       if (res && res.sidebarCollapsed !== undefined) {
         setSidebarCollapsed(!!res.sidebarCollapsed);
       }
@@ -128,7 +129,7 @@ export default function App() {
   const toggleSidebarCollapse = async () => {
     const val = !sidebarCollapsed;
     setSidebarCollapsed(val);
-    await chrome.storage.local.set({ sidebarCollapsed: val });
+    await browser.storage.local.set({ sidebarCollapsed: val });
   };
 
 
@@ -167,7 +168,7 @@ export default function App() {
   const handleCloseTour = async () => {
     setShowTour(false);
     setTourStep(-1);
-    await chrome.storage.local.set({ hasSeenTour: true });
+    await browser.storage.local.set({ hasSeenTour: true });
   };
 
   // Onboarding States
@@ -214,20 +215,20 @@ export default function App() {
         setSyncResult(msg.result);
       }
     };
-    chrome.runtime.onMessage.addListener(messageListener);
-    return () => chrome.runtime.onMessage.removeListener(messageListener);
+    browser.runtime.onMessage.addListener(messageListener);
+    return () => browser.runtime.onMessage.removeListener(messageListener);
   }, []);
 
   useEffect(() => {
     loadData();
 
-    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+    const handleStorageChange = (changes: { [key: string]: any }, areaName: string) => {
       if (areaName === 'local' && changes.wstoken && changes.wstoken.newValue) {
         loadData();
       }
     };
-    chrome.storage.onChanged.addListener(handleStorageChange);
-    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+    browser.storage.onChanged.addListener(handleStorageChange);
+    return () => browser.storage.onChanged.removeListener(handleStorageChange);
   }, []);
 
   useEffect(() => {
@@ -249,7 +250,7 @@ export default function App() {
         if (creds) {
           backup.wstoken = token;
         }
-        chrome.storage.local.set({ config_backup: backup });
+        browser.storage.local.set({ config_backup: backup });
       });
     }
   }, [token, trackedCourseIds, settings]);
@@ -262,7 +263,7 @@ export default function App() {
       const extensionSettings = await getSettings();
 
       // Check if config backup exists
-      const backupRes = (await chrome.storage.local.get('config_backup')) as {
+      const backupRes = (await browser.storage.local.get('config_backup')) as {
         config_backup?: {
           wstoken?: string;
           trackedCourseIds?: number[];
@@ -299,7 +300,7 @@ export default function App() {
       setSyncResult(cached);
 
       // Load cached enrolled courses if available
-      const cachedCoursesRes = (await chrome.storage.local.get('enrolledCoursesCache')) as { enrolledCoursesCache?: any[] };
+      const cachedCoursesRes = (await browser.storage.local.get('enrolledCoursesCache')) as { enrolledCoursesCache?: any[] };
       if (cachedCoursesRes.enrolledCoursesCache) {
         setAvailableCourses(cachedCoursesRes.enrolledCoursesCache);
       }
@@ -311,7 +312,7 @@ export default function App() {
         if (credentials.idNumber) setMoodleId(credentials.idNumber);
       }
 
-      const tourSeenRes = await chrome.storage.local.get('hasSeenTour');
+      const tourSeenRes = await browser.storage.local.get('hasSeenTour');
       if (activeToken && activeIds.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
         fetchEnrolledCoursesInBackground(activeToken);
@@ -362,7 +363,7 @@ export default function App() {
       const res = await fetchEnrolledCoursesOnBackground(t);
       if (res.success && res.courses) {
         setAvailableCourses(res.courses);
-        await chrome.storage.local.set({ enrolledCoursesCache: res.courses });
+        await browser.storage.local.set({ enrolledCoursesCache: res.courses });
       }
     } catch (e) {
       console.warn('Failed to background fetch enrolled courses:', e);
@@ -449,14 +450,14 @@ export default function App() {
 
       // Handle config_backup separately (UI-layer concern not owned by the service worker)
       if (deletePermanently) {
-        await chrome.storage.local.remove('config_backup');
+        await browser.storage.local.remove('config_backup');
       } else {
         // Strip the token from the backup so restoring it later doesn't auto-login
-        const backupRes = (await chrome.storage.local.get('config_backup')) as { config_backup?: any };
+        const backupRes = (await browser.storage.local.get('config_backup')) as { config_backup?: any };
         if (backupRes.config_backup) {
           const updatedBackup = { ...backupRes.config_backup };
           delete updatedBackup.wstoken;
-          await chrome.storage.local.set({ config_backup: updatedBackup });
+          await browser.storage.local.set({ config_backup: updatedBackup });
         }
       }
 

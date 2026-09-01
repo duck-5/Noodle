@@ -1,18 +1,16 @@
 import type { SyncResult } from '@tautracker/moodle-client';
+import browser from 'webextension-polyfill';
 
 export async function sendMessageToBackground(message: any): Promise<any> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(message, (response: any) => {
-      if (chrome.runtime.lastError) {
-        // The service worker may have been terminated mid-flight (MV3 lifecycle).
-        // Treat this as a null response rather than a hard error — callers handle null.
-        console.warn('[TauTracker] SW message port closed:', chrome.runtime.lastError.message);
-        resolve(null);
-        return;
-      }
-      resolve(response);
-    });
-  });
+  try {
+    const response = await browser.runtime.sendMessage(message);
+    return response;
+  } catch (error: any) {
+    // The service worker may have been terminated mid-flight (MV3 lifecycle).
+    // Treat this as a null response rather than a hard error — callers handle null.
+    console.warn('[TauTracker] SW message port closed:', error.message);
+    return null;
+  }
 }
 
 export async function validateTokenOnBackground(

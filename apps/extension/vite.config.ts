@@ -1,27 +1,35 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import webExtension from 'vite-plugin-web-extension';
+import * as fs from 'fs';
+import * as path from 'path';
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    rollupOptions: {
-      input: {
-        popup: resolve(__dirname, 'index.html'),
-        options: resolve(__dirname, 'options.html'),
-        background: resolve(__dirname, 'src/background/serviceWorker.ts'),
-      },
-      output: {
-        entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === 'background') {
-            return 'background.js';
+export default defineConfig(({ mode }) => {
+  const targetBrowser = process.env.TARGET_BROWSER || (mode === 'firefox' ? 'firefox' : 'chrome');
+
+  return {
+    plugins: [
+      react(),
+      webExtension({
+        manifest: () => {
+          const manifestStr = fs.readFileSync(path.resolve(__dirname, 'src/manifest.json'), 'utf-8');
+          const manifest = JSON.parse(manifestStr);
+          
+          if (targetBrowser === 'firefox') {
+            manifest.browser_specific_settings = {
+              gecko: {
+                id: 'noodle@tau.ac.il'
+              }
+            };
+            if (manifest.background && manifest.background.service_worker) {
+               manifest.background.scripts = [manifest.background.service_worker];
+               delete manifest.background.service_worker;
+            }
           }
-          return 'assets/[name]-[hash].js';
+          return manifest;
         },
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
-      },
-    },
-  },
-})
+        browser: targetBrowser,
+      }),
+    ],
+  };
+});

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Noodle",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "Direct client-side sync of Moodle assignments and grades to Google Tasks",
   "permissions": [
     "storage",
@@ -21,8 +21,7 @@
     "https://applications.zoom.us/*"
   ],
   "background": {
-    "scripts": ["background.js"],
-    "service_worker": "background.js",
+    "service_worker": "src/background/serviceWorker.ts",
     "type": "module"
   },
   "browser_specific_settings": {
