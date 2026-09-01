@@ -18,7 +18,11 @@ export default defineConfig(({ mode }) => {
           if (targetBrowser === 'firefox') {
             manifest.browser_specific_settings = {
               gecko: {
-                id: 'noodle@tau.ac.il'
+                id: 'noodle@tau',
+                strict_min_version: '109.0',
+                data_collection_permissions: {
+                  required: ['none']
+                }
               }
             };
             if (manifest.background && manifest.background.service_worker) {
@@ -31,5 +35,8 @@ export default defineConfig(({ mode }) => {
         browser: targetBrowser,
       }),
     ],
+    build: {
+      modulePreload: false,
+    },
   };
 });

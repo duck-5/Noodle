@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Noodle",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsnawLB3kOVdOSx+yxMtp1SbGuKfqLfY+0kapcJtK3SN6mXyAjIpgcIK7JTRoaCx8QNbdI7/TkedXJx75DyavoygJQJy8+X9wbPIz2oNIo+OuXT5lX8A9XQ1GvxUcXz6ICth84AgUuNitQUjk7YsJjrSoN+8Pmsdh0QuAbwXKYmL/FNSoHFSJR2o8QbzSHtVuGupB0+kaKph88kp82uNG8n4adLj5RIHOH43rAb4tNDrMm4OUxOT7UsPSojuFk/cpIWjGNZ6A07WPTsArqzJQxwW7xQGv6SYeBQMFJ68uwQxyQ/vi1XUivlCjdPRAQhXMfgwXijZzoxTM4UnOXVgzewIDAQAB",
   "version": "3.2.0",
   "description": "Direct client-side sync of Moodle assignments and grades to Google Tasks",
   "permissions": [
@@ -49,7 +50,7 @@
     "128": "icon-128.png"
   },
   "oauth2": {
-    "client_id": "510394355212-qq5n37h1ijrp28ge71gm51v722hsstpg.apps.googleusercontent.com",
+    "client_id": "510394355212-0e3ums7pu5raagej4gg14nrkt9o06m78.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/tasks"
     ]
