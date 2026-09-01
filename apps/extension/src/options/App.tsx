@@ -26,11 +26,11 @@ import { translations } from '../shared/i18n';
 
 import './App.css';
 import logoImg from '../assets/logo.png';
-import aboutIcon from '../assets/about-svgrepo-com.svg';
-import coursesIcon from '../assets/courses-logo.svg';
-import filesIcon from '../assets/files-folder-svgrepo-com.svg';
-import settingsIcon from '../assets/settings-logo.svg';
-import dashboardIcon from '../assets/dashboard-logo.svg';
+import aboutIcon from '../assets/about.svg';
+import coursesIcon from '../assets/courses.svg';
+import filesIcon from '../assets/files.svg';
+import settingsIcon from '../assets/settings.svg';
+import dashboardIcon from '../assets/dashboard.svg';
 
 interface GroupedCourses {
   semesterKey: string;

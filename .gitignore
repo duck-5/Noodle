@@ -16,6 +16,10 @@ sync_cache.json
 TauTracker.log
 *.log
 *.png
+!logo.png
+!apps/**/assets/**
+!apps/extension/public/*.png
+!packages/**/assets/**
 
 # ==========================================
 # Developer JSON Dumps & API Diagnostics
@@ -71,6 +75,7 @@ node_modules/
 .turbo/
 dist/
 build/
+*.zip
 .expo/
 web-build/
 npm-debug.log*

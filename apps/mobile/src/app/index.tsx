@@ -1389,11 +1389,11 @@ export default function DashboardScreen() {
   }
 
   const navItems = [
-    { key: 'dashboard', label: t('dashboard'), source: require('../../assets/logos/dashboard-logo.svg') },
-    { key: 'courses', label: t('courses'), source: require('../../assets/logos/courses-logo.svg') },
-    { key: 'files', label: t('files'), source: require('../../assets/logos/files-logo.svg') },
-    { key: 'grades', label: t('grades'), source: require('../../assets/logos/grades-logo.svg') },
-    { key: 'settings', label: t('settings'), source: require('../../assets/logos/settings-logo.svg') },
+    { key: 'dashboard', label: t('dashboard'), source: require('../../assets/logos/dashboard.svg') },
+    { key: 'courses', label: t('courses'), source: require('../../assets/logos/courses.svg') },
+    { key: 'files', label: t('files'), source: require('../../assets/logos/files.svg') },
+    { key: 'grades', label: t('grades'), source: require('../../assets/logos/grades.svg') },
+    { key: 'settings', label: t('settings'), source: require('../../assets/logos/settings.svg') },
   ];
 
   const renderActiveScreen = () => {
