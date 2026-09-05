@@ -1,13 +1,35 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
-import { useColorScheme } from 'react-native';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { PreferencesProvider, usePreferences } from '@/hooks/use-preferences';
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+function InnerLayout() {
+  const { themeMode, theme } = usePreferences();
+  const isDark = themeMode === 'dark';
+
+  const customNavigationTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      background: theme.background,
+      card: theme.backgroundElement,
+      text: theme.text,
+      border: theme.border,
+      primary: theme.primary,
+    },
+  };
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={customNavigationTheme}>
       <AnimatedSplashOverlay />
       <Stack screenOptions={{ headerShown: false }} />
     </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <PreferencesProvider>
+      <InnerLayout />
+    </PreferencesProvider>
   );
 }
