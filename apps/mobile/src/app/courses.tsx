@@ -11,9 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Paths, File } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
-import { getMoodleToken } from '../services/backgroundSync';
+import { downloadMoodleFile } from '../services/fileDownloadService';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
@@ -114,30 +112,9 @@ export default function CoursesScreen({ activeCourseId, setActiveCourseId }: Cou
   };
 
   async function handleDownloadFile(file: any) {
-    try {
-      const moodleTokenVal = await getMoodleToken();
-      if (!moodleTokenVal) {
-        Alert.alert(t('connect_moodle'), 'Moodle connection token not found.');
-        return;
-      }
-      const separator = file.file_url.includes('?') ? '&' : '?';
-      const authenticatedUrl = `${file.file_url}${separator}token=${moodleTokenVal}`;
-      const destinationFile = new File(Paths.document, encodeURIComponent(file.file_name));
-      const downloadedFile = await File.downloadFileAsync(authenticatedUrl, destinationFile, { idempotent: true });
-      if (downloadedFile) {
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(downloadedFile.uri, {
-            mimeType: file.mime_type,
-            dialogTitle: `Open ${file.file_name}`,
-          });
-        } else {
-          Alert.alert('Download Complete', `File saved to: ${downloadedFile.uri}`);
-        }
-      } else {
-        Alert.alert('Download Failed', 'Failed to download file.');
-      }
-    } catch (e: any) {
-      Alert.alert('Download Error', e.message || 'An error occurred during file download.');
+    const res = await downloadMoodleFile(file);
+    if (!res.success && res.error) {
+      Alert.alert(t('download'), res.error);
     }
   }
 
