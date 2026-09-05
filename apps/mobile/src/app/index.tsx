@@ -14,27 +14,26 @@ import {
   UIManager,
   Linking,
 } from 'react-native';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
-import { Paths, File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Sharing from 'expo-sharing';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync, registerBackgroundSyncTask } from '../services/backgroundSync';
+import { downloadMoodleFile } from '../services/fileDownloadService';
 import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } from '../services/auth';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { setGoogleAccessToken } from '../services/googleTasks';
 import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
-import { t, getLanguage } from '../services/i18n';
-import { useTheme } from '../hooks/use-theme';
+import { t } from '../services/i18n';
+import { usePreferences } from '../hooks/use-preferences';
 import CoursesScreen from './courses';
 import FilesScreen from './files';
 import GradesScreen from './grades';
 import SettingsScreen from './settings';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface GroupedCourses {
   semesterKey: string;
@@ -94,7 +93,7 @@ function isValidIsraeliId(id: string): boolean {
 }
 
 export default function DashboardScreen() {
-  const theme = useTheme();
+  const { theme, language: lang, isRtl, setLanguage, refreshPreferences } = usePreferences();
 
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -117,23 +116,16 @@ export default function DashboardScreen() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const [trackedCourses, setTrackedCourses] = useState<any[]>([]);
 
-
   // UI details matching SPEC
   const [userFullname, setUserFullname] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [completedCount, setCompletedCount] = useState<number>(0);
-
-  // Dynamic language state
-  const [langState, setLangState] = useState<'he' | 'en'>(getLanguage());
 
   // Accordion feed elements and files
   const [expandedAssignments, setExpandedAssignments] = useState<Record<string, boolean>>({});
   const [dashboardFiles, setDashboardFiles] = useState<any[]>([]);
   const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
-
-  const lang = langState;
-  const isRtl = lang === 'he';
 
   useFocusEffect(
     useCallback(() => {
@@ -216,7 +208,10 @@ export default function DashboardScreen() {
   }, [fetchEnrolledCourses]);
 
   useEffect(() => {
-    loadAppStatus();
+    const timer = setTimeout(() => {
+      loadAppStatus();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadAppStatus]);
 
   async function handleConnect() {
@@ -451,34 +446,9 @@ export default function DashboardScreen() {
   };
 
   async function handleDownloadFile(file: any) {
-    try {
-      const moodleTokenVal = await getMoodleToken();
-      if (!moodleTokenVal) {
-        Alert.alert(t('connect_moodle'), 'Moodle connection token not found.');
-        return;
-      }
-
-      const separator = file.file_url.includes('?') ? '&' : '?';
-      const authenticatedUrl = `${file.file_url}${separator}token=${moodleTokenVal}`;
-      const destinationFile = new File(Paths.document, encodeURIComponent(file.file_name));
-
-      console.log(`Downloading ${file.file_name}...`);
-      const downloadedFile = await File.downloadFileAsync(authenticatedUrl, destinationFile, { idempotent: true });
-
-      if (downloadedFile) {
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(downloadedFile.uri, {
-            mimeType: file.mime_type,
-            dialogTitle: `Open ${file.file_name}`,
-          });
-        } else {
-          Alert.alert('Download Complete', `File saved to: ${downloadedFile.uri}`);
-        }
-      } else {
-        Alert.alert('Download Failed', 'Failed to download file.');
-      }
-    } catch (e: any) {
-      Alert.alert('Download Error', e.message || 'An error occurred during file download.');
+    const res = await downloadMoodleFile(file);
+    if (!res.success && res.error) {
+      Alert.alert(t('download'), res.error);
     }
   }
 
@@ -494,8 +464,7 @@ export default function DashboardScreen() {
             <Pressable
               onPress={() => {
                 const nextLang = isRtl ? 'en' : 'he';
-                setPreference('language', nextLang);
-                setLangState(nextLang);
+                setLanguage(nextLang);
               }}
               style={{
                 paddingVertical: 6,
@@ -1412,7 +1381,7 @@ export default function DashboardScreen() {
           setOnboardingStep(1);
           loadAppStatus();
         }} onSettingsChanged={() => {
-          setLangState(getLanguage());
+          refreshPreferences();
           loadDashboardData();
         }} />;
       default:
@@ -1446,67 +1415,89 @@ export default function DashboardScreen() {
           </Text>
         </Pressable>
 
-        {/* Sidebar Logo */}
-        <View style={{ paddingVertical: 16, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, marginBottom: 16 }}>
-          <Image
-            source={require('../../assets/logo.png')}
-            style={{
-              width: sidebarExpanded ? 100 : 32,
-              height: sidebarExpanded ? 100 : 32,
-              borderRadius: 8,
-            }}
-            resizeMode="contain"
-          />
-        </View>
-
-        {/* Navigation Items */}
-        <View style={styles.sidebarNav}>
-          {navItems.map((item) => {
-            const isActive = activeTab === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                style={[
-                  styles.sidebarNavItem,
-                  { flexDirection: isRtl ? 'row-reverse' : 'row' },
-                  isActive && { backgroundColor: theme.backgroundSelected }
-                ]}
-                onPress={() => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  setExpandedAssignments({});
-                  setActiveCourseId(null);
-                  setActiveTab(item.key);
+        {/* Scrollable Sidebar Content */}
+        <ScrollView
+          style={{ flex: 1, width: '100%' }}
+          contentContainerStyle={{ alignItems: 'center', paddingBottom: 16 }}
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+          overScrollMode="never"
+        >
+          {/* Sidebar Logo & App Name */}
+          <View style={{ paddingVertical: 12, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, marginBottom: 12, width: '100%' }}>
+            <Image
+              source={require('../../assets/logo.png')}
+              style={{
+                width: sidebarExpanded ? 72 : 32,
+                height: sidebarExpanded ? 72 : 32,
+                borderRadius: 8,
+              }}
+              resizeMode="contain"
+            />
+            {sidebarExpanded && (
+              <Text
+                style={{
+                  color: theme.primary,
+                  fontSize: 16,
+                  fontWeight: 'bold',
+                  marginTop: 6,
+                  letterSpacing: 0.5,
                 }}
               >
-                <ExpoImage
-                  source={item.source}
-                  style={{ width: 24, height: 24, opacity: isActive ? 1 : 0.6 }}
-                  contentFit="contain"
-                />
-                {sidebarExpanded && (
-                  <Text style={[
-                    styles.sidebarNavLabel, 
-                    { color: isActive ? theme.primary : theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }
-                  ]}>
-                    {item.label}
-                  </Text>
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Footer with Disconnect Button - Only shown when vertical menu is expanded */}
-        {sidebarExpanded && (
-          <View style={styles.sidebarFooter}>
-            <Pressable
-              style={styles.disconnectBtn}
-              onPress={handleSidebarDisconnect}
-            >
-              <Text style={styles.disconnectBtnText}>{isRtl ? 'התנתק' : 'Disconnect'}</Text>
-            </Pressable>
+                Noodle
+              </Text>
+            )}
           </View>
-        )}
+
+          {/* Navigation Items */}
+          <View style={styles.sidebarNav}>
+            {navItems.map((item) => {
+              const isActive = activeTab === item.key;
+              return (
+                <Pressable
+                  key={item.key}
+                  style={[
+                    styles.sidebarNavItem,
+                    { flexDirection: isRtl ? 'row-reverse' : 'row' },
+                    isActive && { backgroundColor: theme.backgroundSelected }
+                  ]}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setExpandedAssignments({});
+                    setActiveCourseId(null);
+                    setActiveTab(item.key);
+                  }}
+                >
+                  <ExpoImage
+                    source={item.source}
+                    style={{ width: 24, height: 24, opacity: isActive ? 1 : 0.6 }}
+                    contentFit="contain"
+                  />
+                  {sidebarExpanded && (
+                    <Text style={[
+                      styles.sidebarNavLabel, 
+                      { color: isActive ? theme.primary : theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }
+                    ]}>
+                      {item.label}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Footer with Disconnect Button - Only shown when vertical menu is expanded */}
+          {sidebarExpanded && (
+            <View style={[styles.sidebarFooter, { marginTop: 16 }]}>
+              <Pressable
+                style={styles.disconnectBtn}
+                onPress={handleSidebarDisconnect}
+              >
+                <Text style={styles.disconnectBtnText}>{isRtl ? 'התנתק' : 'Disconnect'}</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
       </View>
 
       {/* Screen Content Wrapper */}
@@ -1709,7 +1700,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sidebarNav: {
-    flex: 1,
     width: '100%',
     gap: 4,
     paddingHorizontal: 4,
