@@ -9,19 +9,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased] - 2026-09-01
 
 ### Added
-- **Firefox AMO & Cross-Browser Packaging Tooling**:
-  - Added `scripts/package-source.py` to generate complete, reproducible source code zips for Mozilla Add-on (AMO) review, including dynamic `BUILD.md` reviewer documentation.
-  - Added `apps/extension/scripts/zip.py` and npm scripts (`build:zip`, `package:source`, `zip`) for automated packaging.
-  - Added Firefox Gecko extension metadata to `manifest.json` (`noodle@tau` Gecko ID and `strict_min_version`).
-  - Added explicit action and extension `icons` configuration (16px, 32px, 48px, 128px) in `manifest.json`.
-- **Cross-Browser OAuth & Identity Support (`serviceWorker.ts`)**:
-  - Implemented automatic fallback to `launchWebAuthFlow` using `chrome.identity.getRedirectURL()` and manifest `oauth2.client_id` for browsers without native `chrome.identity.getAuthToken` (e.g. Mozilla Firefox).
-- **Proprietary Software License & Disclaimers (`LICENSE`)**:
-  - Added comprehensive terms prohibiting unauthorized duplication, distribution, reverse engineering, and commercial/personal use.
-  - Added extensive limitation of liability, hold-harmless indemnification, and third-party platform non-affiliation (disclaiming association with Moodle Pty Ltd, Zoom, and academic institutions, and disclaiming liability for credential compromise or user actions).
-  - Updated `package.json` license field to `"UNLICENSED"`.
+- **Mobile Google Tasks One-Tap OAuth Flow (`apps/mobile/src/services/googleTasks.ts`, `settings.tsx`)**:
+  - Implemented one-tap OAuth login via `WebBrowser.openAuthSessionAsync` with scope `https://www.googleapis.com/auth/tasks`, matching the seamless flow of the browser extension.
+  - Set default Google Tasks list name to `"University"`.
+  - Added collapsible "Advanced Settings" section for manual OAuth client ID/access token overrides.
+- **Mobile Resilient File Download Service (`apps/mobile/src/services/fileDownloadService.ts`)**:
+  - Implemented robust downloader with browser User-Agent headers, URL and filename sanitization, and dual-strategy fallback.
+  - Added automatic TAU SSO token renewal via `loginTauSso` when encountering 401/403 or socket timeouts (`java.net.SocketTimeoutException`).
+- **Mobile Reactive Preferences Provider (`apps/mobile/src/hooks/use-preferences.tsx`)**:
+  - Added global reactive context provider for theme, mode, language, and RTL state, eliminating "Please restart the app" alert popups on setting changes.
+  - Set default theme to `'noodle'` (warm cream & terracotta) and default language to Hebrew (`'he'`).
+- **Mobile Files Tab Accordion Explorer (`apps/mobile/src/app/files.tsx`)**:
+  - Collapsed courses by default to prevent long scrolling.
+  - Added "Expand All" / "Collapse All" global toggle and collapsible section folders.
+  - Redesigned file cards with extension-inspired file-type badges (PDF, Word, Excel, PowerPoint, ZIP, Media, Code), file size badges, and one-tap download/open buttons.
 
 ### Changed
+- **Mobile Branding & Bundling Assets (`apps/mobile/assets/images/*`, `app.json`, `animated-icon.tsx`)**:
+  - Generated high-resolution adaptive app icons, foregrounds, backgrounds, splash screens (`#FAF5EB`), and favicons directly from the official Noodle brand logo (`assets/logo.png`).
+  - Added "Noodle" brand name typography below the header logo in the mobile sidebar.
+  - Updated mobile sidebar navigation to use smooth bouncing vertical scrolling to prevent clipping on smaller screens.
 - **Logo & Asset System Refactor**:
   - Standardized all navigation icon filenames uniformly across both web extension and mobile app (`dashboard.svg`, `courses.svg`, `files.svg`, `grades.svg`, `settings.svg`, `about.svg`).
   - Updated web extension `index.html` and `options.html` page favicons and headers to use the official Noodle brand icon instead of the default Vite template icon.
