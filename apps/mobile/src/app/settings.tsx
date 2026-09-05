@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import { setMoodleToken } from '../services/backgroundSync';
 import { clearCredentials } from '../services/auth';
-import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync } from '../services/googleTasks';
+import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync, authenticateGoogleOAuth } from '../services/googleTasks';
 import { getDb, getPreference, setPreference } from '../services/database';
-import { t, getLanguage } from '../services/i18n';
-import { useTheme } from '../hooks/use-theme';
+import { t } from '../services/i18n';
+import { usePreferences, ThemeMode, SupportedLanguage } from '../hooks/use-preferences';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -25,36 +25,31 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ onDisconnect, onSettingsChanged }: SettingsScreenProps) {
-  const theme = useTheme();
+  const { themeMode: activeTheme, theme, setThemeMode, language: lang, setLanguage: setLang, isRtl, refreshPreferences } = usePreferences();
 
   const [loading, setLoading] = useState<boolean>(false);
   const [googleTasksEnabled, setGoogleTasksEnabled] = useState<boolean>(false);
-  const [googleListName, setGoogleListName] = useState<string>('Noodle');
+  const [googleListName, setGoogleListName] = useState<string>('University');
   const [googleTokenInput, setGoogleTokenInput] = useState<string>('');
   const [googleStatus, setGoogleStatus] = useState<string | null>(null);
-  const [lang, setLang] = useState<'he' | 'en'>('he');
-  const [activeTheme, setActiveTheme] = useState<'system' | 'light' | 'dark' | 'noodle'>('system');
-
-  const isRtl = lang === 'he';
+  const [showAdvancedGoogle, setShowAdvancedGoogle] = useState<boolean>(false);
+  const [customClientId, setCustomClientId] = useState<string>('');
 
   const loadSettings = async () => {
     try {
       const enabled = getPreference('google_tasks_enabled') === 'true';
       setGoogleTasksEnabled(enabled);
 
-      const listName = getPreference('google_tasks_list_name') || 'Noodle';
+      const listName = getPreference('google_tasks_list_name') || 'University';
       setGoogleListName(listName);
+
+      const savedClientId = getPreference('google_tasks_client_id') || '';
+      setCustomClientId(savedClientId);
 
       const googleToken = await getGoogleAccessToken();
       if (googleToken) {
         setGoogleTokenInput(googleToken);
       }
-
-      const activeLang = getLanguage();
-      setLang(activeLang);
-
-      const themeVal = getPreference('theme') || 'system';
-      setActiveTheme(themeVal as any);
     } catch (e) {
       console.error('loadSettings error:', e);
     }
@@ -66,17 +61,10 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
     }, 0);
   }, []);
 
-  const handleUpdateTheme = (tChoice: 'system' | 'light' | 'dark' | 'noodle') => {
+  const handleUpdateTheme = (tChoice: ThemeMode) => {
     try {
-      setPreference('theme', tChoice);
-      setActiveTheme(tChoice);
+      setThemeMode(tChoice);
       onSettingsChanged?.();
-      Alert.alert(
-        lang === 'he' ? 'ערכת הנושא שונתה' : 'Theme Changed',
-        lang === 'he'
-          ? 'אנא הפעל מחדש את האפליקציה להחלת ערכת הנושא במלוא עמודי האפליקציה.'
-          : 'Please restart the app to apply the theme change fully.'
-      );
     } catch (e) {
       console.error('handleUpdateTheme error:', e);
     }
@@ -102,14 +90,37 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
     }
   };
 
-  const handleUpdateLanguage = (l: 'he' | 'en') => {
+  const handleUpdateLanguage = (l: SupportedLanguage) => {
     try {
-      setPreference('language', l);
       setLang(l);
       onSettingsChanged?.();
-      Alert.alert(l === 'he' ? 'השפה שונתה' : 'Language Changed', l === 'he' ? 'אנא הפעל מחדש את האפליקציה להחלת השינויים במלואם.' : 'Please restart the app to apply language changes fully.');
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleAuthAndSyncGoogle = async () => {
+    setLoading(true);
+    setGoogleStatus(lang === 'he' ? 'מתחבר ל-Google...' : 'Connecting to Google...');
+    try {
+      const authRes = await authenticateGoogleOAuth(customClientId);
+      if (!authRes.success || !authRes.token) {
+        setGoogleStatus(authRes.error || (lang === 'he' ? 'ההתחברות בוטלה' : 'Authentication cancelled'));
+        setLoading(false);
+        return;
+      }
+      setGoogleTokenInput(authRes.token);
+      setGoogleStatus(lang === 'he' ? 'התחבר בהצלחה! מסנכרן משימות...' : 'Connected! Synchronizing Tasks...');
+
+      const db = getDb();
+      const assignments = db.getAllSync<any>('SELECT * FROM assignments');
+      const res = await performGoogleTasksSync(assignments);
+      setGoogleStatus(res.message || (lang === 'he' ? 'הסנכרון הושלם!' : 'Sync completed.'));
+      onSettingsChanged?.();
+    } catch (e: any) {
+      setGoogleStatus(`Sync failed: ${e.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -375,14 +386,13 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
       });
 
       setGoogleTasksEnabled(data.settings.googleTasksEnabled ?? false);
-      setGoogleListName(data.settings.googleTasksListName ?? 'Noodle');
-      setLang(data.settings.language ?? 'he');
-      setActiveTheme(data.settings.theme ?? 'system');
+      setGoogleListName(data.settings.googleTasksListName ?? 'University');
+      refreshPreferences();
       onSettingsChanged?.();
 
       Alert.alert(
         t('config_backup_title'),
-        t('import_success') + '\n' + (lang === 'he' ? 'אנא הפעל מחדש את האפליקציה להחלת שינויי שפה/ערכת נושא.' : 'Please restart the app to apply language/theme changes fully.')
+        t('import_success')
       );
     } catch (e: any) {
       Alert.alert(t('import_failed'), e.message || 'An error occurred during import.');
@@ -470,34 +480,78 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
             <View style={[styles.subsettings, { borderTopColor: theme.border }]}>
               <Text style={[styles.label, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>{t('google_tasks_list_name_label')}</Text>
               <TextInput
-                style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
+                style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', backgroundColor: theme.backgroundElement }]}
                 value={googleListName}
                 onChangeText={handleUpdateListName}
-                placeholder="Noodle"
+                placeholder="University"
                 placeholderTextColor={theme.placeholder}
               />
 
-              <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8, textAlign: isRtl ? 'right' : 'left' }]}>{t('google_token_label')}</Text>
-              <TextInput
-                style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}
-                value={googleTokenInput}
-                onChangeText={setGoogleTokenInput}
-                placeholder={lang === 'he' ? 'הדבק אסימון OAuth של גוגל...' : 'Paste Google OAuth token...'}
-                placeholderTextColor={theme.placeholder}
-                secureTextEntry
-              />
+              <Pressable
+                style={[styles.primaryActionBtn, { backgroundColor: theme.primary }]}
+                onPress={handleAuthAndSyncGoogle}
+                disabled={loading}
+              >
+                <Text style={styles.primaryActionBtnText}>🔗 {t('auth_sync_google')}</Text>
+              </Pressable>
 
               <View style={[styles.btnRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
-                <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleSaveGoogleToken} disabled={loading}>
-                  <Text style={styles.secondaryBtnText}>{t('save_token_btn')}</Text>
+                <Pressable
+                  style={[styles.secondaryBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleManualGoogleSync}
+                  disabled={loading}
+                >
+                  <Text style={styles.secondaryBtnText}>🔄 {t('sync_now')}</Text>
                 </Pressable>
 
-                <Pressable style={[styles.secondaryBtn, { backgroundColor: theme.primary }]} onPress={handleManualGoogleSync} disabled={loading}>
-                  <Text style={styles.secondaryBtnText}>{t('sync_now')}</Text>
+                <Pressable
+                  style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSelected }]}
+                  onPress={() => setShowAdvancedGoogle(!showAdvancedGoogle)}
+                >
+                  <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>
+                    ⚙️ {t('advanced_settings')} {showAdvancedGoogle ? '▲' : '▼'}
+                  </Text>
                 </Pressable>
               </View>
 
-              {googleStatus && <Text style={[styles.statusText, { textAlign: isRtl ? 'right' : 'left' }]}>{googleStatus}</Text>}
+              {showAdvancedGoogle && (
+                <View style={{ gap: 8, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.backgroundSelected + '40', borderWidth: 1, borderColor: theme.border }}>
+                  <Text style={[styles.label, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                    {t('google_tasks_client_id_label')}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', backgroundColor: theme.backgroundElement }]}
+                    value={customClientId}
+                    onChangeText={(v) => {
+                      setCustomClientId(v);
+                      setPreference('google_tasks_client_id', v);
+                    }}
+                    placeholder="510394355212-...apps.googleusercontent.com"
+                    placeholderTextColor={theme.placeholder}
+                  />
+
+                  <Text style={[styles.label, { color: theme.textSecondary, marginTop: 6, textAlign: isRtl ? 'right' : 'left' }]}>
+                    {t('google_token_label')}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', backgroundColor: theme.backgroundElement }]}
+                    value={googleTokenInput}
+                    onChangeText={setGoogleTokenInput}
+                    placeholder={lang === 'he' ? 'הדבק אסימון ידנית...' : 'Paste token manually...'}
+                    placeholderTextColor={theme.placeholder}
+                    secureTextEntry
+                  />
+                  <Pressable
+                    style={[styles.secondaryBtn, { backgroundColor: theme.primary, marginTop: 4 }]}
+                    onPress={handleSaveGoogleToken}
+                    disabled={loading}
+                  >
+                    <Text style={styles.secondaryBtnText}>{t('save_token_btn')}</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {googleStatus && <Text style={[styles.statusText, { textAlign: isRtl ? 'right' : 'left', color: theme.primary }]}>{googleStatus}</Text>}
             </View>
           )}
         </View>
@@ -601,6 +655,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 13,
+  },
+  primaryActionBtn: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  primaryActionBtnText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   statusText: {
     fontSize: 12,
