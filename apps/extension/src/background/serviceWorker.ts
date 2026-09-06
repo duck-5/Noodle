@@ -1,10 +1,12 @@
 import browser from 'webextension-polyfill';
-import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient } from '@tautracker/moodle-client';
+import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager } from '@tautracker/moodle-client';
 import {
   getStoredToken,
   getTrackedCourseIds,
+  setTrackedCourseIds,
   setCachedSyncResult,
   getSettings,
+  setSettings,
   getCachedSyncResult,
 } from '../shared/storage.js';
 
@@ -76,6 +78,13 @@ browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse
   if (message.type === 'SYNC_NOW') {
     performBackgroundSync()
       .then((result) => sendResponse({ success: true, result }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'SYNC_SETTINGS') {
+    performSettingsSync()
+      .then(() => sendResponse({ success: true }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
@@ -192,6 +201,78 @@ async function fetchEnrolledCourses(token: string) {
   return await client.getEnrolledCourses(info.userid);
 }
 
+async function performSettingsSync() {
+  const token = await getStoredToken();
+  if (!token) {
+    console.log('[SettingsSync] No token, skipping.');
+    return;
+  }
+  
+  const client = new MoodleClient(token);
+  const syncManager = new SettingsSyncManager(client, 'chrome-extension');
+
+  const settings = await getSettings();
+  const trackedCourseIds = await getTrackedCourseIds();
+  const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
+
+  const localShared: Record<string, any> = {};
+  
+  // Package settings
+  for (const [key, value] of Object.entries(settings)) {
+    if (value !== undefined) {
+      const ts = timestamps[key] || 0;
+      // Only send default values if they were explicitly set (ts > 0)
+      if (ts > 0 || (Array.isArray(value) ? value.length > 0 : (typeof value === 'object' ? Object.keys(value).length > 0 : true))) {
+        localShared[key] = {
+          value,
+          updatedAt: ts,
+          deviceId: 'chrome-extension'
+        };
+      }
+    }
+  }
+  
+  // Package trackedCourseIds
+  const tsTracked = timestamps['trackedCourseIds'] || 0;
+  if (tsTracked > 0 || trackedCourseIds.length > 0) {
+    localShared['trackedCourseIds'] = {
+      value: trackedCourseIds,
+      updatedAt: tsTracked,
+      deviceId: 'chrome-extension'
+    };
+  }
+
+  const merged = await syncManager.sync(localShared);
+
+  // Unwrap merged
+  const newSettings: any = {};
+  let newTrackedCourseIds: number[] | null = null;
+  const newTimestamps: Record<string, number> = { ...timestamps };
+
+  for (const [key, tracked] of Object.entries(merged)) {
+    if (!tracked) continue;
+    newTimestamps[key] = tracked.updatedAt;
+    
+    if (key === 'trackedCourseIds') {
+      newTrackedCourseIds = tracked.value;
+    } else {
+      newSettings[key] = tracked.value;
+    }
+  }
+
+  // Save back to storage without triggering another sync
+  if (Object.keys(newSettings).length > 0) {
+    await setSettings(newSettings, true);
+  }
+  if (newTrackedCourseIds !== null) {
+    await setTrackedCourseIds(newTrackedCourseIds, true);
+  }
+  
+  // Update timestamps
+  await browser.storage.sync.set({ settings_timestamps: newTimestamps });
+  console.log('[SettingsSync] Successfully synced settings with Moodle.');
+}
+
 async function performBackgroundSync() {
   let token = await getStoredToken();
 
@@ -200,6 +281,14 @@ async function performBackgroundSync() {
     throw new Error('Not authenticated with Moodle');
   }
 
+  // Pull any latest configuration from Moodle before syncing assignments
+  try {
+    await performSettingsSync();
+  } catch (e) {
+    console.warn('Non-fatal: Failed to pull settings before assignment sync', e);
+  }
+
+  // Refetch settings/trackedCourseIds in case they just updated from performSettingsSync!
   const trackedCourseIds = await getTrackedCourseIds();
   const settings = await getSettings();
   const prevResult = await getCachedSyncResult();

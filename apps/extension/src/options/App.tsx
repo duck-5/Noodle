@@ -1,7 +1,7 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult, Assignment, CourseFile, ZoomMeeting } from '@tautracker/moodle-client';
-import { parseTauCourseMetadata } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
 import {
   getStoredToken,
   setStoredToken,
@@ -211,8 +211,16 @@ export default function App() {
 
   useEffect(() => {
     const messageListener = (msg: any) => {
-      if (msg.type === 'SYNC_COMPLETE' && msg.result) {
-        setSyncResult(msg.result);
+      if (msg.type === 'SYNC_COMPLETE') {
+        // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
+        Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
+          setTrackedCourseIdsState(ids);
+          setSettingsState(extSettings);
+          if (cached) setSyncResult(cached);
+        });
+        if (msg.result) {
+          setSyncResult(msg.result);
+        }
       }
     };
     browser.runtime.onMessage.addListener(messageListener);
@@ -262,43 +270,6 @@ export default function App() {
       const ids = await getTrackedCourseIds();
       const extensionSettings = await getSettings();
 
-      // Check if config backup exists
-      const backupRes = (await browser.storage.local.get('config_backup')) as {
-        config_backup?: {
-          wstoken?: string;
-          trackedCourseIds?: number[];
-          settings?: any;
-        };
-      };
-      const data = backupRes.config_backup;
-
-      let activeToken = storedToken;
-      let activeIds = ids;
-      let activeSettings = extensionSettings;
-
-      // Automatically restore config backup settings and course preferences on startup if current state is empty
-      if (data) {
-        if (activeIds.length === 0 && data.trackedCourseIds && data.trackedCourseIds.length > 0) {
-          await setTrackedCourseIds(data.trackedCourseIds);
-          activeIds = data.trackedCourseIds;
-        }
-        if (data.settings) {
-          await setSettings(data.settings);
-          activeSettings = { ...activeSettings, ...data.settings };
-        }
-        if (data.wstoken && !activeToken) {
-          activeToken = data.wstoken;
-          await setStoredToken(activeToken);
-        }
-      }
-
-      setToken(activeToken);
-      setTrackedCourseIdsState(activeIds);
-      setSettingsState(activeSettings);
-
-      const cached = await getCachedSyncResult();
-      setSyncResult(cached);
-
       // Load cached enrolled courses if available
       const cachedCoursesRes = (await browser.storage.local.get('enrolledCoursesCache')) as { enrolledCoursesCache?: any[] };
       if (cachedCoursesRes.enrolledCoursesCache) {
@@ -313,17 +284,24 @@ export default function App() {
       }
 
       const tourSeenRes = await browser.storage.local.get('hasSeenTour');
-      if (activeToken && activeIds.length > 0 && cached) {
+
+      setToken(storedToken);
+      setTrackedCourseIdsState(ids);
+      setSettingsState(extensionSettings);
+
+      const cached = await getCachedSyncResult();
+      setSyncResult(cached);
+
+      if (storedToken && ids.length > 0 && cached) {
         setOnboardingStep(3); // Fully set up
-        fetchEnrolledCoursesInBackground(activeToken);
+        fetchEnrolledCoursesInBackground(storedToken);
         if (!tourSeenRes.hasSeenTour) {
           setShowTour(true);
           setTourStep(0);
         }
-      } else if (activeToken) {
-        // Token exists but courses might not be tracked yet
-        setOnboardingStep(2);
-        fetchEnrolledCoursesForOnboarding(activeToken);
+      } else if (storedToken) {
+        // Token exists but courses might not be tracked yet — try to restore from Moodle
+        restoreMoodleSettingsForOnboarding(storedToken);
       } else {
         setOnboardingStep(1);
       }
@@ -351,7 +329,7 @@ export default function App() {
         await setMoodleCredentials(null);
       }
       setToken(fetchedToken);
-      fetchEnrolledCoursesForOnboarding(fetchedToken);
+      restoreMoodleSettingsForOnboarding(fetchedToken);
     } catch (err: any) {
       showToast(`Login failed: ${err.message}`, 'error');
       setLoading(false);
@@ -367,6 +345,68 @@ export default function App() {
       }
     } catch (e) {
       console.warn('Failed to background fetch enrolled courses:', e);
+    }
+  }
+
+  async function restoreMoodleSettingsForOnboarding(t: string) {
+    setValidatingToken(true);
+    try {
+      const client = new MoodleClient(t);
+      const remoteSettings = await client.loadNoodleSettings();
+      if (remoteSettings && Object.keys(remoteSettings).length > 0) {
+        // We found existing remote settings, apply them directly!
+        const updatedSettings = { ...settings } as ExtensionSettings;
+        let foundTrackedCourses = false;
+        
+        for (const [key, trackedVal] of Object.entries(remoteSettings)) {
+          if (trackedVal && typeof trackedVal === 'object' && 'value' in trackedVal) {
+            if (key === 'trackedCourseIds') {
+              foundTrackedCourses = true;
+              const idsArray = Array.isArray(trackedVal.value) ? trackedVal.value : [];
+              const ids = idsArray.map(Number);
+              setTrackedCourseIdsState(ids);
+              await setTrackedCourseIds(ids, true);
+            } else {
+              (updatedSettings as any)[key] = trackedVal.value;
+            }
+          }
+        }
+        
+        setSettingsState(updatedSettings);
+        await setSettings(updatedSettings, true);
+        
+        // Persist the remote timestamps so future syncs don't think local is newer
+        const remoteTimestamps: Record<string, number> = {};
+        for (const [key, trackedVal] of Object.entries(remoteSettings)) {
+          if (trackedVal && typeof trackedVal === 'object' && 'updatedAt' in trackedVal) {
+            remoteTimestamps[key] = (trackedVal as any).updatedAt;
+          }
+        }
+        await browser.storage.sync.set({ settings_timestamps: remoteTimestamps });
+        
+        if (foundTrackedCourses) {
+          // Successfully restored, jump straight to dashboard
+          setOnboardingStep(3);
+          
+          // Also fetch their courses in background so they have names immediately
+          fetchEnrolledCoursesInBackground(t);
+          
+          // Run initial sync
+          const res = await syncNowOnBackground();
+          if (res?.success && res.result) {
+            setSyncResult(res.result);
+          }
+          return; // Skip normal onboarding
+        }
+      }
+      
+      // If no remote settings found, or no tracked courses, proceed to normal onboarding step 2
+      await fetchEnrolledCoursesForOnboarding(t);
+    } catch (e) {
+      console.error('[Onboarding] Error restoring settings:', e);
+      await fetchEnrolledCoursesForOnboarding(t); // Fallback
+    } finally {
+      setValidatingToken(false);
     }
   }
 
@@ -538,9 +578,6 @@ export default function App() {
     };
     reader.readAsText(file);
   }
-
-
-
   async function handleToggleGoogleTasks(enabled: boolean) {
     if (!settings) return;
     const updated = { ...settings, googleTasksEnabled: enabled };
@@ -2354,6 +2391,8 @@ function SettingsTab({
       </div>
 
       <hr className="settings-divider" />
+
+
 
 
 

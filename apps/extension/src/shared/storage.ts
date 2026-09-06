@@ -72,8 +72,14 @@ export async function getTrackedCourseIds(): Promise<number[]> {
   return res.trackedCourseIds || [];
 }
 
-export async function setTrackedCourseIds(ids: number[]): Promise<void> {
+export async function setTrackedCourseIds(ids: number[], skipSync = false): Promise<void> {
   await browser.storage.sync.set({ trackedCourseIds: ids });
+  if (!skipSync) {
+    const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
+    timestamps['trackedCourseIds'] = Date.now();
+    await browser.storage.sync.set({ settings_timestamps: timestamps });
+    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+  }
 }
 
 export async function getCachedSyncResult(): Promise<SyncResult | null> {
@@ -90,7 +96,18 @@ export async function getSettings(): Promise<ExtensionSettings> {
   return { ...DEFAULT_SETTINGS, ...res.settings };
 }
 
-export async function setSettings(settings: Partial<ExtensionSettings>): Promise<void> {
+export async function setSettings(settings: Partial<ExtensionSettings>, skipSync = false): Promise<void> {
   const current = await getSettings();
   await browser.storage.sync.set({ settings: { ...current, ...settings } });
+  
+  if (!skipSync) {
+    // Only update timestamps when the user explicitly changed a setting
+    const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
+    const now = Date.now();
+    for (const key of Object.keys(settings)) {
+      timestamps[key] = now;
+    }
+    await browser.storage.sync.set({ settings_timestamps: timestamps });
+    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+  }
 }
