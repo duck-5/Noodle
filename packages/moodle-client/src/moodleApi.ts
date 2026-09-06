@@ -254,4 +254,71 @@ export class MoodleClient {
     const separator = fileUrl.includes('?') ? '&' : '?';
     return `${fileUrl}${separator}token=${this.token}`;
   }
+
+  // --- PoC for Moodle Calendar Sync ---
+
+  public async saveNoodleSettings(settingsJson: string): Promise<void> {
+    // 1. Try to find all existing events first to delete them (prevent duplicates)
+    const response = await this.apiCall('core_calendar_get_calendar_events', {
+      'events[eventids][0]': 0, 
+      'options[userevents]': 1,
+      'options[timeend]': 4102444800 + 86400,
+      'options[timestart]': 4102444800 - 86400
+    });
+    
+    if (response && response.events) {
+      const existingEvents = response.events.filter((e: any) => e.name === 'NOODLE_SYNC_DATA');
+      if (existingEvents.length > 0) {
+        const deleteParams: Record<string, any> = {};
+        for (let i = 0; i < existingEvents.length; i++) {
+          deleteParams[`events[${i}][eventid]`] = existingEvents[i].id;
+          deleteParams[`events[${i}][repeat]`] = 0;
+        }
+        try {
+          await this.apiCall('core_calendar_delete_calendar_events', deleteParams, 'POST');
+        } catch (e: any) {
+          console.warn('[saveNoodleSettings] Failed to delete old events:', e);
+          // If deletion fails, we will still proceed to create the new one
+        }
+      }
+    }
+
+    // 2. Create the new sync event
+    await this.apiCall(
+      'core_calendar_create_calendar_events',
+      {
+        'events[0][name]': 'NOODLE_SYNC_DATA',
+        'events[0][description]': settingsJson,
+        'events[0][eventtype]': 'user',
+        'events[0][timestart]': 4102444800, // Year 2100
+      },
+      'POST'
+    );
+  }
+
+  private async loadNoodleSettingsRaw(): Promise<any> {
+    const response = await this.apiCall('core_calendar_get_calendar_events', {
+      'events[eventids][0]': 0, 
+      'options[userevents]': 1,
+      'options[timeend]': 4102444800 + 86400,
+      'options[timestart]': 4102444800 - 86400
+    });
+    
+    if (!response || !response.events) return null;
+    const allEvents = response.events.filter((e: any) => e.name === 'NOODLE_SYNC_DATA');
+    if (allEvents.length === 0) return null;
+    
+    allEvents.sort((a: any, b: any) => b.id - a.id);
+    return allEvents[0];
+  }
+
+  public async loadNoodleSettings(): Promise<any> {
+    const syncEvent = await this.loadNoodleSettingsRaw();
+    if (!syncEvent) return null;
+
+    // The description might be wrapped in HTML tags by Moodle (e.g., <p>{...}</p>)
+    // So we strip HTML tags just in case:
+    const cleanJson = syncEvent.description.replace(/(<([^>]+)>)/gi, "").trim();
+    return JSON.parse(cleanJson);
+  }
 }
