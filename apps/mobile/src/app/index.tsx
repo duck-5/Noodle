@@ -21,6 +21,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { getMoodleToken, setMoodleToken, triggerForegroundSync, registerBackgroundSyncTask } from '../services/backgroundSync';
 import { downloadMoodleFile } from '../services/fileDownloadService';
 import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } from '../services/auth';
+import { performSettingsSync, markSettingUpdatedAndSync } from '../services/settingsSyncService';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { setGoogleAccessToken } from '../services/googleTasks';
 import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
@@ -191,12 +192,19 @@ export default function DashboardScreen() {
       const db = getDb();
       const trackedCourses = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
 
-      if (storedToken && trackedCourses.length > 0) {
-        setOnboardingStep(3);
-        loadDashboardData();
-      } else if (storedToken) {
-        setOnboardingStep(2);
-        fetchEnrolledCourses(storedToken);
+      if (storedToken) {
+        // Always try to sync settings on boot to get remote updates
+        const hasTracked = await performSettingsSync(storedToken);
+        
+        if (hasTracked || trackedCourses.length > 0) {
+          refreshPreferences();
+          setOnboardingStep(3);
+          loadDashboardData();
+          handleManualSync();
+        } else {
+          setOnboardingStep(2);
+          fetchEnrolledCourses(storedToken);
+        }
       } else {
         setOnboardingStep(1);
       }
@@ -205,7 +213,7 @@ export default function DashboardScreen() {
     } finally {
       setLoading(false);
     }
-  }, [fetchEnrolledCourses]);
+  }, [fetchEnrolledCourses, refreshPreferences]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -258,8 +266,16 @@ export default function DashboardScreen() {
         setPreference('remember_me', 'false');
       }
 
-      await fetchEnrolledCourses(fetchedToken);
-      setOnboardingStep(2);
+      const hasTracked = await performSettingsSync(fetchedToken);
+      if (hasTracked) {
+        refreshPreferences();
+        setOnboardingStep(3);
+        loadDashboardData();
+        handleManualSync();
+      } else {
+        await fetchEnrolledCourses(fetchedToken);
+        setOnboardingStep(2);
+      }
     } catch (e: any) {
       Alert.alert(isRtl ? 'כניסה נכשלה' : 'Login Failed', e.message || 'An error occurred during login.');
     } finally {
@@ -295,6 +311,7 @@ export default function DashboardScreen() {
           }
         }
       });
+      markSettingUpdatedAndSync(['trackedCourseIds', 'coursesColorMap', 'coursesCustomNames']);
       setOnboardingStep(3);
       handleManualSync();
     } catch (e: any) {

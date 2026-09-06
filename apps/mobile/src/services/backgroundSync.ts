@@ -1,7 +1,8 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import * as SecureStore from 'expo-secure-store';
-import { runSync } from '@tautracker/moodle-client';
+import { runSync, MoodleClient } from '@tautracker/moodle-client';
+import { performSettingsSync } from './settingsSyncService';
 import { getDb, saveSyncResultToDatabase } from './database';
 import { scheduleDeadlineNotifications } from './notifications';
 import { performGoogleTasksSync } from './googleTasks';
@@ -45,6 +46,13 @@ export async function triggerForegroundSync(): Promise<any> {
   const token = await getMoodleToken();
   if (!token) throw new Error('Moodle token not configured.');
 
+  // Pull any latest configuration from Moodle before syncing assignments
+  try {
+    await performSettingsSync(token);
+  } catch (e) {
+    console.warn('Non-fatal: Failed to pull settings before assignment sync', e);
+  }
+
   const trackedIds = await getTrackedCourseIdsFromDb();
   const creds = await getStoredCredentials();
 
@@ -65,6 +73,13 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
     const token = await getMoodleToken();
     if (!token) {
       return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    // Pull any latest configuration from Moodle before syncing assignments
+    try {
+      await performSettingsSync(token);
+    } catch (e) {
+      console.warn('Non-fatal: Failed to pull settings before background assignment sync', e);
     }
 
     const trackedIds = await getTrackedCourseIdsFromDb();

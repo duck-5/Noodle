@@ -9,7 +9,7 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { setMoodleToken } from '../services/backgroundSync';
+import { setMoodleToken, getMoodleToken } from '../services/backgroundSync';
 import { clearCredentials } from '../services/auth';
 import { getGoogleAccessToken, setGoogleAccessToken, performGoogleTasksSync, authenticateGoogleOAuth } from '../services/googleTasks';
 import { getDb, getPreference, setPreference } from '../services/database';
@@ -18,6 +18,8 @@ import { usePreferences, ThemeMode, SupportedLanguage } from '../hooks/use-prefe
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { MoodleClient } from '@tautracker/moodle-client';
+import { markSettingUpdatedAndSync } from '../services/settingsSyncService';
 
 interface SettingsScreenProps {
   onDisconnect?: () => void;
@@ -35,6 +37,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
   const [showAdvancedGoogle, setShowAdvancedGoogle] = useState<boolean>(false);
   const [customClientId, setCustomClientId] = useState<string>('');
   const [customClientSecret, setCustomClientSecret] = useState<string>('');
+
 
   const loadSettings = async () => {
     try {
@@ -68,6 +71,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
   const handleUpdateTheme = (tChoice: ThemeMode) => {
     try {
       setThemeMode(tChoice);
+      markSettingUpdatedAndSync(['theme']);
       onSettingsChanged?.();
     } catch (e) {
       console.error('handleUpdateTheme error:', e);
@@ -78,6 +82,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
     try {
       setGoogleTasksEnabled(val);
       setPreference('google_tasks_enabled', val ? 'true' : 'false');
+      markSettingUpdatedAndSync(['googleTasksEnabled']);
       onSettingsChanged?.();
     } catch (e) {
       console.error(e);
@@ -88,6 +93,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
     try {
       setGoogleListName(text);
       setPreference('google_tasks_list_name', text);
+      markSettingUpdatedAndSync(['googleTasksListName']);
       onSettingsChanged?.();
     } catch (e) {
       console.error(e);
@@ -97,6 +103,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
   const handleUpdateLanguage = (l: SupportedLanguage) => {
     try {
       setLang(l);
+      markSettingUpdatedAndSync(['language']);
       onSettingsChanged?.();
     } catch (e) {
       console.error(e);
@@ -599,6 +606,8 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
             </View>
           )}
         </View>
+
+
 
         {/* Backup & Restore */}
         <View style={[styles.section, { backgroundColor: theme.backgroundElement, marginTop: 24 }]}>

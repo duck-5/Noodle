@@ -15,6 +15,7 @@ import { downloadMoodleFile } from '../services/fileDownloadService';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
+import { markSettingUpdatedAndSync } from '../services/settingsSyncService';
 
 const PRESETS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4'];
 
@@ -84,6 +85,7 @@ export default function CoursesScreen({ activeCourseId, setActiveCourseId }: Cou
       const db = getDb();
       const newVal = currentVal === 1 ? 0 : 1;
       db.runSync('UPDATE tracked_courses SET is_active = ? WHERE id = ?', [newVal, id]);
+      markSettingUpdatedAndSync(['trackedCourseIds']);
       loadCourses();
     } catch (e) {
       console.error(e);
@@ -94,6 +96,7 @@ export default function CoursesScreen({ activeCourseId, setActiveCourseId }: Cou
     try {
       const db = getDb();
       db.runSync('UPDATE tracked_courses SET name = ? WHERE id = ?', [text, id]);
+      markSettingUpdatedAndSync(['coursesCustomNames']);
       // Update local state without full reload to keep focus
       setCourses(courses.map(c => c.id === id ? { ...c, name: text } : c));
     } catch (e) {
@@ -105,6 +108,7 @@ export default function CoursesScreen({ activeCourseId, setActiveCourseId }: Cou
     try {
       const db = getDb();
       db.runSync('UPDATE tracked_courses SET color = ? WHERE id = ?', [color, id]);
+      markSettingUpdatedAndSync(['coursesColorMap']);
       loadCourses();
     } catch (e) {
       console.error(e);
