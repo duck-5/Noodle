@@ -1,6 +1,9 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { PreferencesProvider, usePreferences } from '@/hooks/use-preferences';
+
+WebBrowser.maybeCompleteAuthSession();
 
 function InnerLayout() {
   const { themeMode, theme } = usePreferences();

@@ -34,6 +34,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
   const [googleStatus, setGoogleStatus] = useState<string | null>(null);
   const [showAdvancedGoogle, setShowAdvancedGoogle] = useState<boolean>(false);
   const [customClientId, setCustomClientId] = useState<string>('');
+  const [customClientSecret, setCustomClientSecret] = useState<string>('');
 
   const loadSettings = async () => {
     try {
@@ -45,6 +46,9 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
 
       const savedClientId = getPreference('google_tasks_client_id') || '';
       setCustomClientId(savedClientId);
+
+      const savedClientSecret = getPreference('google_tasks_client_secret') || '';
+      setCustomClientSecret(savedClientSecret);
 
       const googleToken = await getGoogleAccessToken();
       if (googleToken) {
@@ -103,7 +107,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
     setLoading(true);
     setGoogleStatus(lang === 'he' ? 'מתחבר ל-Google...' : 'Connecting to Google...');
     try {
-      const authRes = await authenticateGoogleOAuth(customClientId);
+      const authRes = await authenticateGoogleOAuth(customClientId, customClientSecret);
       if (!authRes.success || !authRes.token) {
         setGoogleStatus(authRes.error || (lang === 'he' ? 'ההתחברות בוטלה' : 'Authentication cancelled'));
         setLoading(false);
@@ -515,7 +519,7 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
               </View>
 
               {showAdvancedGoogle && (
-                <View style={{ gap: 8, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.backgroundSelected + '40', borderWidth: 1, borderColor: theme.border }}>
+                <View style={{ gap: 10, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: theme.backgroundSelected + '40', borderWidth: 1, borderColor: theme.border }}>
                   <Text style={[styles.label, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
                     {t('google_tasks_client_id_label')}
                   </Text>
@@ -529,6 +533,46 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
                     placeholder="510394355212-...apps.googleusercontent.com"
                     placeholderTextColor={theme.placeholder}
                   />
+
+                  <Text style={[styles.label, { color: theme.textSecondary, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }]}>
+                    {t('google_tasks_client_secret_label')}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', backgroundColor: theme.backgroundElement }]}
+                    value={customClientSecret}
+                    onChangeText={(v) => {
+                      setCustomClientSecret(v);
+                      setPreference('google_tasks_client_secret', v);
+                    }}
+                    placeholder="GOCSPX-..."
+                    placeholderTextColor={theme.placeholder}
+                    secureTextEntry
+                  />
+
+                  {/* Google Cloud Console Setup Helper */}
+                  <View style={{ marginTop: 6, padding: 10, borderRadius: 8, backgroundColor: theme.backgroundElement, borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 12, color: theme.primary, marginBottom: 6, textAlign: isRtl ? 'right' : 'left' }}>
+                      📋 {t('google_cloud_setup_title')}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 2, textAlign: isRtl ? 'right' : 'left' }}>
+                      {t('google_cloud_package_label')}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: theme.text, marginBottom: 6, textAlign: isRtl ? 'right' : 'left' }} selectable>
+                      com.noodle.tau
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 2, textAlign: isRtl ? 'right' : 'left' }}>
+                      {t('google_cloud_sha1_label')}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: theme.text, marginBottom: 6, textAlign: isRtl ? 'right' : 'left' }} selectable>
+                      5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 2, textAlign: isRtl ? 'right' : 'left' }}>
+                      {t('google_cloud_redirect_label')}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: theme.text, textAlign: isRtl ? 'right' : 'left' }} selectable>
+                      mobile://oauth
+                    </Text>
+                  </View>
 
                   <Text style={[styles.label, { color: theme.textSecondary, marginTop: 6, textAlign: isRtl ? 'right' : 'left' }]}>
                     {t('google_token_label')}

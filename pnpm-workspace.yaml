@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+nodeLinker: hoisted
 allowBuilds:
   spawn-sync: true
   unrs-resolver: true

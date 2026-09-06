@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": ["mobile", "noodle", "com.noodle.tau", "com.googleusercontent.apps.510394355212-opk74l9lv3e44sv3m1c1u96ocsdn1n0j"],
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/icon.png"
@@ -16,7 +16,7 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mobile"
+      "package": "com.noodle.tau"
     },
     "web": {
       "output": "static",
