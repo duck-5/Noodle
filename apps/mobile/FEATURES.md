@@ -83,3 +83,26 @@ This document details the features ported from the Chrome Extension into the mob
 * **Sidebar Layout**: Added smooth vertical scrolling (`ScrollView` with bounce physics and hidden scrollbars) to prevent clipping on compact phones and landscape viewports.
 * **Brand Typography**: Positioned the official "Noodle" wordmark under the header logo in the sidebar navigation with dynamic theme styling.
 
+---
+
+## 10. Mobile Courses Page Redesign & Extension Parity
+* **Ported Feature**: Full parity with the Chrome Extension's courses experience, custom editing, subject navigation, and assignment sidebar overview.
+* **Course Editing Modal**:
+  * Tap ✏️ on any course card in the main list or in the Course Detail header to customize course display nicknames, toggle tracking (`is_active`), and pick from 14 curated theme colors or input a custom Hex code with live preview.
+  * Writes to SQLite and automatically synchronizes to Moodle Calendar private storage (`markSettingUpdatedAndSync`), keeping settings identical between mobile and browser.
+* **Tracked Courses Configuration Panel**:
+  * Expandable panel matching the extension's configuration drawer, grouping courses by semester (Semester A, Semester B, Yearly, Other) via `parseTauCourseMetadata`.
+  * Inline tracking checkboxes, nickname inputs with auto-save on blur, and quick color swatch pickers.
+* **Course Detail Dual-View**:
+  * **Course Content Tab**:
+    * Horizontal scrolling **Subjects Navigation Pill Bar** ("All 🌐" and section pills with active color highlight) allowing instant filtering to any course topic.
+    * Expand/Collapse All toggle for all sections.
+    * Collapsible section accordions containing downloadable files (with formatted sizes) and assignments with urgency countdown badges and attachment downloads.
+    * Interactive Zoom section with active meeting detection (`● פעיל כעת`), dashboard eye interest toggle, and direct Join Zoom links.
+  * **Assignments & Grades Tab**:
+    * Course summary stats banner: Course Average Grade (`ממוצע הקורס`), Completed count (`הוגשו`), and Pending tasks count (`פתוחות`).
+    * Full chronological list of all assignments with urgency borders (green, yellow, red), status badges (`הוגש!`), grades (`ציון: X / Y`), due countdowns, attachments, and Moodle links.
+* **Deadline Utilities (`dateUtils.ts`)**:
+  * Ported `getDueTextAndClass` to mobile for consistent deadline countdown text and badge coloring (`badge-success`, `badge-warning`, `badge-danger`).
+
+
