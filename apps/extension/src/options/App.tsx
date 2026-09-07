@@ -132,35 +132,6 @@ export default function App() {
     await browser.storage.local.set({ sidebarCollapsed: val });
   };
 
-  useEffect(() => {
-    const handleGlobalClick = async (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('a');
-      if (link && link.href && link.href.includes('moodle.tau.ac.il') && link.dataset.moodleLink === 'true') {
-        e.preventDefault();
-        e.stopPropagation();
-        const storedToken = await getStoredToken();
-        if (storedToken) {
-          try {
-            const client = new MoodleClient(storedToken);
-            const siteInfo = await client.getSiteInfo();
-            const { key, autologinurl } = await client.getAutoLoginKey();
-            const finalUrl = `${autologinurl}?userid=${siteInfo.userid}&key=${key}&urltogo=${encodeURIComponent(link.href)}`;
-            browser.tabs.create({ url: finalUrl });
-          } catch (err) {
-            console.error('Auto login failed', err);
-            browser.tabs.create({ url: link.href });
-          }
-        } else {
-          browser.tabs.create({ url: link.href });
-        }
-      }
-    };
-    document.addEventListener('click', handleGlobalClick, true);
-    return () => document.removeEventListener('click', handleGlobalClick, true);
-  }, []);
-
-
   // Toast and Tour States
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showTour, setShowTour] = useState<boolean>(false);
