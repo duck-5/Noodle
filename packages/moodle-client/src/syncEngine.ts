@@ -1,5 +1,5 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
-import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials } from './types.js';
+import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials, Attachment } from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
 import { CookieJar, performLogin, scrapeZoomMeetingsWithToken } from './zoomScraper.js';
 
