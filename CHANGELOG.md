@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased] - 2026-09-07
 
 ### Added
+- **Submitted Files Display & Download (`@tautracker/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Parsed `lastattempt.submission.plugins` for `submission_files` in `syncEngine.ts`, exposing typed `submittedFiles?: Attachment[]` on `Assignment`.
+  - Added SQLite migration (`ALTER TABLE assignments ADD COLUMN submitted_files TEXT`) and data mapper updates in `apps/mobile/src/services/database.ts`.
+  - Rendered submitted files as green download links in the web extension options dashboard and course view (`App.tsx`), and mobile screens (`index.tsx`, `courses.tsx`).
+- **Moodle SSO Background Auto-Login for Links (`apps/extension`)**:
+  - Added capture-phase global click interceptor on `moodle.tau.ac.il` assignment and course links.
+  - Checks existing `MoodleSession` cookies to allow instantaneous navigation if already authenticated.
+  - Automatically performs an invisible background SAML/Shibboleth SSO authentication via the Extension Service Worker using saved credentials, seeding browser cookies before opening the tab to bypass login prompts and prevent enrolment rejection loops.
+  - Added `skipInvalidate` support to avoid wiping active sessions and ensure fast (sub-second) tab launching.
+  - Updated storage configuration to retain Moodle credentials securely when "Remember me" is checked.
 - **Assignment Card & Calendar Redesign, Lifecycle & Status Tags (`apps/extension`, `apps/mobile`, `packages/moodle-client`)**:
   - **Dual-Dimension Status Tracking & Tags**:
     - Added light green **"הוגש" (`Submitted`)** tag when a Moodle-submitted assignment is kept in **To Do** (`לביצוע`).
