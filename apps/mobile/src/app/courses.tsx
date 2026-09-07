@@ -175,6 +175,7 @@ export default function CoursesScreen({
 
   // Detail screen state
   const [activeDetailTab, setActiveDetailTab] = useState<'content' | 'assignments'>('content');
+  const [refreshKey, setRefreshKey] = useState(0);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
@@ -330,11 +331,39 @@ export default function CoursesScreen({
     const courseColor = course.color || theme.primary;
     const db = getDb();
 
+    const hiddenStr = getPreference('hidden_assignments');
+    const completedStr = getPreference('completed_assignments');
+    const uncompletedStr = getPreference('uncompleted_assignments');
+    const hiddenIds: number[] = hiddenStr ? JSON.parse(hiddenStr) : [];
+    const completedIds: number[] = completedStr ? JSON.parse(completedStr) : [];
+    const uncompletedIds: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
     // Load ALL assignments for this course
-    const courseAssignments = db.getAllSync<any>(
+    const courseAssignmentsRaw = db.getAllSync<any>(
       'SELECT * FROM assignments WHERE course_moodle_id = ? ORDER BY deadline ASC',
       [course.moodle_id]
     );
+
+    const courseAssignments = courseAssignmentsRaw.map(a => {
+      let mod = { ...a };
+      const rawMoodleSubmitted = a.status === 'Submitted';
+      mod.rawMoodleSubmitted = rawMoodleSubmitted;
+
+      if (hiddenIds.includes(a.moodle_assign_id)) {
+        mod.isHidden = true;
+      }
+
+      let isCompleted = rawMoodleSubmitted;
+      if (rawMoodleSubmitted && uncompletedIds.includes(a.moodle_assign_id)) {
+        isCompleted = false;
+      } else if (!rawMoodleSubmitted && completedIds.includes(a.moodle_assign_id)) {
+        isCompleted = true;
+      }
+
+      mod.isCompleted = isCompleted;
+      mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
+      return mod;
+    });
     const courseFiles = db.getAllSync<any>(
       'SELECT * FROM files WHERE course_moodle_id = ?',
       [course.moodle_id]
@@ -1132,7 +1161,9 @@ export default function CoursesScreen({
                                   )}
 
                                   {attachments.map((att: any, attIdx: number) => {
-                                    const displayFileName = att.fileName || att.name || (isRtl ? 'קובץ' : 'File');
+                                    const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ' : 'File');
+                                    const fileUrl = att.url || att.fileUrl || att.fileurl;
+                                    const mimeType = att.mimeType || att.mimetype;
                                     return (
                                       <Pressable
                                         key={attIdx}
@@ -1141,11 +1172,11 @@ export default function CoursesScreen({
                                           { backgroundColor: theme.backgroundElement, borderColor: theme.border },
                                         ]}
                                         onPress={() =>
-                                          att.fileUrl || att.url
+                                          fileUrl
                                             ? handleDownloadFile({
                                                 file_name: displayFileName,
-                                                file_url: att.fileUrl || att.url,
-                                                mime_type: att.mimeType,
+                                                file_url: fileUrl,
+                                                mime_type: mimeType,
                                               })
                                             : null
                                         }
@@ -1431,17 +1462,32 @@ export default function CoursesScreen({
                       </View>
 
                       {/* Assignment Name */}
-                      <Text
-                        style={{
-                          color: theme.text,
-                          fontSize: 16,
-                          fontWeight: 'bold',
-                          textAlign: isRtl ? 'right' : 'left',
-                          marginBottom: 8,
-                        }}
-                      >
-                        {a.name}
-                      </Text>
+                      <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                        <Text
+                          style={{
+                            color: theme.text,
+                            fontSize: 16,
+                            fontWeight: 'bold',
+                            textAlign: isRtl ? 'right' : 'left',
+                          }}
+                        >
+                          {a.name}
+                        </Text>
+                        {a.isCompleted && !a.rawMoodleSubmitted && (
+                          <View style={styles.tagNotSubmitted}>
+                            <Text style={styles.tagNotSubmittedText}>
+                              {isRtl ? 'לא הוגש' : 'Not submitted'}
+                            </Text>
+                          </View>
+                        )}
+                        {!a.isCompleted && a.rawMoodleSubmitted && (
+                          <View style={styles.tagSubmitted}>
+                            <Text style={styles.tagSubmittedText}>
+                              {isRtl ? 'הוגש' : 'Submitted'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
 
                       {/* Due Date & Grade */}
                       <View
@@ -1493,6 +1539,64 @@ export default function CoursesScreen({
                           paddingTop: 8,
                         }}
                       >
+                        <Pressable
+                          style={[
+                            styles.smallActionBtn,
+                            { backgroundColor: theme.background, borderColor: theme.border },
+                          ]}
+                          onPress={async () => {
+                            const rawMoodleSubmitted = Boolean(a.rawMoodleSubmitted);
+                            const completedStr = getPreference('completed_assignments');
+                            let completedList: number[] = completedStr ? JSON.parse(completedStr) : [];
+                            const uncompletedStr = getPreference('uncompleted_assignments');
+                            let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
+                            if (rawMoodleSubmitted) {
+                              if (uncompletedList.includes(a.moodle_assign_id)) {
+                                uncompletedList = uncompletedList.filter((id: number) => id !== a.moodle_assign_id);
+                              } else {
+                                uncompletedList.push(a.moodle_assign_id);
+                              }
+                              setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
+                              markSettingUpdatedAndSync(['uncompletedAssignments']);
+                            } else {
+                              if (completedList.includes(a.moodle_assign_id)) {
+                                completedList = completedList.filter((id: number) => id !== a.moodle_assign_id);
+                              } else {
+                                completedList.push(a.moodle_assign_id);
+                              }
+                              setPreference('completed_assignments', JSON.stringify(completedList));
+                              markSettingUpdatedAndSync(['completedAssignments']);
+                            }
+                            setRefreshKey(prev => prev + 1);
+                          }}
+                        >
+                           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                             {a.status === 'Submitted' ? (isRtl ? 'סמן לביצוע ↺' : 'Mark as To Do ↺') : (isRtl ? 'סמן כבוצע ✅' : 'Mark Done ✅')}
+                           </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.smallActionBtn,
+                            { backgroundColor: theme.background, borderColor: theme.border },
+                          ]}
+                          onPress={async () => {
+                            const hiddenStr = getPreference('hidden_assignments');
+                            let current = hiddenStr ? JSON.parse(hiddenStr) : [];
+                            if (current.includes(a.moodle_assign_id)) {
+                              current = current.filter((id: number) => id !== a.moodle_assign_id);
+                            } else {
+                              current.push(a.moodle_assign_id);
+                            }
+                            setPreference('hidden_assignments', JSON.stringify(current));
+                            markSettingUpdatedAndSync(['hiddenAssignments']);
+                            setRefreshKey(prev => prev + 1);
+                          }}
+                        >
+                           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                             {a.isHidden ? (isRtl ? 'בטל הסתרה 👁️' : 'Unhide 👁️') : (isRtl ? 'הסתר 👁️' : 'Hide 👁️')}
+                           </Text>
+                        </Pressable>
                         {a.link && (
                           <Pressable
                             style={[
@@ -1508,7 +1612,9 @@ export default function CoursesScreen({
                         )}
 
                         {attachments.map((att: any, attIdx: number) => {
-                          const displayFileName = att.fileName || att.name || (isRtl ? 'קובץ' : 'File');
+                          const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ' : 'File');
+                          const fileUrl = att.url || att.fileUrl || att.fileurl;
+                          const mimeType = att.mimeType || att.mimetype;
                           return (
                             <Pressable
                               key={attIdx}
@@ -1517,11 +1623,11 @@ export default function CoursesScreen({
                                 { backgroundColor: theme.background, borderColor: theme.border },
                               ]}
                               onPress={() =>
-                                att.fileUrl || att.url
+                                fileUrl
                                   ? handleDownloadFile({
                                       file_name: displayFileName,
-                                      file_url: att.fileUrl || att.url,
-                                      mime_type: att.mimeType,
+                                      file_url: fileUrl,
+                                      mime_type: mimeType,
                                     })
                                   : null
                               }
@@ -2340,5 +2446,31 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     padding: 20,
+  },
+  tagNotSubmitted: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  tagNotSubmittedText: {
+    color: '#f59e0b',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tagSubmitted: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  tagSubmittedText: {
+    color: '#10b981',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

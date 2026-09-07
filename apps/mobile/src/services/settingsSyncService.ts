@@ -33,6 +33,27 @@ function packLocalSharedSettings(timestamps: Record<string, number>): Record<str
     localShared['googleTasksListName'] = { value: googleTasksListName, updatedAt: tsGoogleList, deviceId: 'mobile-app' };
   }
 
+  const hiddenAssignmentsRaw = getPreference('hidden_assignments');
+  const hiddenAssignments = hiddenAssignmentsRaw ? JSON.parse(hiddenAssignmentsRaw) : [];
+  const tsHidden = timestamps['hiddenAssignments'] || 0;
+  if (tsHidden > 0 || hiddenAssignments.length > 0) {
+    localShared['hiddenAssignments'] = { value: hiddenAssignments, updatedAt: tsHidden, deviceId: 'mobile-app' };
+  }
+
+  const completedAssignmentsRaw = getPreference('completed_assignments');
+  const completedAssignments = completedAssignmentsRaw ? JSON.parse(completedAssignmentsRaw) : [];
+  const tsCompleted = timestamps['completedAssignments'] || 0;
+  if (tsCompleted > 0 || completedAssignments.length > 0) {
+    localShared['completedAssignments'] = { value: completedAssignments, updatedAt: tsCompleted, deviceId: 'mobile-app' };
+  }
+
+  const uncompletedAssignmentsRaw = getPreference('uncompleted_assignments');
+  const uncompletedAssignments = uncompletedAssignmentsRaw ? JSON.parse(uncompletedAssignmentsRaw) : [];
+  const tsUncompleted = timestamps['uncompletedAssignments'] || 0;
+  if (tsUncompleted > 0 || uncompletedAssignments.length > 0) {
+    localShared['uncompletedAssignments'] = { value: uncompletedAssignments, updatedAt: tsUncompleted, deviceId: 'mobile-app' };
+  }
+
   // 2. Tracked Courses (SQLite)
   const db = getDb();
   const trackedRows = db.getAllSync<{ moodle_id: number; name: string; color: string }>('SELECT moodle_id, name, color FROM tracked_courses WHERE is_active = 1');
@@ -82,6 +103,15 @@ function unpackMergedSettings(merged: Record<string, any>, newTimestamps: Record
     }
     if (merged['googleTasksListName']) {
       setPreference('google_tasks_list_name', merged['googleTasksListName'].value);
+    }
+    if (merged['hiddenAssignments']) {
+      setPreference('hidden_assignments', JSON.stringify(merged['hiddenAssignments'].value));
+    }
+    if (merged['completedAssignments']) {
+      setPreference('completed_assignments', JSON.stringify(merged['completedAssignments'].value));
+    }
+    if (merged['uncompletedAssignments']) {
+      setPreference('uncompleted_assignments', JSON.stringify(merged['uncompletedAssignments'].value));
     }
 
     if (merged['trackedCourseIds']) {

@@ -6,7 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [Unreleased] - 2026-09-01
+## [Unreleased] - 2026-09-07
+
+### Added
+- **Assignment Card & Calendar Redesign, Lifecycle & Status Tags (`apps/extension`, `apps/mobile`, `packages/moodle-client`)**:
+  - **Dual-Dimension Status Tracking & Tags**:
+    - Added light green **"הוגש" (`Submitted`)** tag when a Moodle-submitted assignment is kept in **To Do** (`לביצוע`).
+    - Added light orange **"לא הוגש" (`Not submitted`)** tag when an unsubmitted assignment is marked done manually (replacing the old `❗`).
+    - Added full reversibility between "To Do" (`לביצוע`) and "Completed" (`הושלמו`) with contextual action menu items ("סמן כבוצע" / "סמן לביצוע").
+    - Added `uncompletedAssignments` synchronization support across Extension settings, Mobile preferences, and `@tautracker/moodle-client` SharedSettings.
+  - **Contextual Action Menu (`⋯`)**:
+    - Integrated expanded toolbar options dropdown across desktop calendar cards and mobile drawers, revealing: Mark Done/To Do, Go to Course, Open in Moodle, and Hide/Unhide.
+  - **Submit Button Visibility Optimization**:
+    - Restyled and made the `Submit ↗` (`הגש ↗`) button visible exclusively on unsubmitted, active tasks, omitting it on completed tasks for a cleaner appearance.
+  - **Terminology Standardization**:
+    - Renamed all UI references from "Pending" (`ממתינים` / `פתוח`) to "To Do" (`לביצוע`) across filters, stat cards, headings, and empty state messages.
+  - **Desktop Assignment Card Layout Fix (`apps/extension/src/options/App.css`)**:
+    - Fixed card squashing and cropping when expanding multiple assignments by applying `flex-shrink: 0; min-height: fit-content;` and expanding `.assignments-list` scroll viewport to `75vh`.
+
+### Fixed
+- **Mobile Attachments Display & Download (`apps/mobile/src/app/index.tsx`, `courses.tsx`)**:
+  - Fixed issue where all attachments displayed the literal label "Attachment" / "קובץ מצורף" by resolving property keys across `name`, `fileName`, and `filename`.
+  - Fixed attachment download button non-responsiveness by resolving `url`, `fileUrl`, and `fileurl`, and adding a fallback to `Linking.openURL`.
+- **Mobile Task Progress & Stats (`apps/mobile/src/app/index.tsx`)**:
+  - Corrected calculation of `pendingTasksCount` and progress bar percentage to properly filter hidden and completed tasks.
+
+---
+
+## [3.2.0] - 2026-09-01
 
 ### Added
 - **Mobile Courses Redesign & Extension Parity (`apps/mobile/src/app/courses.tsx`, `dateUtils.ts`, `i18n.ts`)**:

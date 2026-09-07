@@ -14,6 +14,9 @@ export interface ExtensionSettings {
   theme?: 'dark' | 'noodle';
   interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
   showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
+  hiddenAssignments?: number[];  // Array of assignment ids that are hidden
+  completedAssignments?: number[]; // Array of assignment ids that are marked as completed
+  uncompletedAssignments?: number[]; // Array of assignment ids marked as To Do even if submitted
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -29,6 +32,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   theme: 'noodle',
   interestedMeetings: [],
   showAllMeetings: false,
+  hiddenAssignments: [],
+  completedAssignments: [],
+  uncompletedAssignments: [],
 };
 
 export async function getStoredToken(): Promise<string | null> {

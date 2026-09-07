@@ -124,9 +124,15 @@ export default function DashboardScreen() {
 
   // Accordion feed elements and files
   const [expandedAssignments, setExpandedAssignments] = useState<Record<string, boolean>>({});
+  const [openMenuAssignId, setOpenMenuAssignId] = useState<string | null>(null);
   const [dashboardFiles, setDashboardFiles] = useState<any[]>([]);
   const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
+
+  const [filterPending, setFilterPending] = useState<boolean>(true);
+  const [filterPast, setFilterPast] = useState<boolean>(false);
+  const [filterHidden, setFilterHidden] = useState<boolean>(false);
+  const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -221,6 +227,50 @@ export default function DashboardScreen() {
     }, 0);
     return () => clearTimeout(timer);
   }, [loadAppStatus]);
+
+  async function handleToggleCompleted(assignMoodleId: number) {
+    const target = assignments.find((x: any) => x.moodle_assign_id === assignMoodleId);
+    const rawMoodleSubmitted = target ? Boolean(target.rawMoodleSubmitted) : false;
+
+    const completedStr = getPreference('completed_assignments');
+    let completedList: number[] = completedStr ? JSON.parse(completedStr) : [];
+
+    const uncompletedStr = getPreference('uncompleted_assignments');
+    let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
+    if (rawMoodleSubmitted) {
+      if (uncompletedList.includes(assignMoodleId)) {
+        uncompletedList = uncompletedList.filter((id: number) => id !== assignMoodleId);
+      } else {
+        uncompletedList.push(assignMoodleId);
+      }
+      setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
+      markSettingUpdatedAndSync(['uncompletedAssignments']);
+    } else {
+      if (completedList.includes(assignMoodleId)) {
+        completedList = completedList.filter((id: number) => id !== assignMoodleId);
+      } else {
+        completedList.push(assignMoodleId);
+      }
+      setPreference('completed_assignments', JSON.stringify(completedList));
+      markSettingUpdatedAndSync(['completedAssignments']);
+    }
+
+    loadDashboardData();
+  }
+
+  async function handleToggleHidden(assignMoodleId: number) {
+    const hiddenStr = getPreference('hidden_assignments');
+    let current = hiddenStr ? JSON.parse(hiddenStr) : [];
+    if (current.includes(assignMoodleId)) {
+      current = current.filter((id: number) => id !== assignMoodleId);
+    } else {
+      current.push(assignMoodleId);
+    }
+    setPreference('hidden_assignments', JSON.stringify(current));
+    markSettingUpdatedAndSync(['hiddenAssignments']);
+    loadDashboardData();
+  }
 
   async function handleConnect() {
     if (!inputUsername.trim() || !inputIdNumber.trim() || !inputPassword.trim()) {
@@ -397,15 +447,41 @@ export default function DashboardScreen() {
       const trackedList = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
       setTrackedCourses(trackedList);
 
-      // Load assignments of active courses only
+      const hiddenStr = getPreference('hidden_assignments');
+      const completedStr = getPreference('completed_assignments');
+      const uncompletedStr = getPreference('uncompleted_assignments');
+      const hiddenIds: number[] = hiddenStr ? JSON.parse(hiddenStr) : [];
+      const completedIds: number[] = completedStr ? JSON.parse(completedStr) : [];
+      const uncompletedIds: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
+      // Load all assignments of active courses
       const cachedAssigns = db.getAllSync<any>(
         `SELECT a.*, c.name AS custom_course_name, c.color AS course_color 
          FROM assignments a 
          JOIN tracked_courses c ON a.course_moodle_id = c.moodle_id 
-         WHERE c.is_active = 1 AND a.status != ? 
-         ORDER BY CASE WHEN a.deadline IS NULL OR a.deadline = '' THEN 1 ELSE 0 END, a.deadline ASC`,
-        ['Submitted']
-      );
+         WHERE c.is_active = 1
+         ORDER BY CASE WHEN a.deadline IS NULL OR a.deadline = '' THEN 1 ELSE 0 END, a.deadline ASC`
+      ).map(a => {
+        let mod = { ...a };
+        const rawMoodleSubmitted = a.status === 'Submitted';
+        mod.rawMoodleSubmitted = rawMoodleSubmitted;
+
+        if (hiddenIds.includes(a.moodle_assign_id)) {
+          mod.isHidden = true;
+        }
+
+        let isCompleted = rawMoodleSubmitted;
+        if (rawMoodleSubmitted && uncompletedIds.includes(a.moodle_assign_id)) {
+          isCompleted = false;
+        } else if (!rawMoodleSubmitted && completedIds.includes(a.moodle_assign_id)) {
+          isCompleted = true;
+        }
+
+        mod.isCompleted = isCompleted;
+        mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
+        return mod;
+      });
+
       setAssignments(cachedAssigns);
 
       // Load meetings of active courses only
@@ -427,15 +503,8 @@ export default function DashboardScreen() {
       );
       setDashboardFiles(cachedFiles);
 
-      // Load completed count for active courses
-      const completedRow = db.getFirstSync<{ count: number }>(
-        `SELECT COUNT(*) as count 
-         FROM assignments a 
-         JOIN tracked_courses c ON a.course_moodle_id = c.moodle_id 
-         WHERE c.is_active = 1 AND a.status = ?`,
-        ['Submitted']
-      );
-      setCompletedCount(completedRow?.count || 0);
+      const computedCompletedCount = cachedAssigns.filter(a => a.status === 'Submitted' && !a.isHidden).length;
+      setCompletedCount(computedCompletedCount);
 
       // Load interested meetings preference
       const interestedStr = getPreference('interested_meetings') || '';
@@ -463,9 +532,25 @@ export default function DashboardScreen() {
   };
 
   async function handleDownloadFile(file: any) {
-    const res = await downloadMoodleFile(file);
-    if (!res.success && res.error) {
-      Alert.alert(t('download'), res.error);
+    if (!file?.file_url) {
+      Alert.alert(t('download') || (isRtl ? 'הורדה' : 'Download'), isRtl ? 'כתובת קובץ לא תקינה' : 'Invalid file URL');
+      return;
+    }
+    try {
+      const res = await downloadMoodleFile(file);
+      if (!res.success && res.error) {
+        try {
+          await Linking.openURL(file.file_url);
+        } catch (linkErr) {
+          Alert.alert(t('download') || (isRtl ? 'הורדה' : 'Download'), res.error);
+        }
+      }
+    } catch (err: any) {
+      try {
+        await Linking.openURL(file.file_url);
+      } catch (linkErr) {
+        Alert.alert(t('download') || (isRtl ? 'הורדה' : 'Download'), err?.message || 'Download failed');
+      }
     }
   }
 
@@ -698,7 +783,7 @@ export default function DashboardScreen() {
     // Find the closest future assignment
     const now = new Date();
     const nextAssignment = assignments.find(
-      (a) => a.deadline && new Date(a.deadline) > now
+      (a) => a.deadline && new Date(a.deadline) > now && a.status !== 'Submitted' && !a.isHidden
     );
 
     let timeColor: string = theme.danger;
@@ -730,10 +815,25 @@ export default function DashboardScreen() {
 
     const filteredAssignments = assignments.filter((a) => {
       const cName = a.custom_course_name || a.course_name;
-      return (
+      const isSearchMatch = 
         a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cName.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+        cName.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (!isSearchMatch) return false;
+
+      const isHidden = a.isHidden;
+      const isCompleted = a.status === 'Submitted';
+      const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
+
+      if (isHidden && filterHidden) return true;
+      if (!isHidden && isCompleted && filterCompleted) return true;
+      
+      if (!isHidden && !isCompleted) {
+        if (hasDeadlinePassed && filterPast) return true;
+        if (!hasDeadlinePassed && filterPending) return true;
+      }
+
+      return false;
     }).sort((a, b) => {
       // Overdue at the bottom
       const aHours = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : Infinity;
@@ -745,8 +845,11 @@ export default function DashboardScreen() {
       return 0; // maintain SQL order
     });
 
-    const totalTasks = completedCount + assignments.length;
-    const progressPercent = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
+    const visibleAssignments = assignments.filter((a) => !a.isHidden);
+    const totalTasks = visibleAssignments.length;
+    const currentCompletedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+    const pendingTasksCount = visibleAssignments.filter((a) => a.status !== 'Submitted').length;
+    const progressPercent = totalTasks > 0 ? (currentCompletedCount / totalTasks) * 100 : 0;
 
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -768,7 +871,7 @@ export default function DashboardScreen() {
               {isRtl ? 'התקדמות מטלות' : 'Task Progress'}
             </Text>
             <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
-              {completedCount} / {totalTasks} {isRtl ? 'הושלמו' : 'completed'}
+              {currentCompletedCount} / {totalTasks} {isRtl ? 'הושלמו' : 'completed'}
             </Text>
           </View>
           <View style={{ height: 8, backgroundColor: theme.border, borderRadius: 4, overflow: 'hidden', flexDirection: isRtl ? 'row-reverse' : 'row' }}>
@@ -780,13 +883,13 @@ export default function DashboardScreen() {
           {/* Quick Stats Widget */}
           <View style={[styles.statsRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
             <View style={[styles.statCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1 }]}>
-              <Text style={[styles.statValue, { color: theme.primary }]}>{assignments.length}</Text>
+              <Text style={[styles.statValue, { color: theme.primary }]}>{pendingTasksCount}</Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                {isRtl ? 'מטלות פתוחות' : 'Pending Tasks'}
+                {isRtl ? 'מטלות לביצוע' : 'To Do'}
               </Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderWidth: 1 }]}>
-              <Text style={[styles.statValue, { color: theme.secondary }]}>{completedCount}</Text>
+              <Text style={[styles.statValue, { color: theme.secondary }]}>{currentCompletedCount}</Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
                 {isRtl ? 'מטלות שהוגשו' : 'Completed'}
               </Text>
@@ -802,126 +905,316 @@ export default function DashboardScreen() {
           </View>
 
           {/* Next Assignment Banner */}
-          {nextAssignment && (
-            <View style={{ marginBottom: 16 }}>
-              <Pressable
-                style={[styles.nextAssignmentBanner, { backgroundColor: theme.backgroundElement, borderColor: theme.primary, borderWidth: 1, padding: 16, borderRadius: 12 }]}
-                onPress={() => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  setExpandedAssignments((prev) => ({ ...prev, ['next_' + nextAssignment.id]: !prev['next_' + nextAssignment.id] }));
-                }}
-              >
-                <View style={{ flex: 1, alignItems: isRtl ? 'flex-end' : 'flex-start' }}>
-                  <Text style={[styles.nextAssignLabel, { color: theme.textSecondary }]}>
-                    {isRtl ? '🚀 המטלה הקרובה ביותר' : '🚀 Next Assignment'}
-                  </Text>
-                  <Text style={[styles.nextAssignTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
-                    {nextAssignment.name}
-                  </Text>
-                  <Text style={[styles.nextAssignCourse, { color: nextAssignment.course_color || theme.primary }]}>
-                    {nextAssignment.custom_course_name || nextAssignment.course_name}
-                  </Text>
-                </View>
-                <View style={{ alignItems: isRtl ? 'flex-start' : 'flex-end', justifyContent: 'center' }}>
-                  <Text style={[styles.nextAssignTime, { color: timeColor }]}>
-                    {nextAssignDeadlineText}
-                  </Text>
-                </View>
-              </Pressable>
-              {expandedAssignments[nextAssignment.id] && (() => {
-                let attachments: any[] = [];
-                try {
-                  attachments = typeof nextAssignment.attachments === 'string' ? JSON.parse(nextAssignment.attachments) : nextAssignment.attachments || [];
-                } catch (e) { attachments = []; }
-                
-                const relatedFiles = dashboardFiles.filter((f) => f.course_moodle_id === nextAssignment.course_moodle_id && f.section_name === nextAssignment.section_name);
-                const relatedAssignments = assignments.filter((assign) => assign.id !== nextAssignment.id && assign.course_moodle_id === nextAssignment.course_moodle_id && assign.section_name === nextAssignment.section_name);
+          {nextAssignment && (() => {
+            const isNextExpanded = !!expandedAssignments['next_' + nextAssignment.id];
+            const nextColor = nextAssignment.course_color || theme.primary;
+            const nextCourseName = nextAssignment.custom_course_name || nextAssignment.course_name;
+            const isNextDone = nextAssignment.status === 'Submitted';
+            let nextAttachments: any[] = [];
+            try {
+              nextAttachments = typeof nextAssignment.attachments === 'string'
+                ? JSON.parse(nextAssignment.attachments)
+                : nextAssignment.attachments || [];
+            } catch (e) { nextAttachments = []; }
 
-                return (
-                  <View style={[styles.dashboardAccordion, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderTopWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 }]}>
-                    {attachments.map((att: any, idx: number) => {
-                      const displayFileName = att.fileName ? att.fileName : (isRtl ? 'קובץ מצורף' : 'Attachment');
-                      return (
-                        <Pressable 
-                          key={`att-${idx}`} 
-                          style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
-                          onPress={() => att.fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: att.fileUrl, mime_type: att.mimeType })}
-                        >
-                          <Text style={{ fontSize: 14 }}>{att.fileUrl ? '📄' : '🔗'}</Text>
-                          <Text style={[styles.accordionText, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                            {displayFileName}
+            const nextDeadlineBg = timeColor === theme.danger
+              ? 'rgba(239, 68, 68, 0.12)'
+              : timeColor === theme.warning
+                ? 'rgba(245, 158, 11, 0.12)'
+                : 'rgba(34, 197, 94, 0.12)';
+
+            return (
+              <View style={{ marginBottom: 14 }}>
+                <View
+                  style={[
+                    styles.unifiedAssignmentCard,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderColor: isNextDone ? theme.secondary : theme.primary,
+                      borderWidth: 1.5,
+                      opacity: isNextDone ? 0.75 : 1,
+                    }
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.accentStripe,
+                      {
+                        [isRtl ? 'right' : 'left']: 0,
+                        backgroundColor: isNextDone ? theme.secondary : theme.primary,
+                      }
+                    ]}
+                  />
+                  <Pressable
+                    style={[
+                      styles.cardHeaderRow,
+                      {
+                        flexDirection: isRtl ? 'row-reverse' : 'row',
+                        paddingLeft: isRtl ? 14 : 18,
+                        paddingRight: isRtl ? 18 : 14,
+                      }
+                    ]}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setExpandedAssignments((prev) => ({ ...prev, ['next_' + nextAssignment.id]: !isNextExpanded }));
+                    }}
+                  >
+                    <Pressable
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      onPress={() => handleToggleCompleted(nextAssignment.moodle_assign_id)}
+                      style={styles.checkboxArea}
+                    >
+                      <View
+                        style={[
+                          styles.checkboxCircle,
+                          {
+                            borderColor: isNextDone ? theme.secondary : theme.border,
+                            backgroundColor: isNextDone ? theme.secondary : 'transparent',
+                          }
+                        ]}
+                      >
+                        {isNextDone && <Text style={styles.checkmarkIcon}>✓</Text>}
+                      </View>
+                    </Pressable>
+
+                    <View style={[styles.cardContent, { alignItems: isRtl ? 'flex-end' : 'flex-start' }]}>
+                      <View style={[styles.cardMetaRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                        <View style={[styles.urgencyBadge, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                          <Text style={[styles.urgencyBadgeText, { color: theme.primary }]}>
+                            {isRtl ? '🚀 הקרובה ביותר' : '🚀 Next Up'}
                           </Text>
-                        </Pressable>
-                      );
-                    })}
-                    
-                    {relatedAssignments.length > 0 && (
-                      <View style={{ padding: 8, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
-                        <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: 'bold', marginBottom: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                          {isRtl ? '📝 מטלות באותו נושא' : '📝 Assignments in this subject'}
-                        </Text>
-                        {relatedAssignments.map((ra) => (
-                          <View key={`ra-${ra.id}`} style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent', paddingVertical: 4 }]}>
-                            <Text style={{ fontSize: 14 }}>📝</Text>
-                            <Text style={[styles.accordionText, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                              {ra.name}
+                        </View>
+                        {nextCourseName ? (
+                          <View style={[styles.coursePill, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                            <View style={[styles.courseDot, { backgroundColor: nextColor }]} />
+                            <Text style={[styles.coursePillText, { color: theme.textSecondary }]} numberOfLines={1}>
+                              {nextCourseName}
                             </Text>
                           </View>
-                        ))}
+                        ) : null}
+                        {nextAssignDeadlineText ? (
+                          <View style={[styles.urgencyBadge, { backgroundColor: nextDeadlineBg }]}>
+                            <Text style={[styles.urgencyBadgeText, { color: timeColor }]}>
+                              {nextAssignDeadlineText}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
-                    )}
-                    
-                    {relatedFiles.length > 0 && (
-                      <View style={{ padding: 8, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
-                        <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: 'bold', marginBottom: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                          {isRtl ? '📁 קבצים באותו נושא' : '📁 Files in this subject'}
+
+                      <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        <Text
+                          style={[
+                            styles.assignmentTitle,
+                            {
+                              color: isNextDone ? theme.textSecondary : theme.text,
+                              textDecorationLine: isNextDone ? 'line-through' : 'none',
+                              textAlign: isRtl ? 'right' : 'left',
+                            }
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {nextAssignment.name}
                         </Text>
-                        {relatedFiles.map((rf, idx) => (
-                          <Pressable 
-                            key={`rf-${idx}`} 
-                            style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent', paddingVertical: 4 }]}
-                            onPress={() => handleDownloadFile({ file_name: rf.file_name, file_url: rf.file_url, mime_type: rf.mime_type })}
+                        {isNextDone && !nextAssignment.rawMoodleSubmitted && (
+                          <View style={styles.tagNotSubmitted}>
+                            <Text style={styles.tagNotSubmittedText}>
+                              {isRtl ? 'לא הוגש' : 'Not submitted'}
+                            </Text>
+                          </View>
+                        )}
+                        {!isNextDone && nextAssignment.rawMoodleSubmitted && (
+                          <View style={styles.tagSubmitted}>
+                            <Text style={styles.tagSubmittedText}>
+                              {isRtl ? 'הוגש' : 'Submitted'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    <Text style={[styles.chevronText, { color: theme.textSecondary }]}>
+                      {isNextExpanded ? '▲' : '▼'}
+                    </Text>
+                  </Pressable>
+
+                  {isNextExpanded && (
+                    <View style={[styles.cardDrawer, { borderTopColor: theme.border }]}>
+                      {nextAttachments.length > 0 && (
+                        <View style={styles.attachmentsContainer}>
+                          <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                            {t('attachments') || (isRtl ? 'קבצים מצורפים' : 'Attachments')}
+                          </Text>
+                          <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                            {nextAttachments.map((att: any, idx: number) => {
+                              const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
+                              const fileUrl = att.url || att.fileUrl || att.fileurl;
+                              const mimeType = att.mimeType || att.mimetype;
+                              return (
+                                <Pressable
+                                  key={`att-next-${idx}`}
+                                  style={[styles.attachmentChip, { backgroundColor: theme.background, borderColor: theme.border }]}
+                                  onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
+                                >
+                                  <Text style={{ fontSize: 13 }}>{fileUrl ? '📄' : '🔗'}</Text>
+                                  <Text style={[styles.attachmentText, { color: theme.text }]} numberOfLines={1}>
+                                    {displayFileName}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+
+                      <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                        {(!isNextDone && !nextAssignment.rawMoodleSubmitted && nextAssignment.link) ? (
+                          <Pressable
+                            style={[styles.actionPrimaryBtn, { backgroundColor: theme.primary, flex: 1 }]}
+                            onPress={() => Linking.openURL(nextAssignment.link)}
                           >
-                            <Text style={{ fontSize: 14 }}>📄</Text>
-                            <Text style={[styles.accordionText, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                              {rf.file_name}
+                            <Text style={styles.actionPrimaryBtnText}>
+                              {t('submit_assignment') || (isRtl ? 'הגש ↗' : 'Submit ↗')}
                             </Text>
                           </Pressable>
-                        ))}
-                      </View>
-                    )}
-                    
-                    {attachments.length === 0 && relatedAssignments.length === 0 && relatedFiles.length === 0 && (
-                      <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: 'center', padding: 8 }}>
-                        {isRtl ? 'אין תוכן נוסף בנושא זה.' : 'No additional content in this subject.'}
-                      </Text>
-                    )}
-                    
-                    <Pressable
-                      style={[styles.goToCourseBtn, { borderColor: theme.primary }]}
-                      onPress={() => {
-                        setActiveCourseId(nextAssignment.course_moodle_id);
-                        setActiveTab('courses');
-                      }}
-                    >
-                      <Text style={[styles.goToCourseBtnText, { color: theme.primary }]}>
-                        {isRtl ? 'עבור לדף הקורס' : 'Go to Course Page'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                );
-              })()}
-            </View>
-          )}
+                        ) : null}
 
-          {/* Search Bar */}
+                        <Pressable
+                          style={[
+                            styles.actionMenuBtn,
+                            {
+                              borderColor: openMenuAssignId === ('next_' + nextAssignment.id) ? theme.primary : theme.border,
+                              backgroundColor: openMenuAssignId === ('next_' + nextAssignment.id) ? (theme.primary + '15') : theme.background,
+                              flexDirection: isRtl ? 'row-reverse' : 'row',
+                            }
+                          ]}
+                          onPress={() => {
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setOpenMenuAssignId(openMenuAssignId === ('next_' + nextAssignment.id) ? null : ('next_' + nextAssignment.id));
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, color: openMenuAssignId === ('next_' + nextAssignment.id) ? theme.primary : theme.text }}>⋯</Text>
+                          <Text style={[styles.actionMenuBtnText, { color: openMenuAssignId === ('next_' + nextAssignment.id) ? theme.primary : theme.text }]}>
+                            {t('more_actions') || (isRtl ? 'אפשרויות' : 'Options')}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      {openMenuAssignId === ('next_' + nextAssignment.id) && (
+                        <View style={[styles.mobileMenuCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                          <Pressable
+                            style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                            onPress={() => {
+                              handleToggleCompleted(nextAssignment.moodle_assign_id);
+                              setOpenMenuAssignId(null);
+                            }}
+                          >
+                            <Text style={{ fontSize: 14 }}>{isNextDone ? '↺' : '✓'}</Text>
+                            <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                              {isNextDone
+                                ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do')
+                                : (isRtl ? 'סמן כבוצע' : 'Mark as Done')}
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                            onPress={() => {
+                              setActiveCourseId(nextAssignment.course_moodle_id);
+                              setActiveTab('courses');
+                              setOpenMenuAssignId(null);
+                            }}
+                          >
+                            <Text style={{ fontSize: 14 }}>📚</Text>
+                            <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                              {isRtl ? 'עבור לדף הקורס' : 'Go to Course'}
+                            </Text>
+                          </Pressable>
+
+                          {nextAssignment.link ? (
+                            <Pressable
+                              style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                              onPress={() => {
+                                Linking.openURL(nextAssignment.link);
+                                setOpenMenuAssignId(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 14 }}>🌐</Text>
+                              <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                                {isRtl ? 'פתח במודל' : 'Open in Moodle'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
+
+                          <Pressable
+                            style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent' }]}
+                            onPress={() => {
+                              handleToggleHidden(nextAssignment.moodle_assign_id);
+                              setOpenMenuAssignId(null);
+                            }}
+                          >
+                            <Text style={{ fontSize: 14 }}>👁️</Text>
+                            <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                              {nextAssignment.isHidden ? (isRtl ? 'בטל הסתרת מטלה' : 'Unhide Assignment') : (isRtl ? 'הסתר מטלה' : 'Hide Assignment')}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </View>
+            );
+          })()}
+
           <TextInput
-            style={[styles.searchInput, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', marginTop: nextAssignment ? 20 : 8, marginBottom: 16 }]}
+            style={[styles.searchInput, { borderColor: theme.border, color: theme.text, textAlign: isRtl ? 'right' : 'left', marginTop: nextAssignment ? 20 : 8, marginBottom: 8 }]}
             placeholder={isRtl ? 'חפש מטלות או קורסים...' : 'Search assignments or courses...'}
             placeholderTextColor={theme.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          
+          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16, justifyContent: 'center' }}>
+            <Pressable
+              onPress={() => setFilterPending(!filterPending)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <View style={[styles.checkbox, { width: 16, height: 16, borderRadius: 4, borderColor: theme.primary, backgroundColor: filterPending ? theme.primary : 'transparent' }]}>
+                {filterPending && <Text style={{ color: '#fff', fontSize: 10, textAlign: 'center' }}>✓</Text>}
+              </View>
+              <Text style={{ color: theme.text, fontSize: 12 }}>{isRtl ? 'לביצוע' : 'To Do'}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilterPast(!filterPast)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <View style={[styles.checkbox, { width: 16, height: 16, borderRadius: 4, borderColor: theme.primary, backgroundColor: filterPast ? theme.primary : 'transparent' }]}>
+                {filterPast && <Text style={{ color: '#fff', fontSize: 10, textAlign: 'center' }}>✓</Text>}
+              </View>
+              <Text style={{ color: theme.text, fontSize: 12 }}>{isRtl ? 'עברו' : 'Past'}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilterCompleted(!filterCompleted)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <View style={[styles.checkbox, { width: 16, height: 16, borderRadius: 4, borderColor: theme.primary, backgroundColor: filterCompleted ? theme.primary : 'transparent' }]}>
+                {filterCompleted && <Text style={{ color: '#fff', fontSize: 10, textAlign: 'center' }}>✓</Text>}
+              </View>
+              <Text style={{ color: theme.text, fontSize: 12 }}>{isRtl ? 'הושלמו' : 'Completed'}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilterHidden(!filterHidden)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <View style={[styles.checkbox, { width: 16, height: 16, borderRadius: 4, borderColor: theme.primary, backgroundColor: filterHidden ? theme.primary : 'transparent' }]}>
+                {filterHidden && <Text style={{ color: '#fff', fontSize: 10, textAlign: 'center' }}>✓</Text>}
+              </View>
+              <Text style={{ color: theme.text, fontSize: 12 }}>{isRtl ? 'מוסתרים' : 'Hidden'}</Text>
+            </Pressable>
+          </View>
 
           <Text style={[styles.sectionHeading, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
             {t('pending_tasks')} ({filteredAssignments.length})
@@ -966,130 +1259,254 @@ export default function DashboardScreen() {
                 }
               }
 
-              const isExpanded = expandedAssignments[a.id] ?? false;
-              const relatedFiles = dashboardFiles.filter((f) => f.course_moodle_id === a.course_moodle_id && f.section_name === a.section_name);
-              const relatedMeetings = meetings.filter((m) => m.course_moodle_id === a.course_moodle_id);
+              const isExpanded = !!expandedAssignments[a.id];
+              const isDone = a.status === 'Submitted';
+              let attachments: any[] = [];
+              try {
+                attachments = typeof a.attachments === 'string' ? JSON.parse(a.attachments) : a.attachments || [];
+              } catch (e) { attachments = []; }
+
+              const deadlineBg = deadlineColor === theme.danger
+                ? 'rgba(239, 68, 68, 0.12)'
+                : deadlineColor === theme.warning
+                  ? 'rgba(245, 158, 11, 0.12)'
+                  : 'rgba(100, 116, 139, 0.1)';
 
               return (
-                <View key={a.id} style={{ marginBottom: 8 }}>
-                  <Pressable
+                <View key={a.id} style={{ marginBottom: 10 }}>
+                  <View
                     style={[
-                      styles.assignmentCard,
+                      styles.unifiedAssignmentCard,
                       {
                         backgroundColor: theme.backgroundElement,
-                        borderLeftWidth: isRtl ? 0 : 4,
-                        borderRightWidth: isRtl ? 4 : 0,
-                        borderLeftColor: isRtl ? 'transparent' : cColor,
-                        borderRightColor: isRtl ? cColor : 'transparent',
-                        flexDirection: isRtl ? 'row-reverse' : 'row',
-                      },
+                        borderColor: isDone ? (theme.secondary + '40') : theme.border,
+                        opacity: isDone ? 0.75 : 1,
+                      }
                     ]}
-                    onPress={() => {
-                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                      setExpandedAssignments((prev) => ({ ...prev, [a.id]: !isExpanded }));
-                    }}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.courseTag, { color: cColor, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{cName}</Text>
-                      <Text style={[styles.assignName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
-                      <Text style={{ color: deadlineColor, fontSize: 12, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                        {deadlineText}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8 }}>
-                      <View style={[styles.statusBadge, { backgroundColor: a.status === 'Submitted' ? theme.secondary : theme.primary }]}>
-                        <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
-                          {a.status === 'Submitted' ? (isRtl ? 'הוגש' : 'Submitted') : (isRtl ? 'מטלה' : 'Assigned')}
-                        </Text>
+                    <View
+                      style={[
+                        styles.accentStripe,
+                        {
+                          [isRtl ? 'right' : 'left']: 0,
+                          backgroundColor: isDone ? theme.secondary : cColor,
+                        }
+                      ]}
+                    />
+
+                    <Pressable
+                      style={[
+                        styles.cardHeaderRow,
+                        {
+                          flexDirection: isRtl ? 'row-reverse' : 'row',
+                          paddingLeft: isRtl ? 14 : 18,
+                          paddingRight: isRtl ? 18 : 14,
+                        }
+                      ]}
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setExpandedAssignments((prev) => ({ ...prev, [a.id]: !isExpanded }));
+                      }}
+                    >
+                      <Pressable
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        onPress={() => handleToggleCompleted(a.moodle_assign_id)}
+                        style={styles.checkboxArea}
+                      >
+                        <View
+                          style={[
+                            styles.checkboxCircle,
+                            {
+                              borderColor: isDone ? theme.secondary : theme.border,
+                              backgroundColor: isDone ? theme.secondary : 'transparent',
+                            }
+                          ]}
+                        >
+                          {isDone && <Text style={styles.checkmarkIcon}>✓</Text>}
+                        </View>
+                      </Pressable>
+
+                      <View style={[styles.cardContent, { alignItems: isRtl ? 'flex-end' : 'flex-start' }]}>
+                        <View style={[styles.cardMetaRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                          {cName ? (
+                            <View style={[styles.coursePill, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              <View style={[styles.courseDot, { backgroundColor: cColor }]} />
+                              <Text style={[styles.coursePillText, { color: theme.textSecondary }]} numberOfLines={1}>
+                                {cName}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          {deadlineText ? (
+                            <View style={[styles.urgencyBadge, { backgroundColor: deadlineBg }]}>
+                              <Text style={[styles.urgencyBadgeText, { color: deadlineColor }]}>
+                                {deadlineText}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
+                          <Text
+                            style={[
+                              styles.assignmentTitle,
+                              {
+                                color: isDone ? theme.textSecondary : theme.text,
+                                textDecorationLine: isDone ? 'line-through' : 'none',
+                                textAlign: isRtl ? 'right' : 'left',
+                              }
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {a.name}
+                          </Text>
+                          {isDone && !a.rawMoodleSubmitted && (
+                            <View style={styles.tagNotSubmitted}>
+                              <Text style={styles.tagNotSubmittedText}>
+                                {isRtl ? 'לא הוגש' : 'Not submitted'}
+                              </Text>
+                            </View>
+                          )}
+                          {!isDone && a.rawMoodleSubmitted && (
+                            <View style={styles.tagSubmitted}>
+                              <Text style={styles.tagSubmittedText}>
+                                {isRtl ? 'הוגש' : 'Submitted'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
-                      <Text style={{ color: theme.textSecondary, fontSize: 14, paddingHorizontal: 4 }}>
+
+                      <Text style={[styles.chevronText, { color: theme.textSecondary }]}>
                         {isExpanded ? '▲' : '▼'}
                       </Text>
-                    </View>
-                  </Pressable>
+                    </Pressable>
 
-                  {isExpanded && (() => {
-                    let attachments: any[] = [];
-                    try {
-                      attachments = typeof a.attachments === 'string' ? JSON.parse(a.attachments) : a.attachments || [];
-                    } catch (e) { attachments = []; }
-                    
-                    const relatedAssignments = assignments.filter((assign) => assign.id !== a.id && assign.course_moodle_id === a.course_moodle_id && assign.section_name === a.section_name);
-                    
-                    return (
-                      <View style={[styles.dashboardAccordion, { backgroundColor: theme.backgroundElement, borderColor: theme.border, borderTopWidth: 0 }]}>
-                        {attachments.map((att: any, idx: number) => {
-                          const displayFileName = att.fileName ? att.fileName : (isRtl ? 'קובץ מצורף' : 'Attachment');
-                          return (
-                            <Pressable 
-                              key={`att-${idx}`} 
-                              style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
-                              onPress={() => att.fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: att.fileUrl, mime_type: att.mimeType })}
+                    {isExpanded && (
+                      <View style={[styles.cardDrawer, { borderTopColor: theme.border }]}>
+                        {attachments.length > 0 && (
+                          <View style={styles.attachmentsContainer}>
+                            <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                              {t('attachments') || (isRtl ? 'קבצים מצורפים' : 'Attachments')}
+                            </Text>
+                            <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              {attachments.map((att: any, idx: number) => {
+                                const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
+                                const fileUrl = att.url || att.fileUrl || att.fileurl;
+                                const mimeType = att.mimeType || att.mimetype;
+                                return (
+                                  <Pressable
+                                    key={`att-${idx}`}
+                                    style={[styles.attachmentChip, { backgroundColor: theme.background, borderColor: theme.border }]}
+                                    onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
+                                  >
+                                    <Text style={{ fontSize: 13 }}>{fileUrl ? '📄' : '🔗'}</Text>
+                                    <Text style={[styles.attachmentText, { color: theme.text }]} numberOfLines={1}>
+                                      {displayFileName}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                          {(!isDone && !a.rawMoodleSubmitted && a.link) ? (
+                            <Pressable
+                              style={[styles.actionPrimaryBtn, { backgroundColor: theme.primary, flex: 1 }]}
+                              onPress={() => Linking.openURL(a.link)}
                             >
-                              <Text style={{ fontSize: 14 }}>{att.fileUrl ? '📄' : '🔗'}</Text>
-                              <Text style={[styles.accordionText, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                                {displayFileName}
+                              <Text style={styles.actionPrimaryBtnText}>
+                                {t('submit_assignment') || (isRtl ? 'הגש ↗' : 'Submit ↗')}
                               </Text>
                             </Pressable>
-                          );
-                        })}
-                        
-                        {relatedAssignments.length > 0 && (
-                          <View style={{ padding: 8, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
-                            <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: 'bold', marginBottom: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                              {isRtl ? '📝 מטלות באותו נושא' : '📝 Assignments in this subject'}
+                          ) : null}
+
+                          <Pressable
+                            style={[
+                              styles.actionMenuBtn,
+                              {
+                                borderColor: openMenuAssignId === String(a.id) ? theme.primary : theme.border,
+                                backgroundColor: openMenuAssignId === String(a.id) ? (theme.primary + '15') : theme.background,
+                                flexDirection: isRtl ? 'row-reverse' : 'row',
+                              }
+                            ]}
+                            onPress={() => {
+                              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                              setOpenMenuAssignId(openMenuAssignId === String(a.id) ? null : String(a.id));
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, color: openMenuAssignId === String(a.id) ? theme.primary : theme.text }}>⋯</Text>
+                            <Text style={[styles.actionMenuBtnText, { color: openMenuAssignId === String(a.id) ? theme.primary : theme.text }]}>
+                              {t('more_actions') || (isRtl ? 'אפשרויות' : 'Options')}
                             </Text>
-                            {relatedAssignments.map((ra) => (
-                              <View key={`ra-${ra.id}`} style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent', paddingVertical: 4 }]}>
-                                <Text style={{ fontSize: 14 }}>📝</Text>
-                                <Text style={[styles.accordionText, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                                  {ra.name}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                        
-                        {relatedFiles.length > 0 && (
-                          <View style={{ padding: 8, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
-                            <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: 'bold', marginBottom: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                              {isRtl ? '📁 קבצים באותו נושא' : '📁 Files in this subject'}
-                            </Text>
-                            {relatedFiles.map((rf, idx) => (
-                              <Pressable 
-                                key={`rf-${idx}`} 
-                                style={[styles.accordionItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent', paddingVertical: 4 }]}
-                                onPress={() => handleDownloadFile({ file_name: rf.file_name, file_url: rf.file_url, mime_type: rf.mime_type })}
+                          </Pressable>
+                        </View>
+
+                        {openMenuAssignId === String(a.id) && (
+                          <View style={[styles.mobileMenuCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                            <Pressable
+                              style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                              onPress={() => {
+                                handleToggleCompleted(a.moodle_assign_id);
+                                setOpenMenuAssignId(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 14 }}>{isDone ? '↺' : '✓'}</Text>
+                              <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                                {isDone
+                                  ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do')
+                                  : (isRtl ? 'סמן כבוצע' : 'Mark as Done')}
+                              </Text>
+                            </Pressable>
+
+                            <Pressable
+                              style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                              onPress={() => {
+                                setActiveCourseId(a.course_moodle_id);
+                                setActiveTab('courses');
+                                setOpenMenuAssignId(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 14 }}>📚</Text>
+                              <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                                {isRtl ? 'עבור לדף הקורס' : 'Go to Course'}
+                              </Text>
+                            </Pressable>
+
+                            {a.link ? (
+                              <Pressable
+                                style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
+                                onPress={() => {
+                                  Linking.openURL(a.link);
+                                  setOpenMenuAssignId(null);
+                                }}
                               >
-                                <Text style={{ fontSize: 14 }}>📄</Text>
-                                <Text style={[styles.accordionText, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]} numberOfLines={1}>
-                                  {rf.file_name}
+                                <Text style={{ fontSize: 14 }}>🌐</Text>
+                                <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                                  {isRtl ? 'פתח במודל' : 'Open in Moodle'}
                                 </Text>
                               </Pressable>
-                            ))}
+                            ) : null}
+
+                            <Pressable
+                              style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: 'transparent' }]}
+                              onPress={() => {
+                                handleToggleHidden(a.moodle_assign_id);
+                                setOpenMenuAssignId(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 14 }}>👁️</Text>
+                              <Text style={[styles.mobileMenuItemText, { color: theme.text }]}>
+                                {a.isHidden ? (isRtl ? 'בטל הסתרת מטלה' : 'Unhide Assignment') : (isRtl ? 'הסתר מטלה' : 'Hide Assignment')}
+                              </Text>
+                            </Pressable>
                           </View>
                         )}
-
-                        {attachments.length === 0 && relatedAssignments.length === 0 && relatedFiles.length === 0 && (
-                          <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: 'center', padding: 8 }}>
-                            {isRtl ? 'אין תוכן נוסף בנושא זה.' : 'No additional content in this subject.'}
-                          </Text>
-                        )}
-
-                        <Pressable
-                          style={[styles.goToCourseBtn, { borderColor: theme.primary }]}
-                          onPress={() => {
-                            setActiveCourseId(a.course_moodle_id);
-                            setActiveTab('courses');
-                          }}
-                        >
-                        <Text style={[styles.goToCourseBtnText, { color: theme.primary }]}>
-                          {isRtl ? 'עבור לדף הקורס' : 'Go to Course Page'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  );
-                })()}
+                      </View>
+                    )}
+                  </View>
                 </View>
               );
             })
@@ -1814,47 +2231,213 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'center',
   },
-  dashboardAccordion: {
-    borderRadius: 14,
+  unifiedAssignmentCard: {
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 12,
-    gap: 8,
-    marginTop: -8,
-    marginBottom: 8,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  accordionItem: {
+  accentStripe: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 4,
+    zIndex: 2,
+  },
+  cardHeaderRow: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
+  },
+  checkboxArea: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 2,
+  },
+  checkboxCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkmarkIcon: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginTop: -2,
+  },
+  cardContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  cardMetaRow: {
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  coursePill: {
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: '65%',
+  },
+  courseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  coursePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  urgencyBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  urgencyBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  assignmentTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  chevronText: {
+    fontSize: 11,
+    paddingHorizontal: 4,
+  },
+  cardDrawer: {
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  drawerSectionLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  attachmentsContainer: {
+    gap: 4,
+  },
+  attachmentsWrap: {
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  attachmentChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 0.5,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  attachmentText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  cardActionBar: {
+    alignItems: 'center',
     gap: 8,
   },
-  accordionText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  accordionBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  accordionBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  goToCourseBtn: {
-    borderWidth: 1,
+  actionPrimaryBtn: {
+    flex: 3,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 10,
-    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
   },
-  goToCourseBtnText: {
-    fontWeight: 'bold',
+  actionPrimaryBtnText: {
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  actionSecondaryBtn: {
+    flex: 2,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionSecondaryBtnText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  actionIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionMenuBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  actionMenuBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  mobileMenuCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  mobileMenuItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    gap: 10,
+    borderBottomWidth: 0.5,
+  },
+  mobileMenuItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tagNotSubmitted: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  tagNotSubmittedText: {
+    color: '#f59e0b',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tagSubmitted: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  tagSubmittedText: {
+    color: '#10b981',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

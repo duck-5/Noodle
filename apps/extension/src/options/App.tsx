@@ -646,6 +646,55 @@ export default function App() {
     await setSettings(updated);
   }
 
+  async function handleToggleCompleted(assignmentId: number) {
+    if (!settings) return;
+    const rawAssignments = syncResult?.assignments || [];
+    const assign = rawAssignments.find(x => x.id === assignmentId);
+    const isMoodleSubmitted = assign ? assign.status === 'Submitted' : false;
+
+    const currentCompleted = settings.completedAssignments || [];
+    const currentUncompleted = settings.uncompletedAssignments || [];
+
+    let updatedCompleted = [...currentCompleted];
+    let updatedUncompleted = [...currentUncompleted];
+
+    if (isMoodleSubmitted) {
+      if (currentUncompleted.includes(assignmentId)) {
+        updatedUncompleted = currentUncompleted.filter(id => id !== assignmentId);
+      } else {
+        updatedUncompleted.push(assignmentId);
+      }
+    } else {
+      if (currentCompleted.includes(assignmentId)) {
+        updatedCompleted = currentCompleted.filter(id => id !== assignmentId);
+      } else {
+        updatedCompleted.push(assignmentId);
+      }
+    }
+
+    const updated = {
+      ...settings,
+      completedAssignments: updatedCompleted,
+      uncompletedAssignments: updatedUncompleted,
+    };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
+  async function handleToggleHidden(assignmentId: number) {
+    if (!settings) return;
+    const currentHidden = settings.hiddenAssignments || [];
+    let updatedHidden;
+    if (currentHidden.includes(assignmentId)) {
+      updatedHidden = currentHidden.filter(id => id !== assignmentId);
+    } else {
+      updatedHidden = [...currentHidden, assignmentId];
+    }
+    const updated = { ...settings, hiddenAssignments: updatedHidden };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
   const getCourseColor = (courseId: number) => {
     return settings?.coursesColorMap[courseId] || '#6366f1';
   };
@@ -884,7 +933,30 @@ export default function App() {
   }
 
   // Main Dashboard View (OnboardingStep === 3)
-  const assignmentsList = syncResult?.assignments || [];
+  const rawAssignments = syncResult?.assignments || [];
+  const completedIds = settings?.completedAssignments || [];
+  const uncompletedIds = settings?.uncompletedAssignments || [];
+
+  const assignmentsList = rawAssignments.map(a => {
+    const isMoodleSubmitted = a.status === 'Submitted';
+    const isManuallyCompleted = completedIds.includes(a.id);
+    const isManuallyToDo = uncompletedIds.includes(a.id);
+
+    let isCompleted = isMoodleSubmitted;
+    if (isMoodleSubmitted && isManuallyToDo) {
+      isCompleted = false;
+    } else if (!isMoodleSubmitted && isManuallyCompleted) {
+      isCompleted = true;
+    }
+
+    return {
+      ...a,
+      isMoodleSubmitted,
+      isCompleted,
+      status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
+    };
+  });
+
   const filesList = syncResult?.files || [];
   const meetingsList = syncResult?.meetings || [];
 
@@ -997,6 +1069,8 @@ export default function App() {
                 setActiveTab('courses');
               }}
               syncResult={syncResult}
+              onToggleCompleted={handleToggleCompleted}
+              onToggleHidden={handleToggleHidden}
             />
           )}
 
@@ -1014,6 +1088,8 @@ export default function App() {
               lang={currentLang}
               settings={settings}
               onToggleMeetingInterest={handleToggleMeetingInterest}
+              onToggleCompleted={handleToggleCompleted}
+              onToggleHidden={handleToggleHidden}
             />
           ) : activeTab === 'courses' && (
             <CoursesTab
@@ -1187,6 +1263,52 @@ const EyeOffIcon = () => (
   </svg>
 );
 
+const CheckIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const ExternalLinkIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
+  </svg>
+);
+
+const BookOpenIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+  </svg>
+);
+
+const FolderIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+const ChevronDownIcon = ({ size = 14, expanded = false }: { size?: number; expanded?: boolean }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{
+      transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+      transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+    }}
+  >
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+
 interface TabProps {
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, def: string) => string;
@@ -1211,6 +1333,8 @@ function DashboardTab({
   trackedCourseIds,
   onGoToCourse,
   syncResult,
+  onToggleCompleted,
+  onToggleHidden,
 }: {
   assignments: Assignment[];
   meetings: ZoomMeeting[];
@@ -1223,31 +1347,56 @@ function DashboardTab({
   trackedCourseIds: number[];
   onGoToCourse: (courseId: number) => void;
   syncResult: SyncResult | null;
+  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleHidden?: (assignmentId: number) => void;
 } & TabProps) {
   const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
+  const [menuOpenAssignId, setMenuOpenAssignId] = useState<any>(null);
+  const [isNextMenuOpen, setIsNextMenuOpen] = useState<boolean>(false);
 
-  const pendingAssigns = assignments.filter((a) => a.status !== 'Submitted');
+  const [filterPending, setFilterPending] = useState<boolean>(true);
+  const [filterPast, setFilterPast] = useState<boolean>(false);
+  const [filterHidden, setFilterHidden] = useState<boolean>(false);
+  const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
+
+  const visibleAssignments = assignments.filter(a => !settings?.hiddenAssignments?.includes(a.id));
+  const pendingAssigns = visibleAssignments.filter((a) => a.status !== 'Submitted');
   
+  const now = new Date();
+
   // Sort assignments by due date ascending
-  const sortedPendingAssigns = [...pendingAssigns].sort((a, b) => {
+  const sortedAssigns = [...assignments].sort((a, b) => {
     if (!a.deadline && !b.deadline) return 0;
     if (!a.deadline) return 1;
     if (!b.deadline) return -1;
     return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
   });
 
-  const filteredAssigns = sortedPendingAssigns.filter(
-    (a) =>
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.courseName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredAssigns = sortedAssigns.filter((a) => {
+    const isSearchMatch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          a.courseName.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!isSearchMatch) return false;
+
+    const isHidden = settings?.hiddenAssignments?.includes(a.id);
+    const isCompleted = a.status === 'Submitted';
+    const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
+
+    if (isHidden && filterHidden) return true;
+    if (!isHidden && isCompleted && filterCompleted) return true;
+    
+    if (!isHidden && !isCompleted) {
+      if (hasDeadlinePassed && filterPast) return true;
+      if (!hasDeadlinePassed && filterPending) return true;
+    }
+
+    return false;
+  });
 
   // Find the closest future assignment
-  const now = new Date();
-  const nextAssignment = sortedPendingAssigns.find(
-    (a) => a.deadline && new Date(a.deadline) > now
+  const nextAssignment = sortedAssigns.find(
+    (a) => a.deadline && new Date(a.deadline) > now && !settings?.hiddenAssignments?.includes(a.id) && a.status !== 'Submitted'
   );
 
   const greenThreshold = settings?.assignmentGreenDaysThreshold ?? 7;
@@ -1284,7 +1433,19 @@ function DashboardTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <div className="next-assign-info">
               <span className="next-assign-label">{t('next_assignment')}</span>
-              <span className="next-assign-title">{nextAssignment.name}</span>
+              <span className="next-assign-title">
+                {nextAssignment.name}
+                {(nextAssignment as any).isCompleted && !(nextAssignment as any).isMoodleSubmitted && (
+                  <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                    {t('not_submitted_tag')}
+                  </span>
+                )}
+                {!(nextAssignment as any).isCompleted && (nextAssignment as any).isMoodleSubmitted && (
+                  <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                    {t('submitted_tag')}
+                  </span>
+                )}
+              </span>
               <span className="next-assign-course" style={{ color: getCourseColor(nextAssignment.courseId) }}>
                 {getCourseDisplayName(nextAssignment.courseId, nextAssignment.courseName)}
               </span>
@@ -1325,16 +1486,18 @@ function DashboardTab({
                   }
                 </span>
               )}
-              <a
-                href={nextAssignment.link}
-                target="_blank"
-                rel="noreferrer"
-                className="primary-btn btn-sm"
-                onClick={(ev) => ev.stopPropagation()}
-                data-moodle-link="true"
-              >
-                {t('open_assignment')}
-              </a>
+              {!(nextAssignment as any).isCompleted && !(nextAssignment as any).isMoodleSubmitted && nextAssignment.link && (
+                <a
+                  href={nextAssignment.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="action-submit-btn"
+                  onClick={(ev) => ev.stopPropagation()}
+                  data-moodle-link="true"
+                >
+                  <span>{t('submit_assignment')}</span>
+                </a>
+              )}
             </div>
           </div>
 
@@ -1346,18 +1509,75 @@ function DashboardTab({
               textAlign: lang === 'he' ? 'right' : 'left'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h5 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                <strong>{lang === 'he' ? 'נושא' : 'Subject'}:</strong> {nextAssignment.sectionName || 'General'}
-              </h5>
-              <button
-                className="secondary-btn btn-sm"
-                onClick={() => onGoToCourse(nextAssignment.courseId)}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              >
-                🔗 {t('go_to_course')}
-              </button>
+            <div className="expanded-toolbar-row">
+              <div className="expanded-subject-info">
+                <span className="subject-pill">
+                  <FolderIcon size={13} />
+                  <span className="subject-label">{t('subject_label')}:</span>
+                  <span className="subject-val">{nextAssignment.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                </span>
+              </div>
+              <div className="expanded-actions-group">
+                <button
+                  className="card-action-btn card-action-btn-ghost"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setIsNextMenuOpen(!isNextMenuOpen);
+                  }}
+                  title={t('more_actions')}
+                >
+                  <span>⋯</span>
+                  <span>{t('more_actions')}</span>
+                </button>
+              </div>
             </div>
+
+            {isNextMenuOpen && (
+              <div className="card-revealed-menu" onClick={(ev) => ev.stopPropagation()}>
+                <button
+                  className={`card-action-btn ${(nextAssignment as any).isCompleted ? 'card-action-btn-completed' : 'card-action-btn-complete'}`}
+                  onClick={() => {
+                    onToggleCompleted && onToggleCompleted(nextAssignment.id);
+                    setIsNextMenuOpen(false);
+                  }}
+                >
+                  <CheckIcon size={13} />
+                  <span>{(nextAssignment as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                </button>
+                <button
+                  className="card-action-btn card-action-btn-ghost"
+                  onClick={() => {
+                    onGoToCourse(nextAssignment.courseId);
+                    setIsNextMenuOpen(false);
+                  }}
+                >
+                  <BookOpenIcon size={13} />
+                  <span>{t('go_to_course')}</span>
+                </button>
+                {nextAssignment.link && (
+                  <a
+                    href={nextAssignment.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="card-action-btn card-action-btn-ghost"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <ExternalLinkIcon size={13} />
+                    <span>{t('open_in_moodle')}</span>
+                  </a>
+                )}
+                <button
+                  className="card-action-btn card-action-btn-ghost"
+                  onClick={() => {
+                    onToggleHidden && onToggleHidden(nextAssignment.id);
+                    setIsNextMenuOpen(false);
+                  }}
+                >
+                  {settings?.hiddenAssignments?.includes(nextAssignment.id) ? <EyeIcon /> : <EyeOffIcon />}
+                  <span>{settings?.hiddenAssignments?.includes(nextAssignment.id) ? t('unhide_assignment') : t('hide_assignment')}</span>
+                </button>
+              </div>
+            )}
 
             {(() => {
               const subjectFiles = (syncResult?.files || []).filter(
@@ -1398,24 +1618,24 @@ function DashboardTab({
         </div>
         <div className="stat-card glass-panel border-left-secondary">
           <span className="stat-title">{t('completed_assignments')}</span>
-          <span className="stat-val">{assignments.filter((a) => a.status === 'Submitted').length}</span>
+          <span className="stat-val">{visibleAssignments.filter((a) => a.status === 'Submitted').length}</span>
         </div>
       </div>
 
-      {assignments.length > 0 && (
+      {visibleAssignments.length > 0 && (
         <div className="progress-container" style={{ marginBottom: '2rem', padding: '0 0.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             <span>{lang === 'he' ? 'התקדמות העונה' : 'Semester Progress'}</span>
-            <span>{Math.round((assignments.filter(a => a.status === 'Submitted').length / assignments.length) * 100)}%</span>
+            <span>{Math.round((visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) * 100)}%</span>
           </div>
           <div className="progress-bar-bg" style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
             <div 
               className="progress-bar-fill" 
               style={{ 
-                width: `${(assignments.filter(a => a.status === 'Submitted').length / assignments.length) * 100}%`,
+                width: `${(visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) * 100}%`,
                 height: '100%',
-                background: (assignments.filter(a => a.status === 'Submitted').length / assignments.length) >= 0.7 ? '#10b981' : 
-                            (assignments.filter(a => a.status === 'Submitted').length / assignments.length) >= 0.3 ? '#f59e0b' : 'var(--primary)',
+                background: (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.7 ? '#10b981' : 
+                            (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.3 ? '#f59e0b' : 'var(--primary)',
                 transition: 'width 0.5s ease-out'
               }}
             />
@@ -1436,6 +1656,24 @@ function DashboardTab({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem', fontSize: '0.85rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={filterPending} onChange={(e) => setFilterPending(e.target.checked)} />
+              {lang === 'he' ? 'לביצוע' : 'To Do'}
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={filterPast} onChange={(e) => setFilterPast(e.target.checked)} />
+              {lang === 'he' ? 'עברו' : 'Past'}
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={filterCompleted} onChange={(e) => setFilterCompleted(e.target.checked)} />
+              {lang === 'he' ? 'הושלמו' : 'Completed'}
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={filterHidden} onChange={(e) => setFilterHidden(e.target.checked)} />
+              {lang === 'he' ? 'מוסתרים' : 'Hidden'}
+            </label>
+          </div>
 
           <div className="assignments-list">
             {filteredAssigns.length === 0 ? (
@@ -1452,31 +1690,45 @@ function DashboardTab({
                   a.status
                 );
 
+                const isCompleted = a.status === 'Submitted';
+                const isHidden = settings?.hiddenAssignments?.includes(a.id);
+                const isExpanded = expandedAssignId === a.id;
+                const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
+
                 return (
                   <div
                     key={a.id}
-                    className={`assignment-card glass-panel clickable-card ${expandedAssignId === a.id ? 'expanded' : ''}`}
-                    style={{
-                      borderRight: `4px solid ${color}`,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'stretch',
-                      gap: '1rem'
-                    }}
+                    className={`assignment-card glass-panel clickable-card ${isExpanded ? 'expanded' : ''}`}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('a, button, input')) return;
-                      setExpandedAssignId(expandedAssignId === a.id ? null : a.id);
+                      setExpandedAssignId(isExpanded ? null : a.id);
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <div className="assignment-accent-bar" style={{ backgroundColor: color }} />
+
+                    <div className="assignment-card-header">
                       <div className="assign-main" style={{ textAlign: lang === 'he' ? 'right' : 'left' }}>
-                        <span className="assign-course-tag" style={{ color }}>
-                          {getCourseDisplayName(a.courseId, a.courseName)}
-                        </span>
-                        <h4 className="assign-name">{a.name}</h4>
+                        {courseDisplayName ? (
+                          <div className="assign-course-tag" style={{ color }}>
+                            <span className="assign-course-dot" style={{ backgroundColor: color }} />
+                            {courseDisplayName}
+                          </div>
+                        ) : null}
+                        <h4 className="assign-name">
+                          {a.name}
+                          {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
+                            <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                              {t('not_submitted_tag')}
+                            </span>
+                          )}
+                          {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
+                            <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                              {t('submitted_tag')}
+                            </span>
+                          )}
+                        </h4>
                         {a.attachments && a.attachments.length > 0 && (
-                          <div className="attachment-button-row" style={{ marginTop: '0.5rem' }}>
+                          <div className="attachment-button-row" style={{ marginTop: '0.4rem' }}>
                             {a.attachments.map((att, attIdx) => {
                               const downloadUrl = token
                                 ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
@@ -1497,41 +1749,112 @@ function DashboardTab({
                           </div>
                         )}
                       </div>
-                      <div className="assign-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+
+                      <div className="assign-meta">
                         <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                        <a
-                          href={a.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="action-icon-link"
-                          onClick={(ev) => ev.stopPropagation()}
-                          data-moodle-link="true"
+                        {!(a as any).isCompleted && !(a as any).isMoodleSubmitted && a.link && (
+                          <a
+                            href={a.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="action-submit-btn"
+                            onClick={(ev) => ev.stopPropagation()}
+                            data-moodle-link="true"
+                          >
+                            <span>{t('submit_assignment')}</span>
+                          </a>
+                        )}
+                        <button
+                          className="card-chevron-btn"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            setExpandedAssignId(isExpanded ? null : a.id);
+                          }}
+                          title={isExpanded ? (lang === 'he' ? 'צמצם' : 'Collapse') : (lang === 'he' ? 'הרחב' : 'Expand')}
                         >
-                          ↗️ {lang === 'he' ? 'פתח' : 'Open'}
-                        </a>
+                          <ChevronDownIcon size={14} expanded={isExpanded} />
+                        </button>
                       </div>
                     </div>
 
                     {/* Expanding subject (section) element */}
                     <div
-                      className={`expanded-subject-container ${expandedAssignId === a.id ? 'open' : ''}`}
+                      className={`expanded-subject-container ${isExpanded ? 'open' : ''}`}
                       onClick={(ev) => ev.stopPropagation()}
                       style={{
                         textAlign: lang === 'he' ? 'right' : 'left'
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <h5 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                          <strong>{lang === 'he' ? 'נושא' : 'Subject'}:</strong> {a.sectionName || 'General'}
-                        </h5>
-                        <button
-                          className="secondary-btn btn-sm"
-                          onClick={() => onGoToCourse(a.courseId)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                        >
-                          🔗 {t('go_to_course')}
-                        </button>
+                      <div className="expanded-toolbar-row">
+                        <div className="expanded-subject-info">
+                          <span className="subject-pill">
+                            <FolderIcon size={13} />
+                            <span className="subject-label">{t('subject_label')}:</span>
+                            <span className="subject-val">{a.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                          </span>
+                        </div>
+
+                        <div className="expanded-actions-group">
+                          <button
+                            className="card-action-btn card-action-btn-ghost"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setMenuOpenAssignId(menuOpenAssignId === a.id ? null : a.id);
+                            }}
+                            title={t('more_actions')}
+                          >
+                            <span>⋯</span>
+                            <span>{t('more_actions')}</span>
+                          </button>
+                        </div>
                       </div>
+
+                      {menuOpenAssignId === a.id && (
+                        <div className="card-revealed-menu" onClick={(ev) => ev.stopPropagation()}>
+                          <button
+                            className={`card-action-btn ${isCompleted ? 'card-action-btn-completed' : 'card-action-btn-complete'}`}
+                            onClick={() => {
+                              onToggleCompleted && onToggleCompleted(a.id);
+                              setMenuOpenAssignId(null);
+                            }}
+                          >
+                            <CheckIcon size={13} />
+                            <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                          </button>
+                          <button
+                            className="card-action-btn card-action-btn-ghost"
+                            onClick={() => {
+                              onGoToCourse(a.courseId);
+                              setMenuOpenAssignId(null);
+                            }}
+                          >
+                            <BookOpenIcon size={13} />
+                            <span>{t('go_to_course')}</span>
+                          </button>
+                          {a.link && (
+                            <a
+                              href={a.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="card-action-btn card-action-btn-ghost"
+                              style={{ textDecoration: 'none' }}
+                            >
+                              <ExternalLinkIcon size={13} />
+                              <span>{t('open_in_moodle')}</span>
+                            </a>
+                          )}
+                          <button
+                            className="card-action-btn card-action-btn-ghost"
+                            onClick={() => {
+                              onToggleHidden && onToggleHidden(a.id);
+                              setMenuOpenAssignId(null);
+                            }}
+                          >
+                            {isHidden ? <EyeIcon /> : <EyeOffIcon />}
+                            <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                          </button>
+                        </div>
+                      )}
 
                       {(() => {
                         const subjectFiles = (syncResult?.files || []).filter(
@@ -1539,17 +1862,17 @@ function DashboardTab({
                         );
                         if (subjectFiles.length === 0) return null;
                         return (
-                          <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
+                          <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
                             {subjectFiles.map((f, fIdx) => {
                               const downloadUrl = token
                                 ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
                                 : f.fileUrl;
                               return (
-                                <div key={fIdx} className="section-file-item" style={{ padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px' }}>
-                                  <span className="item-name" style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>📄 {f.fileName}</span>
+                                <div key={fIdx} className="section-file-item">
+                                  <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
                                   <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     {f.fileSize > 0 && (
-                                      <span className="file-size" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                      <span className="file-size" style={{ fontSize: '0.7rem' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
                                     )}
                                     <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
                                       {lang === 'he' ? 'הורדה 📥' : 'Download 📥'}
@@ -2441,6 +2764,8 @@ function CourseDetailView({
   lang,
   settings,
   onToggleMeetingInterest,
+  onToggleCompleted,
+  onToggleHidden,
 }: {
   courseId: number;
   assignments: Assignment[];
@@ -2452,6 +2777,8 @@ function CourseDetailView({
   lang: 'he' | 'en';
   settings: ExtensionSettings | null;
   onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
+  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleHidden?: (assignmentId: number) => void;
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
@@ -2899,7 +3226,19 @@ function CourseDetailView({
                                       <span className={`badge ${badgeClass}`}>{deadlineText}</span>
                                     )}
                                   </div>
-                                  <span className="item-name">{a.name}</span>
+                                  <span className="item-name">
+                                    {a.name}
+                                    {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
+                                      <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                                        {t('not_submitted_tag')}
+                                      </span>
+                                    )}
+                                    {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
+                                      <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                                        {t('submitted_tag')}
+                                      </span>
+                                    )}
+                                  </span>
                                   <div className="item-actions">
                                     <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
                                       {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
@@ -2963,7 +3302,19 @@ function CourseDetailView({
             <div className="sidebar-assignments-list">
               {sortedCourseAssigns.map((a) => (
                 <div key={a.id} className="sidebar-assign-card" style={{ borderLeft: `3px solid ${a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` }}>
-                  <h6>{a.name}</h6>
+                  <h6 style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                    {a.name}
+                    {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
+                      <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                        {t('not_submitted_tag')}
+                      </span>
+                    )}
+                    {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
+                      <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                        {t('submitted_tag')}
+                      </span>
+                    )}
+                  </h6>
                   <p className="assign-status">{t('status_label')}: {a.status}</p>
                   {a.status === 'Submitted' ? (
                     <p className="assign-deadline due-green" style={{ color: '#10b981' }}>
@@ -2998,6 +3349,20 @@ function CourseDetailView({
                       })}
                     </div>
                   )}
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
+                    >
+                      {a.status === 'Submitted' ? '❌ ' + t('mark_incomplete') : '✅ ' + t('mark_done')}
+                    </button>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleHidden && onToggleHidden(a.id)}
+                    >
+                      👁️‍🗨️ {lang === 'he' ? 'הסתר' : 'Hide'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

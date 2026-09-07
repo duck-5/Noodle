@@ -8,6 +8,8 @@ export interface TrackedValue<T> {
 
 export interface SharedSettings {
   hidden_assignments?: TrackedValue<number[]>;
+  completed_assignments?: TrackedValue<number[]>;
+  uncompleted_assignments?: TrackedValue<number[]>;
   theme?: TrackedValue<string>;
   // Allow arbitrary extra settings
   [key: string]: TrackedValue<any> | undefined;
