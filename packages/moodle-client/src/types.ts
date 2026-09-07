@@ -26,6 +26,7 @@ export interface Assignment {
   gradeMax: number | null;
   sectionName?: string;
   attachments?: Attachment[];
+  submittedFiles?: Attachment[];
 }
 
 export interface CourseFile {

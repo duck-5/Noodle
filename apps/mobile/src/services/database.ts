@@ -102,6 +102,11 @@ function initDb(db: SQLite.SQLiteDatabase) {
   } catch (e) {
     // Column might already exist
   }
+  
+  try {
+    db.execSync('ALTER TABLE assignments ADD COLUMN submitted_files TEXT;');
+  } catch (e) {
+  }
 
   try {
     db.execSync('ALTER TABLE meetings ADD COLUMN start_time TEXT;');
@@ -154,9 +159,9 @@ export function saveSyncResultToDatabase(result: any): void {
       for (const a of result.assignments) {
         db.runSync(
           `INSERT OR REPLACE INTO assignments 
-          (moodle_assign_id, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [a.id, a.cmid, a.courseId, a.courseName, a.name, a.status, a.deadline, a.opened, a.link, a.grade, a.gradeMax, nowStr, JSON.stringify(a.attachments || [])]
+          (moodle_assign_id, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [a.id, a.cmid, a.courseId, a.courseName, a.name, a.status, a.deadline, a.opened, a.link, a.grade, a.gradeMax, nowStr, JSON.stringify(a.attachments || []), JSON.stringify(a.submittedFiles || [])]
         );
       }
 

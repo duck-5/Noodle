@@ -132,6 +132,33 @@ export default function App() {
     await browser.storage.local.set({ sidebarCollapsed: val });
   };
 
+  useEffect(() => {
+    const handleGlobalClick = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('a');
+      if (link && link.href && link.href.includes('moodle.tau.ac.il') && link.dataset.moodleLink === 'true') {
+        e.preventDefault();
+        const storedToken = await getStoredToken();
+        if (storedToken) {
+          try {
+            const client = new MoodleClient(storedToken);
+            const siteInfo = await client.getSiteInfo();
+            const { key, autologinurl } = await client.getAutoLoginKey();
+            const finalUrl = `${autologinurl}?userid=${siteInfo.userid}&key=${key}&urltogo=${encodeURIComponent(link.href)}`;
+            browser.tabs.create({ url: finalUrl });
+          } catch (err) {
+            console.error('Auto login failed', err);
+            browser.tabs.create({ url: link.href });
+          }
+        } else {
+          browser.tabs.create({ url: link.href });
+        }
+      }
+    };
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, []);
+
 
   // Toast and Tour States
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -1748,6 +1775,31 @@ function DashboardTab({
                             })}
                           </div>
                         )}
+                        {a.submittedFiles && a.submittedFiles.length > 0 && (
+                          <div className="attachment-button-row" style={{ marginTop: '0.4rem' }}>
+                            <span style={{ fontSize: '0.75rem', marginRight: '0.5rem', opacity: 0.7 }}>
+                              {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                            </span>
+                            {a.submittedFiles.map((att, attIdx) => {
+                              const downloadUrl = token
+                                ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                                : att.url;
+                              return (
+                                <a
+                                  key={`sub-${attIdx}`}
+                                  href={downloadUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="action-link-btn file-btn btn-xs"
+                                  style={{ backgroundColor: '#2e7d32', color: 'white', border: 'none' }}
+                                  onClick={(ev) => ev.stopPropagation()}
+                                >
+                                  📥 {att.name}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       <div className="assign-meta">
@@ -3344,6 +3396,30 @@ function CourseDetailView({
                         return (
                           <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn btn-xs">
                             📄 {lang === 'he' ? 'פתח קובץ' : 'Open File'}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {a.submittedFiles && a.submittedFiles.length > 0 && (
+                    <div className="attachment-button-row" style={{ marginTop: '0.5rem' }}>
+                      <span style={{ fontSize: '0.75rem', marginRight: '0.5rem', opacity: 0.7 }}>
+                        {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                      </span>
+                      {a.submittedFiles.map((att, attIdx) => {
+                        const downloadUrl = token
+                          ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
+                          : att.url;
+                        return (
+                          <a
+                            key={`sub-${attIdx}`}
+                            href={downloadUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="action-link-btn file-btn btn-xs"
+                            style={{ backgroundColor: '#2e7d32', color: 'white', border: 'none' }}
+                          >
+                            📥 {att.name}
                           </a>
                         );
                       })}

@@ -48,10 +48,28 @@ export interface RawMoodleAssignmentsResponse {
   courses: RawMoodleAssignmentCourse[];
 }
 
+export interface RawSubmissionPluginFile {
+  filename: string;
+  fileurl: string;
+  filesize: number;
+  mimetype?: string;
+}
+
 export interface RawSubmissionStatus {
   lastattempt?: {
+    canedit?: boolean;
+    cansubmit?: boolean;
+    gradingstatus?: string;
     submission?: {
       status: string;
+      plugins?: Array<{
+        type: string;
+        name: string;
+        fileareas?: Array<{
+          area: string;
+          files?: RawSubmissionPluginFile[];
+        }>;
+      }>;
     };
     extensionduedate?: number;
   };
@@ -248,6 +266,10 @@ export class MoodleClient {
       },
       'POST'
     );
+  }
+
+  public async getAutoLoginKey(): Promise<{ key: string; autologinurl: string }> {
+    return this.apiCall('tool_mobile_get_autologin_key');
   }
 
   public buildAuthenticatedFileUrl(fileUrl: string): string {

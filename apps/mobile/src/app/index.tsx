@@ -1063,10 +1063,37 @@ export default function DashboardScreen() {
                               );
                             })}
                           </View>
-                        </View>
-                      )}
+                          </View>
+                        )}
 
-                      <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                        {submittedFiles.length > 0 && (
+                          <View style={styles.attachmentsContainer}>
+                            <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                              {isRtl ? 'קבצים שהוגשו' : 'Submitted Files'}
+                            </Text>
+                            <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              {submittedFiles.map((att: any, idx: number) => {
+                                const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
+                                const fileUrl = att.url || att.fileUrl || att.fileurl;
+                                const mimeType = att.mimeType || att.mimetype;
+                                return (
+                                  <Pressable
+                                    key={sub-}
+                                    style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
+                                    onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
+                                  >
+                                    <Text style={{ fontSize: 13, color: 'white' }}>{fileUrl ? '📥' : '🔗'}</Text>
+                                    <Text style={[styles.attachmentText, { color: 'white' }]} numberOfLines={1}>
+                                      {displayFileName}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                         {(!isNextDone && !nextAssignment.rawMoodleSubmitted && nextAssignment.link) ? (
                           <Pressable
                             style={[styles.actionPrimaryBtn, { backgroundColor: theme.primary, flex: 1 }]}
@@ -1411,6 +1438,33 @@ export default function DashboardScreen() {
                           </View>
                         )}
 
+                        {submittedFiles.length > 0 && (
+                          <View style={styles.attachmentsContainer}>
+                            <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                              {isRtl ? 'קבצים שהוגשו' : 'Submitted Files'}
+                            </Text>
+                            <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                              {submittedFiles.map((att: any, idx: number) => {
+                                const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
+                                const fileUrl = att.url || att.fileUrl || att.fileurl;
+                                const mimeType = att.mimeType || att.mimetype;
+                                return (
+                                  <Pressable
+                                    key={sub-}
+                                    style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
+                                    onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
+                                  >
+                                    <Text style={{ fontSize: 13, color: 'white' }}>{fileUrl ? '📥' : '🔗'}</Text>
+                                    <Text style={[styles.attachmentText, { color: 'white' }]} numberOfLines={1}>
+                                      {displayFileName}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
                         <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                           {(!isDone && !a.rawMoodleSubmitted && a.link) ? (
                             <Pressable
@@ -1479,7 +1533,7 @@ export default function DashboardScreen() {
                               <Pressable
                                 style={[styles.mobileMenuItem, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}
                                 onPress={() => {
-                                  Linking.openURL(a.link);
+                                  openMoodleLink(a.link);
                                   setOpenMenuAssignId(null);
                                 }}
                               >

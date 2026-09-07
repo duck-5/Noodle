@@ -147,7 +147,7 @@ export async function runSync(
   // 3. Parallelize fetching submissions, grades, and course contents
   onProgress(`Fetching details for ${rawAssignments.length} assignments and ${trackedCourseIds.length} courses...`);
   
-  const submissionsMap = new Map<number, { status: string; extensionDueDate: number }>();
+  const submissionsMap = new Map<number, { status: string; extensionDueDate: number; submittedFiles?: Attachment[] }>();
   const gradesByCmid = new Map<number, RawGradeItem>();
   const cmidToSectionMap = new Map<number, string>();
 
@@ -159,7 +159,23 @@ export async function runSync(
         const subStatus = statusResp.lastattempt?.submission?.status || 'new';
         const status = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
         const extensionDueDate = statusResp.lastattempt?.extensionduedate || 0;
-        submissionsMap.set(assign.id, { status, extensionDueDate });
+        
+        let submittedFiles: Attachment[] | undefined = undefined;
+        const plugins = statusResp.lastattempt?.submission?.plugins;
+        if (plugins) {
+          const filePlugin = plugins.find(p => p.type === 'file');
+          if (filePlugin && filePlugin.fileareas) {
+            const submissionArea = filePlugin.fileareas.find(a => a.area === 'submission_files');
+            if (submissionArea && submissionArea.files) {
+              submittedFiles = submissionArea.files.map(f => ({
+                name: f.filename,
+                url: f.fileurl,
+              }));
+            }
+          }
+        }
+
+        submissionsMap.set(assign.id, { status, extensionDueDate, submittedFiles });
       } catch (err: any) {
         errors.push({
           context: `Fetching submission status for assignment ${assign.name} (id: ${assign.id})`,
@@ -306,6 +322,7 @@ export async function runSync(
       courseName: getCourseDisplayName(assign.course),
       name: assign.name,
       status,
+      submittedFiles: sub.submittedFiles,
       deadline: deadlineIso,
       opened: openedIso,
       link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${assign.cmid}`,
