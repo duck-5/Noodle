@@ -55,7 +55,7 @@ browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse
 
 
   if (message.type === 'LOGIN_TAU_SSO') {
-    loginTauSso(message.username, message.idNumber, message.pass)
+    loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
       .then((token) => sendResponse({ success: true, token }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
@@ -562,7 +562,7 @@ function decodeHTMLEntities(text: string) {
              .replace(/&amp;/g, '&');
 }
 
-async function loginTauSso(username: string, idNumber: string, pass: string): Promise<string> {
+async function loginTauSso(username: string, idNumber: string, pass: string, skipInvalidate = false): Promise<string> {
   return new Promise<string>(async (resolve, reject) => {
     capturedTokenResolve = resolve;
     capturedTokenReject = reject;
@@ -578,13 +578,13 @@ async function loginTauSso(username: string, idNumber: string, pass: string): Pr
     }, 25000);
 
     try {
-      // 0. Force a clean session state. This prevents an issue where a user logs out in the extension
-      // but their browser retains the TAU SSO cookies, causing the next login to bypass the credential
-      // check and log them back in as the previous user.
-      try {
-        await invalidateSsoSession();
-      } catch (e) {
-        console.log('Failed to invalidate existing SSO session before login', e);
+      // 0. Force a clean session state unless skipInvalidate is set.
+      if (!skipInvalidate) {
+        try {
+          await invalidateSsoSession();
+        } catch (e) {
+          console.log('Failed to invalidate existing SSO session before login', e);
+        }
       }
 
       const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;

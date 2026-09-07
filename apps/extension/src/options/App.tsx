@@ -132,6 +132,44 @@ export default function App() {
     await browser.storage.local.set({ sidebarCollapsed: val });
   };
 
+  useEffect(() => {
+    const handleGlobalClick = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('a');
+      if (link && link.href && link.href.includes('moodle.tau.ac.il') && link.dataset.moodleLink === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const cookie = await browser.cookies.get({ url: 'https://moodle.tau.ac.il', name: 'MoodleSession' });
+        if (cookie) {
+          browser.tabs.create({ url: link.href });
+          return;
+        }
+
+        const creds = await getMoodleCredentials();
+        if (creds && creds.password) {
+          try {
+            await browser.runtime.sendMessage({
+              type: 'LOGIN_TAU_SSO',
+              username: creds.username,
+              idNumber: creds.idNumber,
+              pass: creds.password,
+              skipInvalidate: true
+            });
+            browser.tabs.create({ url: link.href });
+          } catch (err) {
+            console.error('SSO auto-login failed', err);
+            browser.tabs.create({ url: link.href });
+          }
+        } else {
+          browser.tabs.create({ url: link.href });
+        }
+      }
+    };
+    document.addEventListener('click', handleGlobalClick, true);
+    return () => document.removeEventListener('click', handleGlobalClick, true);
+  }, []);
+
   // Toast and Tour States
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showTour, setShowTour] = useState<boolean>(false);
@@ -323,7 +361,7 @@ export default function App() {
       const fetchedToken = res.token;
       await setStoredToken(fetchedToken);
       if (rememberMe) {
-        await setMoodleCredentials({ username: moodleUsername, idNumber: moodleId });
+        await setMoodleCredentials({ username: moodleUsername, idNumber: moodleId, password: moodlePassword });
       } else {
         await setMoodleCredentials(null);
       }

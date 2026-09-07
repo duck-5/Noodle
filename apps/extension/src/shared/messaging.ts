@@ -38,9 +38,10 @@ export async function syncGoogleTasksOnBackground(
 export async function loginTauSsoOnBackground(
   username: string,
   idNumber: string,
-  pass: string
+  pass: string,
+  skipInvalidate: boolean = false
 ): Promise<{ success: boolean; token?: string; error?: string }> {
-  return sendMessageToBackground({ type: 'LOGIN_TAU_SSO', username, idNumber, pass });
+  return sendMessageToBackground({ type: 'LOGIN_TAU_SSO', username, idNumber, pass, skipInvalidate });
 }
 
 export async function logoutOnBackground(): Promise<{ success: boolean; error?: string }> {
