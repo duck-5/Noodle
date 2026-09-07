@@ -138,6 +138,7 @@ export default function App() {
       const link = target.closest('a');
       if (link && link.href && link.href.includes('moodle.tau.ac.il') && link.dataset.moodleLink === 'true') {
         e.preventDefault();
+        e.stopPropagation();
         const storedToken = await getStoredToken();
         if (storedToken) {
           try {
@@ -155,8 +156,8 @@ export default function App() {
         }
       }
     };
-    document.addEventListener('click', handleGlobalClick);
-    return () => document.removeEventListener('click', handleGlobalClick);
+    document.addEventListener('click', handleGlobalClick, true);
+    return () => document.removeEventListener('click', handleGlobalClick, true);
   }, []);
 
 
