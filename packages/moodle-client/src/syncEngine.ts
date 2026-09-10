@@ -38,7 +38,7 @@ export async function runSync(
   const getScrapeJar = async (): Promise<CookieJar | null> => {
     if (scrapedMeetingsJar) return scrapedMeetingsJar;
 
-    const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
+    const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
     if (isBrowser) {
       // In the browser/extension, we don't need programmatic login or to pass cookies; 
       // the network stack handles cookies implicitly when credentials: 'include' is used.
@@ -71,13 +71,19 @@ export async function runSync(
     return null;
   };
 
-  onProgress('Fetching Moodle user info...');
+  onProgress('Fetching Moodle user info and assignments...');
   let userId: number;
+  let assignmentsResp: any;
+
   try {
-    const siteInfo = await client.getSiteInfo();
+    const [siteInfo, assignmentsData] = await Promise.all([
+      client.getSiteInfo(),
+      client.getAssignments(),
+    ]);
     userId = siteInfo.userid;
+    assignmentsResp = assignmentsData;
   } catch (err: any) {
-    throw new Error(`Failed to authenticate with Moodle: ${err.message}`);
+    throw new Error(`Failed to fetch initial data from Moodle: ${err.message}`);
   }
 
   if (trackedCourseIds.length === 0) {
@@ -125,11 +131,10 @@ export async function runSync(
     return rawNameFromAssign || `Course ${moodleCourseId}`;
   };
 
-  // 2. Fetch Assignments
-  onProgress('Fetching assignments...');
+  // 2. Process Assignments
+  onProgress('Processing assignments...');
   let rawAssignments: RawMoodleAssignment[] = [];
   try {
-    const assignmentsResp = await client.getAssignments();
     for (const courseObj of assignmentsResp.courses) {
       if (trackedCourseIds.includes(courseObj.id)) {
         for (const assign of courseObj.assignments) {
@@ -139,7 +144,7 @@ export async function runSync(
     }
   } catch (err: any) {
     errors.push({
-      context: 'Fetching assignments',
+      context: 'Processing assignments',
       message: err.message,
     });
   }

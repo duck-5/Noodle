@@ -230,16 +230,26 @@ export default function App() {
   const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
 
   const [nextSyncSecs, setNextSyncSecs] = useState<number | null>(null);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   useEffect(() => {
-    const updateCountdown = () => {
-      if (!syncResult?.syncedAt) {
+    browser.storage.local.get('isSyncing').then((res: any) => {
+      if (res.isSyncing !== undefined) setIsSyncing(res.isSyncing);
+    });
+
+    const updateCountdown = async () => {
+      try {
+        const alarm = await browser.alarms.get('periodicSync');
+        const targetTime = alarm?.scheduledTime || (syncResult?.syncedAt ? new Date(syncResult.syncedAt).getTime() + 5 * 60 * 1000 : null);
+        if (!targetTime) {
+          setNextSyncSecs(null);
+          return;
+        }
+        const diffMs = targetTime - Date.now();
+        setNextSyncSecs(diffMs > 0 ? Math.floor(diffMs / 1000) : 0);
+      } catch (e) {
         setNextSyncSecs(null);
-        return;
       }
-      const nextSyncTime = new Date(syncResult.syncedAt).getTime() + 5 * 60 * 1000;
-      const diffMs = nextSyncTime - Date.now();
-      setNextSyncSecs(diffMs > 0 ? Math.floor(diffMs / 1000) : 0);
     };
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
@@ -248,7 +258,11 @@ export default function App() {
 
   useEffect(() => {
     const messageListener = (msg: any) => {
+      if (msg.type === 'SYNC_START') {
+        setIsSyncing(true);
+      }
       if (msg.type === 'SYNC_COMPLETE') {
+        setIsSyncing(false);
         // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
         Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
           setTrackedCourseIdsState(ids);
@@ -1070,11 +1084,15 @@ export default function App() {
             <h2>{t(activeTab as any)}</h2>
             <p className="subtitle" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
               <span>{t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}</span>
-              {nextSyncSecs !== null && (
+              {isSyncing ? (
                 <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
-                  ⏱️ {nextSyncSecs > 0 ? `${Math.floor(nextSyncSecs / 60)}:${(nextSyncSecs % 60).toString().padStart(2, '0')}` : (currentLang === 'he' ? 'מסנכרן...' : 'Syncing...')}
+                  ⏱️ {currentLang === 'he' ? 'מסנכרן...' : 'Syncing...'}
                 </span>
-              )}
+              ) : nextSyncSecs !== null && nextSyncSecs > 0 ? (
+                <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
+                  ⏱️ {Math.floor(nextSyncSecs / 60)}:{(nextSyncSecs % 60).toString().padStart(2, '0')}
+                </span>
+              ) : null}
             </p>
           </div>
           <div className="header-actions">
