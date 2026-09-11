@@ -124,7 +124,7 @@ export async function syncAssignmentsToGoogleTasks(
   // Helper to extract assignment ID from notes
   const getMoodleAssignIdFromNotes = (notes?: string): number | null => {
     if (!notes) return null;
-    const match = notes.match(/tautracker:assignId:(\d+)/);
+    const match = notes.match(/(?:tautracker|Noodle):assignId:(\d+)/i);
     return match ? parseInt(match[1], 10) : null;
   };
 
@@ -134,7 +134,7 @@ export async function syncAssignmentsToGoogleTasks(
       const taskTitle = `[${assign.courseName}] ${assign.name}`;
       const targetStatus = assign.status === 'Submitted' ? 'completed' : 'needsAction';
       
-      const notes = `Course: ${assign.courseName}\nLink: ${assign.link}\nSource: Moodle (TauTracker)\ntautracker:assignId:${assign.id}`;
+      const notes = `Course: ${assign.courseName}\nLink: ${assign.link}\nSource: Moodle (Noodle)\nNoodle:assignId:${assign.id}`;
 
       // Format deadline to Zulu ISO string for Google Tasks due field
       // Google Tasks expects UTC timestamp date. The time portion is discarded.

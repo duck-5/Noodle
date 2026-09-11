@@ -1,7 +1,7 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult, Assignment, CourseFile, ZoomMeeting } from '@tautracker/moodle-client';
-import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient, isValidIsraeliId } from '@tautracker/moodle-client';
 import {
   getStoredToken,
   setStoredToken,
@@ -366,6 +366,12 @@ export default function App() {
   async function handleMoodleLogin(e: React.FormEvent) {
     e.preventDefault();
     if (!moodleUsername || !moodleId || !moodlePassword) return;
+
+    if (!isValidIsraeliId(moodleId)) {
+      showToast(currentLang === 'he' ? 'מספר תעודת זהות לא תקין' : 'Invalid Israeli ID', 'error');
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await loginTauSsoOnBackground(moodleUsername, moodleId, moodlePassword);

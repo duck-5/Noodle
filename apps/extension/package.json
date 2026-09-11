@@ -10,7 +10,10 @@
     "build:chrome": "tsc -b && vite build --mode chrome",
     "build:firefox": "tsc -b && vite build --mode firefox",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@tautracker/moodle-client": "workspace:*",
@@ -20,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/chrome": "^0.1.43",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",

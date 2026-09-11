@@ -9,6 +9,36 @@ export class MoodleApiError extends Error {
   }
 }
 
+export function isValidIsraeliId(id: string): boolean {
+  const str = String(id).trim();
+  if (str.length === 0 || str.length > 9 || isNaN(Number(str))) return false;
+  const padded = str.padStart(9, '0');
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let num = Number(padded.charAt(i)) * ((i % 2) + 1);
+    if (num > 9) num = num - 9;
+    sum += num;
+  }
+  return sum % 10 === 0;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes <= 0 || isNaN(bytes)) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) {
+    const kb = Math.round(bytes / 1024);
+    return `${kb} KB`;
+  }
+  const mb = (bytes / (1024 * 1024)).toFixed(1);
+  return `${mb} MB`;
+}
+
+export function getFileExtension(filename: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === filename.length - 1) return '';
+  return filename.substring(lastDot + 1).toUpperCase();
+}
+
 export interface MoodleSiteInfo {
   userid: number;
   username: string;

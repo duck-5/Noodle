@@ -9,6 +9,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased] - 2026-09-07
 
 ### Added
+- **Continuous Integration (CI) Test Pipeline on Every Commit (`.github/workflows/build-extension.yml`)**:
+  - Updated GitHub Actions workflow to trigger on every `push` (all branches) and `pull_request`.
+  - Integrated the full test suite into the CI pipeline:
+    - Shared core unit tests (`pnpm test:moodle-client` - 12 suites, 61 tests).
+    - Cross-browser extension build parity verification (`pnpm test:parity` - Chrome MV3 vs Firefox MV3).
+    - Playwright Chromium extension E2E tests (`xvfb-run --auto-servernum -- pnpm test:e2e`).
+    - Failure artifact capture (`playwright-report` upload on test failure).
+    - Build and release artifact upload for both Chrome and Firefox extensions.
+- **Comprehensive Automated Testing & Playwright E2E Suite (`packages/moodle-client`, `apps/extension`, `scripts/`)**:
+  - Implemented 12 Jest test suites in `packages/moodle-client` with 61 unit/integration tests verifying categories 1 through 15 from `docs/TEST_CASES.md` (Authentication, Courses, Assignments, Grades, Zoom, Files, Google Tasks, Calendar Sync, Backup/Restore, Background Notifications, Stress/Volume).
+  - Added shared validation and formatting utilities (`isValidIsraeliId`, `formatFileSize`, `getFileExtension`) in `@tautracker/moodle-client`.
+  - Added automated cross-browser build parity suite (`scripts/test-build-parity.mjs`) for `TC-EXT-BRW-01` and `TC-EXT-BRW-02`.
+  - Configured **Playwright** (`@playwright/test`) in `apps/extension` for automated headless testing and interactive headed browser agent testing:
+    - `auth.spec.ts`: Tests login form, Israeli ID mod-10 validation toast, and "Remember Me" toggle.
+    - `dashboard.spec.ts`: Tests "Next Up" spotlight banner, real-time search filtering, status filter checkboxes, and accordion expansion.
+    - `theming.spec.ts`: Tests Hebrew (RTL) vs English (LTR) language toggle, and Slate Dark vs Warm Cream Noodle theme.
+    - `sidebar.spec.ts`: Tests sidebar collapse width toggle and session logout.
+  - Added root test scripts `pnpm test`, `pnpm test:moodle-client`, `pnpm test:parity`, `pnpm test:e2e`, and `pnpm test:e2e:headed`.
+- **Master System Test Cases Catalog & Cross-Browser Parity (`docs/TEST_CASES.md`, `.agents/`)**:
+  - Created comprehensive test catalog in `docs/TEST_CASES.md` detailing 70+ test cases across 15 functional domains.
+  - Divided test cases into **Automated Testing** (Jest, Vitest, Playwright) and **Gemini Browser Interaction Agent Testing** (options page, popup, mobile web).
+  - Explicitly specified platform coverage: Mobile, Extension (Chromium), and Extension (Firefox), including dedicated cross-browser parity test cases (`TC-EXT-BRW-*`).
+  - Updated agent instructions (`AGENTS.md` and `.agents/rules/`) to mandate cross-browser parity and test case traceability.
+  - Archived legacy test infrastructure specification (`docs/TEST_INFRA.md`).
 - **Submitted Files Display & Download (`@tautracker/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Parsed `lastattempt.submission.plugins` for `submission_files` in `syncEngine.ts`, exposing typed `submittedFiles?: Attachment[]` on `Assignment`.
   - Added SQLite migration (`ALTER TABLE assignments ADD COLUMN submitted_files TEXT`) and data mapper updates in `apps/mobile/src/services/database.ts`.
