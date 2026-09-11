@@ -5,8 +5,11 @@
   "main": "index.js",
   "scripts": {
     "build:moodle-client": "pnpm --filter @tautracker/moodle-client run build",
-    "release": "pnpm run build:moodle-client && python scripts/build-releases.py",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "pnpm test:moodle-client && pnpm test:parity && pnpm test:e2e",
+    "test:moodle-client": "pnpm --filter @tautracker/moodle-client test",
+    "test:parity": "node scripts/test-build-parity.mjs",
+    "test:e2e": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e",
+    "test:e2e:headed": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e:headed"
   },
   "keywords": [],
   "author": "",

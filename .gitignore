@@ -4,7 +4,6 @@
 .env
 credentials.json
 token.json
-.agents
 *.secret
 *.kotlin
 .gradle/
@@ -85,3 +84,5 @@ pnpm-debug.log*
 releases/
 
 .dev-profile/
+playwright-report/
+test-results/

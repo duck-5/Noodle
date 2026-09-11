@@ -1,14 +1,13 @@
-name: Build and Upload Extension
+name: Test and Build Extension
 
 on:
   push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  test-and-build:
+    name: Test and Build
     runs-on: ubuntu-latest
 
     steps:
@@ -29,10 +28,30 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Moodle Client
-        run: pnpm --filter @tautracker/moodle-client build
+        run: pnpm run build:moodle-client
+
+      - name: Run Moodle Client Unit Tests
+        run: pnpm test:moodle-client
+
+      - name: Run Cross-Browser Build Parity Tests
+        run: pnpm test:parity
+
+      - name: Install Playwright Browsers & OS Dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Extension E2E Playwright Tests
+        run: xvfb-run --auto-servernum -- pnpm test:e2e
+
+      - name: Upload Playwright Test Report (on failure)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/extension/playwright-report
+          retention-days: 7
 
       - name: Build extension for Chrome
-        run: pnpm --filter extension build:chrome
+        run: pnpm --filter extension run build:chrome
 
       - name: Upload Chrome artifact
         uses: actions/upload-artifact@v4
@@ -41,7 +60,7 @@ jobs:
           path: apps/extension/dist
 
       - name: Build extension for Firefox
-        run: pnpm --filter extension build:firefox
+        run: pnpm --filter extension run build:firefox
 
       - name: Upload Firefox artifact
         uses: actions/upload-artifact@v4
