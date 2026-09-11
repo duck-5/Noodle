@@ -43,22 +43,22 @@ interface GroupedCourses {
 
 function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[] {
   const groups: Record<string, any[]> = {};
-  
+
   courses.forEach(c => {
     const idNum = c.idnumber || c.shortname || '';
     const meta = parseTauCourseMetadata(idNum);
     const year = meta?.year || '';
     const semester = meta?.semester || 'Other';
-    
+
     const key = year ? `${year}-${semester}` : 'Other';
     if (!groups[key]) {
       groups[key] = [];
     }
     groups[key].push(c);
   });
-  
+
   const result: GroupedCourses[] = [];
-  
+
   Object.keys(groups).forEach(key => {
     if (key === 'Other') {
       result.push({
@@ -87,24 +87,24 @@ function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[
       });
     }
   });
-  
+
   result.sort((a, b) => {
     if (a.semesterKey === 'Other') return 1;
     if (b.semesterKey === 'Other') return -1;
-    
+
     const yearDiff = parseInt(b.year) - parseInt(a.year);
     if (yearDiff !== 0) return yearDiff;
-    
+
     const getSemValue = (sem: string) => {
       if (sem === 'SemesterB') return 3;
       if (sem === 'SemesterA') return 2;
       if (sem === 'Yearly') return 1;
       return 0;
     };
-    
+
     return getSemValue(b.semester) - getSemValue(a.semester);
   });
-  
+
   return result;
 }
 
@@ -408,7 +408,7 @@ export default function App() {
         // We found existing remote settings, apply them directly!
         const updatedSettings = { ...settings } as ExtensionSettings;
         let foundTrackedCourses = false;
-        
+
         for (const [key, trackedVal] of Object.entries(remoteSettings)) {
           if (trackedVal && typeof trackedVal === 'object' && 'value' in trackedVal) {
             if (key === 'trackedCourseIds') {
@@ -422,10 +422,10 @@ export default function App() {
             }
           }
         }
-        
+
         setSettingsState(updatedSettings);
         await setSettings(updatedSettings, true);
-        
+
         // Persist the remote timestamps so future syncs don't think local is newer
         const remoteTimestamps: Record<string, number> = {};
         for (const [key, trackedVal] of Object.entries(remoteSettings)) {
@@ -434,14 +434,14 @@ export default function App() {
           }
         }
         await browser.storage.sync.set({ settings_timestamps: remoteTimestamps });
-        
+
         if (foundTrackedCourses) {
           // Successfully restored, jump straight to dashboard
           setOnboardingStep(3);
-          
+
           // Also fetch their courses in background so they have names immediately
           fetchEnrolledCoursesInBackground(t);
-          
+
           // Run initial sync
           const res = await syncNowOnBackground();
           if (res?.success && res.result) {
@@ -450,7 +450,7 @@ export default function App() {
           return; // Skip normal onboarding
         }
       }
-      
+
       // If no remote settings found, or no tracked courses, proceed to normal onboarding step 2
       await fetchEnrolledCoursesForOnboarding(t);
     } catch (e) {
@@ -601,12 +601,12 @@ export default function App() {
         setLoading(true);
         // We do NOT overwrite the wstoken during manual config import since the user is already signed in.
         await setTrackedCourseIds(data.trackedCourseIds);
-        
+
         if (data.zoomLinks && Array.isArray(data.zoomLinks)) {
-           data.settings.interestedMeetings = Array.from(new Set([
-             ...(data.settings.interestedMeetings || []),
-             ...data.zoomLinks
-           ]));
+          data.settings.interestedMeetings = Array.from(new Set([
+            ...(data.settings.interestedMeetings || []),
+            ...data.zoomLinks
+          ]));
         }
 
         await setSettings(data.settings);
@@ -925,7 +925,7 @@ export default function App() {
                       }).map((c) => {
                         const isChecked = trackedCourseIds.includes(c.id);
                         return (
-                           <div
+                          <div
                             key={c.id}
                             className={`course-selection-item glass-panel ${isChecked ? 'selected' : ''}`}
                             onClick={() => handleOnboardingCourseToggle(c.id)}
@@ -1418,7 +1418,7 @@ function DashboardTab({
 
   const visibleAssignments = assignments.filter(a => !settings?.hiddenAssignments?.includes(a.id));
   const pendingAssigns = visibleAssignments.filter((a) => a.status !== 'Submitted');
-  
+
   const now = new Date();
 
   // Sort assignments by due date ascending
@@ -1431,7 +1431,7 @@ function DashboardTab({
 
   const filteredAssigns = sortedAssigns.filter((a) => {
     const isSearchMatch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          a.courseName.toLowerCase().includes(searchQuery.toLowerCase());
+      a.courseName.toLowerCase().includes(searchQuery.toLowerCase());
     if (!isSearchMatch) return false;
 
     const isHidden = settings?.hiddenAssignments?.includes(a.id);
@@ -1440,7 +1440,7 @@ function DashboardTab({
 
     if (isHidden && filterHidden) return true;
     if (!isHidden && isCompleted && filterCompleted) return true;
-    
+
     if (!isHidden && !isCompleted) {
       if (hasDeadlinePassed && filterPast) return true;
       if (!hasDeadlinePassed && filterPending) return true;
@@ -1684,13 +1684,13 @@ function DashboardTab({
             <span>{Math.round((visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) * 100)}%</span>
           </div>
           <div className="progress-bar-bg" style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div 
-              className="progress-bar-fill" 
-              style={{ 
+            <div
+              className="progress-bar-fill"
+              style={{
                 width: `${(visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) * 100}%`,
                 height: '100%',
-                background: (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.7 ? '#10b981' : 
-                            (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.3 ? '#f59e0b' : 'var(--primary)',
+                background: (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.7 ? '#10b981' :
+                  (visibleAssignments.filter(a => a.status === 'Submitted').length / visibleAssignments.length) >= 0.3 ? '#f59e0b' : 'var(--primary)',
                 transition: 'width 0.5s ease-out'
               }}
             />
@@ -1985,11 +1985,11 @@ function DashboardTab({
             return (
               <div className="current-zoom-banner" style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>{t('current_zoom')}</span>
-                <a 
-                  href={activeMeeting.meetingUrl} 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  style={{ 
+                <a
+                  href={activeMeeting.meetingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
                     color: getCourseColor(activeMeeting.courseId),
                     textDecoration: 'underline'
                   }}
@@ -1999,14 +1999,14 @@ function DashboardTab({
               </div>
             );
           })()}
-          
+
           <div className="zoom-courses-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {(() => {
               const allMeetingIds = meetings.map(m => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
 
               const coursesWithMeetings = trackedCourseIds.map((cid) => {
                 const courseMeetings = meetings.filter(m => m.courseId === cid);
-                
+
                 // Deduplicate recurring meetings by meetingNumber or meetingUrl
                 const now = new Date();
                 const groups = new Map<string, typeof meetings>();
@@ -2063,8 +2063,8 @@ function DashboardTab({
 
                 return (
                   <div key={c.courseId} className="zoom-course-card glass-panel" style={{ borderLeft: lang === 'he' ? 'none' : `4px solid ${color}`, borderRight: lang === 'he' ? `4px solid ${color}` : 'none', padding: '1rem', marginBottom: '0.2rem' }}>
-                    <div 
-                      className="zoom-course-header" 
+                    <div
+                      className="zoom-course-header"
                       onClick={() => setExpandedCourseId(prev => prev === c.courseId ? null : c.courseId)}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
                     >
@@ -2072,7 +2072,7 @@ function DashboardTab({
                         <h4 style={{ margin: 0, fontSize: '1rem', color: color, fontWeight: 'bold' }}>
                           📖 {getCourseDisplayName(c.courseId, c.courseName)}
                         </h4>
-                        
+
                         {/* Configured Quick buttons */}
                         {markedMeetings.length > 0 && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', alignItems: lang === 'he' ? 'flex-end' : 'flex-start' }}>
@@ -2101,25 +2101,25 @@ function DashboardTab({
                           </div>
                         )}
                       </div>
-                      
+
                       <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
                         {isExpanded ? '▲' : '▼'}
                       </span>
                     </div>
 
-                    <div 
-                      className="zoom-course-meetings-dropdown" 
-                      style={{ 
+                    <div
+                      className="zoom-course-meetings-dropdown"
+                      style={{
                         maxHeight: isExpanded ? '300px' : '0px',
                         opacity: isExpanded ? 1 : 0,
                         overflowY: isExpanded ? 'auto' : 'hidden',
                         transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
-                        marginTop: isExpanded ? '1rem' : '0px', 
-                        borderTop: isExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
-                        paddingTop: isExpanded ? '1rem' : '0px', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '0.75rem' 
+                        marginTop: isExpanded ? '1rem' : '0px',
+                        borderTop: isExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                        paddingTop: isExpanded ? '1rem' : '0px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.75rem'
                       }}
                     >
                       {(() => {
@@ -2127,6 +2127,7 @@ function DashboardTab({
                           return (
                             <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
                               {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                              <button className='primary-btn btn-sm'>Add zoom meeting link manually</button>
                             </div>
                           );
                         }
@@ -2154,12 +2155,12 @@ function DashboardTab({
 
                           let statusLabel = '';
                           let statusColor = '';
-                          let itemStyle: React.CSSProperties = { 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            padding: '0.75rem', 
-                            background: 'rgba(255,255,255,0.02)', 
+                          let itemStyle: React.CSSProperties = {
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '0.75rem',
+                            background: 'rgba(255,255,255,0.02)',
                             borderRadius: 'var(--radius-sm)',
                             borderLeft: lang === 'he' ? 'none' : `3px solid rgba(255,255,255,0.1)`,
                             borderRight: lang === 'he' ? `3px solid rgba(255,255,255,0.1)` : 'none'
@@ -2267,7 +2268,7 @@ function CoursesTab({
   tourStep?: number;
 } & TabProps) {
   const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
-  
+
   if (enrolledCourses && enrolledCourses.length > 0) {
     enrolledCourses.forEach(c => {
       coursesMap.set(c.id, { id: c.id, name: c.fullname || c.shortname || `Course ${c.id}`, idnumber: c.idnumber || c.shortname || '' });
@@ -2391,11 +2392,11 @@ function CoursesTab({
       {/* 2. Navigation Pane */}
       <div className={`dashboard-section glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}>
         <h3>{t('navigation_pane_title')}</h3>
-        
+
         {activeTrackedIds.length === 0 ? (
           <div className="empty-state">
-            {lang === 'he' 
-              ? 'אנא בחר קורסים למעקב בהגדרות למעלה.' 
+            {lang === 'he'
+              ? 'אנא בחר קורסים למעקב בהגדרות למעלה.'
               : 'Please select courses to track in the configuration menu above.'}
           </div>
         ) : (
@@ -2408,8 +2409,8 @@ function CoursesTab({
                 return (
                   <div key={c.id} className="nav-course-card glass-panel" style={{ borderLeft: lang !== 'he' ? `4px solid ${color}` : undefined, borderRight: lang === 'he' ? `4px solid ${color}` : undefined, marginBottom: '0.8rem', padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h4 
-                        className="nav-course-title" 
+                      <h4
+                        className="nav-course-title"
                         onClick={() => onSelectCourse(c.id)}
                         style={{ color: color, cursor: 'pointer', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                       >
@@ -2642,7 +2643,7 @@ function SettingsTab({
     <div className="tab-settings glass-panel">
       <h3>{t('integration_settings')}</h3>
       <p className="subtitle" style={{ marginBottom: '2rem' }}>
-        {lang === 'he' 
+        {lang === 'he'
           ? 'הגדר אינטגרציות חיצוניות, תדירות סנכרון והעדפות התראה.'
           : 'Configure external integrations, sync intervals, and notification preferences.'}
       </p>
@@ -2881,9 +2882,9 @@ function CourseDetailView({
   };
 
   const courseColor = getCourseColor(courseId);
-  const rawCourseName = assignments.find(a => a.courseId === courseId)?.courseName || 
-                    files.find(f => f.courseId === courseId)?.courseName || 
-                    `Course ${courseId}`;
+  const rawCourseName = assignments.find(a => a.courseId === courseId)?.courseName ||
+    files.find(f => f.courseId === courseId)?.courseName ||
+    `Course ${courseId}`;
   const courseDisplayName = getCourseDisplayName(courseId, rawCourseName);
 
   // Filter items for this course
@@ -2892,7 +2893,7 @@ function CourseDetailView({
 
   // Group files and assignments by sectionName
   const sectionsMap = new Map<string, { files: CourseFile[]; assignments: Assignment[] }>();
-  
+
   // Initialize section helper
   const getSection = (name: string) => {
     const sName = name || 'General';
@@ -2937,7 +2938,7 @@ function CourseDetailView({
         <div className="detail-main-tree">
           {(() => {
             const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
-            
+
             // Deduplicate recurring meetings by meetingNumber or meetingUrl
             const now = new Date();
             const groups = new Map<string, typeof meetings>();
@@ -2975,11 +2976,11 @@ function CourseDetailView({
               return settings.interestedMeetings.includes(id);
             };
             const markedMeetings = courseMeetings.filter(isMarked);
-            
+
             return (
               <div className="zoom-section-card glass-panel" style={{ borderLeft: lang === 'he' ? 'none' : `4px solid ${courseColor}`, borderRight: lang === 'he' ? `4px solid ${courseColor}` : 'none', padding: '1rem', marginBottom: '1.5rem' }}>
-                <div 
-                  className="zoom-course-header" 
+                <div
+                  className="zoom-course-header"
                   onClick={() => setExpandedZoom(!expandedZoom)}
                   style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
                 >
@@ -2987,18 +2988,18 @@ function CourseDetailView({
                     <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold' }}>
                       📹 {t('zoom_links_found')}
                     </h4>
-                    
+
                     {(() => {
                       const activeMeeting = courseMeetings.find(m => getMeetingStatus(m.startTime) === 'active');
                       if (!activeMeeting) return null;
                       return (
                         <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '4px' }}>
                           <span style={{ color: 'var(--text-muted)' }}>{t('current_zoom')} </span>
-                          <a 
-                            href={activeMeeting.meetingUrl} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            style={{ 
+                          <a
+                            href={activeMeeting.meetingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
                               color: courseColor,
                               textDecoration: 'underline'
                             }}
@@ -3008,7 +3009,7 @@ function CourseDetailView({
                         </div>
                       );
                     })()}
-                    
+
                     {/* Configured Quick buttons */}
                     {markedMeetings.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', alignItems: lang === 'he' ? 'flex-end' : 'flex-start' }}>
@@ -3037,25 +3038,25 @@ function CourseDetailView({
                       </div>
                     )}
                   </div>
-                  
+
                   <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
                     {expandedZoom ? '▲' : '▼'}
                   </span>
                 </div>
 
-                <div 
-                  className="zoom-course-meetings-dropdown" 
-                  style={{ 
+                <div
+                  className="zoom-course-meetings-dropdown"
+                  style={{
                     maxHeight: expandedZoom ? '300px' : '0px',
                     opacity: expandedZoom ? 1 : 0,
                     overflowY: expandedZoom ? 'auto' : 'hidden',
                     transition: 'max-height 0.2s ease-out, opacity 0.15s ease-out',
-                    marginTop: expandedZoom ? '1rem' : '0px', 
-                    borderTop: expandedZoom ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent', 
-                    paddingTop: expandedZoom ? '1rem' : '0px', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: '0.75rem' 
+                    marginTop: expandedZoom ? '1rem' : '0px',
+                    borderTop: expandedZoom ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                    paddingTop: expandedZoom ? '1rem' : '0px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem'
                   }}
                 >
                   {(() => {
@@ -3063,6 +3064,7 @@ function CourseDetailView({
                       return (
                         <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
                           {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                          <button>Add zoom meeting link manually</button>
                         </div>
                       );
                     }
@@ -3090,12 +3092,12 @@ function CourseDetailView({
 
                       let statusLabel = '';
                       let statusColor = '';
-                      let itemStyle: React.CSSProperties = { 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center', 
-                        padding: '0.75rem', 
-                        background: 'rgba(255,255,255,0.02)', 
+                      let itemStyle: React.CSSProperties = {
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.75rem',
+                        background: 'rgba(255,255,255,0.02)',
                         borderRadius: 'var(--radius-sm)',
                         borderLeft: lang === 'he' ? 'none' : `3px solid rgba(255,255,255,0.1)`,
                         borderRight: lang === 'he' ? `3px solid rgba(255,255,255,0.1)` : 'none'
@@ -3281,7 +3283,7 @@ function CourseDetailView({
                         {isCollapsed ? '▼' : '▲'}
                       </span>
                     </h5>
-                    
+
                     {!isCollapsed && (
                       <div className="section-node-body" style={{ marginTop: '1rem' }}>
                         {content.assignments.length > 0 && (
@@ -3482,13 +3484,13 @@ function AboutTab({ t, lang, onStartTour }: { t: (key: any) => string; lang: 'he
   return (
     <div className="tab-about glass-panel" style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <h3 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>{t('about')}</h3>
-      
+
       {lang === 'he' ? (
         <>
           <p style={{ lineHeight: '1.8', fontSize: '1.25rem', color: 'var(--text-secondary)' }}>
             <strong>Noodle 🍜</strong> הוא כלי עזר לסטודנטים באוניברסיטת תל אביב, המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל.
           </p>
-          
+
           <div style={{ marginTop: '1.2rem' }}>
             <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>מדריך שימוש מהיר 📖</h4>
             <ul style={{ paddingRight: '1.8rem', lineHeight: '2.0', color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
@@ -3498,7 +3500,7 @@ function AboutTab({ t, lang, onStartTour }: { t: (key: any) => string; lang: 'he
               <li><strong>סנכרון לגוגל:</strong> בהגדרות תוכל לחבר את חשבון הגוגל שלך ולסנכרן את המשימות אוטומטית.</li>
             </ul>
           </div>
-          
+
           <div style={{ marginTop: '1.2rem' }}>
             <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>צריכים עזרה נוספת? 💡</h4>
             <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: '1.8' }}>
@@ -3514,7 +3516,7 @@ function AboutTab({ t, lang, onStartTour }: { t: (key: any) => string; lang: 'he
           <p style={{ lineHeight: '1.8', fontSize: '1.25rem', color: 'var(--text-secondary)' }}>
             <strong>Noodle 🍜</strong> is a utility for Tel Aviv University students, helping you sync Moodle deadlines directly with Google Tasks and Google Calendar.
           </p>
-          
+
           <div style={{ marginTop: '1.2rem' }}>
             <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>Quick User Manual 📖</h4>
             <ul style={{ paddingLeft: '1.8rem', lineHeight: '2.0', color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
@@ -3524,7 +3526,7 @@ function AboutTab({ t, lang, onStartTour }: { t: (key: any) => string; lang: 'he
               <li><strong>Google Sync:</strong> Under Settings, connect your Google Account to automatically push deadlines to your tasks.</li>
             </ul>
           </div>
-          
+
           <div style={{ marginTop: '1.2rem' }}>
             <h4 style={{ color: 'white', marginBottom: '0.8rem', fontSize: '1.45rem' }}>Need More Help? 💡</h4>
             <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: '1.8' }}>
@@ -3638,7 +3640,7 @@ function TourOverlay({ step, setStep, onClose, t, lang }: TourOverlayProps) {
             {step + 1} / {steps.length}
           </span>
         </div>
-        
+
         <div className="tour-body">
           <p style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>{currentStep.desc}</p>
         </div>
@@ -3656,7 +3658,7 @@ function TourOverlay({ step, setStep, onClose, t, lang }: TourOverlayProps) {
           <button className="secondary-btn btn-sm" onClick={onClose}>
             {t('tour_skip')}
           </button>
-          
+
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {step > 0 && (
               <button className="secondary-btn btn-sm" onClick={handleBack}>
