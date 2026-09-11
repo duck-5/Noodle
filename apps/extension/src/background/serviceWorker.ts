@@ -11,24 +11,24 @@ import {
 } from '../shared/storage.js';
 
 
-
+const SYNC_INTERVAL_MINUTES = 5;
 
 // Setup periodic alarms on install / startup
 browser.runtime.onInstalled.addListener(async () => {
   console.log('TauTracker Extension Installed');
-  // Always recreate the alarm on install/update to ensure correct period (5 minutes)
-  await browser.alarms.create('periodicSync', { periodInMinutes: 5 });
-  console.log('Forced creation of periodicSync alarm for 5 minutes onInstalled');
+  // Always recreate the alarm on install/update to ensure correct period
+  await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+  console.log(`Forced creation of periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes onInstalled`);
 });
 
 // Setup alarm checking function to register the alarm on startup without resetting it if it already exists
 async function setupAlarm() {
   const alarm = await browser.alarms.get('periodicSync');
-  if (!alarm || alarm.periodInMinutes !== 5) {
-    await browser.alarms.create('periodicSync', { periodInMinutes: 5 });
-    console.log('Created periodicSync alarm for 5 minutes');
+  if (!alarm || alarm.periodInMinutes !== SYNC_INTERVAL_MINUTES) {
+    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+    console.log(`Created periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes`);
   } else {
-    console.log('periodicSync alarm already exists with 5 minutes');
+    console.log(`periodicSync alarm already exists with ${SYNC_INTERVAL_MINUTES} minutes`);
   }
 }
 setupAlarm();
@@ -207,7 +207,7 @@ async function performSettingsSync() {
     console.log('[SettingsSync] No token, skipping.');
     return;
   }
-  
+
   const client = new MoodleClient(token);
   const syncManager = new SettingsSyncManager(client, 'chrome-extension');
 
@@ -216,7 +216,7 @@ async function performSettingsSync() {
   const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
 
   const localShared: Record<string, any> = {};
-  
+
   // Package settings
   for (const [key, value] of Object.entries(settings)) {
     if (value !== undefined) {
@@ -231,7 +231,7 @@ async function performSettingsSync() {
       }
     }
   }
-  
+
   // Package trackedCourseIds
   const tsTracked = timestamps['trackedCourseIds'] || 0;
   if (tsTracked > 0 || trackedCourseIds.length > 0) {
@@ -252,7 +252,7 @@ async function performSettingsSync() {
   for (const [key, tracked] of Object.entries(merged)) {
     if (!tracked) continue;
     newTimestamps[key] = tracked.updatedAt;
-    
+
     if (key === 'trackedCourseIds') {
       newTrackedCourseIds = tracked.value;
     } else {
@@ -267,13 +267,14 @@ async function performSettingsSync() {
   if (newTrackedCourseIds !== null) {
     await setTrackedCourseIds(newTrackedCourseIds, true);
   }
-  
+
   // Update timestamps
   await browser.storage.sync.set({ settings_timestamps: newTimestamps });
   console.log('[SettingsSync] Successfully synced settings with Moodle.');
 }
 
 async function performBackgroundSync() {
+  console.log('--- STARTING SYNC (Triggered manually or via periodic alarm) ---');
   let token = await getStoredToken();
 
   if (!token) {
@@ -281,58 +282,68 @@ async function performBackgroundSync() {
     throw new Error('Not authenticated with Moodle');
   }
 
-  // Pull any latest configuration from Moodle before syncing assignments
-  try {
-    await performSettingsSync();
-  } catch (e) {
-    console.warn('Non-fatal: Failed to pull settings before assignment sync', e);
-  }
-
-  // Refetch settings/trackedCourseIds in case they just updated from performSettingsSync!
-  const trackedCourseIds = await getTrackedCourseIds();
-  const settings = await getSettings();
-  const prevResult = await getCachedSyncResult();
+  await browser.storage.local.set({ isSyncing: true });
+  browser.runtime.sendMessage({ type: 'SYNC_START' }).catch(() => { });
 
   let result;
   try {
-    result = await runSync(token, trackedCourseIds, (msg) => {
-      browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => {});
-      console.log(`[Sync Progress] ${msg}`);
-    });
-  } catch (err: any) {
-    if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
-      console.log('Token invalid/expired. Prompting user to re-login.');
-      browser.notifications.create('moodle_token_expired', {
-        type: 'basic',
-        iconUrl: 'icon-128.png',
-        title: 'Moodle Session Expired',
-        message: 'Your Moodle session has expired. Please open Noodle to log in again.',
-      });
-      throw new Error('Moodle session expired');
-    } else {
-      throw err;
-    }
-  }
-
-  // Save results to storage
-  await setCachedSyncResult(result);
-
-  // Check and fire notifications for new or upcoming assignments
-  if (settings.notificationsEnabled) {
-    await checkAndNotify(result.assignments, prevResult?.assignments || []);
-  }
-
-  // Trigger Google Tasks sync if enabled
-  if (settings.googleTasksEnabled) {
+    // Pull any latest configuration from Moodle before syncing assignments
     try {
-      await triggerGoogleTasksSync(false);
+      await performSettingsSync();
     } catch (e) {
-      console.error('Google Tasks sync failed:', e);
+      console.warn('Non-fatal: Failed to pull settings before assignment sync', e);
     }
-  }
 
-  // Notify listeners that sync is fully complete
-  browser.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => {});
+    // Refetch settings/trackedCourseIds in case they just updated from performSettingsSync!
+    const trackedCourseIds = await getTrackedCourseIds();
+    const settings = await getSettings();
+    const prevResult = await getCachedSyncResult();
+
+    try {
+      result = await runSync(token, trackedCourseIds, (msg) => {
+        browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
+        console.log(`[Sync Progress] ${msg}`);
+      });
+    } catch (err: any) {
+      if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
+        console.log('Token invalid/expired. Prompting user to re-login.');
+        browser.notifications.create('moodle_token_expired', {
+          type: 'basic',
+          iconUrl: 'icon-128.png',
+          title: 'Moodle Session Expired',
+          message: 'Your Moodle session has expired. Please open Noodle to log in again.',
+        });
+        throw new Error('Moodle session expired');
+      } else {
+        throw err;
+      }
+    }
+
+    // Save results to storage
+    await setCachedSyncResult(result);
+
+    // Check and fire notifications for new or upcoming assignments
+    if (settings.notificationsEnabled) {
+      await checkAndNotify(result.assignments, prevResult?.assignments || []);
+    }
+
+    // Trigger Google Tasks sync if enabled
+    if (settings.googleTasksEnabled) {
+      try {
+        await triggerGoogleTasksSync(false);
+      } catch (e) {
+        console.error('Google Tasks sync failed:', e);
+      }
+    }
+  } finally {
+    // Save syncing state and notify listeners
+    await browser.storage.local.set({ isSyncing: false });
+    browser.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => { });
+    // Reschedule the alarm to exactly X minutes from now to align with this sync
+    // NOTE: Chrome strictly enforces a minimum of 1 minute in production. 
+    // In dev, you can test with floats (e.g., 0.1 for 6 seconds).
+    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+  }
 
   return result;
 }
@@ -350,8 +361,8 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean)
     throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
   }
 
-  const redirectUrl = typeof browser.identity.getRedirectURL === 'function' 
-    ? browser.identity.getRedirectURL() 
+  const redirectUrl = typeof browser.identity.getRedirectURL === 'function'
+    ? browser.identity.getRedirectURL()
     : `https://${browser.runtime.id}.chromiumapp.org/`;
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
 
@@ -362,29 +373,29 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean)
           return reject(new Error('OAuth flow canceled or returned empty response.'));
         }
 
-      try {
-        const urlObj = new URL(responseUrl);
-        const params = new URLSearchParams(urlObj.hash.substring(1));
-        const token = params.get('access_token');
-        const expiresIn = params.get('expires_in');
+        try {
+          const urlObj = new URL(responseUrl);
+          const params = new URLSearchParams(urlObj.hash.substring(1));
+          const token = params.get('access_token');
+          const expiresIn = params.get('expires_in');
 
-        if (!token) {
-          return reject(new Error('Access token not found in Google OAuth response.'));
+          if (!token) {
+            return reject(new Error('Access token not found in Google OAuth response.'));
+          }
+
+          const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
+          browser.storage.local.set({
+            googleAccessToken: token,
+            googleTokenExpiry: expiryTime
+          }).then(() => {
+            resolve(token);
+          });
+        } catch (err: any) {
+          reject(new Error(err.message || String(err)));
         }
-
-        const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
-        browser.storage.local.set({
-          googleAccessToken: token,
-          googleTokenExpiry: expiryTime
-        }).then(() => {
-          resolve(token);
-        });
-      } catch (err: any) {
+      }).catch((err: any) => {
         reject(new Error(err.message || String(err)));
-      }
-    }).catch((err: any) => {
-      reject(new Error(err.message || String(err)));
-    });
+      });
   });
 }
 
@@ -401,31 +412,14 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
 
   let accessToken: string;
   const customClientId = settings.googleClientId?.trim();
-  const isEdge = navigator.userAgent.includes('Edg/');
-  const isFirefox = navigator.userAgent.includes('Firefox/');
-  
-  if (customClientId) {
-    accessToken = await getLaunchWebAuthFlowToken(customClientId, interactive);
-  } else if (typeof chrome !== 'undefined' && chrome.identity && chrome.identity.getAuthToken && !isEdge && !isFirefox) {
-    accessToken = await new Promise<string>((resolve, reject) => {
-      chrome.identity.getAuthToken({ interactive }, (result: any) => {
-        if (chrome.runtime.lastError) {
-          return reject(new Error(chrome.runtime.lastError.message));
-        }
-        const token = result && typeof result === 'object' ? result.token : result;
-        if (!token) {
-          return reject(new Error('Failed to obtain Google access token'));
-        }
-        resolve(token);
-      });
-    });
-  } else {
-    const manifestClientId = chrome.runtime.getManifest().oauth2?.client_id;
-    if (!manifestClientId) {
-      throw new Error('No Google Client ID provided and getAuthToken is not supported in this browser.');
-    }
-    accessToken = await getLaunchWebAuthFlowToken(manifestClientId, interactive);
+  const manifestClientId = (browser.runtime.getManifest() as any).oauth2?.client_id;
+  const clientId = customClientId || manifestClientId;
+
+  if (!clientId) {
+    throw new Error('No Google Client ID provided. Please configure one in settings.');
   }
+
+  accessToken = await getLaunchWebAuthFlowToken(clientId, interactive);
 
   const syncErrors: string[] = [];
   const listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
@@ -555,18 +549,18 @@ browser.webRequest.onBeforeRedirect.addListener(
 
 function decodeHTMLEntities(text: string) {
   return text.replace(/&quot;/g, '"')
-             .replace(/&#x3d;/g, '=')
-             .replace(/&#x3D;/g, '=')
-             .replace(/&lt;/g, '<')
-             .replace(/&gt;/g, '>')
-             .replace(/&amp;/g, '&');
+    .replace(/&#x3d;/g, '=')
+    .replace(/&#x3D;/g, '=')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 async function loginTauSso(username: string, idNumber: string, pass: string, skipInvalidate = false): Promise<string> {
   return new Promise<string>(async (resolve, reject) => {
     capturedTokenResolve = resolve;
     capturedTokenReject = reject;
-    
+
     // Set a global timeout for the entire login process
     if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
     activeLoginTimeout = setTimeout(() => {
@@ -588,7 +582,7 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
       }
 
       const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
-      
+
       // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
       let res1;
       try {
@@ -611,13 +605,13 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
       if (formActionMatch1) {
         const action = formActionMatch1[1];
         ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
-        
+
         const params = new URLSearchParams();
         const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
         inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
 
         // Submit the form to initialize the session with SAML context
-        await fetch(ssoUrl, { 
+        await fetch(ssoUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           credentials: 'include',
@@ -640,15 +634,15 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
         credentials: 'include',
         body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
       });
-      
+
       const credText = await credRes.text();
-      
+
       if (credText.replace(/\s/g, '').includes('"isError":true')) {
         let errorCode = 'Invalid username, ID, or password';
         try {
           const credData = JSON.parse(credText);
           errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש או סיסמה שהזנתם אינם תקינים' : credData.errorCode;
-        } catch (e) {}
+        } catch (e) { }
         throw new Error(errorCode);
       }
 

@@ -33,6 +33,13 @@ export default defineConfig(({ mode }) => {
           return manifest;
         },
         browser: targetBrowser,
+        webExtConfig: {
+          target: targetBrowser === 'firefox' ? 'firefox-desktop' : 'chromium',
+          keepProfileChanges: true,
+          firefoxProfile: path.resolve(__dirname, '.dev-profile'),
+          chromiumProfile: path.resolve(__dirname, '.dev-profile'),
+          profileCreateIfMissing: true,
+        } as any,
       }),
     ],
     build: {

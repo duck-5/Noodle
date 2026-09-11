@@ -254,6 +254,10 @@
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  align-self: start;
   padding: 2rem 1.5rem;
   border-radius: 0;
   border-top: none;
@@ -263,7 +267,10 @@
   flex-direction: column;
   justify-content: space-between;
   transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 10;
+  scrollbar-width: thin;
 }
 
 .sidebar.collapsed {
@@ -424,6 +431,7 @@
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
+  min-width: 0;
   overflow-y: auto;
 }
 
