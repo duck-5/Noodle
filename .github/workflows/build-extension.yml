@@ -37,7 +37,7 @@ jobs:
         run: pnpm test:parity
 
       - name: Install Playwright Browsers & OS Dependencies
-        run: npx playwright install --with-deps chromium
+        run: pnpm --filter extension exec playwright install --with-deps chromium
 
       - name: Run Extension E2E Playwright Tests
         run: xvfb-run --auto-servernum -- pnpm test:e2e
