@@ -515,38 +515,6 @@ async function markNotified(assignId: number, type: '24h' | '1h') {
 // Programmatic TAU SSO Login
 // --------------------------------------------------------------------------
 
-let capturedTokenResolve: ((token: string) => void) | null = null;
-let capturedTokenReject: ((err: Error) => void) | null = null;
-let activeLoginTimeout: ReturnType<typeof setTimeout> | null = null;
-
-browser.webRequest.onBeforeRedirect.addListener(
-  (details) => {
-    const redirectUrl = details.redirectUrl || '';
-    if (redirectUrl.startsWith('moodlemobile://') || redirectUrl.startsWith('moodleapp://')) {
-      const match = redirectUrl.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
-      if (match) {
-        try {
-          const parts = atob(match[1]).split(':::');
-          const token = parts.length > 1 ? parts[1] : parts[0];
-          console.log('Captured token from SSO redirect via webRequest');
-          if (activeLoginTimeout) {
-            clearTimeout(activeLoginTimeout);
-            activeLoginTimeout = null;
-          }
-          if (capturedTokenResolve) {
-            capturedTokenResolve(token);
-            capturedTokenResolve = null;
-            capturedTokenReject = null;
-          }
-        } catch (e) {
-          console.error('Error decoding token', e);
-        }
-      }
-    }
-  },
-  { urls: ['https://moodle.tau.ac.il/*'] }
-);
-
 function decodeHTMLEntities(text: string) {
   return text.replace(/&quot;/g, '"')
     .replace(/&#x3d;/g, '=')
@@ -557,148 +525,149 @@ function decodeHTMLEntities(text: string) {
 }
 
 async function loginTauSso(username: string, idNumber: string, pass: string, skipInvalidate = false): Promise<string> {
-  return new Promise<string>(async (resolve, reject) => {
-    capturedTokenResolve = resolve;
-    capturedTokenReject = reject;
-
-    // Set a global timeout for the entire login process
-    if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
-    activeLoginTimeout = setTimeout(() => {
-      if (capturedTokenReject) {
-        capturedTokenReject(new Error('Timeout waiting for Moodle token redirect'));
-        capturedTokenResolve = null;
-        capturedTokenReject = null;
-      }
-    }, 25000);
-
+  // 0. Force a clean session state unless skipInvalidate is set.
+  if (!skipInvalidate) {
     try {
-      // 0. Force a clean session state unless skipInvalidate is set.
-      if (!skipInvalidate) {
-        try {
-          await invalidateSsoSession();
-        } catch (e) {
-          console.log('Failed to invalidate existing SSO session before login', e);
-        }
-      }
-
-      const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
-
-      // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
-      let res1;
-      try {
-        res1 = await fetch(launchUrl, { credentials: 'include' });
-      } catch (e) {
-        // If fetch throws on the very first request, it's likely because it hit the moodlemobile:// redirect!
-        // We just wait a bit for the webRequest listener to fire and resolve the promise.
-        console.log('fetch(launchUrl) threw, waiting for redirect interceptor...', e);
-        return;
-      }
-
-      let ssoUrl = res1.url;
-      if (!ssoUrl.includes('nidp.tau.ac.il')) {
-        throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
-      }
-
-      // 2. Parse the auto-submitting form that sets up the SAML session
-      const html1 = await res1.text();
-      const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
-      if (formActionMatch1) {
-        const action = formActionMatch1[1];
-        ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
-
-        const params = new URLSearchParams();
-        const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
-        inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
-
-        // Submit the form to initialize the session with SAML context
-        await fetch(ssoUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          credentials: 'include',
-          body: params
-        });
-      }
-
-      // 3. Initiate login sequence
-      await fetch(ssoUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        credentials: 'include',
-        body: 'option=credential&initiateLoginSequence=true&isAjax=true'
-      });
-
-      // 4. Submit credentials
-      const credRes = await fetch(ssoUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        credentials: 'include',
-        body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
-      });
-
-      const credText = await credRes.text();
-
-      if (credText.replace(/\s/g, '').includes('"isError":true')) {
-        let errorCode = 'Invalid username, ID, or password';
-        try {
-          const credData = JSON.parse(credText);
-          errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש או סיסמה שהזנתם אינם תקינים' : credData.errorCode;
-        } catch (e) { }
-        throw new Error(errorCode);
-      }
-
-      // 5. Complete SSO. Fetching the SSO URL again yields the auto-submitting SAML form
-      const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
-      const html2 = await finalSsoRes.text();
-
-      // Extract SAMLResponse and RelayState robustly (attribute order may vary in NIDP's HTML)
-      let samlResponse = '';
-      let relayState = '';
-      const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
-      for (const m of finalInputs) {
-        const nMatch = m[1].match(/name=["']([^"']+)["']/i);
-        const vMatch = m[1].match(/value=["']([^"']+)["']/i);
-        if (nMatch && vMatch) {
-          if (nMatch[1] === 'SAMLResponse') samlResponse = vMatch[1];
-          if (nMatch[1] === 'RelayState') relayState = vMatch[1];
-        }
-      }
-
-      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
-
-      if (!actionMatch || !samlResponse) {
-        const debugHtml = html2.length > 500 ? html2.substring(0, 500) + '...' : html2;
-        throw new Error('SAML Parsing Failed. HTML: ' + debugHtml);
-      }
-
-      const actionUrl = decodeHTMLEntities(actionMatch[1]);
-      samlResponse = decodeHTMLEntities(samlResponse);
-      relayState = relayState ? decodeHTMLEntities(relayState) : '';
-
-      const bodyParams = new URLSearchParams();
-      bodyParams.append('SAMLResponse', samlResponse);
-      if (relayState) {
-        bodyParams.append('RelayState', relayState);
-      }
-
-      // 6. Submit SAML response back to Moodle.
-      try {
-        await fetch(actionUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          credentials: 'include',
-          body: bodyParams
-        });
-      } catch (e) {
-        console.log('Expected fetch error on custom protocol redirect:', e);
-      }
-    } catch (error) {
-      if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
-      if (capturedTokenReject) {
-        capturedTokenReject(error instanceof Error ? error : new Error(String(error)));
-        capturedTokenResolve = null;
-        capturedTokenReject = null;
-      }
+      await invalidateSsoSession();
+    } catch (e) {
+      console.log('Failed to invalidate existing SSO session before login', e);
     }
+  }
+
+  // 1. Initial request to login/index.php to get baseUrl
+  let ssoUrl = '';
+  let baseUrl = '';
+
+  const initialRes = await fetch('https://moodle.tau.ac.il/login/index.php', { credentials: 'include' });
+  const urlAfterLogin = initialRes.url;
+  
+  if (urlAfterLogin.includes('/auth/saml2/login.php')) {
+    baseUrl = urlAfterLogin.split('/auth')[0];
+    // If it didn't redirect to SSO, we need to explicitly hit auth/saml2/login.php
+    const samlRes = await fetch(urlAfterLogin, { credentials: 'include' });
+    ssoUrl = samlRes.url;
+  } else {
+    // If it redirected straight to NIDP
+    baseUrl = 'https://moodle.tau.ac.il'; // Fallback
+    ssoUrl = urlAfterLogin;
+  }
+
+  if (!ssoUrl.includes('nidp.tau.ac.il')) {
+    // Maybe we are already logged in?
+    if (ssoUrl.includes('/my/') || ssoUrl.includes('moodle.tau.ac.il')) {
+       // We might be logged in, let's extract sesskey directly
+       const text = await initialRes.text();
+       const sesskeyMatch = text.match(/"sesskey":"([^"]+)"/);
+       if (sesskeyMatch) {
+         return JSON.stringify({ type: 'web', sesskey: sesskeyMatch[1], baseUrl: baseUrl || 'https://moodle.tau.ac.il' });
+       }
+    }
+    throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
+  }
+
+  // 2. Parse the auto-submitting form that sets up the SAML session
+  let html1 = await (await fetch(ssoUrl, { credentials: 'include' })).text();
+  const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
+  if (formActionMatch1) {
+    const action = formActionMatch1[1];
+    ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
+
+    const params = new URLSearchParams();
+    const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
+    inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
+
+    await fetch(ssoUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      credentials: 'include',
+      body: params
+    });
+  }
+
+  // 3. Initiate login sequence
+  await fetch(ssoUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: 'option=credential&initiateLoginSequence=true&isAjax=true'
+  });
+
+  // 4. Submit credentials
+  const credRes = await fetch(ssoUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
+  });
+
+  const credText = await credRes.text();
+
+  if (credText.replace(/\s/g, '').includes('"isError":true')) {
+    let errorCode = 'Invalid username, ID, or password';
+    try {
+      const credData = JSON.parse(credText);
+      errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש או סיסמה שהזנתם אינם תקינים' : credData.errorCode;
+    } catch (e) { }
+    throw new Error(errorCode);
+  }
+
+  // 5. Complete SSO
+  const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
+  const html2 = await finalSsoRes.text();
+
+  let samlResponse = '';
+  let relayState = '';
+  const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
+  for (const m of finalInputs) {
+    const nMatch = m[1].match(/name=["']([^"']+)["']/i);
+    const vMatch = m[1].match(/value=["']([^"']+)["']/i);
+    if (nMatch && vMatch) {
+      if (nMatch[1] === 'SAMLResponse') samlResponse = vMatch[1];
+      if (nMatch[1] === 'RelayState') relayState = vMatch[1];
+    }
+  }
+
+  const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
+
+  if (!actionMatch || !samlResponse) {
+    const debugHtml = html2.length > 500 ? html2.substring(0, 500) + '...' : html2;
+    throw new Error('SAML Parsing Failed. HTML: ' + debugHtml);
+  }
+
+  const actionUrl = decodeHTMLEntities(actionMatch[1]);
+  samlResponse = decodeHTMLEntities(samlResponse);
+  relayState = relayState ? decodeHTMLEntities(relayState) : '';
+
+  const bodyParams = new URLSearchParams();
+  bodyParams.append('SAMLResponse', samlResponse);
+  if (relayState) {
+    bodyParams.append('RelayState', relayState);
+  }
+
+  // 6. Submit SAML response back to Moodle.
+  // This will follow redirects and land on the Moodle dashboard
+  const moodleRes = await fetch(actionUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: bodyParams
+  });
+
+  const moodleHtml = await moodleRes.text();
+  const sesskeyMatch = moodleHtml.match(/"sesskey":"([^"]+)"/);
+  
+  if (!sesskeyMatch) {
+    throw new Error('Failed to extract sesskey from Moodle dashboard');
+  }
+  
+  if (!baseUrl) {
+     const myUrlMatch = moodleRes.url.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
+     baseUrl = myUrlMatch ? myUrlMatch[1].replace(/\/$/, '') : 'https://moodle.tau.ac.il';
+  }
+
+  return JSON.stringify({
+    type: 'web',
+    sesskey: sesskeyMatch[1],
+    baseUrl: baseUrl
   });
 }
-

@@ -218,26 +218,39 @@ export async function loginTauSso(
   password: string
 ): Promise<string> {
   const jar = new CookieJar();
-  const passport = Math.random().toString(36).substring(2, 15);
-  const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${passport}`;
 
-  // ── Step 1: Hit launch.php and follow redirects to nidp.tau.ac.il ────────
-  // IMPORTANT: We follow manually so the MoodleSession cookie from the
-  // intermediate 302 response is captured — without it, Moodle can't match
-  // the SAML assertion in Step 6 and rejects the login.
-  const { response: res1, finalUrl: afterLaunch } = await mfetchFollow(jar, launchUrl);
+  // 1. Initial request to login/index.php to get baseUrl
+  let ssoUrl = '';
+  let baseUrl = '';
 
-  // If already authenticated, Moodle redirects straight to moodlemobile://
-  const earlyToken = tryExtractTokenFromUrl(afterLaunch);
-  if (earlyToken) return earlyToken;
-
-  if (!afterLaunch.includes('nidp.tau.ac.il')) {
-    throw new Error(`Unexpected SSO redirect — expected TAU SSO (nidp.tau.ac.il), got: ${afterLaunch}`);
+  const { response: initialRes, finalUrl: urlAfterLogin } = await mfetchFollow(jar, 'https://moodle.tau.ac.il/login/index.php');
+  
+  if (urlAfterLogin.includes('/auth/saml2/login.php')) {
+    baseUrl = urlAfterLogin.split('/auth')[0];
+    const { response: samlRes, finalUrl: finalSsoUrl } = await mfetchFollow(jar, urlAfterLogin);
+    ssoUrl = finalSsoUrl;
+  } else {
+    baseUrl = 'https://moodle.tau.ac.il';
+    ssoUrl = urlAfterLogin;
   }
 
-  let ssoUrl = afterLaunch;
+  // If already authenticated
+  if (ssoUrl.includes('/my/') || ssoUrl.includes('moodle.tau.ac.il')) {
+     const text = await initialRes.text();
+     const sesskeyMatch = text.match(/"sesskey":"([^"]+)"/);
+     if (sesskeyMatch) {
+       return JSON.stringify({ type: 'web', sesskey: sesskeyMatch[1], cookie: jar.header(), baseUrl });
+     }
+  }
+
+  if (!ssoUrl.includes('nidp.tau.ac.il')) {
+    throw new Error(`Unexpected SSO redirect — expected TAU SSO (nidp.tau.ac.il), got: ${ssoUrl}`);
+  }
 
   // ── Step 2: Parse & submit the SAML session-init form ───────────────────
+  // We need to fetch ssoUrl again because mfetchFollow might have lost the html body 
+  // if we used the stream? No, we didn't read it. Let's just fetch it again to be safe.
+  const res1 = await mfetch(jar, ssoUrl);
   const html1 = await res1.text();
   const formMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
   if (formMatch1) {
@@ -305,21 +318,29 @@ export async function loginTauSso(
   if (relayState) bodyParams.append('RelayState', relayState);
 
   // ── Step 6: POST SAML assertion to Moodle ───────────────────────────────
-  // Moodle responds with 302 → moodlemobile://token=<base64>.
-  // mfetchFollow captures this URL before React Native's fetch tries to
-  // navigate to the custom scheme (which would throw).
-  // The Moodle session cookie captured in Step 1 is sent automatically here.
-  const { finalUrl } = await mfetchFollow(jar, actionUrl, {
+  // We manually follow redirects so we capture the Moodle session cookie
+  const { response: finalRes, finalUrl } = await mfetchFollow(jar, actionUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: bodyParams.toString(),
   });
 
-  const token = tryExtractTokenFromUrl(finalUrl);
-  if (token) return token;
+  const finalHtml = await finalRes.text();
+  const sesskeyMatch = finalHtml.match(/"sesskey":"([^"]+)"/);
 
-  throw new Error(
-    `Could not extract Moodle token from SSO redirect. ` +
-    `Final URL: ${finalUrl}`
-  );
+  if (!sesskeyMatch) {
+    throw new Error('Failed to extract sesskey from Moodle dashboard. Final URL: ' + finalUrl);
+  }
+  
+  if (!baseUrl) {
+     const myUrlMatch = finalUrl.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
+     baseUrl = myUrlMatch ? myUrlMatch[1].replace(/\/$/, '') : 'https://moodle.tau.ac.il';
+  }
+
+  return JSON.stringify({
+    type: 'web',
+    sesskey: sesskeyMatch[1],
+    cookie: jar.header(),
+    baseUrl: baseUrl
+  });
 }

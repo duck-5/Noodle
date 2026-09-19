@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased] - 2026-09-07
 
+### Fixed
+- Fixed Moodle login breaking after the academic year changed by dynamically resolving the `baseUrl` from Moodle's `/login/index.php`.
+- Migrated API calls from the deprecated `tool_mobile` REST API to Moodle's internal AJAX `/lib/ajax/service.php` using the web session `sesskey`, restoring functionality after the university disabled the mobile app plugin.
+
 ### Added
 - **Continuous Integration (CI) Test Pipeline on Every Commit (`.github/workflows/build-extension.yml`)**:
   - Updated GitHub Actions workflow to trigger on every `push` (all branches) and `pull_request`.
