@@ -150,6 +150,8 @@ export interface RawCourseSection {
 }
 
 export class MoodleClient {
+  private resolvedBaseUrl: boolean = false;
+
   constructor(
     private token: string,
     private baseUrl: string = 'https://moodle.tau.ac.il/webservice/rest/server.php'
@@ -177,11 +179,29 @@ export class MoodleClient {
     return data.token;
   }
 
+  private async ensureCorrectBaseUrl() {
+    if (this.resolvedBaseUrl) return;
+    try {
+      // Follow redirects to determine if there's a year-specific subfolder (e.g. /2026/)
+      const res = await fetch('https://moodle.tau.ac.il/login/index.php');
+      const match = res.url.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
+      if (match) {
+        this.baseUrl = match[1].replace(/\/$/, '') + '/webservice/rest/server.php';
+      }
+    } catch (e) {
+      // Ignore network errors and fallback to whatever baseUrl is currently set to
+      console.warn('Failed to dynamically resolve Moodle baseUrl', e);
+    }
+    this.resolvedBaseUrl = true;
+  }
+
   private async apiCall(
     wsfunction: string,
     params: Record<string, any> = {},
     method: 'GET' | 'POST' = 'GET'
   ): Promise<any> {
+    await this.ensureCorrectBaseUrl();
+
     const allParams = {
       wstoken: this.token,
       wsfunction,
