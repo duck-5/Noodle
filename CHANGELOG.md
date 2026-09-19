@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased] - 2026-09-07
 
+### Fixed
+- Fixed Moodle login breaking after the academic year changed by scraping `user/managetoken.php` to reset and acquire the Web Service token, restoring API access after the university disabled the `tool_mobile` plugin.
+
 ### Added
 - **Continuous Integration (CI) Test Pipeline on Every Commit (`.github/workflows/build-extension.yml`)**:
   - Updated GitHub Actions workflow to trigger on every `push` (all branches) and `pull_request`.
