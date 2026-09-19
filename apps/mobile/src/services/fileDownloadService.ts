@@ -61,16 +61,41 @@ export async function downloadMoodleFile(
     }
 
     const downloadWithToken = async (activeToken: string): Promise<string> => {
-      const separator = file.file_url.includes('?') ? '&' : '?';
-      const authenticatedUrl = `${file.file_url}${separator}token=${activeToken}`;
+      let isWebToken = false;
+      let authenticatedUrl = '';
+      let cookieHeader = '';
+      
+      if (activeToken.startsWith('{')) {
+        try {
+          const authObj = JSON.parse(activeToken);
+          if (authObj.type === 'web') {
+            isWebToken = true;
+            authenticatedUrl = file.file_url;
+            cookieHeader = authObj.cookie || '';
+          }
+        } catch (e) {}
+      }
+
+      if (!isWebToken) {
+        const separator = file.file_url.includes('?') ? '&' : '?';
+        authenticatedUrl = `${file.file_url}${separator}token=${activeToken}`;
+      }
+
+      const defaultHeaders: Record<string, string> = {
+        'User-Agent': BROWSER_USER_AGENT,
+        'Accept': '*/*'
+      };
+      
+      if (cookieHeader) {
+        defaultHeaders['Cookie'] = cookieHeader;
+      }
 
       // Strategy 1: Modern File.downloadFileAsync with headers
       try {
         const result = await File.downloadFileAsync(authenticatedUrl, targetFile, {
           idempotent: true,
           headers: {
-            'User-Agent': BROWSER_USER_AGENT,
-            'Accept': '*/*',
+            ...defaultHeaders,
             'Accept-Encoding': 'gzip, deflate, br',
           },
         });
@@ -84,10 +109,7 @@ export async function downloadMoodleFile(
       // Strategy 2: Legacy FileSystem.downloadAsync with custom headers
       const legacyTargetUri = `${FileSystemLegacy.documentDirectory}${encodeURIComponent(cleanName)}`;
       const legacyResult = await FileSystemLegacy.downloadAsync(authenticatedUrl, legacyTargetUri, {
-        headers: {
-          'User-Agent': BROWSER_USER_AGENT,
-          'Accept': '*/*',
-        },
+        headers: defaultHeaders,
       });
 
       if (legacyResult && legacyResult.status === 200) {

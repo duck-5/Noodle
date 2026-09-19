@@ -149,6 +149,52 @@ export interface RawCourseSection {
   modules: RawCourseModule[];
 }
 
+/**
+ * Converts flat bracket-notation params (used by the REST API) into nested
+ * JSON objects (required by the AJAX API).
+ *
+ * Example:
+ *   { 'events[eventids][0]': 0, 'options[userevents]': 1, userid: 42 }
+ * becomes:
+ *   { events: { eventids: [0] }, options: { userevents: 1 }, userid: 42 }
+ */
+function unflattenParams(params: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+
+    // No brackets → simple flat key
+    if (!key.includes('[')) {
+      result[key] = value;
+      continue;
+    }
+
+    // Split "a[b][c]" → ["a", "b", "c"]
+    const parts = key.replace(/\]/g, '').split('[');
+    let current: any = result;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!(part in current)) {
+        // Peek at the next segment: if it looks like a numeric index, create an array
+        const nextPart = parts[i + 1];
+        current[part] = /^\d+$/.test(nextPart) ? [] : {};
+      }
+      current = current[part];
+    }
+
+    const lastPart = parts[parts.length - 1];
+    if (Array.isArray(current)) {
+      current[parseInt(lastPart, 10)] = value;
+    } else {
+      current[lastPart] = value;
+    }
+  }
+
+  return result;
+}
+
 export class MoodleClient {
   constructor(
     private token: string,
@@ -182,6 +228,58 @@ export class MoodleClient {
     params: Record<string, any> = {},
     method: 'GET' | 'POST' = 'GET'
   ): Promise<any> {
+    let authObj: any = null;
+    if (this.token && this.token.startsWith('{')) {
+      try {
+        authObj = JSON.parse(this.token);
+      } catch (e) {
+        // Fallback to treat as plain token
+      }
+    }
+
+    if (authObj && authObj.type === 'web') {
+      const url = `${authObj.baseUrl}/lib/ajax/service.php?sesskey=${authObj.sesskey}&info=${wsfunction}`;
+      const payload = [{
+        index: 0,
+        methodname: wsfunction,
+        args: unflattenParams(params)
+      }];
+
+      const options: RequestInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      };
+
+      if (authObj.cookie) {
+        (options.headers as any)['Cookie'] = authObj.cookie;
+      }
+
+      // We explicitly set credentials to 'include' for Chrome Extension environment
+      // where fetch handles the cookies naturally (and authObj.cookie might be empty).
+      options.credentials = 'include';
+
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data && data[0]) {
+        if (data[0].error) {
+          const exc = data[0].exception || {};
+          throw new MoodleApiError(
+            exc.errorcode || 'ajax_error',
+            exc.message || 'Moodle AJAX API error',
+            exc.exception
+          );
+        }
+        return data[0].data;
+      }
+      throw new Error('Invalid ajax response');
+    }
+
+    // --- Legacy REST API mode (wstoken) ---
     const allParams = {
       wstoken: this.token,
       wsfunction,
@@ -303,6 +401,10 @@ export class MoodleClient {
   }
 
   public buildAuthenticatedFileUrl(fileUrl: string): string {
+    if (this.token && this.token.startsWith('{')) {
+      // For web sessions, we don't append ?token=wstoken because cookies handle auth
+      return fileUrl;
+    }
     const separator = fileUrl.includes('?') ? '&' : '?';
     return `${fileUrl}${separator}token=${this.token}`;
   }
