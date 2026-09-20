@@ -12,10 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Modular Multi-Tier Moodle Client Fallback Architecture (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Implemented a Strategy Pattern with Chain-of-Responsibility fallback runner (`executeWithFallback`) in `@tautracker/moodle-client`:
     - **Tier 1 (`RestMoodleStrategy`)**: Uses the official Moodle Mobile REST API (`/webservice/rest/server.php`) with `wstoken`. When the university re-enables the mobile app or plugin, requests resolve immediately with zero overhead.
-    - **Tier 2 (`AjaxMoodleStrategy`)**: Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the web `sesskey` and browser session cookies for supported endpoints (e.g. timeline courses).
-    - **Tier 3 (`ScraperMoodleStrategy`)**: Uses pure TypeScript DOM/Regex parsing to fetch and extract course listings, assignment submission tables, course sections, files, and grades directly from standard Moodle web pages (`/my/`, `/course/view.php`, etc.) using session cookies.
+    - **Tier 2 (`AjaxMoodleStrategy`)**: Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the web `sesskey` and browser session cookies for supported endpoints (e.g. timeline courses). Statically lists unsupported operations to bypass redundant network requests and console noise.
+    - **Tier 3 (`ScraperMoodleStrategy`)**: Uses pure TypeScript DOM/Regex parsing to fetch and extract course listings, assignment submission tables, course sections, files, and grades directly from standard Moodle web pages (`/my/courses.php`, `/user/profile.php`, `/my/`, `/course/view.php`, etc.) using session cookies.
+  - Added a **1-hour circuit breaker** on `RestMoodleStrategy`: when Moodle returns access control exceptions (`accessexception` / `servicenotavailable`), the REST strategy enters a 1-hour cooldown window to prevent repeated hammering of the disabled mobile endpoint.
+  - Enhanced course discovery in `ScraperMoodleStrategy.getEnrolledCourses()` using `Promise.allSettled` to query `/my/courses.php`, `/user/profile.php`, and `/my/`, parsing course cards (`data-course-id`), links (`/course/view.php?id=`), and inline JSON state scripts, extracting TAU course codes (`0368111801`).
   - Added real-time observability in dev mode (`devMode: true`) logging strategy attempts, unsupported function skips, failure reasons, and fallback transitions.
-  - Added test suite `fallbackStrategies.test.ts` verifying test cases `TC-FALLBACK-01` through `TC-FALLBACK-04` from `docs/TEST_CASES.md`.
+  - Added test cases `TC-FALLBACK-01` through `TC-FALLBACK-07` in `fallbackStrategies.test.ts`.
   - Added `sesskey` extraction, storage, and teardown in extension `serviceWorker.ts`, `storage.ts`, and mobile `auth.ts`.
   - Updated `docs/ARCHITECTURE.md` and `docs/TEST_CASES.md`.
 

@@ -9,10 +9,18 @@ import {
 } from '../moodleApi.js';
 import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
 
+export const AJAX_SUPPORTED_OPERATIONS = new Set<string>([
+  'getEnrolledCourses',
+]);
+
 export class AjaxMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'AJAX';
 
   constructor(private context: StrategyContext) {}
+
+  public isOperationSupported(operationName: string): boolean {
+    return AJAX_SUPPORTED_OPERATIONS.has(operationName);
+  }
 
   private getRootUrl(): string {
     const base = this.context.baseUrl.replace(/\/$/, '');
@@ -43,6 +51,15 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
     }
 
     const json = await response.json();
+    if (json && typeof json === 'object' && !Array.isArray(json)) {
+      if (json.error || json.errorcode) {
+        throw new MoodleApiError(
+          json.errorcode || 'ajax_error',
+          json.error || json.message || 'Moodle AJAX call failed'
+        );
+      }
+    }
+
     if (!Array.isArray(json) || json.length === 0) {
       throw new Error('Unexpected AJAX response format');
     }
@@ -67,26 +84,41 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
 
   public async getEnrolledCourses(_userId: number): Promise<RawMoodleCourse[]> {
     // core_course_get_enrolled_courses_by_timeline_classification is AJAX-enabled in Moodle 4.x
-    const data = await this.ajaxCall(
-      'core_course_get_enrolled_courses_by_timeline_classification',
-      {
-        classification: 'all',
-        limit: 0,
-        offset: 0,
-        sort: 'fullname',
-      }
-    );
+    // Try 'allincludinghidden' first to catch all courses without filter bias
+    const classifications = ['allincludinghidden', 'all', 'inprogress', 'future'];
+    let allCourses: any[] = [];
 
-    if (data && Array.isArray(data.courses)) {
-      return data.courses.map((c: any) => ({
-        id: c.id,
-        fullname: c.fullname || '',
-        shortname: c.shortname || '',
-        idnumber: c.idnumber || '',
-      }));
+    for (const classification of classifications) {
+      try {
+        const data = await this.ajaxCall(
+          'core_course_get_enrolled_courses_by_timeline_classification',
+          {
+            classification,
+            limit: 0,
+            offset: 0,
+          }
+        );
+
+        if (data && Array.isArray(data.courses) && data.courses.length > 0) {
+          allCourses = data.courses;
+          break;
+        }
+      } catch (err) {
+        // Try next classification if Moodle rejects this specific classification value
+        continue;
+      }
     }
 
-    return [];
+    if (allCourses.length === 0) {
+      throw new Error('No enrolled courses returned by AJAX timeline service; falling back to Scraper');
+    }
+
+    return allCourses.map((c: any) => ({
+      id: c.id,
+      fullname: c.fullname || '',
+      shortname: c.shortname || c.fullname || '',
+      idnumber: c.idnumber || '',
+    }));
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {

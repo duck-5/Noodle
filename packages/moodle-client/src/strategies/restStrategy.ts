@@ -11,8 +11,29 @@ import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './ty
 
 export class RestMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'REST';
+  private static cooldownUntil: number = 0;
 
   constructor(private context: StrategyContext) {}
+
+  public static markUnavailable(durationMs: number = 60 * 60 * 1000): void {
+    RestMoodleStrategy.cooldownUntil = Date.now() + durationMs;
+  }
+
+  public static isCoolingDown(): boolean {
+    return Date.now() < RestMoodleStrategy.cooldownUntil;
+  }
+
+  public static getCooldownRemainingMs(): number {
+    return Math.max(0, RestMoodleStrategy.cooldownUntil - Date.now());
+  }
+
+  public static resetCooldown(): void {
+    RestMoodleStrategy.cooldownUntil = 0;
+  }
+
+  public isOperationSupported(_operationName: string): boolean {
+    return !RestMoodleStrategy.isCoolingDown();
+  }
 
   private getRestEndpoint(): string {
     const base = this.context.baseUrl.replace(/\/$/, '');
@@ -27,6 +48,15 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     params: Record<string, any> = {},
     method: 'GET' | 'POST' = 'GET'
   ): Promise<any> {
+    if (RestMoodleStrategy.isCoolingDown()) {
+      const remainingMins = Math.ceil(RestMoodleStrategy.getCooldownRemainingMs() / 60000);
+      throw new UnsupportedStrategyError(
+        'REST',
+        wsfunction,
+        `REST strategy in cooldown (${remainingMins}m remaining after mobile plugin failure)`
+      );
+    }
+
     if (!this.context.token) {
       throw new UnsupportedStrategyError('REST', wsfunction, 'No wstoken provided');
     }
@@ -69,6 +99,18 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
     const data = await response.json();
     if (data && typeof data === 'object') {
+      const code = data.errorcode || '';
+      const message = String(data.message || '');
+      const isAccessOrServiceError =
+        code === 'accessexception' ||
+        code === 'servicenotavailable' ||
+        message.includes('חריגת בקרת גישה') ||
+        message.includes('Access to the function');
+
+      if (isAccessOrServiceError) {
+        RestMoodleStrategy.markUnavailable(60 * 60 * 1000);
+      }
+
       if ('exception' in data) {
         throw new MoodleApiError(
           data.errorcode || 'exception',

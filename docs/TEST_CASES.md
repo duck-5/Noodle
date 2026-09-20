@@ -1044,3 +1044,30 @@ graph LR
   2. Call the operation.
   3. Assert promise rejects with an error matching `All strategies failed for <operation>`.
 
+#### TC-FALLBACK-05: 1-Hour Circuit Breaker on REST Strategy
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When `RestMoodleStrategy` receives an `accessexception` (`חריגת בקרת גישה`) or `servicenotavailable` response from Moodle (indicating that the university has disabled the mobile web service or plugin), it enters a 1-hour cooldown window. During this cooldown, subsequent API calls bypass REST immediately without making network calls to avoid latency and console error noise.
+* **Automated Test Flow**:
+  1. Invoke `RestMoodleStrategy.getSiteInfo()` where Moodle returns `errorcode: 'accessexception'`.
+  2. Assert `RestMoodleStrategy.isCoolingDown()` is `true`.
+  3. Invoke subsequent API call; assert REST call is rejected immediately with cooldown error and zero fetch requests are dispatched.
+
+#### TC-FALLBACK-06: Static AJAX Operation Support Filtering
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Statically identifies operations not supported by Moodle's internal AJAX endpoint (`/lib/ajax/service.php`). When `isOperationSupported(operationName)` returns `false`, `fallbackRunner` skips `AjaxMoodleStrategy` immediately without throwing errors or creating console log spam.
+* **Automated Test Flow**:
+  1. Initialize `AjaxMoodleStrategy`.
+  2. Assert `isOperationSupported('getEnrolledCourses')` is `true`.
+  3. Assert `isOperationSupported('getSiteInfo')`, `isOperationSupported('getAssignments')`, and `isOperationSupported('getCourseContents')` return `false`.
+
+#### TC-FALLBACK-07: Multi-Page Course Scraping & Resilient Regex/JSON Parsing
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `ScraperMoodleStrategy.getEnrolledCourses()` querying multiple Moodle pages (`/my/courses.php`, `/user/profile.php`, `/my/`) using `Promise.allSettled`. Verifies extraction from HTML card attributes (`data-course-id`), links (`/course/view.php?id=`), and embedded JSON scripts (`"courses": [...]`), properly parsing TAU course numbers (`0368111801`).
+* **Automated Test Flow**:
+  1. Mock responses for `/my/courses.php` (containing card markup with `data-course-id`), `/user/profile.php` (containing standard links and inline JSON script), and `/my/`.
+  2. Call `ScraperMoodleStrategy.getEnrolledCourses(userId)`.
+  3. Assert all enrolled courses are extracted, deduplicated, and contain correct `id`, `fullname`, `shortname`, and `idnumber`.
+

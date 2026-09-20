@@ -10,6 +10,15 @@ export async function executeWithFallback<T>(
   const errors: Array<{ strategy: string; error: any }> = [];
 
   for (const strategy of strategies) {
+    if (strategy.isOperationSupported && !strategy.isOperationSupported(operationName)) {
+      if (devMode) {
+        if (strategy.name === 'REST') {
+          console.log(`[MoodleClient] REST strategy in 1-hour cooldown (mobile plugin unavailable). Skipping to next fallback.`);
+        }
+      }
+      continue;
+    }
+
     try {
       if (devMode) {
         console.log(`[MoodleClient] Attempting ${operationName} using strategy '${strategy.name}'...`);

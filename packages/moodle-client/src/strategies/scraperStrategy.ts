@@ -110,54 +110,139 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     };
   }
 
-  public async getEnrolledCourses(_userId: number): Promise<RawMoodleCourse[]> {
-    const html = await this.fetchHtml('/my/');
-    const coursesMap = new Map<number, RawMoodleCourse>();
+  private parseCoursesFromHtml(html: string, coursesMap: Map<number, RawMoodleCourse>): void {
+    const IGNORED_NAMES = new Set([
+      'הקורסים שלי',
+      'my courses',
+      'ראשי',
+      'home',
+      'לוח בקרה',
+      'dashboard',
+      'סמן בכוכב',
+      'star this course',
+      'הסתר מהתצוגה',
+      'hide from view',
+      'הסר מהתצוגה',
+      'remove from view',
+      'פעולות עבור הקורס',
+      'course options',
+      'view course',
+      'צפייה בקורס',
+    ]);
 
-    // 1. Match standard course cards or links: /course/view.php?id=(\d+)
-    const courseRegex = /<a[^>]+href="[^"]*\/course\/view\.php\?id=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-    let match: RegExpExecArray | null;
-
-    while ((match = courseRegex.exec(html)) !== null) {
-      const id = parseInt(match[1], 10);
-      if (isNaN(id) || id <= 1) continue;
-
-      const rawText = match[2];
-      const cleanText = stripHtmlTags(rawText);
-      if (!cleanText || cleanText.length < 2) continue;
-
-      // Extract shortname/idnumber if format is "0368111801 - Course Name"
-      const parts = cleanText.split('-');
-      let shortname = cleanText;
-      let idnumber = '';
-
-      if (parts.length >= 2) {
-        idnumber = parts[0].trim();
-        shortname = cleanText;
-      }
-
-      if (!coursesMap.has(id)) {
-        coursesMap.set(id, {
-          id,
-          fullname: cleanText,
-          shortname,
-          idnumber,
-        });
+    // 1. Check data-course-id attributes (common in Moodle 4.x cards and blocks)
+    const cardMatches = html.matchAll(/data-course-id="(\d+)"[^>]*(?:aria-label="([^"]+)"|title="([^"]+)")/gi);
+    for (const cm of cardMatches) {
+      const id = parseInt(cm[1], 10);
+      const name = decodeHtmlEntities(cm[2] || cm[3] || '').trim();
+      if (id > 1 && name && !IGNORED_NAMES.has(name.toLowerCase()) && !coursesMap.has(id)) {
+        this.addCourseToMap(coursesMap, id, name);
       }
     }
 
-    // 2. Also check if courses are in M.cfg or JSON script tags on dashboard
-    const jsonMatches = html.matchAll(/data-course-id="(\d+)"[^>]*aria-label="([^"]+)"/gi);
-    for (const jm of jsonMatches) {
-      const id = parseInt(jm[1], 10);
-      const fullname = decodeHtmlEntities(jm[2]);
-      if (id > 1 && !coursesMap.has(id)) {
-        coursesMap.set(id, {
-          id,
-          fullname,
-          shortname: fullname,
-          idnumber: '',
-        });
+    // 2. Match standard course links: /course/view.php?id=(\d+)
+    const courseLinkRegex = /<a[^>]+href="[^"]*(?:\/course\/view\.php\?id=|\/course\/view\.php\?.*[&?]id=)(\d+)[^"]*"([^>]*)>([\s\S]*?)<\/a>/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = courseLinkRegex.exec(html)) !== null) {
+      const id = parseInt(match[1], 10);
+      if (isNaN(id) || id <= 1) continue;
+
+      const tagAttrs = match[2] || '';
+      const linkContent = match[3] || '';
+
+      let name = '';
+      // Prefer aria-label if present on <a>
+      const ariaMatch = tagAttrs.match(/aria-label="([^"]+)"/i);
+      if (ariaMatch) {
+        name = decodeHtmlEntities(ariaMatch[1]).trim();
+      }
+
+      // If no aria-label, check inner span classes
+      if (!name) {
+        const courseNameSpan = linkContent.match(/class="[^"]*(?:coursename|multiline|course-title)[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+        if (courseNameSpan) {
+          name = stripHtmlTags(courseNameSpan[1]).trim();
+        } else {
+          name = stripHtmlTags(linkContent).trim();
+        }
+      }
+
+      name = name.replace(/\s+/g, ' ').trim();
+      if (!name || name.length < 2) continue;
+      if (IGNORED_NAMES.has(name.toLowerCase())) continue;
+
+      if (!coursesMap.has(id)) {
+        this.addCourseToMap(coursesMap, id, name);
+      }
+    }
+
+    // 3. Embedded JSON courses in Moodle page JavaScript (e.g., Moodle course overview block state)
+    const jsonCourseRegex = /"courses"\s*:\s*(\[[^\]]+\])/g;
+    let jsonMatch: RegExpExecArray | null;
+    while ((jsonMatch = jsonCourseRegex.exec(html)) !== null) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (Array.isArray(parsed)) {
+          for (const c of parsed) {
+            const id = Number(c.id);
+            if (id > 1 && c.fullname && !coursesMap.has(id)) {
+              this.addCourseToMap(coursesMap, id, c.fullname, c.shortname, c.idnumber);
+            }
+          }
+        }
+      } catch {
+        // Ignore JSON parse errors in inline scripts
+      }
+    }
+  }
+
+  private addCourseToMap(
+    coursesMap: Map<number, RawMoodleCourse>,
+    id: number,
+    fullname: string,
+    providedShortname?: string,
+    providedIdnumber?: string
+  ): void {
+    let shortname = providedShortname || fullname;
+    let idnumber = providedIdnumber || '';
+
+    if (!idnumber) {
+      const tauCodeMatch = fullname.match(/(\d{4}[-\s]?\d{4}[-\s]?\d{2})/);
+      if (tauCodeMatch) {
+        idnumber = tauCodeMatch[1].replace(/[-\s]/g, '');
+      } else {
+        const parts = fullname.split('-');
+        if (parts.length >= 2 && /^\d+$/.test(parts[0].trim())) {
+          idnumber = parts[0].trim();
+        }
+      }
+    }
+
+    coursesMap.set(id, {
+      id,
+      fullname,
+      shortname,
+      idnumber,
+    });
+  }
+
+  public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
+    const urlsToFetch = ['/my/courses.php', '/my/'];
+    if (userId && userId > 0) {
+      urlsToFetch.push(`/user/profile.php?id=${userId}`);
+    }
+    urlsToFetch.push('/user/profile.php');
+
+    const coursesMap = new Map<number, RawMoodleCourse>();
+
+    const results = await Promise.allSettled(
+      urlsToFetch.map((url) => this.fetchHtml(url))
+    );
+
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value) {
+        this.parseCoursesFromHtml(res.value, coursesMap);
       }
     }
 

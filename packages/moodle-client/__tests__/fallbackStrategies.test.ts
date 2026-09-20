@@ -272,4 +272,135 @@ describe('Fallback Strategy Architecture', () => {
       /All strategies failed for getCourseContents/
     );
   });
+
+  it('TC-FALLBACK-05: circuit breaker in RestMoodleStrategy triggers cooldown on accessexception and bypasses REST', async () => {
+    const { RestMoodleStrategy } = await import('../src/strategies/restStrategy.js');
+    RestMoodleStrategy.resetCooldown();
+
+    // Mock global fetch to return accessexception for REST call
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      if (String(url).includes('/webservice/rest/server.php')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            exception: 'moodle_exception',
+            errorcode: 'accessexception',
+            message: 'חריגת בקרת גישה',
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    }) as any;
+
+    try {
+      const rest = new RestMoodleStrategy({
+        token: 'TEST_TOKEN',
+        baseUrl: 'https://moodle.tau.ac.il',
+      });
+
+      expect(rest.isOperationSupported('getSiteInfo')).toBe(true);
+
+      // First call fails with accessexception
+      await expect(rest.getSiteInfo()).rejects.toThrow(/חריגת בקרת גישה/);
+
+      // Verify circuit breaker is now active
+      expect(RestMoodleStrategy.isCoolingDown()).toBe(true);
+      expect(rest.isOperationSupported('getSiteInfo')).toBe(false);
+
+      // Next call fails immediately with UnsupportedStrategyError without making fetch
+      (global.fetch as jest.Mock).mockClear();
+      await expect(rest.getSiteInfo()).rejects.toThrow(/cooldown/);
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+      RestMoodleStrategy.resetCooldown();
+    }
+  });
+
+  it('TC-FALLBACK-06: AjaxMoodleStrategy marks non-course operations as unsupported', async () => {
+    const { AjaxMoodleStrategy } = await import('../src/strategies/ajaxStrategy.js');
+    const ajax = new AjaxMoodleStrategy({
+      token: 'TEST_TOKEN',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    expect(ajax.isOperationSupported('getEnrolledCourses')).toBe(true);
+    expect(ajax.isOperationSupported('getSiteInfo')).toBe(false);
+    expect(ajax.isOperationSupported('getAssignments')).toBe(false);
+    expect(ajax.isOperationSupported('getCourseContents')).toBe(false);
+    expect(ajax.isOperationSupported('getGradeItems')).toBe(false);
+  });
+
+  it('TC-FALLBACK-07: ScraperMoodleStrategy parses courses from cards, links, and JSON script data across pages', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    const mockMyCoursesHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <div class="card dashboard-card" data-course-id="201" aria-label="0368-2158-01 מבני נתונים">
+            <a href="https://moodle.tau.ac.il/course/view.php?id=201">
+              <span class="coursename">0368-2158-01 מבני נתונים</span>
+            </a>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const mockProfileHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <section class="node_category">
+            <ul>
+              <li><a href="https://moodle.tau.ac.il/course/view.php?id=202">0368-1118-01 מתמטיקה בדידה</a></li>
+            </ul>
+          </section>
+          <script>
+            var state = {"courses":[{"id":203,"fullname":"0509-1851-01 אותות ומערכות","shortname":"Signals"}]};
+          </script>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/my/courses.php')) {
+        return { ok: true, status: 200, text: async () => mockMyCoursesHtml };
+      }
+      if (urlStr.includes('/user/profile.php')) {
+        return { ok: true, status: 200, text: async () => mockProfileHtml };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(12345);
+      expect(courses.length).toBe(3);
+
+      const c201 = courses.find((c) => c.id === 201);
+      expect(c201).toBeDefined();
+      expect(c201?.fullname).toContain('מבני נתונים');
+      expect(c201?.idnumber).toBe('0368215801');
+
+      const c202 = courses.find((c) => c.id === 202);
+      expect(c202).toBeDefined();
+      expect(c202?.fullname).toContain('מתמטיקה בדידה');
+      expect(c202?.idnumber).toBe('0368111801');
+
+      const c203 = courses.find((c) => c.id === 203);
+      expect(c203).toBeDefined();
+      expect(c203?.fullname).toContain('אותות ומערכות');
+      expect(c203?.shortname).toBe('Signals');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

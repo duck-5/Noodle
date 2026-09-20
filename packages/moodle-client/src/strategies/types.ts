@@ -31,6 +31,7 @@ export interface StrategyContext {
 
 export interface IMoodleStrategy {
   readonly name: string;
+  isOperationSupported?(operationName: string): boolean;
   getSiteInfo(): Promise<MoodleSiteInfo>;
   getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]>;
   getAssignments(): Promise<RawMoodleAssignmentsResponse>;
