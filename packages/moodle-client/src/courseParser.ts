@@ -6,9 +6,10 @@ import { TauCourseMetadata } from './types.js';
  * e.g. 03211100-01-2025-1 -> Year 2025, Semester A (1)
  */
 export function parseTauCourseMetadata(idnumber: string): TauCourseMetadata | null {
-  const match = idnumber.match(/^(\d{8})-(\d{2})-(\d{4})-(\d)$/);
+  const match = idnumber.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$/);
   if (match) {
-    const [, courseCode, groupId, year, semesterCode] = match;
+    const [, rawCourseCode, groupId, year, semesterCode] = match;
+    const courseCode = rawCourseCode.replace('-', '');
     let semester: 'SemesterA' | 'SemesterB' | 'Yearly' | 'Other' = 'Other';
     if (semesterCode === '1') {
       semester = 'SemesterA';

@@ -6,6 +6,7 @@ import {
   MoodleSiteInfo,
   RawMoodleCourse,
   RawCourseSection,
+  ScraperMoodleStrategy,
 } from '../src/moodleApi.js';
 
 describe('Fallback Strategy Architecture', () => {
@@ -399,6 +400,120 @@ describe('Fallback Strategy Architecture', () => {
       expect(c203).toBeDefined();
       expect(c203?.fullname).toContain('אותות ומערכות');
       expect(c203?.shortname).toBe('Signals');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-08: should scrape courses across multiple academic archive years and tag their years and instance URLs', async () => {
+    const scraper = new ScraperMoodleStrategy({
+      token: 'TEST_TOKEN',
+      baseUrl: 'https://moodle.tau.ac.il/webservice/rest/server.php',
+      devMode: true,
+    });
+
+    const mock2025OverviewHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <table class="generaltable">
+            <tr>
+              <td><a href="https://moodle.tau.ac.il/2025/course/view.php?id=301">0368-2154-01-2025-1 אלגוריתמים</a></td>
+            </tr>
+            <tr>
+              <td><a href="/2025/course/view.php?id=302">0368-1111-02-2025-2 חדווא 1</a></td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/2025/grade/report/overview/index.php')) {
+        return { ok: true, status: 200, text: async () => mock2025OverviewHtml };
+      }
+      // Root pages return empty / no courses
+      return { ok: true, status: 200, text: async () => '<html><body><div class="empty">No courses</div></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(30909);
+      expect(courses.length).toBe(2);
+
+      const c301 = courses.find((c: RawMoodleCourse) => c.id === 301);
+      expect(c301).toBeDefined();
+      expect(c301?.fullname).toContain('אלגוריתמים');
+      expect(c301?.year).toBe('2025');
+      expect(c301?.instanceUrl).toBe('https://moodle.tau.ac.il/2025');
+
+      const c302 = courses.find((c: RawMoodleCourse) => c.id === 302);
+      expect(c302).toBeDefined();
+      expect(c302?.fullname).toContain('חדווא 1');
+      expect(c302?.year).toBe('2025');
+      expect(c302?.instanceUrl).toBe('https://moodle.tau.ac.il/2025');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-09: should route getCourseContents to discovered year instance', async () => {
+    const scraper = new ScraperMoodleStrategy({
+      token: 'TEST_TOKEN',
+      baseUrl: 'https://moodle.tau.ac.il/webservice/rest/server.php',
+      devMode: true,
+    });
+
+    const mockCourseHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <li id="section-1" class="section">
+            <h3 class="sectionname">תרגילים</h3>
+            <ul class="section">
+              <li class="activity modtype_assign" id="module-555">
+                <span class="instancename">מטלה 1</span>
+              </li>
+              <li class="activity modtype_resource" id="module-666">
+                <span class="instancename">סיכום הרצאה</span>
+                <a href="/2025/pluginfile.php/123/mod_resource/content/1/lecture1.pdf">הורדה</a>
+              </li>
+            </ul>
+          </li>
+        </body>
+      </html>
+    `;
+
+    const fetchedUrls: string[] = [];
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      fetchedUrls.push(urlStr);
+      if (urlStr.includes('/2025/course/view.php?id=301')) {
+        return { ok: true, status: 200, text: async () => mockCourseHtml };
+      }
+      if (urlStr.includes('/course/view.php?id=301')) {
+        // Root returns 404 or error for past year course
+        return { ok: false, status: 404, text: async () => 'Not found' };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const sections = await scraper.getCourseContents(301);
+      expect(sections.length).toBe(1);
+      expect(sections[0].name).toBe('תרגילים');
+      expect(sections[0].modules.length).toBe(2);
+
+      const assignMod = sections[0].modules.find((m: any) => m.modname === 'assign');
+      expect(assignMod?.url).toBe('https://moodle.tau.ac.il/2025/mod/assign/view.php?id=555');
+
+      const fileMod = sections[0].modules.find((m: any) => m.modname === 'resource');
+      expect(fileMod?.contents?.[0].fileurl).toBe('https://moodle.tau.ac.il/2025/pluginfile.php/123/mod_resource/content/1/lecture1.pdf');
+
+      // Verify it probed root first then resolved to /2025/
+      expect(fetchedUrls).toContain('https://moodle.tau.ac.il/2025/course/view.php?id=301');
     } finally {
       global.fetch = originalFetch;
     }

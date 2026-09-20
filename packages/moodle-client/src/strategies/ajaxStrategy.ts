@@ -27,13 +27,17 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
     return base.replace(/\/webservice\/rest\/server\.php$/, '');
   }
 
-  public async ajaxCall(methodname: string, args: Record<string, any> = {}): Promise<any> {
+  public async ajaxCall(
+    methodname: string,
+    args: Record<string, any> = {},
+    pathPrefix: string = ''
+  ): Promise<any> {
     if (!this.context.sesskey) {
       throw new UnsupportedStrategyError('AJAX', methodname, 'No sesskey configured for AJAX API');
     }
 
     const root = this.getRootUrl();
-    const url = `${root}/lib/ajax/service.php?sesskey=${encodeURIComponent(
+    const url = `${root}${pathPrefix}/lib/ajax/service.php?sesskey=${encodeURIComponent(
       this.context.sesskey
     )}&info=${encodeURIComponent(methodname)}`;
 
@@ -87,67 +91,81 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
     // Valid timeline classifications in Moodle: 'all', 'inprogress', 'future', 'past', 'favourites'
     const classifications = ['all', 'inprogress', 'future', 'past', 'favourites'];
     const coursesMap = new Map<number, RawMoodleCourse>();
+    const root = this.getRootUrl();
 
-    for (const classification of classifications) {
-      try {
-        if (this.context.devMode) {
-          console.log(`[AjaxStrategy] Requesting timeline courses for classification '${classification}' (limit: 100)...`);
-        }
+    const currentYear = new Date().getFullYear();
+    const yearPrefixes = ['', `/${currentYear - 1}`, `/${currentYear - 2}`];
 
-        const data = await this.ajaxCall(
-          'core_course_get_enrolled_courses_by_timeline_classification',
-          {
-            classification,
-            limit: 100,
-            offset: 0,
-            sort: 'fullname',
-          }
-        );
+    for (const prefix of yearPrefixes) {
+      const year = prefix.replace('/', '');
+      const instanceUrl = year ? `${root}/${year}` : root;
 
-        if (data && Array.isArray(data.courses)) {
+      for (const classification of classifications) {
+        try {
           if (this.context.devMode) {
-            console.log(`[AjaxStrategy] Classification '${classification}' returned ${data.courses.length} courses.`);
+            console.log(`[AjaxStrategy] Requesting timeline courses for classification '${classification}' (prefix: '${prefix || 'root'}', limit: 100)...`);
           }
-          for (const c of data.courses) {
-            if (c.id > 1 && !coursesMap.has(c.id)) {
-              coursesMap.set(c.id, {
-                id: c.id,
-                fullname: c.fullname || '',
-                shortname: c.shortname || c.fullname || '',
-                idnumber: c.idnumber || '',
-              });
+
+          const data = await this.ajaxCall(
+            'core_course_get_enrolled_courses_by_timeline_classification',
+            {
+              classification,
+              limit: 100,
+              offset: 0,
+              sort: 'fullname',
+            },
+            prefix
+          );
+
+          if (data && Array.isArray(data.courses)) {
+            if (this.context.devMode) {
+              console.log(`[AjaxStrategy] Classification '${classification}' on '${prefix || 'root'}' returned ${data.courses.length} courses.`);
+            }
+            for (const c of data.courses) {
+              if (c.id > 1 && !coursesMap.has(c.id)) {
+                coursesMap.set(c.id, {
+                  id: c.id,
+                  fullname: c.fullname || '',
+                  shortname: c.shortname || c.fullname || '',
+                  idnumber: c.idnumber || '',
+                  year: year || undefined,
+                  instanceUrl,
+                });
+              }
             }
           }
-        }
-      } catch (err: any) {
-        if (this.context.devMode) {
-          console.warn(`[AjaxStrategy] Classification '${classification}' failed:`, err?.message || err);
+        } catch (err: any) {
+          if (this.context.devMode) {
+            console.warn(`[AjaxStrategy] Classification '${classification}' on '${prefix || 'root'}' failed:`, err?.message || err);
+          }
         }
       }
-    }
 
-    // Also attempt core_course_get_recent_courses if timeline returned nothing
-    if (coursesMap.size === 0) {
-      try {
-        if (this.context.devMode) {
-          console.log(`[AjaxStrategy] Attempting core_course_get_recent_courses fallback...`);
-        }
-        const recent = await this.ajaxCall('core_course_get_recent_courses', {});
-        if (Array.isArray(recent)) {
-          for (const c of recent) {
-            if (c.id > 1 && !coursesMap.has(c.id)) {
-              coursesMap.set(c.id, {
-                id: c.id,
-                fullname: c.fullname || '',
-                shortname: c.shortname || c.fullname || '',
-                idnumber: c.idnumber || '',
-              });
+      // Also attempt core_course_get_recent_courses if timeline returned nothing for this prefix
+      if (coursesMap.size === 0) {
+        try {
+          if (this.context.devMode) {
+            console.log(`[AjaxStrategy] Attempting core_course_get_recent_courses on '${prefix || 'root'}' fallback...`);
+          }
+          const recent = await this.ajaxCall('core_course_get_recent_courses', {}, prefix);
+          if (Array.isArray(recent)) {
+            for (const c of recent) {
+              if (c.id > 1 && !coursesMap.has(c.id)) {
+                coursesMap.set(c.id, {
+                  id: c.id,
+                  fullname: c.fullname || '',
+                  shortname: c.shortname || c.fullname || '',
+                  idnumber: c.idnumber || '',
+                  year: year || undefined,
+                  instanceUrl,
+                });
+              }
             }
           }
-        }
-      } catch (err: any) {
-        if (this.context.devMode) {
-          console.warn(`[AjaxStrategy] core_course_get_recent_courses failed:`, err?.message || err);
+        } catch (err: any) {
+          if (this.context.devMode) {
+            console.warn(`[AjaxStrategy] core_course_get_recent_courses on '${prefix || 'root'}' failed:`, err?.message || err);
+          }
         }
       }
     }

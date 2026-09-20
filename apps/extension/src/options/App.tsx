@@ -42,14 +42,36 @@ interface GroupedCourses {
   courses: any[];
 }
 
+export function getCourseMoodleUrl(
+  courseIdOrObj: number | string | { id?: number; year?: string; instanceUrl?: string },
+  fallbackLink?: string
+): string {
+  if (typeof courseIdOrObj === 'object' && courseIdOrObj !== null) {
+    if (courseIdOrObj.instanceUrl) {
+      return `${courseIdOrObj.instanceUrl}/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+    }
+    if (courseIdOrObj.year && courseIdOrObj.year !== String(new Date().getFullYear())) {
+      return `https://moodle.tau.ac.il/${courseIdOrObj.year}/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+    }
+    return `https://moodle.tau.ac.il/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+  }
+
+  const courseId = Number(courseIdOrObj);
+  if (fallbackLink && fallbackLink.includes('/mod/')) {
+    const root = fallbackLink.split('/mod/')[0];
+    return `${root}/course/view.php?id=${courseId}`;
+  }
+  return `https://moodle.tau.ac.il/course/view.php?id=${courseId}`;
+}
+
 function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[] {
   const groups: Record<string, any[]> = {};
 
   courses.forEach(c => {
     const idNum = c.idnumber || c.shortname || '';
     const meta = parseTauCourseMetadata(idNum);
-    const year = meta?.year || '';
-    const semester = meta?.semester || 'Other';
+    const year = meta?.year || c.year || '';
+    const semester = meta?.semester || c.semester || 'Other';
 
     const key = year ? `${year}-${semester}` : 'Other';
     if (!groups[key]) {
@@ -73,10 +95,10 @@ function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[
       const [year, semester] = key.split('-');
       let label = '';
       if (lang === 'he') {
-        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "אחר";
+        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "קורסים כלליים";
         label = `${semName} (${year})`;
       } else {
-        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "Other";
+        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "General";
         label = `${semName} (${year})`;
       }
       result.push({
@@ -2432,7 +2454,7 @@ function CoursesTab({
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
                       </h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${c.id}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
+                        <a href={getCourseMoodleUrl(c)} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
                         <button
                           className="secondary-btn btn-xs"
                           onClick={() => onSelectCourse(c.id)}
@@ -3291,7 +3313,7 @@ function CourseDetailView({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>{secName}</span>
-                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${courseId}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
+                        <a href={getCourseMoodleUrl(courseId, courseAssignments[0]?.link)} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
                       </div>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                         {isCollapsed ? '▼' : '▲'}

@@ -99,7 +99,7 @@ export async function runSync(
 
   // 1. Fetch Enrolled Courses to map names and parse metadata
   onProgress('Fetching course mapping...');
-  const courseMap = new Map<number, { display_name: string; name: string }>();
+  const courseMap = new Map<number, { display_name: string; name: string; year?: string; instanceUrl?: string }>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {
@@ -116,6 +116,8 @@ export async function runSync(
       courseMap.set(c.id, {
         display_name,
         name: c.fullname,
+        year: c.year,
+        instanceUrl: c.instanceUrl,
       });
     }
   } catch (err: any) {
@@ -321,6 +323,13 @@ export async function runSync(
         }))
       : [];
 
+    const courseInfo = courseMap.get(assign.course);
+    const assignBaseUrl = courseInfo?.instanceUrl
+      ? courseInfo.instanceUrl
+      : courseInfo?.year && courseInfo.year !== String(new Date().getFullYear())
+      ? `https://moodle.tau.ac.il/${courseInfo.year}`
+      : 'https://moodle.tau.ac.il';
+
     assignments.push({
       id: assign.id,
       cmid: assign.cmid,
@@ -331,7 +340,7 @@ export async function runSync(
       submittedFiles: sub.submittedFiles,
       deadline: deadlineIso,
       opened: openedIso,
-      link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${assign.cmid}`,
+      link: `${assignBaseUrl}/mod/assign/view.php?id=${assign.cmid}`,
       grade,
       gradeMax,
       attachments,

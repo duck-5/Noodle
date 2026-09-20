@@ -62,6 +62,8 @@ export interface RawMoodleCourse {
   shortname: string;
   fullname: string;
   idnumber: string;
+  year?: string;
+  instanceUrl?: string;
 }
 
 export interface RawMoodleAssignment {

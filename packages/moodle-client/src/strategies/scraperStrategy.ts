@@ -11,6 +11,7 @@ import {
   RawSubmissionPluginFile,
   RawSubmissionStatus,
 } from '../moodleApi.js';
+import { parseTauCourseMetadata } from '../courseParser.js';
 import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
 
 export function decodeHtmlEntities(text: string): string {
@@ -37,6 +38,8 @@ function stripHtmlTags(html: string): string {
 
 export class ScraperMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'Scraper';
+  private courseYearMap = new Map<number, string>();
+  private assignYearMap = new Map<number, string>();
 
   constructor(private context: StrategyContext) {}
 
@@ -131,7 +134,38 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     };
   }
 
-  private parseCoursesFromHtml(html: string, coursesMap: Map<number, RawMoodleCourse>): void {
+  private discoverArchiveYears(html: string): string[] {
+    const years = new Set<string>();
+    const currentYear = new Date().getFullYear();
+    const minYear = currentYear - 4;
+    const maxYear = currentYear + 1;
+
+    // Matches href or links like /2025/ or https://moodle.tau.ac.il/2025/
+    const yearMatches = html.matchAll(/(?:href=["'](?:https?:\/\/moodle\.tau\.ac\.il)?\/|moodle\.tau\.ac\.il\/)(20\d{2})\b/gi);
+    for (const m of yearMatches) {
+      const y = parseInt(m[1], 10);
+      if (y >= minYear && y <= maxYear) {
+        years.add(String(y));
+      }
+    }
+
+    // Matches dropdown options e.g. <option value=".../2025/...">
+    const optMatches = html.matchAll(/<option[^>]+value=["'](?:https?:\/\/moodle\.tau\.ac\.il)?\/(20\d{2})\b/gi);
+    for (const m of optMatches) {
+      const y = parseInt(m[1], 10);
+      if (y >= minYear && y <= maxYear) {
+        years.add(String(y));
+      }
+    }
+
+    return Array.from(years);
+  }
+
+  private parseCoursesFromHtml(
+    html: string,
+    coursesMap: Map<number, RawMoodleCourse>,
+    yearContext?: string
+  ): void {
     const IGNORED_NAMES = new Set([
       'הקורסים שלי',
       'my courses',
@@ -157,7 +191,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       const id = parseInt(cm[1], 10);
       const name = decodeHtmlEntities(cm[2] || cm[3] || '').trim();
       if (id > 1 && name && !IGNORED_NAMES.has(name.toLowerCase()) && !coursesMap.has(id)) {
-        this.addCourseToMap(coursesMap, id, name);
+        this.addCourseToMap(coursesMap, id, name, undefined, undefined, yearContext);
       }
     }
 
@@ -193,8 +227,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       if (!name || name.length < 2) continue;
       if (IGNORED_NAMES.has(name.toLowerCase())) continue;
 
+      const yearInUrlMatch = fullAttrs.match(/(?:moodle\.tau\.ac\.il\/|\/)(20\d{2})\/course\/view\.php/i);
+      const detectedYear = yearInUrlMatch ? yearInUrlMatch[1] : yearContext;
+
       if (!coursesMap.has(id)) {
-        this.addCourseToMap(coursesMap, id, name);
+        this.addCourseToMap(coursesMap, id, name, undefined, undefined, detectedYear);
       }
     }
 
@@ -208,7 +245,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           for (const c of parsed) {
             const id = Number(c.id);
             if (id > 1 && c.fullname && !coursesMap.has(id)) {
-              this.addCourseToMap(coursesMap, id, c.fullname, c.shortname, c.idnumber);
+              this.addCourseToMap(coursesMap, id, c.fullname, c.shortname, c.idnumber, yearContext);
             }
           }
         }
@@ -224,7 +261,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       const optText = decodeHtmlEntities(om[2]).trim();
       if (id > 1 && optText && !IGNORED_NAMES.has(optText.toLowerCase()) && !coursesMap.has(id)) {
         if (!optText.includes('כל הקורסים') && !optText.toLowerCase().includes('all courses')) {
-          this.addCourseToMap(coursesMap, id, optText);
+          this.addCourseToMap(coursesMap, id, optText, undefined, undefined, yearContext);
         }
       }
     }
@@ -235,7 +272,8 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     id: number,
     fullname: string,
     providedShortname?: string,
-    providedIdnumber?: string
+    providedIdnumber?: string,
+    yearContext?: string
   ): void {
     let shortname = providedShortname || fullname;
     let idnumber = providedIdnumber || '';
@@ -252,54 +290,132 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       }
     }
 
+    let year = yearContext || '';
+    if (idnumber) {
+      const meta = parseTauCourseMetadata(idnumber);
+      if (meta?.year) {
+        year = meta.year;
+      }
+    }
+
+    if (!year) {
+      const yearMatch = fullname.match(/\b(20\d{2})\b/);
+      if (yearMatch) {
+        year = yearMatch[1];
+      }
+    }
+
+    const root = this.getRootUrl();
+    const instanceUrl = year ? `${root}/${year}` : root;
+
+    if (year) {
+      this.courseYearMap.set(id, year);
+    }
+
     coursesMap.set(id, {
       id,
       fullname,
       shortname,
       idnumber,
+      year: year || undefined,
+      instanceUrl,
     });
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    const urlsToFetch = [
-      '/grade/report/overview/index.php',
-      '/my/courses.php',
-      '/my/',
+    const currentYear = new Date().getFullYear();
+    const candidatePastYears = [String(currentYear - 1), String(currentYear - 2)];
+
+    interface FetchTarget {
+      url: string;
+      year?: string;
+    }
+
+    const targets: FetchTarget[] = [
+      { url: '/grade/report/overview/index.php' },
+      { url: '/my/courses.php' },
+      { url: '/my/' },
     ];
     if (userId && userId > 1) {
-      urlsToFetch.push(`/user/profile.php?id=${userId}`);
+      targets.push({ url: `/user/profile.php?id=${userId}` });
     }
-    urlsToFetch.push('/user/profile.php');
+    targets.push({ url: '/user/profile.php' });
+
+    // Add candidate past years
+    for (const year of candidatePastYears) {
+      targets.push({ url: `/${year}/grade/report/overview/index.php`, year });
+      targets.push({ url: `/${year}/my/courses.php`, year });
+      targets.push({ url: `/${year}/my/`, year });
+      if (userId && userId > 1) {
+        targets.push({ url: `/${year}/user/profile.php?id=${userId}`, year });
+      }
+    }
 
     if (this.context.devMode) {
-      console.log(`[ScraperStrategy] Fetching enrolled courses across ${urlsToFetch.length} candidate URLs...`);
+      console.log(`[ScraperStrategy] Fetching enrolled courses across ${targets.length} candidate URLs (including past years: ${candidatePastYears.join(', ')})...`);
     }
 
     const coursesMap = new Map<number, RawMoodleCourse>();
+    const discoveredYears = new Set<string>();
 
     const results = await Promise.allSettled(
-      urlsToFetch.map(async (url) => {
-        const html = await this.fetchHtml(url);
+      targets.map(async (target) => {
+        const html = await this.fetchHtml(target.url);
         if (this.context.devMode) {
-          console.log(`[ScraperStrategy] Successfully fetched '${url}' (${html.length} bytes)`);
+          console.log(`[ScraperStrategy] Successfully fetched '${target.url}' (${html.length} bytes)`);
         }
-        return { url, html };
+        return { target, html };
       })
     );
 
     for (let i = 0; i < results.length; i++) {
       const res = results[i];
       if (res.status === 'fulfilled' && res.value?.html) {
-        this.parseCoursesFromHtml(res.value.html, coursesMap);
+        const { target, html } = res.value;
+        this.parseCoursesFromHtml(html, coursesMap, target.year);
+        if (!target.year) {
+          const foundYears = this.discoverArchiveYears(html);
+          foundYears.forEach((y) => {
+            if (y !== String(currentYear) && !candidatePastYears.includes(y)) {
+              discoveredYears.add(y);
+            }
+          });
+        }
       } else if (res.status === 'rejected') {
         if (this.context.devMode) {
-          console.warn(`[ScraperStrategy] Failed to fetch '${urlsToFetch[i]}':`, res.reason?.message || res.reason);
+          console.warn(`[ScraperStrategy] Failed to fetch '${targets[i].url}':`, res.reason?.message || res.reason);
+        }
+      }
+    }
+
+    // If new archive years were discovered that were not in default candidate years, fetch their overview pages too
+    if (discoveredYears.size > 0) {
+      const extraTargets: FetchTarget[] = [];
+      discoveredYears.forEach((year) => {
+        extraTargets.push({ url: `/${year}/grade/report/overview/index.php`, year });
+        extraTargets.push({ url: `/${year}/my/courses.php`, year });
+      });
+
+      if (this.context.devMode) {
+        console.log(`[ScraperStrategy] Querying ${extraTargets.length} newly discovered archive endpoints: ${Array.from(discoveredYears).join(', ')}`);
+      }
+
+      const extraResults = await Promise.allSettled(
+        extraTargets.map(async (target) => {
+          const html = await this.fetchHtml(target.url);
+          return { target, html };
+        })
+      );
+
+      for (const res of extraResults) {
+        if (res.status === 'fulfilled' && res.value?.html) {
+          this.parseCoursesFromHtml(res.value.html, coursesMap, res.value.target.year);
         }
       }
     }
 
     if (this.context.devMode) {
-      console.log(`[ScraperStrategy] Finished parsing. Total unique courses found: ${coursesMap.size}`);
+      console.log(`[ScraperStrategy] Finished parsing. Total unique courses found across all years: ${coursesMap.size}`);
     }
 
     if (coursesMap.size === 0) {
@@ -310,56 +426,69 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    // In Moodle web, upcoming assignments are displayed on /calendar/view.php?view=upcoming
-    // and dashboard timeline. Let's fetch /calendar/view.php?view=upcoming.
-    const html = await this.fetchHtml('/calendar/view.php?view=upcoming');
+    const currentYear = new Date().getFullYear();
+    const yearsToCheck = new Set<string>(['']);
+    for (const year of this.courseYearMap.values()) {
+      if (year) yearsToCheck.add(year);
+    }
+    yearsToCheck.add(String(currentYear - 1));
+
     const coursesMap = new Map<number, { id: number; fullname: string; shortname: string; assignments: RawMoodleAssignment[] }>();
-
-    // Event blocks in upcoming calendar view:
-    // <div class="event" data-event-id="..." ...>
-    // Link to assignment: <a href=".../mod/assign/view.php?id=(\d+)">Name</a>
-    // Due date: <span class="date">...</span>
-    // Course link: <a href=".../course/view.php?id=(\d+)">Course Name</a>
     const eventRegex = /<div[^>]+class="[^"]*event[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
-    let eventMatch: RegExpExecArray | null;
 
-    while ((eventMatch = eventRegex.exec(html)) !== null) {
-      const eventHtml = eventMatch[1];
-      const assignMatch = eventHtml.match(/\/mod\/assign\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
-      if (!assignMatch) continue;
+    for (const year of yearsToCheck) {
+      const path = year ? `/${year}/calendar/view.php?view=upcoming` : '/calendar/view.php?view=upcoming';
+      try {
+        const html = await this.fetchHtml(path);
+        let eventMatch: RegExpExecArray | null;
 
-      const cmid = parseInt(assignMatch[1], 10);
-      const name = decodeHtmlEntities(assignMatch[2]);
+        while ((eventMatch = eventRegex.exec(html)) !== null) {
+          const eventHtml = eventMatch[1];
+          const assignMatch = eventHtml.match(/\/mod\/assign\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
+          if (!assignMatch) continue;
 
-      const courseMatch = eventHtml.match(/\/course\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
-      const courseId = courseMatch ? parseInt(courseMatch[1], 10) : 0;
-      const courseName = courseMatch ? decodeHtmlEntities(courseMatch[2]) : `Course ${courseId}`;
+          const cmid = parseInt(assignMatch[1], 10);
+          const name = decodeHtmlEntities(assignMatch[2]);
 
-      // Extract timestamp or date string if available
-      let duedate = 0;
-      const timeMatch = eventHtml.match(/data-timestamp="(\d+)"/i);
-      if (timeMatch) {
-        duedate = parseInt(timeMatch[1], 10);
+          const courseMatch = eventHtml.match(/\/course\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
+          const courseId = courseMatch ? parseInt(courseMatch[1], 10) : 0;
+          const courseName = courseMatch ? decodeHtmlEntities(courseMatch[2]) : `Course ${courseId}`;
+
+          let duedate = 0;
+          const timeMatch = eventHtml.match(/data-timestamp="(\d+)"/i);
+          if (timeMatch) {
+            duedate = parseInt(timeMatch[1], 10);
+          }
+
+          if (year) {
+            this.assignYearMap.set(cmid, year);
+            if (courseId > 0) this.courseYearMap.set(courseId, year);
+          }
+
+          if (!coursesMap.has(courseId)) {
+            coursesMap.set(courseId, {
+              id: courseId,
+              fullname: courseName,
+              shortname: courseName,
+              assignments: [],
+            });
+          }
+
+          coursesMap.get(courseId)!.assignments.push({
+            id: cmid,
+            cmid,
+            course: courseId,
+            name,
+            duedate,
+            cutoffdate: 0,
+            allowsubmissionsfromdate: 0,
+          });
+        }
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[ScraperStrategy] Failed fetching calendar for year '${year}':`, err?.message || err);
+        }
       }
-
-      if (!coursesMap.has(courseId)) {
-        coursesMap.set(courseId, {
-          id: courseId,
-          fullname: courseName,
-          shortname: courseName,
-          assignments: [],
-        });
-      }
-
-      coursesMap.get(courseId)!.assignments.push({
-        id: cmid,
-        cmid,
-        course: courseId,
-        name,
-        duedate,
-        cutoffdate: 0,
-        allowsubmissionsfromdate: 0,
-      });
     }
 
     return {
@@ -368,7 +497,32 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {
-    const html = await this.fetchHtml(`/mod/assign/view.php?id=${assignId}`);
+    const year = this.assignYearMap.get(assignId);
+    let html = '';
+
+    if (year) {
+      try {
+        html = await this.fetchHtml(`/${year}/mod/assign/view.php?id=${assignId}`);
+      } catch {
+        html = await this.fetchHtml(`/mod/assign/view.php?id=${assignId}`);
+      }
+    } else {
+      try {
+        html = await this.fetchHtml(`/mod/assign/view.php?id=${assignId}`);
+      } catch (err) {
+        const currentYear = new Date().getFullYear();
+        let found = false;
+        for (const candidateYear of [currentYear - 1, currentYear - 2]) {
+          try {
+            html = await this.fetchHtml(`/${candidateYear}/mod/assign/view.php?id=${assignId}`);
+            this.assignYearMap.set(assignId, String(candidateYear));
+            found = true;
+            break;
+          } catch {}
+        }
+        if (!found) throw err;
+      }
+    }
 
     const isSubmitted =
       html.includes('הוגש להערכה') ||
@@ -418,11 +572,34 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getGradeItems(courseId: number, _userId: number): Promise<RawGradeReportResponse> {
-    const html = await this.fetchHtml(`/grade/report/user/index.php?id=${courseId}`);
-    const gradeitems: RawGradeItem[] = [];
+    const year = this.courseYearMap.get(courseId);
+    let html = '';
 
-    // Each row in the user grade table:
-    // <tr ...> <th class="... item ..."><a href=".../mod/assign/view.php?id=(\d+)">Item Name</a> ... <td class="... grade ...">95.00</td>
+    if (year) {
+      try {
+        html = await this.fetchHtml(`/${year}/grade/report/user/index.php?id=${courseId}`);
+      } catch {
+        html = await this.fetchHtml(`/grade/report/user/index.php?id=${courseId}`);
+      }
+    } else {
+      try {
+        html = await this.fetchHtml(`/grade/report/user/index.php?id=${courseId}`);
+      } catch (err) {
+        const currentYear = new Date().getFullYear();
+        let found = false;
+        for (const candidateYear of [currentYear - 1, currentYear - 2]) {
+          try {
+            html = await this.fetchHtml(`/${candidateYear}/grade/report/user/index.php?id=${courseId}`);
+            this.courseYearMap.set(courseId, String(candidateYear));
+            found = true;
+            break;
+          } catch {}
+        }
+        if (!found) throw err;
+      }
+    }
+
+    const gradeitems: RawGradeItem[] = [];
     const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
     let rowMatch: RegExpExecArray | null;
 
@@ -459,10 +636,37 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {
-    const html = await this.fetchHtml(`/course/view.php?id=${courseId}`);
-    const sections: RawCourseSection[] = [];
+    const year = this.courseYearMap.get(courseId);
+    let html = '';
+    let effectiveYear = year || '';
 
-    // Match sections: <li id="section-(\d+)" class="section ..."> or <div class="course-section" ...>
+    if (effectiveYear) {
+      try {
+        html = await this.fetchHtml(`/${effectiveYear}/course/view.php?id=${courseId}`);
+      } catch {
+        html = await this.fetchHtml(`/course/view.php?id=${courseId}`);
+        effectiveYear = '';
+      }
+    } else {
+      try {
+        html = await this.fetchHtml(`/course/view.php?id=${courseId}`);
+      } catch (err) {
+        const currentYear = new Date().getFullYear();
+        let found = false;
+        for (const candidateYear of [currentYear - 1, currentYear - 2]) {
+          try {
+            html = await this.fetchHtml(`/${candidateYear}/course/view.php?id=${courseId}`);
+            effectiveYear = String(candidateYear);
+            this.courseYearMap.set(courseId, effectiveYear);
+            found = true;
+            break;
+          } catch {}
+        }
+        if (!found) throw err;
+      }
+    }
+
+    const sections: RawCourseSection[] = [];
     const sectionRegex = /<(?:li|section|div)[^>]+id="section-(\d+)"[^>]*>([\s\S]*?)(?=<(?:li|section|div)[^>]+id="section-\d+"|<\/(?:ul|section)>|$)/gi;
     let secMatch: RegExpExecArray | null;
 
@@ -477,8 +681,6 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       const sectionName = nameMatch ? stripHtmlTags(nameMatch[1]) : `Section ${secId}`;
       const modules: RawCourseModule[] = [];
 
-      // Match activities in this section:
-      // <li class="activity ([^"]*) modtype_([^" ]*)" id="module-(\d+)">
       const modRegex = /<(?:li|div)[^>]+class="[^"]*modtype_([a-z0-9_]+)[^"]*"[^>]+id="module-(\d+)"[^>]*>([\s\S]*?)(?=<(?:li|div)[^>]+class="[^"]*modtype_|<\/ul>|$)/gi;
       let mMatch: RegExpExecArray | null;
 
@@ -492,11 +694,13 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
         const contents: RawCourseFileContent[] = [];
 
-        // If it's a resource/file, extract pluginfile URL
         if (modname === 'resource' || modname === 'folder') {
           const fileMatch = modHtml.match(/<a[^>]+href="([^"]*(?:pluginfile\.php|mod\/resource\/view\.php)[^"]*)"[^>]*>/i);
           if (fileMatch) {
-            const fileurl = decodeHtmlEntities(fileMatch[1]);
+            let fileurl = decodeHtmlEntities(fileMatch[1]);
+            if (fileurl.startsWith('/')) {
+              fileurl = `${this.getRootUrl()}${fileurl}`;
+            }
             contents.push({
               type: 'file',
               filename: modName,
@@ -508,11 +712,12 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           }
         }
 
+        const yearPrefix = effectiveYear ? `/${effectiveYear}` : '';
         modules.push({
           id: moduleId,
           name: modName,
           modname,
-          url: `${this.getRootUrl()}/mod/${modname}/view.php?id=${moduleId}`,
+          url: `${this.getRootUrl()}${yearPrefix}/mod/${modname}/view.php?id=${moduleId}`,
           instance: moduleId,
           contents: contents.length > 0 ? contents : undefined,
         });

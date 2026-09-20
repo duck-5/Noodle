@@ -181,6 +181,15 @@ graph LR
 | **TC-EDGE-01** | Token Expiration During Active Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
 | **TC-EDGE-02** | Corrupted / Malformed Course Metadata | All (Mobile + Chrome + Firefox) | Automated | Edge & Stress |
 | **TC-EDGE-03** | High Course Volume Stress (30+ Courses) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
+| **TC-FALLBACK-01** | Primary REST Strategy Execution | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-02** | REST Failure to AJAX Fallback | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-03** | AJAX Unsupported Operation to Scraper Fallback | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-04** | Aggregate Error on Complete Strategy Failure | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-05** | 1-Hour Circuit Breaker on REST Strategy | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-06** | Static AJAX Operation Support Filtering | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-07** | Multi-Page Course Scraping & Resilient Regex/JSON Parsing | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-08** | Multi-Year Academic Archive Course Discovery | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-09** | Year-Aware Endpoint Routing for Sections & Deep Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 
 ---
 
@@ -1070,4 +1079,25 @@ graph LR
   1. Mock responses for `/my/courses.php` (containing card markup with `data-course-id`), `/user/profile.php` (containing standard links and inline JSON script), and `/my/`.
   2. Call `ScraperMoodleStrategy.getEnrolledCourses(userId)`.
   3. Assert all enrolled courses are extracted, deduplicated, and contain correct `id`, `fullname`, `shortname`, and `idnumber`.
+
+#### TC-FALLBACK-08: Multi-Year Academic Archive Course Discovery
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `ScraperMoodleStrategy.getEnrolledCourses()` and `AjaxMoodleStrategy.getEnrolledCourses()` discovering and scraping courses across the active semester and past academic archive years (e.g. `/2025/`, `/2024/`). Verifies that courses returned are tagged with their respective academic `year` and `instanceUrl`, and registered into the client's year mapping table.
+* **Automated Test Flow**:
+  1. Mock root Moodle overview returning 0 courses (typical before new academic year starts).
+  2. Mock `/2025/grade/report/overview/index.php` returning past year courses.
+  3. Call `ScraperMoodleStrategy.getEnrolledCourses(userId)`.
+  4. Assert courses from `/2025/` are parsed, deduplicated, and contain `year: '2025'` and `instanceUrl: 'https://moodle.tau.ac.il/2025'`.
+
+#### TC-FALLBACK-09: Year-Aware Endpoint Routing for Sections & Deep Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that requests for course contents (`getCourseContents`), assignments (`getAssignments`), submission status (`getSubmissionStatus`), and grade items (`getGradeItems`) for courses belonging to past academic years are routed to the corresponding year instance URL (e.g., `https://moodle.tau.ac.il/2025/course/view.php?id=...`). Also verifies that module URLs and resource download URLs preserve the year prefix.
+* **Automated Test Flow**:
+  1. Configure course `301` mapped to year `2025`.
+  2. Call `getCourseContents(301)`.
+  3. Verify fetch request is routed to `https://moodle.tau.ac.il/2025/course/view.php?id=301`.
+  4. Assert module URLs and resource file URLs include `/2025/`.
+
 

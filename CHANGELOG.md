@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased] - 2026-09-07
 
 ### Added
+- **Multi-Year Academic Archive Course Discovery & Contextual Routing (`packages/moodle-client`, `apps/extension`)**:
+  - Added multi-year archive scanning in `ScraperMoodleStrategy` and `AjaxMoodleStrategy`, querying both current root and candidate past academic year instances (e.g. `2025`, `2024`) via `Promise.allSettled` to resolve empty course selections during academic year transitions (such as between September and October before the upcoming 2026 academic year courses open).
+  - Added dynamic archive year discovery (`discoverArchiveYears`) scanning page HTML and dropdown options for archive subpaths (`/(20\d{2})\b`).
+  - Added `year` and `instanceUrl` metadata properties to `RawMoodleCourse` and internal routing maps (`courseYearMap`, `assignYearMap`) in `ScraperMoodleStrategy`.
+  - Added year-aware deep link generation in `syncEngine.ts`, routing assignment links (`/mod/assign/view.php`) to the appropriate archive year instance (`https://moodle.tau.ac.il/${year}/...`).
+  - Updated `groupAndSortCourses` in `apps/extension/src/options/App.tsx` to group past year courses by academic year when metadata parsing lacks semester details, and updated course links (`getCourseMoodleUrl`) to navigate directly to the correct academic year instance.
+  - Relaxed `parseTauCourseMetadata` regex to accept optional hyphens in course codes (`^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$`).
+  - Added test cases `TC-FALLBACK-08` and `TC-FALLBACK-09` in `fallbackStrategies.test.ts` and `docs/TEST_CASES.md`.
 - **Modular Multi-Tier Moodle Client Fallback Architecture (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Implemented a Strategy Pattern with Chain-of-Responsibility fallback runner (`executeWithFallback`) in `@tautracker/moodle-client`:
     - **Tier 1 (`RestMoodleStrategy`)**: Uses the official Moodle Mobile REST API (`/webservice/rest/server.php`) with `wstoken`. When the university re-enables the mobile app or plugin, requests resolve immediately with zero overhead.
