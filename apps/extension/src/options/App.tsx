@@ -5,6 +5,7 @@ import { parseTauCourseMetadata, MoodleClient, isValidIsraeliId } from '@tautrac
 import {
   getStoredToken,
   setStoredToken,
+  getStoredSesskey,
   getTrackedCourseIds,
   setTrackedCourseIds,
   getCachedSyncResult,
@@ -408,7 +409,8 @@ export default function App() {
   async function restoreMoodleSettingsForOnboarding(t: string) {
     setValidatingToken(true);
     try {
-      const client = new MoodleClient(t);
+      const sesskey = await getStoredSesskey();
+      const client = new MoodleClient(t, undefined, { sesskey: sesskey || undefined, devMode: true });
       const remoteSettings = await client.loadNoodleSettings();
       if (remoteSettings && Object.keys(remoteSettings).length > 0) {
         // We found existing remote settings, apply them directly!

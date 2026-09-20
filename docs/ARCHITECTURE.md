@@ -139,3 +139,33 @@ Noodle/
 | **No Central Proxy Server** | Infinite scaling, zero hosting costs, absolute security compliance, immune to centralized IP blocking. | Client apps must perform OAuth logic themselves; no server to schedule reliable push notifications. |
 | **Local SQLite on Mobile** | Blazing-fast UI rendering, complete offline read capability, simple data structures. | Requires database schema migration support when structural attributes change. |
 | **MV3 Service Worker Sync** | Runs silently in the background of the browser, low power drain. | Service workers are terminated frequently, necessitating strict state serialization. |
+| **Three-Tier Strategy Fallback** | Maximum resilience against university server/plugin changes; zero code changes needed when mobile app returns. | Maintaining multiple parsing/interaction adapters for REST, AJAX, and HTML. |
+
+---
+
+## 6. Moodle Client Modular Fallback Architecture
+
+To handle university infrastructure changes (such as disabling the official Moodle Mobile web service or `tool_mobile` plugin), `packages/moodle-client` implements a Strategy Pattern with Chain-of-Responsibility fallback:
+
+```mermaid
+graph TD
+    Client[MoodleClient Coordinator] --> Chain[Fallback Runner]
+    Chain --> S1[1. RestMoodleStrategy]
+    S1 -->|Fails / Access Control Error| S2[2. AjaxMoodleStrategy]
+    S2 -->|Unsupported / Fails| S3[3. ScraperMoodleStrategy]
+    S1 -->|Success| Out[Return Data]
+    S2 -->|Success| Out
+    S3 -->|Success| Out
+```
+
+### Strategy Tiers:
+1. **Tier 1 — REST Strategy (`RestMoodleStrategy`)**:
+   Uses the official Moodle Mobile App web service (`/webservice/rest/server.php`) with the user's `wstoken`. This is the preferred, fastest, and most structured API. If this service is active, it runs with zero overhead.
+2. **Tier 2 — AJAX Strategy (`AjaxMoodleStrategy`)**:
+   Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the user's web `sesskey` and browser session cookie. Supports modern Moodle 4.x dashboard endpoints (e.g. `core_course_get_enrolled_courses_by_timeline_classification`). Functions not enabled for AJAX in Moodle core throw `UnsupportedStrategyError`, immediately handing off to Tier 3.
+3. **Tier 3 — Scraper Strategy (`ScraperMoodleStrategy`)**:
+   Acts like a standard browser, fetching rendered Moodle pages (such as `/my/` and `/course/view.php?id=...`) with `credentials: 'include'`. Uses pure TypeScript string and regex parsing (fully compliant with Chrome MV3 Service Workers and React Native Hermes) to extract courses, assignment tables, modules, and files.
+
+### Observability in DevMode:
+When `devMode: true` is enabled, the coordinator logs every strategy attempt, unsupported function skip, failure reason, and successful fallback transition to the developer console for transparent debugging.
+

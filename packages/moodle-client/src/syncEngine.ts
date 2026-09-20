@@ -24,9 +24,10 @@ export async function runSync(
   onProgress: (message: string) => void,
   baseUrl?: string,
   creds?: MoodleCredentials,
-  moodleCookies?: string
+  moodleCookies?: string,
+  sesskey?: string
 ): Promise<SyncResult> {
-  const client = new MoodleClient(token, baseUrl);
+  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: true });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];

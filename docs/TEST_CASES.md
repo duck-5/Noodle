@@ -1000,3 +1000,47 @@ graph LR
   * Dashboard load time < 500ms in Chrome, Firefox, and Mobile.
   * Memory usage remains stable.
   * Lists render smoothly using virtualization (`FlatList` on mobile / windowed DOM rendering).
+
+---
+
+### Category 16: Moodle Client Modular Fallback Architecture
+
+#### TC-FALLBACK-01: Primary REST Strategy Execution
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When the Moodle Mobile Web Service is online and enabled, `MoodleClient` resolves requests via `RestMoodleStrategy` immediately without triggering secondary fallbacks.
+* **Automated Test Flow**:
+  1. Initialize `MoodleClient` with valid REST token and mock strategies.
+  2. Execute `client.getSiteInfo()`.
+  3. Assert `RestMoodleStrategy.getSiteInfo` is called once and `AjaxMoodleStrategy` is not called.
+
+#### TC-FALLBACK-02: REST Failure to AJAX Fallback
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When the REST endpoint throws `accessexception` (Access control exception) due to server-side mobile plugin restrictions, `MoodleClient` logs the warning in dev mode and successfully delegates to `AjaxMoodleStrategy`.
+* **Automated Test Flow**:
+  1. Mock `RestMoodleStrategy.getEnrolledCourses` rejecting with `MoodleApiError('accessexception')`.
+  2. Mock `AjaxMoodleStrategy.getEnrolledCourses` resolving with valid enrolled courses.
+  3. Call `client.getEnrolledCourses(userId)`.
+  4. Assert result matches expected courses and both strategies were attempted in sequence.
+
+#### TC-FALLBACK-03: AJAX Unsupported Operation to Scraper Fallback
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When an operation (such as `getCourseContents`) is not exposed over AJAX in Moodle core, `AjaxMoodleStrategy` throws `UnsupportedStrategyError`, immediately falling back to `ScraperMoodleStrategy` without logging a failure.
+* **Automated Test Flow**:
+  1. Mock `RestMoodleStrategy.getCourseContents` rejecting with `accessexception`.
+  2. Mock `AjaxMoodleStrategy.getCourseContents` rejecting with `UnsupportedStrategyError`.
+  3. Mock `ScraperMoodleStrategy.getCourseContents` resolving with parsed course sections.
+  4. Call `client.getCourseContents(courseId)`.
+  5. Assert result matches parsed sections from Scraper strategy.
+
+#### TC-FALLBACK-04: Aggregate Error on Complete Strategy Failure
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When all strategies in the fallback chain fail, `MoodleClient` throws an error detailing the failure message of each strategy.
+* **Automated Test Flow**:
+  1. Mock REST, AJAX, and Scraper rejecting on an operation.
+  2. Call the operation.
+  3. Assert promise rejects with an error matching `All strategies failed for <operation>`.
+

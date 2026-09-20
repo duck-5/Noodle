@@ -1,3 +1,14 @@
+import {
+  IMoodleStrategy,
+  StrategyContext,
+  RestMoodleStrategy,
+  AjaxMoodleStrategy,
+  ScraperMoodleStrategy,
+  executeWithFallback,
+} from './strategies/index.js';
+
+export * from './strategies/index.js';
+
 export class MoodleApiError extends Error {
   constructor(
     public errorcode: string,
@@ -149,13 +160,43 @@ export interface RawCourseSection {
   modules: RawCourseModule[];
 }
 
+export interface MoodleClientOptions {
+  sesskey?: string;
+  devMode?: boolean;
+  strategies?: IMoodleStrategy[];
+}
+
 export class MoodleClient {
-  private resolvedBaseUrl: boolean = false;
+  private strategies: IMoodleStrategy[];
+  private restStrategy: RestMoodleStrategy;
+  private devMode: boolean;
 
   constructor(
-    private token: string,
-    private baseUrl: string = 'https://moodle.tau.ac.il/webservice/rest/server.php'
-  ) {}
+    private token?: string,
+    private baseUrl: string = 'https://moodle.tau.ac.il/webservice/rest/server.php',
+    options?: MoodleClientOptions
+  ) {
+    this.devMode = options?.devMode ?? true;
+
+    const context: StrategyContext = {
+      token: this.token,
+      sesskey: options?.sesskey,
+      baseUrl: this.baseUrl,
+      devMode: this.devMode,
+    };
+
+    this.restStrategy = new RestMoodleStrategy(context);
+
+    if (options?.strategies && options.strategies.length > 0) {
+      this.strategies = options.strategies;
+    } else {
+      this.strategies = [
+        this.restStrategy,
+        new AjaxMoodleStrategy(context),
+        new ScraperMoodleStrategy(context),
+      ];
+    }
+  }
 
   public static async fetchToken(
     username: string,
@@ -179,218 +220,113 @@ export class MoodleClient {
     return data.token;
   }
 
-  private async ensureCorrectBaseUrl() {
-    if (this.resolvedBaseUrl) return;
-    try {
-      // Follow redirects to determine if there's a year-specific subfolder (e.g. /2026/)
-      const res = await fetch('https://moodle.tau.ac.il/login/index.php');
-      const match = res.url.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
-      if (match) {
-        this.baseUrl = match[1].replace(/\/$/, '') + '/webservice/rest/server.php';
-      }
-    } catch (e) {
-      // Ignore network errors and fallback to whatever baseUrl is currently set to
-      console.warn('Failed to dynamically resolve Moodle baseUrl', e);
-    }
-    this.resolvedBaseUrl = true;
-  }
-
-  private async apiCall(
+  /**
+   * Direct REST API call helper for backwards compatibility.
+   */
+  public async apiCall(
     wsfunction: string,
     params: Record<string, any> = {},
     method: 'GET' | 'POST' = 'GET'
   ): Promise<any> {
-    await this.ensureCorrectBaseUrl();
-
-    const allParams = {
-      wstoken: this.token,
-      wsfunction,
-      moodlewsrestformat: 'json',
-      ...params,
-    };
-
-    let url = this.baseUrl;
-    const options: RequestInit = { method };
-
-    if (method === 'GET') {
-      const urlParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(allParams)) {
-        if (value !== undefined && value !== null) {
-          urlParams.append(key, String(value));
-        }
-      }
-      url = `${this.baseUrl}?${urlParams.toString()}`;
-    } else {
-      const bodyParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(allParams)) {
-        if (value !== undefined && value !== null) {
-          bodyParams.append(key, String(value));
-        }
-      }
-      options.body = bodyParams;
-      options.headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      };
-    }
-
-    const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data && typeof data === 'object') {
-      if ('exception' in data) {
-        throw new MoodleApiError(
-          data.errorcode || 'exception',
-          data.message || 'Moodle API Exception',
-          data.exception
-        );
-      }
-      if ('errorcode' in data) {
-        throw new MoodleApiError(data.errorcode, data.message || 'Moodle API Error');
-      }
-    }
-    return data;
+    return this.restStrategy.apiCall(wsfunction, params, method);
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
-    return this.apiCall('core_webservice_get_site_info');
+    return executeWithFallback('getSiteInfo', this.strategies, (s) => s.getSiteInfo(), this.devMode);
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    return this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    return executeWithFallback(
+      'getEnrolledCourses',
+      this.strategies,
+      (s) => s.getEnrolledCourses(userId),
+      this.devMode
+    );
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    return this.apiCall('mod_assign_get_assignments');
+    return executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(), this.devMode);
   }
 
   public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {
-    return this.apiCall('mod_assign_get_submission_status', { assignid: assignId });
+    return executeWithFallback(
+      'getSubmissionStatus',
+      this.strategies,
+      (s) => s.getSubmissionStatus(assignId),
+      this.devMode
+    );
   }
 
   public async getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse> {
-    return this.apiCall('gradereport_user_get_grade_items', {
-      courseid: courseId,
-      userid: userId,
-    });
+    return executeWithFallback(
+      'getGradeItems',
+      this.strategies,
+      (s) => s.getGradeItems(courseId, userId),
+      this.devMode
+    );
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {
-    return this.apiCall('core_course_get_contents', { courseid: courseId });
+    return executeWithFallback(
+      'getCourseContents',
+      this.strategies,
+      (s) => s.getCourseContents(courseId),
+      this.devMode
+    );
   }
 
   public async uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }> {
-    return this.apiCall(
-      'core_files_upload',
-      {
-        component: 'user',
-        filearea: 'draft',
-        itemid: 0,
-        filepath: '/',
-        filename,
-        filecontent: fileContentBase64,
-      },
-      'POST'
+    return executeWithFallback(
+      'uploadFile',
+      this.strategies,
+      (s) => s.uploadFile(filename, fileContentBase64),
+      this.devMode
     );
   }
 
   public async saveSubmission(assignId: number, itemId: number): Promise<any> {
-    return this.apiCall(
-      'mod_assign_save_submission',
-      {
-        assignmentid: assignId,
-        'plugindata[files_filemanager]': itemId,
-      },
-      'POST'
+    return executeWithFallback(
+      'saveSubmission',
+      this.strategies,
+      (s) => s.saveSubmission(assignId, itemId),
+      this.devMode
     );
   }
 
   public async submitForGrading(assignId: number): Promise<any> {
-    return this.apiCall(
-      'mod_assign_submit_for_grading',
-      {
-        assignmentid: assignId,
-        acceptsubmissionstatement: 1,
-      },
-      'POST'
+    return executeWithFallback(
+      'submitForGrading',
+      this.strategies,
+      (s) => s.submitForGrading(assignId),
+      this.devMode
     );
   }
 
   public async getAutoLoginKey(): Promise<{ key: string; autologinurl: string }> {
-    return this.apiCall('tool_mobile_get_autologin_key');
+    return executeWithFallback('getAutoLoginKey', this.strategies, (s) => s.getAutoLoginKey(), this.devMode);
   }
 
   public buildAuthenticatedFileUrl(fileUrl: string): string {
+    if (!this.token) return fileUrl;
     const separator = fileUrl.includes('?') ? '&' : '?';
     return `${fileUrl}${separator}token=${this.token}`;
   }
 
-  // --- PoC for Moodle Calendar Sync ---
-
   public async saveNoodleSettings(settingsJson: string): Promise<void> {
-    // 1. Try to find all existing events first to delete them (prevent duplicates)
-    const response = await this.apiCall('core_calendar_get_calendar_events', {
-      'events[eventids][0]': 0, 
-      'options[userevents]': 1,
-      'options[timeend]': 4102444800 + 86400,
-      'options[timestart]': 4102444800 - 86400
-    });
-    
-    if (response && response.events) {
-      const existingEvents = response.events.filter((e: any) => e.name === 'NOODLE_SYNC_DATA');
-      if (existingEvents.length > 0) {
-        const deleteParams: Record<string, any> = {};
-        for (let i = 0; i < existingEvents.length; i++) {
-          deleteParams[`events[${i}][eventid]`] = existingEvents[i].id;
-          deleteParams[`events[${i}][repeat]`] = 0;
-        }
-        try {
-          await this.apiCall('core_calendar_delete_calendar_events', deleteParams, 'POST');
-        } catch (e: any) {
-          console.warn('[saveNoodleSettings] Failed to delete old events:', e);
-          // If deletion fails, we will still proceed to create the new one
-        }
-      }
-    }
-
-    // 2. Create the new sync event
-    await this.apiCall(
-      'core_calendar_create_calendar_events',
-      {
-        'events[0][name]': 'NOODLE_SYNC_DATA',
-        'events[0][description]': settingsJson,
-        'events[0][eventtype]': 'user',
-        'events[0][timestart]': 4102444800, // Year 2100
-      },
-      'POST'
+    return executeWithFallback(
+      'saveNoodleSettings',
+      this.strategies,
+      (s) => s.saveNoodleSettings(settingsJson),
+      this.devMode
     );
   }
 
-  private async loadNoodleSettingsRaw(): Promise<any> {
-    const response = await this.apiCall('core_calendar_get_calendar_events', {
-      'events[eventids][0]': 0, 
-      'options[userevents]': 1,
-      'options[timeend]': 4102444800 + 86400,
-      'options[timestart]': 4102444800 - 86400
-    });
-    
-    if (!response || !response.events) return null;
-    const allEvents = response.events.filter((e: any) => e.name === 'NOODLE_SYNC_DATA');
-    if (allEvents.length === 0) return null;
-    
-    allEvents.sort((a: any, b: any) => b.id - a.id);
-    return allEvents[0];
-  }
-
   public async loadNoodleSettings(): Promise<any> {
-    const syncEvent = await this.loadNoodleSettingsRaw();
-    if (!syncEvent) return null;
-
-    // The description might be wrapped in HTML tags by Moodle (e.g., <p>{...}</p>)
-    // So we strip HTML tags just in case:
-    const cleanJson = syncEvent.description.replace(/(<([^>]+)>)/gi, "").trim();
-    return JSON.parse(cleanJson);
+    return executeWithFallback(
+      'loadNoodleSettings',
+      this.strategies,
+      (s) => s.loadNoodleSettings(),
+      this.devMode
+    );
   }
 }

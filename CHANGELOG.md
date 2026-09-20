@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased] - 2026-09-07
 
+### Added
+- **Modular Multi-Tier Moodle Client Fallback Architecture (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Implemented a Strategy Pattern with Chain-of-Responsibility fallback runner (`executeWithFallback`) in `@tautracker/moodle-client`:
+    - **Tier 1 (`RestMoodleStrategy`)**: Uses the official Moodle Mobile REST API (`/webservice/rest/server.php`) with `wstoken`. When the university re-enables the mobile app or plugin, requests resolve immediately with zero overhead.
+    - **Tier 2 (`AjaxMoodleStrategy`)**: Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the web `sesskey` and browser session cookies for supported endpoints (e.g. timeline courses).
+    - **Tier 3 (`ScraperMoodleStrategy`)**: Uses pure TypeScript DOM/Regex parsing to fetch and extract course listings, assignment submission tables, course sections, files, and grades directly from standard Moodle web pages (`/my/`, `/course/view.php`, etc.) using session cookies.
+  - Added real-time observability in dev mode (`devMode: true`) logging strategy attempts, unsupported function skips, failure reasons, and fallback transitions.
+  - Added test suite `fallbackStrategies.test.ts` verifying test cases `TC-FALLBACK-01` through `TC-FALLBACK-04` from `docs/TEST_CASES.md`.
+  - Added `sesskey` extraction, storage, and teardown in extension `serviceWorker.ts`, `storage.ts`, and mobile `auth.ts`.
+  - Updated `docs/ARCHITECTURE.md` and `docs/TEST_CASES.md`.
+
 ### Fixed
 - Fixed Moodle login breaking after the academic year changed by scraping `user/managetoken.php` to reset and acquire the Web Service token, restoring API access after the university disabled the `tool_mobile` plugin.
 

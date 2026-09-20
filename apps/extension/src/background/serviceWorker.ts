@@ -2,6 +2,9 @@ import browser from 'webextension-polyfill';
 import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager } from '@tautracker/moodle-client';
 import {
   getStoredToken,
+  setStoredToken,
+  getStoredSesskey,
+  setStoredSesskey,
   getTrackedCourseIds,
   setTrackedCourseIds,
   setCachedSyncResult,
@@ -168,6 +171,7 @@ async function clearUserSession(): Promise<void> {
   // 2. Wipe all user-specific local storage keys
   const userLocalKeys = [
     'wstoken',
+    'sesskey',
     'moodleCredentials',
     'cachedSyncResult',
     'enrolledCoursesCache',
@@ -191,12 +195,14 @@ async function clearUserSession(): Promise<void> {
 
 
 async function validateToken(token: string) {
-  const client = new MoodleClient(token);
+  const sesskey = await getStoredSesskey();
+  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
   return await client.getSiteInfo();
 }
 
 async function fetchEnrolledCourses(token: string) {
-  const client = new MoodleClient(token);
+  const sesskey = await getStoredSesskey();
+  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
   const info = await client.getSiteInfo();
   return await client.getEnrolledCourses(info.userid);
 }
@@ -208,7 +214,8 @@ async function performSettingsSync() {
     return;
   }
 
-  const client = new MoodleClient(token);
+  const sesskey = await getStoredSesskey();
+  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
   const syncManager = new SettingsSyncManager(client, 'chrome-extension');
 
   const settings = await getSettings();
@@ -298,12 +305,21 @@ async function performBackgroundSync() {
     const trackedCourseIds = await getTrackedCourseIds();
     const settings = await getSettings();
     const prevResult = await getCachedSyncResult();
+    const sesskey = await getStoredSesskey();
 
     try {
-      result = await runSync(token, trackedCourseIds, (msg) => {
-        browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-        console.log(`[Sync Progress] ${msg}`);
-      });
+      result = await runSync(
+        token,
+        trackedCourseIds,
+        (msg) => {
+          browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
+          console.log(`[Sync Progress] ${msg}`);
+        },
+        undefined,
+        undefined,
+        undefined,
+        sesskey || undefined
+      );
     } catch (err: any) {
       if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
         console.log('Token invalid/expired. Prompting user to re-login.');
@@ -654,41 +670,47 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
   }
 
   const sesskey = sesskeyMatch[1];
+  await setStoredSesskey(sesskey);
   
-  // 7. Scrape managetoken.php and reset the token for Moodle Mobile App
-  const manageUrl = `${baseUrl}/user/managetoken.php`;
-  const manageRes = await fetch(manageUrl, { credentials: 'include' });
-  const manageHtml = await manageRes.text();
-  
-  const tokenMatch = manageHtml.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
-  if (!tokenMatch) {
-     throw new Error('Moodle Mobile Web Service token row not found in managetoken.php');
+  // 7. Try to scrape managetoken.php and reset the token for Moodle Mobile App
+  let scrapedToken: string | null = null;
+  try {
+    const manageUrl = `${baseUrl}/user/managetoken.php`;
+    const manageRes = await fetch(manageUrl, { credentials: 'include' });
+    const manageHtml = await manageRes.text();
+    
+    const tokenMatch = manageHtml.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
+    if (tokenMatch) {
+      const tokenId = tokenMatch[1];
+      
+      // Reset the token (POST to managetoken.php)
+      const resetParams = new URLSearchParams();
+      resetParams.append('tokenid', tokenId);
+      resetParams.append('action', 'resetwstoken');
+      resetParams.append('confirm', '1');
+      resetParams.append('sesskey', sesskey);
+      
+      const resetRes = await fetch(manageUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'include',
+        body: resetParams
+      });
+      
+      const resetHtml = await resetRes.text();
+      
+      // Read the redirected HTML to find the newly generated token
+      const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+      if (finalTokenMatch) {
+        scrapedToken = finalTokenMatch[1].trim();
+      }
+    }
+  } catch (e) {
+    console.warn('[loginTauSso] Could not scrape mobile token, proceeding with web session fallback:', e);
   }
-  
-  const tokenId = tokenMatch[1];
-  
-  // 8. Reset the token (POST to managetoken.php)
-  const resetParams = new URLSearchParams();
-  resetParams.append('tokenid', tokenId);
-  resetParams.append('action', 'resetwstoken');
-  resetParams.append('confirm', '1');
-  resetParams.append('sesskey', sesskey);
-  
-  const resetRes = await fetch(manageUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    credentials: 'include',
-    body: resetParams
-  });
-  
-  const resetHtml = await resetRes.text();
-  
-  // 9. Read the redirected HTML to find the newly generated token
-  const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
-  if (!finalTokenMatch) {
-    throw new Error('Failed to extract newly generated web service token from Moodle');
-  }
-  
-  return finalTokenMatch[1].trim();
+
+  const finalToken = scrapedToken || `web_session_${Date.now()}`;
+  await setStoredToken(finalToken);
+  return finalToken;
 }
 
