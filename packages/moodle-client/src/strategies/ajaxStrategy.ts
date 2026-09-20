@@ -84,41 +84,79 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
 
   public async getEnrolledCourses(_userId: number): Promise<RawMoodleCourse[]> {
     // core_course_get_enrolled_courses_by_timeline_classification is AJAX-enabled in Moodle 4.x
-    // Try 'allincludinghidden' first to catch all courses without filter bias
-    const classifications = ['allincludinghidden', 'all', 'inprogress', 'future'];
-    let allCourses: any[] = [];
+    // Valid timeline classifications in Moodle: 'all', 'inprogress', 'future', 'past', 'favourites'
+    const classifications = ['all', 'inprogress', 'future', 'past', 'favourites'];
+    const coursesMap = new Map<number, RawMoodleCourse>();
 
     for (const classification of classifications) {
       try {
+        if (this.context.devMode) {
+          console.log(`[AjaxStrategy] Requesting timeline courses for classification '${classification}' (limit: 100)...`);
+        }
+
         const data = await this.ajaxCall(
           'core_course_get_enrolled_courses_by_timeline_classification',
           {
             classification,
-            limit: 0,
+            limit: 100,
             offset: 0,
+            sort: 'fullname',
           }
         );
 
-        if (data && Array.isArray(data.courses) && data.courses.length > 0) {
-          allCourses = data.courses;
-          break;
+        if (data && Array.isArray(data.courses)) {
+          if (this.context.devMode) {
+            console.log(`[AjaxStrategy] Classification '${classification}' returned ${data.courses.length} courses.`);
+          }
+          for (const c of data.courses) {
+            if (c.id > 1 && !coursesMap.has(c.id)) {
+              coursesMap.set(c.id, {
+                id: c.id,
+                fullname: c.fullname || '',
+                shortname: c.shortname || c.fullname || '',
+                idnumber: c.idnumber || '',
+              });
+            }
+          }
         }
-      } catch (err) {
-        // Try next classification if Moodle rejects this specific classification value
-        continue;
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[AjaxStrategy] Classification '${classification}' failed:`, err?.message || err);
+        }
       }
     }
 
-    if (allCourses.length === 0) {
+    // Also attempt core_course_get_recent_courses if timeline returned nothing
+    if (coursesMap.size === 0) {
+      try {
+        if (this.context.devMode) {
+          console.log(`[AjaxStrategy] Attempting core_course_get_recent_courses fallback...`);
+        }
+        const recent = await this.ajaxCall('core_course_get_recent_courses', {});
+        if (Array.isArray(recent)) {
+          for (const c of recent) {
+            if (c.id > 1 && !coursesMap.has(c.id)) {
+              coursesMap.set(c.id, {
+                id: c.id,
+                fullname: c.fullname || '',
+                shortname: c.shortname || c.fullname || '',
+                idnumber: c.idnumber || '',
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[AjaxStrategy] core_course_get_recent_courses failed:`, err?.message || err);
+        }
+      }
+    }
+
+    if (coursesMap.size === 0) {
       throw new Error('No enrolled courses returned by AJAX timeline service; falling back to Scraper');
     }
 
-    return allCourses.map((c: any) => ({
-      id: c.id,
-      fullname: c.fullname || '',
-      shortname: c.shortname || c.fullname || '',
-      idnumber: c.idnumber || '',
-    }));
+    return Array.from(coursesMap.values());
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {

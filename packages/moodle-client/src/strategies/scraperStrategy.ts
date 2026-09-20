@@ -62,7 +62,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
-    const html = await this.fetchHtml('/my/');
+    let html = await this.fetchHtml('/my/');
 
     // 1. Extract User ID
     let userid = 0;
@@ -74,6 +74,27 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
     if (uidMatch) {
       userid = parseInt(uidMatch[1], 10);
+    }
+
+    // If userid <= 1 (guest/not authenticated on /my/), attempt /user/preferences.php
+    if (userid <= 1) {
+      try {
+        const prefHtml = await this.fetchHtml('/user/preferences.php');
+        const prefUidMatch =
+          prefHtml.match(/\/user\/(?:profile|view)\.php\?id=(\d+)/i) ||
+          prefHtml.match(/"userid"\s*:\s*"?(\d+)"?/i) ||
+          prefHtml.match(/data-userid="(\d+)"/i);
+        if (prefUidMatch && parseInt(prefUidMatch[1], 10) > 1) {
+          userid = parseInt(prefUidMatch[1], 10);
+          html = prefHtml;
+        }
+      } catch {
+        // Continue with current html
+      }
+    }
+
+    if (userid <= 1) {
+      throw new Error(`Scraper failed to identify authenticated student session (userid: ${userid})`);
     }
 
     // 2. Extract Full Name
@@ -141,19 +162,19 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     }
 
     // 2. Match standard course links: /course/view.php?id=(\d+)
-    const courseLinkRegex = /<a[^>]+href="[^"]*(?:\/course\/view\.php\?id=|\/course\/view\.php\?.*[&?]id=)(\d+)[^"]*"([^>]*)>([\s\S]*?)<\/a>/gi;
+    const courseLinkRegex = /<a\b([^>]*(?:href=["'][^"']*(?:\/course\/view\.php\?id=|\/course\/view\.php\?.*[&?]id=)(\d+)[^"']*)[^>]*)>([\s\S]*?)<\/a>/gi;
     let match: RegExpExecArray | null;
 
     while ((match = courseLinkRegex.exec(html)) !== null) {
-      const id = parseInt(match[1], 10);
+      const fullAttrs = match[1] || '';
+      const id = parseInt(match[2], 10);
       if (isNaN(id) || id <= 1) continue;
 
-      const tagAttrs = match[2] || '';
       const linkContent = match[3] || '';
 
       let name = '';
-      // Prefer aria-label if present on <a>
-      const ariaMatch = tagAttrs.match(/aria-label="([^"]+)"/i);
+      // Prefer aria-label or title if present on <a>
+      const ariaMatch = fullAttrs.match(/(?:aria-label|title)=["']([^"']+)["']/i);
       if (ariaMatch) {
         name = decodeHtmlEntities(ariaMatch[1]).trim();
       }
@@ -195,6 +216,18 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
         // Ignore JSON parse errors in inline scripts
       }
     }
+
+    // 4. Course selection dropdowns in calendar/grades/reports
+    const optionMatches = html.matchAll(/<option[^>]+value=["']?(\d+)["']?[^>]*>([^<]+)<\/option>/gi);
+    for (const om of optionMatches) {
+      const id = parseInt(om[1], 10);
+      const optText = decodeHtmlEntities(om[2]).trim();
+      if (id > 1 && optText && !IGNORED_NAMES.has(optText.toLowerCase()) && !coursesMap.has(id)) {
+        if (!optText.includes('כל הקורסים') && !optText.toLowerCase().includes('all courses')) {
+          this.addCourseToMap(coursesMap, id, optText);
+        }
+      }
+    }
   }
 
   private addCourseToMap(
@@ -228,22 +261,49 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    const urlsToFetch = ['/my/courses.php', '/my/'];
-    if (userId && userId > 0) {
+    const urlsToFetch = [
+      '/grade/report/overview/index.php',
+      '/my/courses.php',
+      '/my/',
+    ];
+    if (userId && userId > 1) {
       urlsToFetch.push(`/user/profile.php?id=${userId}`);
     }
     urlsToFetch.push('/user/profile.php');
 
+    if (this.context.devMode) {
+      console.log(`[ScraperStrategy] Fetching enrolled courses across ${urlsToFetch.length} candidate URLs...`);
+    }
+
     const coursesMap = new Map<number, RawMoodleCourse>();
 
     const results = await Promise.allSettled(
-      urlsToFetch.map((url) => this.fetchHtml(url))
+      urlsToFetch.map(async (url) => {
+        const html = await this.fetchHtml(url);
+        if (this.context.devMode) {
+          console.log(`[ScraperStrategy] Successfully fetched '${url}' (${html.length} bytes)`);
+        }
+        return { url, html };
+      })
     );
 
-    for (const res of results) {
-      if (res.status === 'fulfilled' && res.value) {
-        this.parseCoursesFromHtml(res.value, coursesMap);
+    for (let i = 0; i < results.length; i++) {
+      const res = results[i];
+      if (res.status === 'fulfilled' && res.value?.html) {
+        this.parseCoursesFromHtml(res.value.html, coursesMap);
+      } else if (res.status === 'rejected') {
+        if (this.context.devMode) {
+          console.warn(`[ScraperStrategy] Failed to fetch '${urlsToFetch[i]}':`, res.reason?.message || res.reason);
+        }
       }
+    }
+
+    if (this.context.devMode) {
+      console.log(`[ScraperStrategy] Finished parsing. Total unique courses found: ${coursesMap.size}`);
+    }
+
+    if (coursesMap.size === 0) {
+      throw new Error('Scraper strategy found 0 enrolled courses across Moodle pages');
     }
 
     return Array.from(coursesMap.values());

@@ -73,8 +73,14 @@ browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse
 
   if (message.type === 'FETCH_ENROLLED_COURSES') {
     fetchEnrolledCourses(message.token)
-      .then((courses) => sendResponse({ success: true, courses }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
+      .then((courses) => {
+        console.log('[serviceWorker] Responding to FETCH_ENROLLED_COURSES with', courses.length, 'courses');
+        sendResponse({ success: true, courses });
+      })
+      .catch((err) => {
+        console.error('[serviceWorker] Error in fetchEnrolledCourses:', err);
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 
@@ -203,8 +209,18 @@ async function validateToken(token: string) {
 async function fetchEnrolledCourses(token: string) {
   const sesskey = await getStoredSesskey();
   const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
-  const info = await client.getSiteInfo();
-  return await client.getEnrolledCourses(info.userid);
+  console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
+  let userid = 0;
+  try {
+    const info = await client.getSiteInfo();
+    console.log('[serviceWorker] SiteInfo resolved:', info);
+    userid = info.userid;
+  } catch (err: any) {
+    console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
+  }
+  const courses = await client.getEnrolledCourses(userid);
+  console.log('[serviceWorker] fetchEnrolledCourses found courses count:', courses.length);
+  return courses;
 }
 
 async function performSettingsSync() {

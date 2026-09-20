@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Updated `docs/ARCHITECTURE.md` and `docs/TEST_CASES.md`.
 
 ### Fixed
+- Fixed `getEnrolledCourses` in `AjaxMoodleStrategy` passing invalid `limit: 0` (which requested 0 courses from Moodle) and unsupported classifications; updated to query valid Moodle 4.x classifications (`'all'`, `'inprogress'`, `'future'`, `'past'`, `'favourites'`) with `limit: 100`, `sort: 'fullname'`, course accumulation across classifications, and `core_course_get_recent_courses` fallback.
+- Enhanced `ScraperMoodleStrategy` course scraping to query `/grade/report/overview/index.php`, reject unauthenticated guest sessions (`userid <= 1`) in `getSiteInfo`, extract opening `<a>` tags with flexible attribute positioning, and parse course `<option>` dropdowns.
 - Fixed Moodle login breaking after the academic year changed by scraping `user/managetoken.php` to reset and acquire the Web Service token, restoring API access after the university disabled the `tool_mobile` plugin.
 
 ### Added

@@ -473,8 +473,14 @@ export default function App() {
     setValidatingToken(true);
     try {
       const res = await fetchEnrolledCoursesOnBackground(t);
-      if (res.success && res.courses) {
+      console.log('[Onboarding] fetchEnrolledCoursesOnBackground response:', res);
+      if (res.success && res.courses && res.courses.length > 0) {
         setAvailableCourses(res.courses);
+        setOnboardingStep(2);
+      } else if (res.success && res.courses && res.courses.length === 0) {
+        console.warn('[Onboarding] Enrolled courses array is empty');
+        showToast(currentLang === 'he' ? 'לא נמצאו קורסים מקושרים לחשבון' : 'No enrolled courses found for account', 'info');
+        setAvailableCourses([]);
         setOnboardingStep(2);
       } else {
         showToast(res.error || 'Failed to fetch enrolled courses.', 'error');
