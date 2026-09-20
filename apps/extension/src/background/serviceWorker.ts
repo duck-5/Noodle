@@ -206,21 +206,36 @@ async function validateToken(token: string) {
   return await client.getSiteInfo();
 }
 
+let activeFetchEnrolledCoursesPromise: Promise<any[]> | null = null;
+
 async function fetchEnrolledCourses(token: string) {
-  const sesskey = await getStoredSesskey();
-  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
-  console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
-  let userid = 0;
-  try {
-    const info = await client.getSiteInfo();
-    console.log('[serviceWorker] SiteInfo resolved:', info);
-    userid = info.userid;
-  } catch (err: any) {
-    console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
+  if (activeFetchEnrolledCoursesPromise) {
+    console.log('[serviceWorker] Returning existing in-flight fetchEnrolledCourses promise');
+    return await activeFetchEnrolledCoursesPromise;
   }
-  const courses = await client.getEnrolledCourses(userid);
-  console.log('[serviceWorker] fetchEnrolledCourses found courses count:', courses.length);
-  return courses;
+
+  activeFetchEnrolledCoursesPromise = (async () => {
+    try {
+      const sesskey = await getStoredSesskey();
+      const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
+      console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
+      let userid = 0;
+      try {
+        const info = await client.getSiteInfo();
+        console.log('[serviceWorker] SiteInfo resolved:', info);
+        userid = info.userid;
+      } catch (err: any) {
+        console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
+      }
+      const courses = await client.getEnrolledCourses(userid);
+      console.log('[serviceWorker] fetchEnrolledCourses found courses count:', courses.length);
+      return courses;
+    } finally {
+      activeFetchEnrolledCoursesPromise = null;
+    }
+  })();
+
+  return await activeFetchEnrolledCoursesPromise;
 }
 
 async function performSettingsSync() {

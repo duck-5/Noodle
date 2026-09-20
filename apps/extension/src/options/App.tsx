@@ -306,12 +306,15 @@ export default function App() {
 
     const handleStorageChange = (changes: { [key: string]: any }, areaName: string) => {
       if (areaName === 'local' && changes.wstoken && changes.wstoken.newValue) {
-        loadData();
+        // If the token is identical to our current state or we are in active course selection, avoid re-running onboarding
+        if (changes.wstoken.newValue !== token && onboardingStep !== 2) {
+          loadData();
+        }
       }
     };
     browser.storage.onChanged.addListener(handleStorageChange);
     return () => browser.storage.onChanged.removeListener(handleStorageChange);
-  }, []);
+  }, [token, onboardingStep]);
 
   useEffect(() => {
     if (settings?.theme) {
@@ -374,6 +377,9 @@ export default function App() {
           setTourStep(0);
         }
       } else if (storedToken) {
+        if (cachedCoursesRes.enrolledCoursesCache && cachedCoursesRes.enrolledCoursesCache.length > 0) {
+          setOnboardingStep(2);
+        }
         // Token exists but courses might not be tracked yet — try to restore from Moodle
         restoreMoodleSettingsForOnboarding(storedToken);
       } else {
@@ -409,9 +415,10 @@ export default function App() {
         await setMoodleCredentials(null);
       }
       setToken(fetchedToken);
-      restoreMoodleSettingsForOnboarding(fetchedToken);
+      await restoreMoodleSettingsForOnboarding(fetchedToken);
     } catch (err: any) {
       showToast(`Login failed: ${err.message}`, 'error');
+    } finally {
       setLoading(false);
     }
   }
@@ -429,6 +436,7 @@ export default function App() {
   }
 
   async function restoreMoodleSettingsForOnboarding(t: string) {
+    if (validatingToken) return;
     setValidatingToken(true);
     try {
       const sesskey = await getStoredSesskey();
@@ -498,6 +506,7 @@ export default function App() {
       console.log('[Onboarding] fetchEnrolledCoursesOnBackground response:', res);
       if (res.success && res.courses && res.courses.length > 0) {
         setAvailableCourses(res.courses);
+        await browser.storage.local.set({ enrolledCoursesCache: res.courses });
         setOnboardingStep(2);
       } else if (res.success && res.courses && res.courses.length === 0) {
         console.warn('[Onboarding] Enrolled courses array is empty');
@@ -505,12 +514,21 @@ export default function App() {
         setAvailableCourses([]);
         setOnboardingStep(2);
       } else {
-        showToast(res.error || 'Failed to fetch enrolled courses.', 'error');
-        setOnboardingStep(1);
+        // If courses are already visible or user is on step 2, do not throw them back to step 1!
+        if (availableCourses.length > 0 || onboardingStep === 2) {
+          console.warn('[Onboarding] Background fetch reported error but courses already present:', res?.error);
+        } else {
+          showToast(res?.error || 'Failed to fetch enrolled courses.', 'error');
+          setOnboardingStep(1);
+        }
       }
     } catch (e: any) {
-      showToast(e.message, 'error');
-      setOnboardingStep(1);
+      if (availableCourses.length > 0 || onboardingStep === 2) {
+        console.warn('[Onboarding] Background fetch exception but courses already present:', e?.message || e);
+      } else {
+        showToast(e?.message || 'Failed to fetch enrolled courses', 'error');
+        setOnboardingStep(1);
+      }
     } finally {
       setValidatingToken(false);
     }

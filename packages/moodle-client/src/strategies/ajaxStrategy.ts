@@ -87,85 +87,76 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getEnrolledCourses(_userId: number): Promise<RawMoodleCourse[]> {
-    // core_course_get_enrolled_courses_by_timeline_classification is AJAX-enabled in Moodle 4.x
-    // Valid timeline classifications in Moodle: 'all', 'inprogress', 'future', 'past', 'favourites'
+    // core_course_get_enrolled_courses_by_timeline_classification is AJAX-enabled on the root Moodle instance.
+    // Note: Past year archives (/2025/, /2024/) must NOT be called with the root sesskey, as foreign sesskeys
+    // trigger Moodle CSRF security errors that terminate the active session cookie. Archive courses
+    // are safely discovered by ScraperMoodleStrategy via standard HTML GET requests.
     const classifications = ['all', 'inprogress', 'future', 'past', 'favourites'];
     const coursesMap = new Map<number, RawMoodleCourse>();
     const root = this.getRootUrl();
 
-    const currentYear = new Date().getFullYear();
-    const yearPrefixes = ['', `/${currentYear - 1}`, `/${currentYear - 2}`];
+    for (const classification of classifications) {
+      try {
+        if (this.context.devMode) {
+          console.log(`[AjaxStrategy] Requesting timeline courses for classification '${classification}' (limit: 100)...`);
+        }
 
-    for (const prefix of yearPrefixes) {
-      const year = prefix.replace('/', '');
-      const instanceUrl = year ? `${root}/${year}` : root;
-
-      for (const classification of classifications) {
-        try {
-          if (this.context.devMode) {
-            console.log(`[AjaxStrategy] Requesting timeline courses for classification '${classification}' (prefix: '${prefix || 'root'}', limit: 100)...`);
+        const data = await this.ajaxCall(
+          'core_course_get_enrolled_courses_by_timeline_classification',
+          {
+            classification,
+            limit: 100,
+            offset: 0,
+            sort: 'fullname',
           }
+        );
 
-          const data = await this.ajaxCall(
-            'core_course_get_enrolled_courses_by_timeline_classification',
-            {
-              classification,
-              limit: 100,
-              offset: 0,
-              sort: 'fullname',
-            },
-            prefix
-          );
-
-          if (data && Array.isArray(data.courses)) {
-            if (this.context.devMode) {
-              console.log(`[AjaxStrategy] Classification '${classification}' on '${prefix || 'root'}' returned ${data.courses.length} courses.`);
-            }
-            for (const c of data.courses) {
-              if (c.id > 1 && !coursesMap.has(c.id)) {
-                coursesMap.set(c.id, {
-                  id: c.id,
-                  fullname: c.fullname || '',
-                  shortname: c.shortname || c.fullname || '',
-                  idnumber: c.idnumber || '',
-                  year: year || undefined,
-                  instanceUrl,
-                });
-              }
-            }
-          }
-        } catch (err: any) {
+        if (data && Array.isArray(data.courses)) {
           if (this.context.devMode) {
-            console.warn(`[AjaxStrategy] Classification '${classification}' on '${prefix || 'root'}' failed:`, err?.message || err);
+            console.log(`[AjaxStrategy] Classification '${classification}' returned ${data.courses.length} courses.`);
+          }
+          for (const c of data.courses) {
+            if (c.id > 1 && !coursesMap.has(c.id)) {
+              coursesMap.set(c.id, {
+                id: c.id,
+                fullname: c.fullname || '',
+                shortname: c.shortname || c.fullname || '',
+                idnumber: c.idnumber || '',
+                instanceUrl: root,
+              });
+            }
           }
         }
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[AjaxStrategy] Classification '${classification}' failed:`, err?.message || err);
+        }
       }
+    }
 
-      // Also attempt core_course_get_recent_courses if timeline returned nothing for this prefix
-      if (coursesMap.size === 0) {
-        try {
-          if (this.context.devMode) {
-            console.log(`[AjaxStrategy] Attempting core_course_get_recent_courses on '${prefix || 'root'}' fallback...`);
-          }
-          const recent = await this.ajaxCall('core_course_get_recent_courses', {}, prefix);
-          if (Array.isArray(recent)) {
-            for (const c of recent) {
-              if (c.id > 1 && !coursesMap.has(c.id)) {
-                coursesMap.set(c.id, {
-                  id: c.id,
-                  fullname: c.fullname || '',
-                  shortname: c.shortname || c.fullname || '',
-                  idnumber: c.idnumber || '',
-                  year: year || undefined,
-                  instanceUrl,
-                });
-              }
+    // Also attempt core_course_get_recent_courses if timeline returned nothing
+    if (coursesMap.size === 0) {
+      try {
+        if (this.context.devMode) {
+          console.log(`[AjaxStrategy] Attempting core_course_get_recent_courses fallback...`);
+        }
+        const recent = await this.ajaxCall('core_course_get_recent_courses', {});
+        if (Array.isArray(recent)) {
+          for (const c of recent) {
+            if (c.id > 1 && !coursesMap.has(c.id)) {
+              coursesMap.set(c.id, {
+                id: c.id,
+                fullname: c.fullname || '',
+                shortname: c.shortname || c.fullname || '',
+                idnumber: c.idnumber || '',
+                instanceUrl: root,
+              });
             }
           }
-        } catch (err: any) {
-          if (this.context.devMode) {
-            console.warn(`[AjaxStrategy] core_course_get_recent_courses on '${prefix || 'root'}' failed:`, err?.message || err);
-          }
+        }
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[AjaxStrategy] core_course_get_recent_courses failed:`, err?.message || err);
         }
       }
     }
