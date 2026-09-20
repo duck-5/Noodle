@@ -28,6 +28,9 @@ def main():
     for old_zip in extension_dir.glob("*.zip"):
         old_zip.unlink()
 
+    print("\n--- Building Shared Moodle Client ---")
+    subprocess.run(["pnpm", "run", "build:moodle-client"], cwd=root_dir, check=True, shell=True)
+
     print("\n--- Building Chrome Extension ---")
     subprocess.run(["pnpm", "run", "build:chrome"], cwd=extension_dir, check=True, shell=True)
     chrome_zip = releases_dir / 'noodle-chrome.zip'

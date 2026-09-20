@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:firefox": "vite --mode firefox",
-    "build": "tsc -b && vite build",
-    "build:chrome": "tsc -b && vite build --mode chrome",
-    "build:firefox": "tsc -b && vite build --mode firefox",
+    "build": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build",
+    "build:chrome": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build --mode chrome",
+    "build:firefox": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build --mode firefox",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e": "playwright test",
