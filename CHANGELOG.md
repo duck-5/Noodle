@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [Unreleased] - 2026-09-07
+## [Unreleased]
+### Fixed
+- **Scraper Strategy SSO Race Condition**: Fixed a critical bug where fetching archive instances (e.g. `2025/my/`) in parallel would sometimes yield unauthenticated guest sessions, causing AJAX course discovery to return 0 courses. The background extension now sequentially primes the SSO session for all known archive domains before fetching course contents.
+- **Moodle 4.x Scraper Regex**: Fixed the module parsing regular expression (`modRegex`) in `ScraperStrategy` to correctly use `id="module-\d+"` as the lookahead boundary. Moodle 4.x nested the `modtype_` class inside the `activitytitle` element, causing the old lookahead to prematurely truncate the HTML string. This truncation was responsible for syncing returning 0 files and 0 zoom meetings.
+
+- Added --live and --live-only flags to pnpm test wrapper to conditionally execute the Moodle API sandbox script (scripts/test-moodle-live.mjs) alongside the standard automated tests. - 2026-09-07
+
+### Changed
+- **Test Runner Cleanliness (`packages/moodle-client/jest.config.js`)**:
+  - Enabled `silent: true` in Jest configuration to suppress expected handled warning and fallback logs emitted during failure mode unit tests.
+  - Suppressed `ts-jest` hybrid module kind diagnostic code `151002` to prevent repetitive compiler warnings on each test file.
 
 ### Added
 - **API Sandbox Testing Tool (`sandbox/test_moodle.mjs`, `docs/developer-guide.md`)**:

@@ -55,7 +55,13 @@ For low-level testing of the Moodle API endpoints (like fetching courses, assign
 2. Run the sandbox script using the native Node.js `--env-file` flag:
 
 ```bash
-node --env-file=moodle_test_credentials.env sandbox/test_moodle.mjs
+node --env-file=moodle_test_credentials.env scripts/test-moodle-live.mjs
 ```
 
 This will authenticate directly using the credentials and output the API responses to the console.
+
+Alternatively, you can run the live tests alongside the standard test suite by running:
+
+`ash
+pnpm test -- --live
+`

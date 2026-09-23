@@ -1,0 +1,729 @@
+PS D:\ProgramFiles\Projects\Noodle> pnpm test    
+$ node scripts/run-tests.mjs
+--- Running Moodle Client Tests ---
+$ pnpm --filter @tautracker/moodle-client test
+$ jest
+ PASS  __tests__/grades.test.ts (5.857 s)
+  ● Console
+
+    console.log
+      [MoodleClient] Attempting getGradeItems using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+ PASS  __tests__/stress.test.ts
+ PASS  __tests__/backupRestore.test.ts (6.028 s)
+ PASS  __tests__/googleTasks.test.ts (5.986 s)
+ PASS  __tests__/backgroundSync.test.ts
+ PASS  __tests__/files.test.ts (6.245 s)
+ PASS  __tests__/settingsSync.test.ts
+ PASS  __tests__/fallbackStrategies.test.ts (6.268 s)
+  ● Console
+
+    console.log
+      [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.log
+      [MoodleClient] Attempting getEnrolledCourses using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.warn
+      [MoodleClient] Strategy 'REST' failed for getEnrolledCourses: Access control exception
+
+      50 |       errors.push({ strategy: strategy.name, error: err });
+      51 |       if (devMode) {
+    > 52 |         console.warn(
+         |                 ^
+      53 |           `[MoodleClient] Strategy '${strategy.name}' failed for ${operationName}:`,
+      54 |           err?.message || err
+      55 |         );
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:52:17)
+
+    console.log
+      [MoodleClient] Attempting getEnrolledCourses using strategy 'AJAX'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.log
+      [MoodleClient] Succeeded getEnrolledCourses with fallback strategy 'AJAX'.
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:28:17)
+
+    console.log
+      [MoodleClient] Attempting getCourseContents using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.warn
+      [MoodleClient] Strategy 'REST' failed for getCourseContents: Access control exception
+
+      50 |       errors.push({ strategy: strategy.name, error: err });
+      51 |       if (devMode) {
+    > 52 |         console.warn(
+         |                 ^
+      53 |           `[MoodleClient] Strategy '${strategy.name}' failed for ${operationName}:`,
+      54 |           err?.message || err
+      55 |         );
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:52:17)
+
+    console.log
+      [MoodleClient] Attempting getCourseContents using strategy 'AJAX'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.log
+      [MoodleClient] Strategy 'AJAX' does not support getCourseContents: Strategy 'AJAX' does not support operation 'getCourseContents': core_course_get_contents is not ajax-enabled. Trying next fallback.
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:34:19)
+
+    console.log
+      [MoodleClient] Attempting getCourseContents using strategy 'Scraper'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.log
+      [MoodleClient] Succeeded getCourseContents with fallback strategy 'Scraper'.
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:28:17)
+
+    console.log
+      [ScraperStrategy] Fetching enrolled courses across 13 candidate URLs (including past years: 2025, 2024)...
+
+      at ScraperMoodleStrategy.getEnrolledCourses (src/strategies/scraperStrategy.ts:540:15)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/grade/report/overview/index.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/my/courses.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/my/' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 2)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/user/profile.php?id=30909' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 3)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/user/profile.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 4)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/grade/report/overview/index.php' (428 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 5)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/my/courses.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 6)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/my/' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 7)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/user/profile.php?id=30909' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 8)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/grade/report/overview/index.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 9)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/my/courses.php' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 10)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/my/' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 11)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/user/profile.php?id=30909' (61 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 12)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(root): no sesskey found in HTML
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:212:17)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=true, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 2 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(2025): no sesskey found in HTML
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:212:17)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(2024): no sesskey found in HTML
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:212:17)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] Finished parsing. Total unique courses found across all years: 2
+
+      at ScraperMoodleStrategy.getEnrolledCourses (src/strategies/scraperStrategy.ts:618:15)
+
+    console.log
+      [ScraperStrategy] Fetching enrolled courses across 13 candidate URLs (including past years: 2025, 2024)...
+
+      at ScraperMoodleStrategy.getEnrolledCourses (src/strategies/scraperStrategy.ts:540:15)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/grade/report/overview/index.php' (555 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/my/courses.php' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/my/' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 2)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/user/profile.php?id=30909' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 3)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/user/profile.php' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 4)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/grade/report/overview/index.php' (390 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 5)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/my/courses.php' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 6)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/my/' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 7)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2025/user/profile.php?id=30909' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 8)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/my/courses.php' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 10)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/my/' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 11)
+
+    console.log
+      [ScraperStrategy] Successfully fetched '/2024/user/profile.php?id=30909' (26 bytes)
+
+      at src/strategies/scraperStrategy.ts:551:19
+          at async Promise.allSettled (index 12)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 2 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(root): using sesskey=ROOT..., endpoint=https://moodle.tau.ac.il/lib/ajax/service.php?sesskey=ROOT_SESSKEY&info=core_course_get_enrolled_courses_by_timeline_classification
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:223:15)
+
+    console.log
+      [ScraperStrategy] AJAX(root/all): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(root/all): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(root/inprogress): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(root/inprogress): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(root/future): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(root/future): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(root/past): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(root/past): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(root/favourites): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(root/favourites): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 2)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=false, coursesJson=false, sesskey=true
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 1 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(2025): using sesskey=Y202..., endpoint=https://moodle.tau.ac.il/2025/lib/ajax/service.php?sesskey=Y2025_SESSKEY&info=core_course_get_enrolled_courses_by_timeline_classification
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:223:15)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/all): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/all): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/inprogress): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/inprogress): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/future): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/future): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/past): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/past): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/favourites): HTTP 200
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:246:19)
+
+    console.log
+      [ScraperStrategy] AJAX(2025/favourites): error=false, courses=0
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:253:21)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.warn
+      [ScraperStrategy] Failed to fetch '/2024/grade/report/overview/index.php': Scraper HTTP error! status: 404 for URL: https://moodle.tau.ac.il/2024/grade/report/overview/index.php
+
+      577 |       } else if (res.status === 'rejected') {
+      578 |         if (this.context.devMode) {
+    > 579 |           console.warn(`[ScraperStrategy] Failed to fetch '${targets[i].url}':`, res.reason?.message || res.reason);
+          |                   ^
+      580 |         }
+      581 |       }
+      582 |     }
+
+      at ScraperMoodleStrategy.getEnrolledCourses (src/strategies/scraperStrategy.ts:579:19)
+      at Object.<anonymous> (__tests__/fallbackStrategies.test.ts:861:23)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] extractCoursesViaAjax(2024): no sesskey found in HTML
+
+      at ScraperMoodleStrategy.extractCoursesViaAjax (src/strategies/scraperStrategy.ts:212:17)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=false
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:297:15)
+
+    console.log
+      [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 3)
+
+      at ScraperMoodleStrategy.parseCoursesFromHtml (src/strategies/scraperStrategy.ts:451:15)
+
+    console.log
+      [ScraperStrategy] Finished parsing. Total unique courses found across all years: 3
+
+      at ScraperMoodleStrategy.getEnrolledCourses (src/strategies/scraperStrategy.ts:618:15)
+
+ PASS  __tests__/auth.test.ts (6.233 s)
+  ● Console                                                                                                                
+                                                                                                                           
+    console.log                                                                                                            
+      [MoodleClient] Attempting getSiteInfo using strategy 'REST'...                                                       
+                                                                                                                           
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)                                                      
+                                                                                                                           
+    console.warn                                                                                                           
+      [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.                                       
+                                                                                                                           
+      43 |       if (err instanceof MoodleApiError && err.errorcode === 'invalidtoken') {                                  
+      44 |         if (devMode) {
+    > 45 |           console.warn(`[MoodleClient] Strategy '${strategy.name}' reported invalidtoken. Re-throwing for re-auth.`);
+         |                   ^
+      46 |         }
+      47 |         throw err;
+      48 |       }
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:45:19)
+      at Object.<anonymous> (__tests__/auth.test.ts:90:7)
+
+    console.log
+      [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+    console.warn
+      [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+
+      43 |       if (err instanceof MoodleApiError && err.errorcode === 'invalidtoken') {
+      44 |         if (devMode) {
+    > 45 |           console.warn(`[MoodleClient] Strategy '${strategy.name}' reported invalidtoken. Re-throwing for re-auth.`);
+         |                   ^
+      46 |         }
+      47 |         throw err;
+      48 |       }
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:45:19)
+      at executeWithRetry (__tests__/auth.test.ts:122:18)
+      at Object.<anonymous> (__tests__/auth.test.ts:134:22)
+
+    console.log
+      [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+ PASS  __tests__/zoom.test.ts
+ PASS  __tests__/courses.test.ts (6.317 s)
+  ● Console                                                                                                                
+
+    console.log
+      [MoodleClient] Attempting getEnrolledCourses using strategy 'REST'...
+
+      at executeWithFallback (src/strategies/fallbackRunner.ts:24:17)
+
+ PASS  __tests__/courseParser.test.ts
+ PASS  __tests__/assignments.test.ts
+
+Test Suites: 13 passed, 13 total
+Tests:       77 passed, 77 total
+Snapshots:   0 total
+Time:        7.428 s
+Ran all test suites.
+
+--- Running Build Parity Tests ---
+$ node scripts/test-build-parity.mjs
+====================================================
+TC-EXT-BRW-01 & TC-EXT-BRW-02: Manifest Build Parity
+====================================================
+
+1. Testing Chrome Extension Build (TC-EXT-BRW-01)...

@@ -1,0 +1,289 @@
+periodicSync alarm already exists with 5 minutes
+serviceWorker.js:1 TauTracker Extension Installed
+serviceWorker.js:1 Forced creation of periodicSync alarm for 5 minutes onInstalled
+serviceWorker.js:1 [serviceWorker] fetchEnrolledCourses called with sesskey: LGbv...
+serviceWorker.js:1 [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+serviceWorker.js:1 [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+d @ serviceWorker.js:1
+serviceWorker.js:1 [serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0: קוד (token) לא חוקי  - האסימון לא נמצא
+(anonymous) @ serviceWorker.js:1
+serviceWorker.js:1 [MoodleClient] Attempting getEnrolledCourses using strategy 'REST'...
+2serviceWorker.js:1 [serviceWorker] Returning existing in-flight fetchEnrolledCourses promise
+serviceWorker.js:1 [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+d @ serviceWorker.js:1
+3serviceWorker.js:1 [serviceWorker] Error in fetchEnrolledCourses: MoodleApiError: קוד (token) לא חוקי  - האסימון לא נמצא
+    at e.apiCall (serviceWorker.js:1:13037)
+    at async e.getEnrolledCourses (serviceWorker.js:1:13305)
+    at async d (serviceWorker.js:1:10765)
+    at async serviceWorker.js:1:55184
+(anonymous) @ serviceWorker.js:1
+serviceWorker.js:1 --- STARTING SYNC (Triggered manually or via periodic alarm) ---
+serviceWorker.js:1 [MoodleClient] Attempting loadNoodleSettings using strategy 'REST'...
+serviceWorker.js:1 [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+d @ serviceWorker.js:1
+serviceWorker.js:1 [SettingsSyncManager] Failed to load remote settings, assuming empty. MoodleApiError: קוד (token) לא חוקי  - האסימון לא נמצא
+    at e.apiCall (serviceWorker.js:1:13037)
+    at async e.loadNoodleSettings (serviceWorker.js:1:15323)
+    at async d (serviceWorker.js:1:10765)
+    at async O.sync (serviceWorker.js:1:49344)
+    at async J (serviceWorker.js:1:55958)
+    at async Y (serviceWorker.js:1:56637)
+sync @ serviceWorker.js:1
+serviceWorker.js:1 [MoodleClient] Attempting saveNoodleSettings using strategy 'REST'...
+serviceWorker.js:1 [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+d @ serviceWorker.js:1
+serviceWorker.js:1 Non-fatal: Failed to pull settings before assignment sync MoodleApiError: קוד (token) לא חוקי  - האסימון לא נמצא
+    at e.apiCall (serviceWorker.js:1:13037)
+    at async e.saveNoodleSettings (serviceWorker.js:1:14586)
+    at async d (serviceWorker.js:1:10765)
+    at async O.sync (serviceWorker.js:1:49524)
+    at async J (serviceWorker.js:1:55958)
+    at async Y (serviceWorker.js:1:56637)
+Y @ serviceWorker.js:1
+serviceWorker.js:1 [Sync Progress] Fetching Moodle user info and assignments...
+serviceWorker.js:1 [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+serviceWorker.js:1 [MoodleClient] Attempting getAssignments using strategy 'REST'...
+2serviceWorker.js:1 [MoodleClient] Strategy 'REST' reported invalidtoken. Re-throwing for re-auth.
+d @ serviceWorker.js:1
+2options.js:1 [MoodleClient] Attempting loadNoodleSettings using strategy 'REST'...
+options.js:1 [MoodleClient] Strategy 'REST' failed for loadNoodleSettings: חריגת בקרת גישה
+C @ options.js:1
+options.js:1 [MoodleClient] Attempting loadNoodleSettings using strategy 'Scraper'...
+options.js:1 [MoodleClient] Strategy 'REST' failed for loadNoodleSettings: חריגת בקרת גישה
+C @ options.js:1
+options.js:1 [MoodleClient] Attempting loadNoodleSettings using strategy 'Scraper'...
+options.js:1 [MoodleClient] Succeeded loadNoodleSettings with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] fetchEnrolledCourses called with sesskey: jCT0...
+serviceWorker.js:1 [MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+serviceWorker.js:1 [MoodleClient] Strategy 'REST' failed for getSiteInfo: חריגת בקרת גישה
+d @ serviceWorker.js:1
+serviceWorker.js:1 [MoodleClient] Attempting getSiteInfo using strategy 'Scraper'...
+options.js:1 [MoodleClient] Succeeded loadNoodleSettings with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] Returning existing in-flight fetchEnrolledCourses promise
+serviceWorker.js:1 [MoodleClient] Succeeded getSiteInfo with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] SiteInfo resolved: Object
+serviceWorker.js:1 [MoodleClient] REST strategy in 1-hour cooldown (mobile plugin unavailable). Skipping to next fallback.
+serviceWorker.js:1 [MoodleClient] Attempting getEnrolledCourses using strategy 'AJAX'...
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'all' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'all' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'inprogress' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'inprogress' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'future' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'future' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'past' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'past' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'favourites' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'favourites' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Attempting core_course_get_recent_courses fallback...
+serviceWorker.js:1 [MoodleClient] Strategy 'AJAX' failed for getEnrolledCourses: No enrolled courses returned by AJAX timeline service; falling back to Scraper
+d @ serviceWorker.js:1
+serviceWorker.js:1 [MoodleClient] Attempting getEnrolledCourses using strategy 'Scraper'...
+serviceWorker.js:1 [ScraperStrategy] Fetching enrolled courses across 13 candidate URLs (including past years: 2025, 2024)...
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/my/courses.php' (66978 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/my/' (298338 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/my/courses.php' (210160 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/my/' (161761 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/user/profile.php?id=30909' (64203 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/user/profile.php?id=30909' (56635 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/user/profile.php?id=30909' (205356 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/my/' (152910 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/user/profile.php' (205373 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/my/courses.php' (64502 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/grade/report/overview/index.php' (201724 bytes)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(root): using sesskey=jCT0..., endpoint=https://moodle.tau.ac.il/lib/ajax/service.php?sesskey=jCT0LUCwBO&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/all): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/inprogress): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/future): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/past): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/favourites): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Failed to fetch '/2025/grade/report/overview/index.php': Scraper HTTP error! status: 404 for URL: https://moodle.tau.ac.il/2025/grade/report/overview/index.php
+getEnrolledCourses @ serviceWorker.js:1
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(2025): using sesskey=BJi4..., endpoint=https://moodle.tau.ac.il/2025/lib/ajax/service.php?sesskey=BJi4BnKA8f&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/all): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/inprogress): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/future): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/past): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/favourites): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Failed to fetch '/2024/grade/report/overview/index.php': Scraper HTTP error! status: 404 for URL: https://moodle.tau.ac.il/2024/grade/report/overview/index.php
+getEnrolledCourses @ serviceWorker.js:1
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(2024): using sesskey=lDlR..., endpoint=https://moodle.tau.ac.il/2024/lib/ajax/service.php?sesskey=lDlRpNQAh0&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/all): error=true, courses=N/A
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/inprogress): error=true, courses=N/A
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/future): error=true, courses=N/A
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/past): error=true, courses=N/A
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/favourites): error=true, courses=N/A
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Finished parsing. Total unique courses found across all years: 0
+serviceWorker.js:1 [MoodleClient] Succeeded getEnrolledCourses with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] fetchEnrolledCourses found courses count: 0
+2serviceWorker.js:1 [serviceWorker] Responding to FETCH_ENROLLED_COURSES with 0 courses
+options.js:1 [Onboarding] fetchEnrolledCoursesOnBackground response: {success: true, courses: Array(0)}
+options.js:1 [Onboarding] Enrolled courses array is empty
+Ge @ options.js:1
+options.js:1 [Onboarding] fetchEnrolledCoursesOnBackground response: {success: true, courses: Array(0)}
+options.js:1 [Onboarding] Enrolled courses array is empty
+Ge @ options.js:1
+options.js:1 [MoodleClient] REST strategy in 1-hour cooldown (mobile plugin unavailable). Skipping to next fallback.
+options.js:1 [MoodleClient] Attempting loadNoodleSettings using strategy 'Scraper'...
+options.js:1 [MoodleClient] Succeeded loadNoodleSettings with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] fetchEnrolledCourses called with sesskey: jCT0...
+serviceWorker.js:1 [MoodleClient] REST strategy in 1-hour cooldown (mobile plugin unavailable). Skipping to next fallback.
+serviceWorker.js:1 [MoodleClient] Attempting getSiteInfo using strategy 'Scraper'...
+serviceWorker.js:1 [MoodleClient] Succeeded getSiteInfo with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] SiteInfo resolved: {userid: 30909, username: '30909', fullname: 'Student', sitename: 'עדכונים בקורסים שלי | אוניברסיטת תל אביב - למידה אקדמית ברשת'}
+serviceWorker.js:1 [MoodleClient] REST strategy in 1-hour cooldown (mobile plugin unavailable). Skipping to next fallback.
+serviceWorker.js:1 [MoodleClient] Attempting getEnrolledCourses using strategy 'AJAX'...
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'all' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'all' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'inprogress' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'inprogress' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'future' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'future' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'past' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'past' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Requesting timeline courses for classification 'favourites' (limit: 100)...
+serviceWorker.js:1 [AjaxStrategy] Classification 'favourites' returned 0 courses.
+serviceWorker.js:1 [AjaxStrategy] Attempting core_course_get_recent_courses fallback...
+serviceWorker.js:1 [MoodleClient] Strategy 'AJAX' failed for getEnrolledCourses: No enrolled courses returned by AJAX timeline service; falling back to Scraper
+d @ serviceWorker.js:1
+await in d
+getEnrolledCourses @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+await in (anonymous)
+q @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+serviceWorker.js:1 [MoodleClient] Attempting getEnrolledCourses using strategy 'Scraper'...
+serviceWorker.js:1 [ScraperStrategy] Fetching enrolled courses across 13 candidate URLs (including past years: 2025, 2024)...
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/grade/report/overview/index.php' (201724 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/my/courses.php' (64502 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/user/profile.php' (205366 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/my/courses.php' (66978 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/my/' (161761 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/my/' (152910 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/my/courses.php' (210160 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2024/user/profile.php?id=30909' (56635 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/2025/user/profile.php?id=30909' (64203 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/user/profile.php?id=30909' (205363 bytes)
+serviceWorker.js:1 [ScraperStrategy] Successfully fetched '/my/' (298338 bytes)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(root): using sesskey=jCT0..., endpoint=https://moodle.tau.ac.il/lib/ajax/service.php?sesskey=jCT0LUCwBO&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/all): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/inprogress): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/future): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/past): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(root/favourites): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Failed to fetch '/2025/grade/report/overview/index.php': Scraper HTTP error! status: 404 for URL: https://moodle.tau.ac.il/2025/grade/report/overview/index.php
+getEnrolledCourses @ serviceWorker.js:1
+await in getEnrolledCourses
+(anonymous) @ serviceWorker.js:1
+d @ serviceWorker.js:1
+await in d
+getEnrolledCourses @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+await in (anonymous)
+q @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(2025): using sesskey=BJi4..., endpoint=https://moodle.tau.ac.il/2025/lib/ajax/service.php?sesskey=BJi4BnKA8f&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/all): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/inprogress): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/future): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/past): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2025/favourites): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Failed to fetch '/2024/grade/report/overview/index.php': Scraper HTTP error! status: 404 for URL: https://moodle.tau.ac.il/2024/grade/report/overview/index.php
+getEnrolledCourses @ serviceWorker.js:1
+await in getEnrolledCourses
+(anonymous) @ serviceWorker.js:1
+d @ serviceWorker.js:1
+await in d
+getEnrolledCourses @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+await in (anonymous)
+q @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+(anonymous) @ serviceWorker.js:1
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] extractCoursesViaAjax(2024): using sesskey=kC22..., endpoint=https://moodle.tau.ac.il/2024/lib/ajax/service.php?sesskey=kC22x9Y2id&info=core_course_get_enrolled_courses_by_timeline_classification
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/all): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/all): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/inprogress): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/inprogress): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/future): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/future): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/past): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/past): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/favourites): HTTP 200
+serviceWorker.js:1 [ScraperStrategy] AJAX(2024/favourites): error=false, courses=0
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+serviceWorker.js:1 [ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 0)
+serviceWorker.js:1 [ScraperStrategy] Finished parsing. Total unique courses found across all years: 0
+serviceWorker.js:1 [MoodleClient] Succeeded getEnrolledCourses with fallback strategy 'Scraper'.
+serviceWorker.js:1 [serviceWorker] fetchEnrolledCourses found courses count: 0
+serviceWorker.js:1 [serviceWorker] Responding to FETCH_ENROLLED_COURSES with 0 courses
+options.js:1 [Onboarding] fetchEnrolledCoursesOnBackground response: {success: true, courses: Array(0)}
+options.js:1 [Onboarding] Enrolled courses array is empty

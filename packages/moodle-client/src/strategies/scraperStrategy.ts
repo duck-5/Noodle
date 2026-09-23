@@ -544,6 +544,14 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     const discoveredYears = new Set<string>();
     const ajaxYearsDone = new Set<string>();
 
+    // Prime the SSO session for candidate past years.
+    // If we fetch archive pages in parallel before the browser receives the MoodleSession cookie for that year,
+    // we get race conditions where guest pages are returned and we extract a guest sesskey for AJAX.
+    if (this.context.devMode) console.log('[ScraperStrategy] Priming SSO sessions for candidate past years...');
+    await Promise.allSettled(
+      candidatePastYears.map(year => this.fetchHtml(`/${year}/login/index.php`))
+    );
+
     const results = await Promise.allSettled(
       targets.map(async (target) => {
         const html = await this.fetchHtml(target.url);
@@ -583,6 +591,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
     // If new archive years were discovered that were not in default candidate years, fetch their overview pages too
     if (discoveredYears.size > 0) {
+      if (this.context.devMode) console.log(`[ScraperStrategy] Priming SSO sessions for newly discovered archive endpoints: ${Array.from(discoveredYears).join(', ')}`);
+      await Promise.allSettled(
+        Array.from(discoveredYears).map(year => this.fetchHtml(`/${year}/login/index.php`))
+      );
+
       const extraTargets: FetchTarget[] = [];
       discoveredYears.forEach((year) => {
         extraTargets.push({ url: `/${year}/grade/report/overview/index.php`, year });
@@ -877,7 +890,8 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       const sectionName = nameMatch ? stripHtmlTags(nameMatch[1]) : `Section ${secId}`;
       const modules: RawCourseModule[] = [];
 
-      const modRegex = /<(?:li|div)[^>]+class="[^"]*modtype_([a-z0-9_]+)[^"]*"[^>]+id="module-(\d+)"[^>]*>([\s\S]*?)(?=<(?:li|div)[^>]+class="[^"]*modtype_|<\/ul>|$)/gi;
+      // In Moodle 4.x, modtype_ is nested inside the module, so lookahead must use id="module-\d+"
+      const modRegex = /<(?:li|div)[^>]+class="[^"]*modtype_([a-z0-9_]+)[^"]*"[^>]+id="module-(\d+)"[^>]*>([\s\S]*?)(?=<(?:li|div)[^>]+id="module-\d+"|<\/ul>|$)/gi;
       let mMatch: RegExpExecArray | null;
 
       while ((mMatch = modRegex.exec(secHtml)) !== null) {

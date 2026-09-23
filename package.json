@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build:moodle-client": "pnpm --filter @tautracker/moodle-client run build",
-    "test": "pnpm test:moodle-client && pnpm test:parity && pnpm test:e2e",
+    "test": "node scripts/run-tests.mjs",
     "test:moodle-client": "pnpm --filter @tautracker/moodle-client test",
     "test:parity": "node scripts/test-build-parity.mjs",
     "test:e2e": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e",
