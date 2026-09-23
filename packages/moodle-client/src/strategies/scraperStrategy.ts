@@ -1,4 +1,5 @@
 import {
+  MoodleApiError,
   MoodleSiteInfo,
   RawCourseFileContent,
   RawCourseModule,
@@ -48,7 +49,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     return base.replace(/\/webservice\/rest\/server\.php$/, '');
   }
 
-  private async fetchHtml(pathOrUrl: string): Promise<string> {
+  private async fetchHtml(pathOrUrl: string, allowSsoRetry = true): Promise<string> {
     const root = this.getRootUrl();
     const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${root}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 
@@ -61,7 +62,46 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       throw new Error(`Scraper HTTP error! status: ${response.status} for URL: ${url}`);
     }
 
-    return response.text();
+    const text = await response.text();
+
+    if (text.includes('Ecom_User_ID') || /<input[^>]+name="Ecom_User_ID"/i.test(text)) {
+      throw new MoodleApiError('AUTH_SESSION_EXPIRED', 'Moodle SSO session expired. Manual login required.');
+    }
+
+    if (allowSsoRetry && text.includes('name="SAMLResponse"') && text.includes('saml2-acs.php')) {
+      const actionMatch = text.match(/<form[^>]+action="([^"]+)"/i);
+      const samlMatch = text.match(/<input[^>]+name="SAMLResponse"[^>]+value="([^"]+)"/i);
+      const relayMatch = text.match(/<input[^>]+name="RelayState"[^>]+value="([^"]*)"/i);
+
+      if (actionMatch && samlMatch) {
+        const actionUrl = decodeHtmlEntities(actionMatch[1]);
+        const samlResponse = decodeHtmlEntities(samlMatch[1]);
+        const relayState = relayMatch ? decodeHtmlEntities(relayMatch[1]) : '';
+
+        const formData = new URLSearchParams();
+        formData.append('SAMLResponse', samlResponse);
+        if (relayState) {
+          formData.append('RelayState', relayState);
+        }
+
+        const postResponse = await fetch(actionUrl, {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          }
+        });
+
+        if (!postResponse.ok) {
+          throw new Error(`SAML ACS POST failed! status: ${postResponse.status}`);
+        }
+
+        return this.fetchHtml(pathOrUrl, false);
+      }
+    }
+
+    return text;
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
@@ -161,11 +201,101 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     return Array.from(years);
   }
 
+  private async extractCoursesViaAjax(
+    html: string,
+    coursesMap: Map<number, RawMoodleCourse>,
+    yearContext?: string
+  ): Promise<void> {
+    const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
+    if (!sesskeyMatch) {
+      if (this.context.devMode) {
+        console.log(`[ScraperStrategy] extractCoursesViaAjax(${yearContext || 'root'}): no sesskey found in HTML`);
+      }
+      return;
+    }
+    const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
+    
+    const prefix = yearContext ? `/${yearContext}` : '';
+    const root = this.getRootUrl();
+    const endpoint = `${root}${prefix}/lib/ajax/service.php?sesskey=${sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification`;
+
+    if (this.context.devMode) {
+      console.log(`[ScraperStrategy] extractCoursesViaAjax(${yearContext || 'root'}): using sesskey=${sesskey.substring(0,4)}..., endpoint=${endpoint}`);
+    }
+
+    const classifications = ['all', 'inprogress', 'future', 'past', 'favourites'];
+    for (const classification of classifications) {
+      try {
+        const payload = [{
+          index: 0,
+          methodname: 'core_course_get_enrolled_courses_by_timeline_classification',
+          args: { classification, limit: 100, offset: 0, sort: 'fullname' }
+        }];
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/javascript, */*; q=0.01'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (this.context.devMode) {
+          console.log(`[ScraperStrategy] AJAX(${yearContext || 'root'}/${classification}): HTTP ${response.status}`);
+        }
+
+        if (response.ok) {
+          const data = await response.json();
+          const result = data[0];
+          if (this.context.devMode) {
+            console.log(`[ScraperStrategy] AJAX(${yearContext || 'root'}/${classification}): error=${result.error}, courses=${result.data?.courses?.length ?? 'N/A'}`);
+          }
+          if (!result.error && result.data && Array.isArray(result.data.courses)) {
+            for (const c of result.data.courses) {
+              if (c.id > 1 && !coursesMap.has(c.id)) {
+                coursesMap.set(c.id, {
+                  id: c.id,
+                  fullname: c.fullname || '',
+                  shortname: c.shortname || c.fullname || '',
+                  idnumber: c.idnumber || '',
+                  year: yearContext,
+                  instanceUrl: `${root}${prefix}`
+                });
+              }
+            }
+            if (result.data.courses.length > 0) {
+              // Found courses, no need to try other classifications for this year
+              return;
+            }
+          }
+        }
+      } catch (err: any) {
+        if (this.context.devMode) {
+          console.warn(`[ScraperStrategy] AJAX(${yearContext || 'root'}/${classification}): error=${err?.message || err}`);
+        }
+      }
+    }
+  }
+
   private parseCoursesFromHtml(
     html: string,
     coursesMap: Map<number, RawMoodleCourse>,
     yearContext?: string
   ): void {
+    const beforeCount = coursesMap.size;
+
+    // Log a brief snippet of the HTML for diagnostics
+    if (this.context.devMode) {
+      // Check for key indicators
+      const hasCourseViewLink = html.includes('/course/view.php');
+      const hasGradeReportLink = html.includes('/grade/report/');
+      const hasDataCourseId = html.includes('data-course-id');
+      const hasCoursesJson = html.includes('"courses"');
+      const hasSesskey = html.includes('sesskey');
+      console.log(`[ScraperStrategy] parseCoursesFromHtml(${yearContext || 'root'}): HTML indicators: courseViewLink=${hasCourseViewLink}, gradeReport=${hasGradeReportLink}, dataCourseId=${hasDataCourseId}, coursesJson=${hasCoursesJson}, sesskey=${hasSesskey}`);
+    }
     const IGNORED_NAMES = new Set([
       'הקורסים שלי',
       'my courses',
@@ -186,17 +316,67 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     ]);
 
     // 1. Check data-course-id attributes (common in Moodle 4.x cards and blocks)
-    const cardMatches = html.matchAll(/data-course-id="(\d+)"[^>]*(?:aria-label="([^"]+)"|title="([^"]+)")/gi);
-    for (const cm of cardMatches) {
+    // Phase A: Match tags where data-course-id and aria-label/title coexist (either order)
+    const cardRegexForward = /data-course-id="(\d+)"[^>]*(?:aria-label="([^"]+)"|title="([^"]+)")/gi;
+    const cardRegexReverse = /(?:aria-label="([^"]+)"|title="([^"]+)")[^>]*data-course-id="(\d+)"/gi;
+    for (const cm of html.matchAll(cardRegexForward)) {
       const id = parseInt(cm[1], 10);
       const name = decodeHtmlEntities(cm[2] || cm[3] || '').trim();
       if (id > 1 && name && !IGNORED_NAMES.has(name.toLowerCase()) && !coursesMap.has(id)) {
         this.addCourseToMap(coursesMap, id, name, undefined, undefined, yearContext);
       }
     }
+    for (const cm of html.matchAll(cardRegexReverse)) {
+      const id = parseInt(cm[3], 10);
+      const name = decodeHtmlEntities(cm[1] || cm[2] || '').trim();
+      if (id > 1 && name && !IGNORED_NAMES.has(name.toLowerCase()) && !coursesMap.has(id)) {
+        this.addCourseToMap(coursesMap, id, name, undefined, undefined, yearContext);
+      }
+    }
 
-    // 2. Match standard course links: /course/view.php?id=(\d+)
-    const courseLinkRegex = /<a\b([^>]*(?:href=["'][^"']*(?:\/course\/view\.php\?id=|\/course\/view\.php\?.*[&?]id=)(\d+)[^"']*)[^>]*)>([\s\S]*?)<\/a>/gi;
+    // Phase B: Find data-course-id elements where the course name is in child elements
+    // (common in Moodle 4.x: data-course-id on a container div, name in nested spans)
+    const dataCourseIdRegex = /data-course-id="(\d+)"/gi;
+    let dcMatch: RegExpExecArray | null;
+    while ((dcMatch = dataCourseIdRegex.exec(html)) !== null) {
+      const id = parseInt(dcMatch[1], 10);
+      if (isNaN(id) || id <= 1 || coursesMap.has(id)) continue;
+
+      // Extract a block of HTML after this match (up to the next data-course-id or 2000 chars)
+      const blockStart = dcMatch.index;
+      const nextCourseId = html.indexOf('data-course-id=', blockStart + dcMatch[0].length);
+      const blockEnd = nextCourseId > -1 ? Math.min(nextCourseId, blockStart + 2000) : blockStart + 2000;
+      const block = html.substring(blockStart, Math.min(blockEnd, html.length));
+
+      let name = '';
+      // Try coursename/multiline spans (most common in Moodle 4.x dashboard cards)
+      const courseNameSpan = block.match(/class="[^"]*(?:coursename|multiline|course-title|course-name)[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+      if (courseNameSpan) {
+        name = stripHtmlTags(courseNameSpan[1]).trim();
+      }
+      // Try aria-label or title on any child element
+      if (!name) {
+        const childAriaMatch = block.match(/(?:aria-label|title)=["']([^"']{3,})["']/i);
+        if (childAriaMatch) {
+          name = decodeHtmlEntities(childAriaMatch[1]).trim();
+        }
+      }
+      // Try <a> link text pointing to course/view.php within the block
+      if (!name) {
+        const linkMatch = block.match(/<a\b[^>]*href=["'][^"']*\/course\/view\.php\?[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+        if (linkMatch) {
+          name = stripHtmlTags(linkMatch[1]).trim();
+        }
+      }
+
+      name = name.replace(/\s+/g, ' ').trim();
+      if (name && name.length >= 2 && !IGNORED_NAMES.has(name.toLowerCase())) {
+        this.addCourseToMap(coursesMap, id, name, undefined, undefined, yearContext);
+      }
+    }
+
+    // 2. Match standard course links: /course/view.php?id=, /grade/report/user/index.php?id=, /grade/report/overview/index.php?id=, /user/view.php?...&course=
+    const courseLinkRegex = /<a\b([^>]*(?:href=["'][^"']*(?:\/course\/view\.php\?[^"']*\bid=|\/grade\/report\/user\/index\.php\?[^"']*\bid=|\/grade\/report\/overview\/index\.php\?[^"']*\bid=|\/user\/view\.php\?[^"']*\bcourse=)(\d+)[^"']*)[^>]*)>([\s\S]*?)<\/a>/gi;
     let match: RegExpExecArray | null;
 
     while ((match = courseLinkRegex.exec(html)) !== null) {
@@ -227,7 +407,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       if (!name || name.length < 2) continue;
       if (IGNORED_NAMES.has(name.toLowerCase())) continue;
 
-      const yearInUrlMatch = fullAttrs.match(/(?:moodle\.tau\.ac\.il\/|\/)(20\d{2})\/course\/view\.php/i);
+      const yearInUrlMatch = fullAttrs.match(/(?:moodle\.tau\.ac\.il\/|\/)(20\d{2})\/(?:course\/view\.php|grade\/report\/)/i);
       const detectedYear = yearInUrlMatch ? yearInUrlMatch[1] : yearContext;
 
       if (!coursesMap.has(id)) {
@@ -264,6 +444,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           this.addCourseToMap(coursesMap, id, optText, undefined, undefined, yearContext);
         }
       }
+    }
+
+    if (this.context.devMode) {
+      const newCourses = coursesMap.size - beforeCount;
+      console.log(`[ScraperStrategy] parseCoursesFromHtml(${yearContext || 'root'}): found ${newCourses} new courses (total now: ${coursesMap.size})`);
     }
   }
 
@@ -357,6 +542,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
     const coursesMap = new Map<number, RawMoodleCourse>();
     const discoveredYears = new Set<string>();
+    const ajaxYearsDone = new Set<string>();
 
     const results = await Promise.allSettled(
       targets.map(async (target) => {
@@ -373,6 +559,13 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       if (res.status === 'fulfilled' && res.value?.html) {
         const { target, html } = res.value;
         this.parseCoursesFromHtml(html, coursesMap, target.year);
+        
+        const effectiveYear = target.year || 'root';
+        if (!ajaxYearsDone.has(effectiveYear)) {
+          ajaxYearsDone.add(effectiveYear);
+          await this.extractCoursesViaAjax(html, coursesMap, target.year);
+        }
+
         if (!target.year) {
           const foundYears = this.discoverArchiveYears(html);
           foundYears.forEach((y) => {
@@ -409,17 +602,20 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
       for (const res of extraResults) {
         if (res.status === 'fulfilled' && res.value?.html) {
-          this.parseCoursesFromHtml(res.value.html, coursesMap, res.value.target.year);
+          const { target, html } = res.value;
+          this.parseCoursesFromHtml(html, coursesMap, target.year);
+          
+          const effectiveYear = target.year || 'root';
+          if (!ajaxYearsDone.has(effectiveYear)) {
+            ajaxYearsDone.add(effectiveYear);
+            await this.extractCoursesViaAjax(html, coursesMap, target.year);
+          }
         }
       }
     }
 
     if (this.context.devMode) {
       console.log(`[ScraperStrategy] Finished parsing. Total unique courses found across all years: ${coursesMap.size}`);
-    }
-
-    if (coursesMap.size === 0) {
-      throw new Error('Scraper strategy found 0 enrolled courses across Moodle pages');
     }
 
     return Array.from(coursesMap.values());

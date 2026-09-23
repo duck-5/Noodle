@@ -130,11 +130,21 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    return this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    const courses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    if (Array.isArray(courses) && courses.length === 0) {
+      // Force fallback to AJAX/Scraper to discover archive courses in past years
+      throw new Error('REST API returned 0 courses on current instance; falling back to discover archive courses');
+    }
+    return courses;
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    return this.apiCall('mod_assign_get_assignments');
+    const res = await this.apiCall('mod_assign_get_assignments');
+    if (res && Array.isArray(res.courses) && res.courses.length === 0) {
+      // Force fallback to AJAX/Scraper to discover assignments in archive years
+      throw new Error('REST API returned 0 assignments on current instance; falling back to discover archive assignments');
+    }
+    return res;
   }
 
   public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {

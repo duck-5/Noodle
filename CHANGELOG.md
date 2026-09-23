@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased] - 2026-09-07
 
 ### Added
+- **API Sandbox Testing Tool (`sandbox/test_moodle.mjs`, `docs/developer-guide.md`)**:
+  - Added a dedicated sandbox testing script in `sandbox/test_moodle.mjs` for manual low-level verification of Moodle Web Service API endpoints (Courses, Assignments, Zoom LTI, and Calendar-based Settings Sync) using actual credentials.
+  - Added support for `--env-file` configuration via `moodle_test_credentials.env` and interactive prompt fallback.
+  - Added API Sandbox Testing section to `docs/developer-guide.md`.
+
 - **Multi-Year Academic Archive Course Discovery & Contextual Routing (`packages/moodle-client`, `apps/extension`)**:
   - Added multi-year archive scanning in `ScraperMoodleStrategy` and `AjaxMoodleStrategy`, querying both current root and candidate past academic year instances (e.g. `2025`, `2024`) via `Promise.allSettled` to resolve empty course selections during academic year transitions (such as between September and October before the upcoming 2026 academic year courses open).
   - Added dynamic archive year discovery (`discoverArchiveYears`) scanning page HTML and dropdown options for archive subpaths (`/(20\d{2})\b`).
@@ -36,6 +41,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added in-flight promise deduplication to `fetchEnrolledCourses` in `serviceWorker.ts` and step 2 retention guards in `App.tsx` so transient network hiccups never demote users from active course selection.
 - Fixed `getEnrolledCourses` in `AjaxMoodleStrategy` passing invalid `limit: 0` (which requested 0 courses from Moodle) and unsupported classifications; updated to query valid Moodle 4.x classifications (`'all'`, `'inprogress'`, `'future'`, `'past'`, `'favourites'`) with `limit: 100`, `sort: 'fullname'`, course accumulation across classifications, and `core_course_get_recent_courses` fallback.
 - Enhanced `ScraperMoodleStrategy` course scraping to query `/grade/report/overview/index.php`, reject unauthenticated guest sessions (`userid <= 1`) in `getSiteInfo`, extract opening `<a>` tags with flexible attribute positioning, and parse course `<option>` dropdowns.
+- **Fixed Zero Courses Extracted in Scraper HTML Parsing (Moodle 4.x)**:
+  - Fixed `parseCoursesFromHtml` failing to extract courses on Moodle 4.x dashboards by updating `data-course-id` regex to support nested child span elements (`<span class="coursename">`) and flexible `aria-label`/`title` attribute positioning.
+  - Fixed scraper failing to extract links from grade overview pages by adding `/grade/report/overview/index.php` to the course link regex.
+  - Fixed greedy regex capturing in course link extraction that incorrectly captured user IDs (`userid=...`) instead of course IDs; updated to use precise word boundaries (`\bid=`).
+  - Added test cases `TC-FALLBACK-10` through `TC-FALLBACK-15` verifying resilient regex parsing on realistic HTML structures without `course/view.php` links.
 - Fixed Moodle login breaking after the academic year changed by scraping `user/managetoken.php` to reset and acquire the Web Service token, restoring API access after the university disabled the `tool_mobile` plugin.
 
 ### Added

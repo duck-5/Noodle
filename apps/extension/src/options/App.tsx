@@ -426,7 +426,7 @@ export default function App() {
   async function fetchEnrolledCoursesInBackground(t: string) {
     try {
       const res = await fetchEnrolledCoursesOnBackground(t);
-      if (res.success && res.courses) {
+      if (res?.success && res.courses) {
         setAvailableCourses(res.courses);
         await browser.storage.local.set({ enrolledCoursesCache: res.courses });
       }
@@ -504,31 +504,46 @@ export default function App() {
     try {
       const res = await fetchEnrolledCoursesOnBackground(t);
       console.log('[Onboarding] fetchEnrolledCoursesOnBackground response:', res);
-      if (res.success && res.courses && res.courses.length > 0) {
+      if (res?.success && res.courses && res.courses.length > 0) {
         setAvailableCourses(res.courses);
         await browser.storage.local.set({ enrolledCoursesCache: res.courses });
         setOnboardingStep(2);
-      } else if (res.success && res.courses && res.courses.length === 0) {
+      } else if (res?.success && res.courses && res.courses.length === 0) {
         console.warn('[Onboarding] Enrolled courses array is empty');
         showToast(currentLang === 'he' ? 'לא נמצאו קורסים מקושרים לחשבון' : 'No enrolled courses found for account', 'info');
         setAvailableCourses([]);
-        setOnboardingStep(2);
+        setOnboardingStep((prev) => prev === 2 ? 2 : 2);
       } else {
-        // If courses are already visible or user is on step 2, do not throw them back to step 1!
-        if (availableCourses.length > 0 || onboardingStep === 2) {
-          console.warn('[Onboarding] Background fetch reported error but courses already present:', res?.error);
-        } else {
-          showToast(res?.error || 'Failed to fetch enrolled courses.', 'error');
-          setOnboardingStep(1);
-        }
+        const isAuthError = res?.errorcode === 'AUTH_SESSION_EXPIRED' || res?.errorcode === 'invalidtoken';
+        setOnboardingStep((prev) => {
+          if (availableCourses.length > 0 || prev === 2) {
+            if (isAuthError) {
+              showToast(res?.error || 'Session expired. Please log in again.', 'error');
+              return 1;
+            }
+            console.warn('[Onboarding] Background fetch reported error but courses already present:', res?.error);
+            return prev;
+          } else {
+            showToast(res?.error || 'Failed to fetch enrolled courses.', 'error');
+            return 1; // Fallback to login if we can't load courses initially
+          }
+        });
       }
     } catch (e: any) {
-      if (availableCourses.length > 0 || onboardingStep === 2) {
-        console.warn('[Onboarding] Background fetch exception but courses already present:', e?.message || e);
-      } else {
-        showToast(e?.message || 'Failed to fetch enrolled courses', 'error');
-        setOnboardingStep(1);
-      }
+      const isAuthError = e?.errorcode === 'AUTH_SESSION_EXPIRED' || e?.errorcode === 'invalidtoken';
+      setOnboardingStep((prev) => {
+        if (availableCourses.length > 0 || prev === 2) {
+          if (isAuthError) {
+            showToast(e?.message || 'Session expired. Please log in again.', 'error');
+            return 1;
+          }
+          console.warn('[Onboarding] Background fetch exception but courses already present:', e?.message || e);
+          return prev;
+        } else {
+          showToast(e?.message || 'Failed to fetch enrolled courses', 'error');
+          return 1;
+        }
+      });
     } finally {
       setValidatingToken(false);
     }

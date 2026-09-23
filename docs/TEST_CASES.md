@@ -190,6 +190,12 @@ graph LR
 | **TC-FALLBACK-07** | Multi-Page Course Scraping & Resilient Regex/JSON Parsing | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-08** | Multi-Year Academic Archive Course Discovery | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-09** | Year-Aware Endpoint Routing for Sections & Deep Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-10** | (Reserved for Future Regex Extensions) | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-11** | SSO Re-Auth Trigger on Manual Login Form Detection | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-12** | Data-Course-Id Extraction with Nested Span Course Names | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-13** | Course Parsing from Grade Overview Index PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 
 ---
 
@@ -1099,5 +1105,35 @@ graph LR
   2. Call `getCourseContents(301)`.
   3. Verify fetch request is routed to `https://moodle.tau.ac.il/2025/course/view.php?id=301`.
   4. Assert module URLs and resource file URLs include `/2025/`.
+
+#### TC-FALLBACK-10: (Reserved for Future Regex Extensions)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Placeholder for future regex fallback coverage.
+
+#### TC-FALLBACK-11: SSO Re-Auth Trigger on Manual Login Form Detection
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that when the scraper encounters a page containing an SSO manual login form (`<input type="text" name="Ecom_User_ID" />`), it aborts parsing and throws an `AUTH_SESSION_EXPIRED` error to trigger re-authentication.
+
+#### TC-FALLBACK-12: Data-Course-Id Extraction with Nested Span Course Names
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `parseCoursesFromHtml` extracting from Moodle 4.x dashboard cards where `data-course-id` is on a container div, and the course name is nested inside child elements like `<span class="multiline">`, rather than as a direct `aria-label` attribute on the container itself.
+
+#### TC-FALLBACK-13: Course Parsing from Grade Overview Index PHP Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests the scraper's ability to extract course IDs and names from links pointing to `/grade/report/overview/index.php?id=...`, which is the primary link type generated on the Moodle grade overview page.
+
+#### TC-FALLBACK-14: Aria-Label Attribute Ordering Resiliency
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests that regex parsing of `data-course-id` correctly extracts the course name regardless of whether `aria-label` or `title` appears before or after the `data-course-id` attribute on the same HTML tag.
+
+#### TC-FALLBACK-15: HTML Scraper Execution on Pages without View PHP Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Validates that even if a year-specific archive page has no standard `/course/view.php` links (for instance, a grade overview page that only lists grades), the scraper correctly assigns the academic year based on the URL context (`detectedYear = yearContext`) and caches the courses under the correct sub-instance mapping.
 
 

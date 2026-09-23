@@ -518,4 +518,365 @@ describe('Fallback Strategy Architecture', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('TC-FALLBACK-10: should intercept SAML SSO auto-submit form and complete POST-Redirect-Get handshake', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    const mockSamlFormHtml = `
+      <html>
+        <body>
+          <form method="post" action="https://moodle.tau.ac.il/2025/auth/saml2/sp/saml2-acs.php/moodle.tau.ac.il">
+            <input type="hidden" name="SAMLResponse" value="PEFzc2VydGlvbj4uLi48L0Fzc2VydGlvbj4=" />
+            <input type="hidden" name="RelayState" value="https://moodle.tau.ac.il/2025/my/" />
+          </form>
+        </body>
+      </html>
+    `;
+
+    const mockSiteInfoHtml = `{"userid": "12345"}`;
+
+    const fetchedUrls: string[] = [];
+    const postedData: URLSearchParams[] = [];
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      fetchedUrls.push(urlStr);
+
+      if (init?.method === 'POST') {
+        postedData.push(init.body as URLSearchParams);
+        // Simulate a successful ACS POST that sets cookie but we just return dummy html
+        // Scraper will re-fetch the original URL
+        return { ok: true, status: 200, text: async () => '<html>ACS Complete</html>' };
+      }
+
+      if (urlStr.includes('/my/')) {
+        // First fetch gets SAML form, second gets real HTML
+        if (fetchedUrls.filter(u => u.includes('/my/')).length === 1) {
+          return { ok: true, status: 200, text: async () => mockSamlFormHtml };
+        } else {
+          return { ok: true, status: 200, text: async () => mockSiteInfoHtml };
+        }
+      }
+
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const siteInfo = await scraper.getSiteInfo();
+      expect(siteInfo.userid).toBe(12345);
+
+      // Verify the POST request was made to ACS
+      expect(fetchedUrls).toContain('https://moodle.tau.ac.il/2025/auth/saml2/sp/saml2-acs.php/moodle.tau.ac.il');
+      expect(postedData.length).toBe(1);
+      
+      const formData = postedData[0];
+      expect(formData.get('SAMLResponse')).toBe('PEFzc2VydGlvbj4uLi48L0Fzc2VydGlvbj4=');
+      expect(formData.get('RelayState')).toBe('https://moodle.tau.ac.il/2025/my/');
+      
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-11: should throw AUTH_SESSION_EXPIRED when hitting a manual SSO login form', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const { MoodleApiError } = await import('../src/moodleApi.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    const mockLoginFormHtml = `
+      <html>
+        <body>
+          <input type="text" name="Ecom_User_ID" />
+          <input type="password" name="Ecom_Password" />
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async () => {
+      return { ok: true, status: 200, text: async () => mockLoginFormHtml };
+    }) as any;
+
+    try {
+      await expect(scraper.getSiteInfo()).rejects.toThrow(MoodleApiError);
+      await expect(scraper.getSiteInfo()).rejects.toMatchObject({
+        errorcode: 'AUTH_SESSION_EXPIRED',
+        message: expect.stringContaining('Moodle SSO session expired'),
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-12: should parse courses from data-course-id when course name is in child span elements', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    // Realistic Moodle 4.x dashboard HTML where data-course-id is on a container
+    // and the course name is in nested child spans (NOT in aria-label/title on same tag)
+    const mockDashboardHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <input type="hidden" name="sesskey" value="TEST123">
+          <div id="block-myoverview" class="block_myoverview">
+            <div class="course-summaryimage" data-course-id="321110001">
+              <div class="card dashboard-card">
+                <div class="card-body course-info-container">
+                  <span class="coursename">
+                    <span class="multiline">0321110001 - אלגברה לינארית לפיזיקה</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="course-summaryimage" data-course-id="321111801">
+              <div class="card dashboard-card">
+                <div class="card-body course-info-container">
+                  <span class="coursename">
+                    <span class="multiline">0321111801 - פיזיקה קלאסית 1</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <li class="list-group-item course-listitem" data-course-id="368111801">
+              <div class="course-info-container">
+                <span class="coursename">0368111801 - מתמטיקה בדידה 1</span>
+              </div>
+            </li>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/my/courses.php')) {
+        return { ok: true, status: 200, text: async () => mockDashboardHtml };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(30909);
+      expect(courses.length).toBeGreaterThanOrEqual(3);
+
+      const c1 = courses.find((c: RawMoodleCourse) => c.id === 321110001);
+      expect(c1).toBeDefined();
+      expect(c1?.fullname).toContain('אלגברה לינארית');
+
+      const c2 = courses.find((c: RawMoodleCourse) => c.id === 321111801);
+      expect(c2).toBeDefined();
+      expect(c2?.fullname).toContain('פיזיקה קלאסית');
+
+      const c3 = courses.find((c: RawMoodleCourse) => c.id === 368111801);
+      expect(c3).toBeDefined();
+      expect(c3?.fullname).toContain('מתמטיקה בדידה');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-13: should parse courses from grade/report/overview/index.php links', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    // Grade overview page with links to /grade/report/overview/index.php?id=X
+    // (NOT /grade/report/user/index.php or /course/view.php)
+    const mockGradeOverviewHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <input type="hidden" name="sesskey" value="TEST123">
+          <table class="generaltable overview-grade">
+            <thead><tr><th>קורס</th><th>ציון</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="cell c0">
+                  <a href="https://moodle.tau.ac.il/grade/report/overview/index.php?id=321110001">0321110001 - אלגברה לינארית לפיזיקה</a>
+                </td>
+                <td class="cell c1">85</td>
+              </tr>
+              <tr>
+                <td class="cell c0">
+                  <a href="/grade/report/overview/index.php?id=321111801&amp;userid=30909">0321111801 - פיזיקה קלאסית 1</a>
+                </td>
+                <td class="cell c1">92</td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/grade/report/overview/index.php')) {
+        return { ok: true, status: 200, text: async () => mockGradeOverviewHtml };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(30909);
+      expect(courses.length).toBeGreaterThanOrEqual(2);
+
+      const c1 = courses.find((c: RawMoodleCourse) => c.id === 321110001);
+      expect(c1).toBeDefined();
+      expect(c1?.fullname).toContain('אלגברה לינארית');
+
+      const c2 = courses.find((c: RawMoodleCourse) => c.id === 321111801);
+      expect(c2).toBeDefined();
+      expect(c2?.fullname).toContain('פיזיקה קלאסית');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-14: should parse courses when aria-label precedes data-course-id on same element', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+    });
+
+    const mockReversedAttrHtml = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <input type="hidden" name="sesskey" value="TEST123">
+          <div class="card dashboard-card" aria-label="0321110001 - אלגברה לינארית לפיזיקה" data-course-id="321110001" role="listitem">
+            <a href="/course/view.php?id=321110001">View</a>
+          </div>
+          <div class="card dashboard-card" title="0321111801 - פיזיקה קלאסית 1" data-course-id="321111801" role="listitem">
+            <a href="/course/view.php?id=321111801">View</a>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/my/courses.php')) {
+        return { ok: true, status: 200, text: async () => mockReversedAttrHtml };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(30909);
+      expect(courses.length).toBeGreaterThanOrEqual(2);
+
+      const c1 = courses.find((c: RawMoodleCourse) => c.id === 321110001);
+      expect(c1).toBeDefined();
+      expect(c1?.fullname).toContain('אלגברה לינארית');
+
+      const c2 = courses.find((c: RawMoodleCourse) => c.id === 321111801);
+      expect(c2).toBeDefined();
+      expect(c2?.fullname).toContain('פיזיקה קלאסית');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('TC-FALLBACK-15: should discover courses from year-specific grade overview pages with no /course/view.php links', async () => {
+    const { ScraperMoodleStrategy } = await import('../src/strategies/scraperStrategy.js');
+    const scraper = new ScraperMoodleStrategy({
+      token: '',
+      baseUrl: 'https://moodle.tau.ac.il',
+      devMode: true,
+    });
+
+    // Mimics the real user scenario: all HTML pages have gradeReport=true,
+    // dataCourseId=true, but courseViewLink=false
+    const mockRootGradeOverview = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <input type="hidden" name="sesskey" value="ROOT_SESSKEY">
+          <table class="generaltable">
+            <tr>
+              <td><a href="/grade/report/overview/index.php?id=321110001">0321110001 - אלגברה לינארית לפיזיקה</a></td>
+              <td>85</td>
+            </tr>
+          </table>
+          <div data-course-id="321111801">
+            <span class="coursename"><span class="multiline">0321111801 - פיזיקה קלאסית 1</span></span>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const mock2025GradeOverview = `
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <input type="hidden" name="sesskey" value="Y2025_SESSKEY">
+          <table class="generaltable">
+            <tr>
+              <td><a href="/2025/grade/report/overview/index.php?id=368111801">0368111801 - מתמטיקה בדידה 1</a></td>
+              <td>78</td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string, init?: any) => {
+      const urlStr = String(url);
+      // Block AJAX calls to avoid testing them here
+      if (init?.method === 'POST') {
+        return { ok: true, status: 200, json: async () => [{ error: false, data: { courses: [] } }] };
+      }
+      if (urlStr.includes('/grade/report/overview') && !urlStr.includes('/2025/') && !urlStr.includes('/2024/')) {
+        return { ok: true, status: 200, text: async () => mockRootGradeOverview };
+      }
+      if (urlStr.includes('/2025/grade/report/overview')) {
+        return { ok: true, status: 200, text: async () => mock2025GradeOverview };
+      }
+      if (urlStr.includes('/2024/grade/report/overview')) {
+        return { ok: false, status: 404, text: async () => 'Not found' };
+      }
+      return { ok: true, status: 200, text: async () => '<html><body></body></html>' };
+    }) as any;
+
+    try {
+      const courses = await scraper.getEnrolledCourses(30909);
+      expect(courses.length).toBeGreaterThanOrEqual(3);
+
+      const c1 = courses.find((c: RawMoodleCourse) => c.id === 321110001);
+      expect(c1).toBeDefined();
+      expect(c1?.fullname).toContain('אלגברה לינארית');
+
+      const c2 = courses.find((c: RawMoodleCourse) => c.id === 321111801);
+      expect(c2).toBeDefined();
+      expect(c2?.fullname).toContain('פיזיקה קלאסית');
+
+      const c3 = courses.find((c: RawMoodleCourse) => c.id === 368111801);
+      expect(c3).toBeDefined();
+      expect(c3?.fullname).toContain('מתמטיקה בדידה');
+      expect(c3?.year).toBe('2025');
+      expect(c3?.instanceUrl).toBe('https://moodle.tau.ac.il/2025');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
+

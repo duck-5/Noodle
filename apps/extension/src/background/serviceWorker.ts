@@ -54,64 +54,56 @@ browser.alarms.onAlarm.addListener(async (alarm: any) => {
 // --------------------------------------------------------------------------
 // Message listeners
 // --------------------------------------------------------------------------
-browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse: (response?: any) => void) => {
-
+browser.runtime.onMessage.addListener((message: any, _sender: any) => {
 
   if (message.type === 'LOGIN_TAU_SSO') {
-    loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
-      .then((token) => sendResponse({ success: true, token }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
+      .then((token) => ({ success: true, token }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'VALIDATE_TOKEN') {
-    validateToken(message.token)
-      .then((info) => sendResponse({ success: true, info }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true; // Keep channel open for async response
+    return validateToken(message.token)
+      .then((info) => ({ success: true, info }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'FETCH_ENROLLED_COURSES') {
-    fetchEnrolledCourses(message.token)
+    return fetchEnrolledCourses(message.token)
       .then((courses) => {
         console.log('[serviceWorker] Responding to FETCH_ENROLLED_COURSES with', courses.length, 'courses');
-        sendResponse({ success: true, courses });
+        return { success: true, courses };
       })
       .catch((err) => {
         console.error('[serviceWorker] Error in fetchEnrolledCourses:', err);
-        sendResponse({ success: false, error: err.message });
+        return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
       });
-    return true;
   }
 
   if (message.type === 'SYNC_NOW') {
-    performBackgroundSync()
-      .then((result) => sendResponse({ success: true, result }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return performBackgroundSync()
+      .then((result) => ({ success: true, result }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'SYNC_SETTINGS') {
-    performSettingsSync()
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return performSettingsSync()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'SYNC_GOOGLE_TASKS') {
-    triggerGoogleTasksSync(message.interactive || false)
-      .then((res) => sendResponse({ success: true, status: res }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return triggerGoogleTasksSync(message.interactive || false)
+      .then((res) => ({ success: true, status: res }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'LOGOUT') {
-    clearUserSession()
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return clearUserSession()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
-}) as any);
+});
 
 
 // --------------------------------------------------------------------------
