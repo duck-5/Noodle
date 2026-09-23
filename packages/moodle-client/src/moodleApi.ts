@@ -250,11 +250,11 @@ export class MoodleClient {
     return executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(), this.devMode);
   }
 
-  public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {
+  public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
     return executeWithFallback(
       'getSubmissionStatus',
       this.strategies,
-      (s) => s.getSubmissionStatus(assignId),
+      (s) => s.getSubmissionStatus(assignId, cmid),
       this.devMode
     );
   }

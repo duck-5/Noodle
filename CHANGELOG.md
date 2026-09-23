@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Fixed
+- **Archive Assignment Syncing (Missing Assignments)**: Discovered that past assignments from archive courses (e.g. `2025/`) were missing because the scraper strategy solely relied on the Moodle Calendar "Upcoming Events" view, which explicitly filters out past deadlines. `syncEngine.ts` has been refactored to first process `CourseContents`, injecting any discovered `assign` modules into the sync pipeline before fetching `SubmissionStatus` and `GradeItems`. This guarantees all assignments visible in course modules are parsed and tracked, even if their deadlines are in the past.
 - **Scraper Strategy SSO Race Condition**: Fixed a critical bug where fetching archive instances (e.g. `2025/my/`) in parallel would sometimes yield unauthenticated guest sessions, causing AJAX course discovery to return 0 courses. The background extension now sequentially primes the SSO session for all known archive domains before fetching course contents.
 - **Moodle 4.x Scraper Regex**: Fixed the module parsing regular expression (`modRegex`) in `ScraperStrategy` to correctly use `id="module-\d+"` as the lookahead boundary. Moodle 4.x nested the `modtype_` class inside the `activitytitle` element, causing the old lookahead to prematurely truncate the HTML string. This truncation was responsible for syncing returning 0 files and 0 zoom meetings.
 

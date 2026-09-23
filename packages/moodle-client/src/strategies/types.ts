@@ -35,7 +35,7 @@ export interface IMoodleStrategy {
   getSiteInfo(): Promise<MoodleSiteInfo>;
   getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]>;
   getAssignments(): Promise<RawMoodleAssignmentsResponse>;
-  getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus>;
+  getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus>;
   getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse>;
   getCourseContents(courseId: number): Promise<RawCourseSection[]>;
   uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }>;

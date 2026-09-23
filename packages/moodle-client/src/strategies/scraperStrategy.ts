@@ -705,26 +705,27 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     };
   }
 
-  public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {
-    const year = this.assignYearMap.get(assignId);
+  public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
+    const targetId = cmid || assignId;
+    const year = this.assignYearMap.get(targetId) || this.assignYearMap.get(assignId);
     let html = '';
 
     if (year) {
       try {
-        html = await this.fetchHtml(`/${year}/mod/assign/view.php?id=${assignId}`);
+        html = await this.fetchHtml(`/${year}/mod/assign/view.php?id=${targetId}`);
       } catch {
-        html = await this.fetchHtml(`/mod/assign/view.php?id=${assignId}`);
+        html = await this.fetchHtml(`/mod/assign/view.php?id=${targetId}`);
       }
     } else {
       try {
-        html = await this.fetchHtml(`/mod/assign/view.php?id=${assignId}`);
+        html = await this.fetchHtml(`/mod/assign/view.php?id=${targetId}`);
       } catch (err) {
         const currentYear = new Date().getFullYear();
         let found = false;
         for (const candidateYear of [currentYear - 1, currentYear - 2]) {
           try {
-            html = await this.fetchHtml(`/${candidateYear}/mod/assign/view.php?id=${assignId}`);
-            this.assignYearMap.set(assignId, String(candidateYear));
+            html = await this.fetchHtml(`/${candidateYear}/mod/assign/view.php?id=${targetId}`);
+            this.assignYearMap.set(targetId, String(candidateYear));
             found = true;
             break;
           } catch {}

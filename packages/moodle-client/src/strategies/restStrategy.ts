@@ -147,7 +147,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     return res;
   }
 
-  public async getSubmissionStatus(assignId: number): Promise<RawSubmissionStatus> {
+  public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
     return this.apiCall('mod_assign_get_submission_status', { assignid: assignId });
   }
 
