@@ -13,6 +13,8 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'REST';
   private static cooldownUntil: number = 0;
   private archiveTokens = new Map<number, string>();
+  private courseYearMap = new Map<number, number>();
+  private assignYearMap = new Map<number, number>();
 
   constructor(private context: StrategyContext) {}
 
@@ -97,6 +99,17 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       if ((this as any).devMode) console.warn(`[RestStrategy] Failed to get archive token for ${year}:`, e);
     }
     return null;
+  }
+
+  private async getYearOverrides(year?: number): Promise<{ baseUrlOverride?: string; tokenOverride?: string }> {
+    if (!year) return {};
+    const archiveData = await this.getArchiveToken(year);
+    if (!archiveData) return {};
+    const urlHost = new URL(this.context.baseUrl).origin;
+    return {
+      baseUrlOverride: `${urlHost}/${year}`,
+      tokenOverride: archiveData.token,
+    };
   }
 
   public setToken(token: string): void {
@@ -225,13 +238,16 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
     const allCourses: RawMoodleCourse[] = [];
+    const currentYear = new Date().getFullYear();
     
     // 1. Root
     const rootCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
-    if (Array.isArray(rootCourses)) allCourses.push(...rootCourses);
+    if (Array.isArray(rootCourses)) {
+      rootCourses.forEach(c => this.courseYearMap.set(c.id, currentYear));
+      allCourses.push(...rootCourses);
+    }
     
     // 2. Archives (Last year)
-    const currentYear = new Date().getFullYear();
     const archiveYears = [currentYear, currentYear - 1]; 
     const urlHost = new URL(this.context.baseUrl).origin;
 
@@ -242,6 +258,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
         try {
           const archiveCourses = await this.apiCall('core_enrol_get_users_courses', { userid: archiveData.userid }, 'POST', archiveUrl, archiveData.token);
           if (Array.isArray(archiveCourses)) {
+            archiveCourses.forEach(c => this.courseYearMap.set(c.id, year));
             allCourses.push(...archiveCourses);
           }
         } catch (e) {}
@@ -257,6 +274,15 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const res = await this.apiCall('mod_assign_get_assignments');
     
     const currentYear = new Date().getFullYear();
+    if (res && Array.isArray(res.courses)) {
+      res.courses.forEach((c: any) => {
+        this.courseYearMap.set(c.id, currentYear);
+        if (Array.isArray(c.assignments)) {
+          c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, currentYear));
+        }
+      });
+    }
+
     const archiveYears = [currentYear, currentYear - 1]; 
     const urlHost = new URL(this.context.baseUrl).origin;
 
@@ -267,6 +293,12 @@ export class RestMoodleStrategy implements IMoodleStrategy {
         try {
           const aAssigns = await this.apiCall('mod_assign_get_assignments', {}, 'POST', archiveUrl, archiveData.token);
           if (aAssigns && Array.isArray(aAssigns.courses)) {
+            aAssigns.courses.forEach((c: any) => {
+              this.courseYearMap.set(c.id, year);
+              if (Array.isArray(c.assignments)) {
+                c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, year));
+              }
+            });
             if (!res.courses) res.courses = [];
             res.courses.push(...aAssigns.courses);
           }
@@ -282,18 +314,24 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
-    return this.apiCall('mod_assign_get_submission_status', { assignid: assignId });
+    const year = this.assignYearMap.get(assignId);
+    const overrides = await this.getYearOverrides(year);
+    return this.apiCall('mod_assign_get_submission_status', { assignid: assignId }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
   }
 
   public async getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse> {
+    const year = this.courseYearMap.get(courseId);
+    const overrides = await this.getYearOverrides(year);
     return this.apiCall('gradereport_user_get_grade_items', {
       courseid: courseId,
       userid: userId,
-    });
+    }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {
-    return this.apiCall('core_course_get_contents', { courseid: courseId });
+    const year = this.courseYearMap.get(courseId);
+    const overrides = await this.getYearOverrides(year);
+    return this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
   }
 
   public async uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }> {
