@@ -108,36 +108,80 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     return text;
   }
 
+  private async performSsoLogin(year: string): Promise<void> {
+    const root = this.getRootUrl();
+    const loginUrl = `${root}/${year}/login/index.php`;
+    
+    let html = await this.fetchHtml(`/${year}/login/index.php`);
+    
+    const samlMatch = html.match(/<form[^>]+action=["']([^"']+)["']/i);
+    const samlValMatch = html.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
+    
+    if (samlMatch && samlValMatch) {
+      const entities: { [key: string]: string } = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&#x27;': "'" };
+      const decodeHtmlEntities = (text: string) => text.replace(/&[#\w]+;/g, (m) => entities[m] || m);
+      
+      const actionUrl = decodeHtmlEntities(samlMatch[1]);
+      const samlResponse = decodeHtmlEntities(samlValMatch[1]);
+      const body = new URLSearchParams();
+      body.append('SAMLResponse', samlResponse);
+      
+      await fetch(actionUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+    }
+  }
+
   public async getMobileToken(): Promise<string> {
+    const root = this.getRootUrl();
     const html = await this.fetchHtml('/user/managetoken.php');
     
     const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
     if (!sesskeyMatch) throw new Error('Could not find sesskey for token reset');
     const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
 
-    const tokenMatch = html.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
-    if (!tokenMatch) throw new Error('Could not find existing Moodle Mobile Web Service token to reset');
+    const allTokens = [...html.matchAll(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/gi)].map(m => m[1]);
+    if (allTokens.length === 0) throw new Error('No tokens found to reset');
 
-    const resetParams = new URLSearchParams();
-    resetParams.append('tokenid', tokenMatch[1]);
-    resetParams.append('action', 'resetwstoken');
-    resetParams.append('confirm', '1');
-    resetParams.append('sesskey', sesskey);
+    for (const tokenId of allTokens) {
+      const resetParams = new URLSearchParams();
+      resetParams.append('tokenid', tokenId);
+      resetParams.append('action', 'resetwstoken');
+      resetParams.append('confirm', '1');
+      resetParams.append('sesskey', sesskey);
 
-    const root = this.getRootUrl();
-    const response = await fetch(`${root}/user/managetoken.php`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: resetParams.toString(),
-    });
+      const response = await fetch(`${root}/user/managetoken.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: resetParams.toString(),
+      });
 
-    if (!response.ok) throw new Error('Failed to reset token');
-    const resetHtml = await response.text();
-    const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
-    if (finalTokenMatch) return finalTokenMatch[1].trim();
+      if (!response.ok) continue;
+      
+      const resetHtml = await response.text();
+      const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+      if (finalTokenMatch) {
+        const candidateToken = finalTokenMatch[1].trim();
+        try {
+          const testUrl = `${root}/webservice/rest/server.php`;
+          const testRes = await fetch(testUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `wstoken=${candidateToken}&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json`
+          });
+          const testData = await testRes.json();
+          if (testData && !testData.errorcode && testData.userid) {
+            return candidateToken;
+          }
+        } catch (e) {}
+      }
+    }
     
-    throw new Error('SSO login successful but failed to extract the wstoken from user/managetoken.php');
+    throw new Error('SSO login successful but none of the tokens worked for the REST API');
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
@@ -588,7 +632,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     // we get race conditions where guest pages are returned and we extract a guest sesskey for AJAX.
     if (this.context.devMode) console.log('[ScraperStrategy] Priming SSO sessions for candidate past years...');
     await Promise.allSettled(
-      candidatePastYears.map(year => this.fetchHtml(`/${year}/login/index.php`))
+      candidatePastYears.map(year => this.performSsoLogin(year))
     );
 
     const results = await Promise.allSettled(
@@ -632,7 +676,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     if (discoveredYears.size > 0) {
       if (this.context.devMode) console.log(`[ScraperStrategy] Priming SSO sessions for newly discovered archive endpoints: ${Array.from(discoveredYears).join(', ')}`);
       await Promise.allSettled(
-        Array.from(discoveredYears).map(year => this.fetchHtml(`/${year}/login/index.php`))
+        Array.from(discoveredYears).map(year => this.performSsoLogin(year))
       );
 
       const extraTargets: FetchTarget[] = [];
