@@ -15,6 +15,10 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
   constructor(private context: StrategyContext) {}
 
+  public setToken(token: string): void {
+    this.context.token = token;
+  }
+
   public static markUnavailable(durationMs: number = 60 * 60 * 1000): void {
     RestMoodleStrategy.cooldownUntil = Date.now() + durationMs;
   }
@@ -140,7 +144,8 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
     const res = await this.apiCall('mod_assign_get_assignments');
-    if (res && Array.isArray(res.courses) && res.courses.length === 0) {
+    const totalAssigns = res?.courses?.reduce((acc: number, c: any) => acc + (c.assignments?.length || 0), 0) || 0;
+    if (res && Array.isArray(res.courses) && totalAssigns === 0) {
       // Force fallback to AJAX/Scraper to discover assignments in archive years
       throw new Error('REST API returned 0 assignments on current instance; falling back to discover archive assignments');
     }

@@ -1136,4 +1136,14 @@ graph LR
 * **Modality**: `Automated`
 * **Description**: Validates that even if a year-specific archive page has no standard `/course/view.php` links (for instance, a grade overview page that only lists grades), the scraper correctly assigns the academic year based on the URL context (`detectedYear = yearContext`) and caches the courses under the correct sub-instance mapping.
 
+#### TC-FALLBACK-16: Automatic Silent Token Renewal via Scraper on REST invalidtoken
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Sandbox`
+* **Description**: Verifies that when `RestMoodleStrategy` fails with an `invalidtoken` or `accessexception` Moodle error code, `fallbackRunner.ts` automatically attempts silent token regeneration via `ScraperMoodleStrategy.getMobileToken()`. It issues an authenticated POST to `/user/managetoken.php` with `action=resetwstoken`, parses the new token from `#copytoclipboardtoken`, synchronizes it across all strategies via `setToken()`, resets the REST cooldown, and retries the REST call without requiring the user to re-enter credentials or log in again.
+
+#### TC-FALLBACK-17: Direct Course-Page Assignment Discovery Across Multi-Year Archives
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Sandbox`
+* **Description**: Verifies that `ScraperMoodleStrategy.getAssignments()` discovers assignments directly by scraping individual course pages (`/course/view.php?id=X`) across all active and archive years registered in `courseYearMap`. Asserts that anchor tags pointing to `/mod/assign/view.php?id=(\d+)` and their assignment titles are correctly extracted, bypassing the Moodle Calendar and successfully discovering past or unlisted course assignments.
+
 

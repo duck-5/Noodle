@@ -18,6 +18,10 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
 
   constructor(private context: StrategyContext) {}
 
+  public setToken(token: string): void {
+    this.context.token = token;
+  }
+
   public isOperationSupported(operationName: string): boolean {
     return AJAX_SUPPORTED_OPERATIONS.has(operationName);
   }

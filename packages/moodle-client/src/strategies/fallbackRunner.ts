@@ -38,7 +38,45 @@ export async function executeWithFallback<T>(
         continue;
       }
 
-      // (Removed immediate re-throw of invalidtoken per user request to allow fallback to Scraper)
+      if (
+        strategy.name === 'REST' &&
+        err instanceof MoodleApiError &&
+        (err.errorcode === 'invalidtoken' || err.errorcode === 'accessexception')
+      ) {
+        if (devMode) {
+          console.log(`[MoodleClient] REST token expired/invalid. Attempting to automatically refresh token via scraper...`);
+        }
+        let newToken: string | null = null;
+        for (const s of strategies) {
+          if (s.getMobileToken) {
+            try {
+              newToken = await s.getMobileToken();
+              break;
+            } catch (tokenErr) {
+              if (devMode) console.warn(`[MoodleClient] Failed to refresh token via '${s.name}':`, tokenErr);
+            }
+          }
+        }
+        
+        if (newToken) {
+          if (devMode) console.log(`[MoodleClient] Successfully generated new token. Retrying ${operationName} with REST...`);
+          for (const s of strategies) {
+            if (s.setToken) s.setToken(newToken);
+          }
+          // Reset cooldown if it was applied
+          if ((strategy as any).constructor?.resetCooldown) {
+            (strategy as any).constructor.resetCooldown();
+          }
+          try {
+            const retryResult = await operation(strategy);
+            if (devMode) console.log(`[MoodleClient] Succeeded ${operationName} with strategy '${strategy.name}' after token refresh.`);
+            return retryResult;
+          } catch (retryErr: any) {
+            if (devMode) console.warn(`[MoodleClient] Strategy '${strategy.name}' failed again after token refresh:`, retryErr?.message || retryErr);
+            err = retryErr;
+          }
+        }
+      }
 
       errors.push({ strategy: strategy.name, error: err });
       if (devMode) {

@@ -44,6 +44,10 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
   constructor(private context: StrategyContext) {}
 
+  public setToken(token: string): void {
+    this.context.token = token;
+  }
+
   private getRootUrl(): string {
     const base = this.context.baseUrl.replace(/\/$/, '');
     return base.replace(/\/webservice\/rest\/server\.php$/, '');
@@ -102,6 +106,38 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     }
 
     return text;
+  }
+
+  public async getMobileToken(): Promise<string> {
+    const html = await this.fetchHtml('/user/managetoken.php');
+    
+    const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
+    if (!sesskeyMatch) throw new Error('Could not find sesskey for token reset');
+    const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
+
+    const tokenMatch = html.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
+    if (!tokenMatch) throw new Error('Could not find existing Moodle Mobile Web Service token to reset');
+
+    const resetParams = new URLSearchParams();
+    resetParams.append('tokenid', tokenMatch[1]);
+    resetParams.append('action', 'resetwstoken');
+    resetParams.append('confirm', '1');
+    resetParams.append('sesskey', sesskey);
+
+    const root = this.getRootUrl();
+    const response = await fetch(`${root}/user/managetoken.php`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: resetParams.toString(),
+    });
+
+    if (!response.ok) throw new Error('Failed to reset token');
+    const resetHtml = await response.text();
+    const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+    if (finalTokenMatch) return finalTokenMatch[1].trim();
+    
+    throw new Error('SSO login successful but failed to extract the wstoken from user/managetoken.php');
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
@@ -255,6 +291,9 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           if (!result.error && result.data && Array.isArray(result.data.courses)) {
             for (const c of result.data.courses) {
               if (c.id > 1 && !coursesMap.has(c.id)) {
+                if (yearContext) {
+                  this.courseYearMap.set(c.id, yearContext);
+                }
                 coursesMap.set(c.id, {
                   id: c.id,
                   fullname: c.fullname || '',
@@ -634,57 +673,53 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     return Array.from(coursesMap.values());
   }
 
+  
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    const currentYear = new Date().getFullYear();
-    const yearsToCheck = new Set<string>(['']);
-    for (const year of this.courseYearMap.values()) {
-      if (year) yearsToCheck.add(year);
-    }
-    yearsToCheck.add(String(currentYear - 1));
-
+    console.log('[ScraperStrategy] getAssignments called! courseYearMap size:', this.courseYearMap.size);
     const coursesMap = new Map<number, { id: number; fullname: string; shortname: string; assignments: RawMoodleAssignment[] }>();
-    const eventRegex = /<div[^>]+class="[^"]*event[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
 
-    for (const year of yearsToCheck) {
-      const path = year ? `/${year}/calendar/view.php?view=upcoming` : '/calendar/view.php?view=upcoming';
+    // Fetch assignments from course pages instead of calendar
+    for (const [courseId, year] of this.courseYearMap.entries()) {
+      if (courseId <= 1) continue;
+      
+      const prefix = year ? '/' + year : '';
+      const courseUrl = `${prefix}/course/view.php?id=${courseId}`;
+      
       try {
-        const html = await this.fetchHtml(path);
-        let eventMatch: RegExpExecArray | null;
-
-        while ((eventMatch = eventRegex.exec(html)) !== null) {
-          const eventHtml = eventMatch[1];
-          const assignMatch = eventHtml.match(/\/mod\/assign\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
-          if (!assignMatch) continue;
-
-          const cmid = parseInt(assignMatch[1], 10);
-          const name = decodeHtmlEntities(assignMatch[2]);
-
-          const courseMatch = eventHtml.match(/\/course\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
-          const courseId = courseMatch ? parseInt(courseMatch[1], 10) : 0;
-          const courseName = courseMatch ? decodeHtmlEntities(courseMatch[2]) : `Course ${courseId}`;
-
-          let duedate = 0;
-          const timeMatch = eventHtml.match(/data-timestamp="(\d+)"/i);
-          if (timeMatch) {
-            duedate = parseInt(timeMatch[1], 10);
+        const html = await this.fetchHtml(courseUrl);
+        const assignMatchCount = html.match(/mod\/assign\/view\.php/g)?.length || 0;
+        console.log("[ScraperStrategy] Fetching course assignments for ID:", courseId, "Matches:", assignMatchCount);
+        
+        // Find course name to populate map
+        let courseName = 'Course ' + courseId;
+        const nameMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title>([^<]*)<\/title>/i);
+        if (nameMatch) {
+          courseName = decodeHtmlEntities(nameMatch[1].replace(/<[^>]+>/g, '').trim());
+        }
+        
+        const assignments: RawMoodleAssignment[] = [];
+        const assignMatches = html.matchAll(/<a[^>]+href=["'][^"']*\/mod\/assign\/view\.php\?id=(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi);
+        
+        for (const m of assignMatches) {
+          const cmid = parseInt(m[1], 10);
+          let name = m[2];
+          const instancenameMatch = name.match(/<span[^>]*class=["'][^"]*instancename[^"]*["'][^>]*>([\s\S]*?)<\/span>/i);
+          if (instancenameMatch) {
+            name = instancenameMatch[1];
           }
-
+          // Remove inner spans like <span class="accesshide">
+          name = name.replace(/<span[^>]*class=["'][^"]*accesshide[^"]*["'][^>]*>[\s\S]*?<\/span>/gi, '');
+          name = decodeHtmlEntities(name.replace(/<[^>]+>/g, '').trim());
+          
           if (year) {
             this.assignYearMap.set(cmid, year);
-            if (courseId > 0) this.courseYearMap.set(courseId, year);
           }
-
-          if (!coursesMap.has(courseId)) {
-            coursesMap.set(courseId, {
-              id: courseId,
-              fullname: courseName,
-              shortname: courseName,
-              assignments: [],
-            });
-          }
-
-          coursesMap.get(courseId)!.assignments.push({
-            id: cmid,
+          
+          // Try to extract due date from the assignment snippet if it exists on the course page
+          let duedate = 0;
+          
+          assignments.push({
+            id: cmid, // Using cmid as id for scraper compatibility
             cmid,
             course: courseId,
             name,
@@ -693,9 +728,17 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
             allowsubmissionsfromdate: 0,
           });
         }
+        
+        coursesMap.set(courseId, {
+          id: courseId,
+          fullname: courseName,
+          shortname: courseName,
+          assignments
+        });
+        
       } catch (err: any) {
         if (this.context.devMode) {
-          console.warn(`[ScraperStrategy] Failed fetching calendar for year '${year}':`, err?.message || err);
+          console.warn(`[ScraperStrategy] Failed fetching course page for course ${courseId}:`, err?.message || err);
         }
       }
     }
@@ -705,7 +748,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     };
   }
 
-  public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
+public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
     const targetId = cmid || assignId;
     const year = this.assignYearMap.get(targetId) || this.assignYearMap.get(assignId);
     let html = '';

@@ -44,4 +44,6 @@ export interface IMoodleStrategy {
   getAutoLoginKey(): Promise<{ key: string; autologinurl: string }>;
   saveNoodleSettings(settingsJson: string): Promise<void>;
   loadNoodleSettings(): Promise<any>;
+  getMobileToken?(): Promise<string>;
+  setToken?(token: string): void;
 }
