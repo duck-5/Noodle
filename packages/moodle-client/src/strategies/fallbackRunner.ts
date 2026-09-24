@@ -38,14 +38,7 @@ export async function executeWithFallback<T>(
         continue;
       }
 
-      // If the REST token is expired/invalid, do not mask it with fallback failure;
-      // re-throw immediately so silent re-authentication or token refresh can trigger.
-      if (err instanceof MoodleApiError && err.errorcode === 'invalidtoken') {
-        if (devMode) {
-          console.warn(`[MoodleClient] Strategy '${strategy.name}' reported invalidtoken. Re-throwing for re-auth.`);
-        }
-        throw err;
-      }
+      // (Removed immediate re-throw of invalidtoken per user request to allow fallback to Scraper)
 
       errors.push({ strategy: strategy.name, error: err });
       if (devMode) {
