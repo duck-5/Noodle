@@ -84,6 +84,9 @@ export async function runSync(
     userId = siteInfo.userid;
     assignmentsResp = assignmentsData;
   } catch (err: any) {
+    if (err.errorcode || err.name === 'MoodleApiError') {
+      throw err; // Preserve original API error so callers can inspect errorcode
+    }
     throw new Error(`Failed to fetch initial data from Moodle: ${err.message}`);
   }
 

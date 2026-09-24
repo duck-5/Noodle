@@ -217,6 +217,10 @@ async function fetchEnrolledCourses(token: string) {
         console.log('[serviceWorker] SiteInfo resolved:', info);
         userid = info.userid;
       } catch (err: any) {
+        if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.errorcode === 'invalidtoken') {
+          console.warn('[serviceWorker] fetchEnrolledCourses: Moodle token is invalid and no fallback session found. Aborting to trigger re-auth.');
+          throw err;
+        }
         console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
       }
       const courses = await client.getEnrolledCourses(userid);
