@@ -12,8 +12,92 @@ import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './ty
 export class RestMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'REST';
   private static cooldownUntil: number = 0;
+  private archiveTokens = new Map<number, string>();
 
   constructor(private context: StrategyContext) {}
+
+  private decodeHtmlEntities(text: string): string {
+    const entities: { [key: string]: string } = {
+      '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&#x27;': "'"
+    };
+    return text.replace(/&[#\w]+;/g, (m) => entities[m] || m);
+  }
+
+  private async getArchiveToken(year: number): Promise<{ token: string, userid: number } | null> {
+    if (this.archiveTokens.has(year)) {
+      // Return cached token. (Userid can be re-fetched or cached, but let's just fetch it below anyway)
+    }
+    
+    try {
+      const baseUrl = this.context.baseUrl.replace(/\/$/, '');
+      const urlHost = new URL(baseUrl).origin;
+      const archiveLoginUrl = `${urlHost}/${year}/login/index.php`;
+      
+      let res = await fetch(archiveLoginUrl, { credentials: 'include' });
+      let html = await res.text();
+      
+      const samlMatch = html.match(/<form[^>]+action=["']([^"']+)["']/i);
+      const samlValMatch = html.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
+      
+      if (samlMatch && samlValMatch) {
+        const actionUrl = this.decodeHtmlEntities(samlMatch[1]);
+        const samlResponse = this.decodeHtmlEntities(samlValMatch[1]);
+        const body = new URLSearchParams();
+        body.append('SAMLResponse', samlResponse);
+        
+        res = await fetch(actionUrl, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString()
+        });
+        html = await res.text();
+      }
+      
+      const sessMatch = html.match(/"sesskey":"([^"]+)"/);
+      if (!sessMatch) return null;
+      const sesskey = sessMatch[1];
+      
+      const manageUrl = `${urlHost}/${year}/user/managetoken.php`;
+      res = await fetch(manageUrl, { credentials: 'include' });
+      const manageHtml = await res.text();
+      
+      const allTokens = [...manageHtml.matchAll(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/gi)].map(m => m[1]);
+      
+      for (const tokenId of allTokens) {
+        const resetParams = new URLSearchParams();
+        resetParams.append('tokenid', tokenId);
+        resetParams.append('action', 'resetwstoken');
+        resetParams.append('confirm', '1');
+        resetParams.append('sesskey', sesskey);
+        
+        const resetRes = await fetch(manageUrl, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: resetParams.toString()
+        });
+        
+        const resetHtml = await resetRes.text();
+        const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+        
+        if (finalTokenMatch) {
+          const candidateToken = finalTokenMatch[1].trim();
+          const testUrl = `${urlHost}/${year}`;
+          try {
+            const siteInfo = await this.apiCall('core_webservice_get_site_info', {}, 'POST', testUrl, candidateToken);
+            if (siteInfo && !siteInfo.errorcode && siteInfo.userid) {
+              this.archiveTokens.set(year, candidateToken);
+              return { token: candidateToken, userid: siteInfo.userid };
+            }
+          } catch (e) { /* ignore and try next token */ }
+        }
+      }
+    } catch (e) {
+      if ((this as any).devMode) console.warn(`[RestStrategy] Failed to get archive token for ${year}:`, e);
+    }
+    return null;
+  }
 
   public setToken(token: string): void {
     this.context.token = token;
@@ -50,7 +134,9 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   public async apiCall(
     wsfunction: string,
     params: Record<string, any> = {},
-    method: 'GET' | 'POST' = 'GET'
+    method: 'GET' | 'POST' = 'GET',
+    baseUrlOverride?: string,
+    tokenOverride?: string
   ): Promise<any> {
     if (RestMoodleStrategy.isCoolingDown()) {
       const remainingMins = Math.ceil(RestMoodleStrategy.getCooldownRemainingMs() / 60000);
@@ -61,18 +147,22 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       );
     }
 
-    if (!this.context.token) {
+    const token = tokenOverride || this.context.token;
+    if (!token) {
       throw new UnsupportedStrategyError('REST', wsfunction, 'No wstoken provided');
     }
 
     const allParams = {
-      wstoken: this.context.token,
+      wstoken: token,
       wsfunction,
       moodlewsrestformat: 'json',
       ...params,
     };
 
-    let url = this.getRestEndpoint();
+    let url = baseUrlOverride || this.getRestEndpoint();
+    if (baseUrlOverride && !url.endsWith('/webservice/rest/server.php')) {
+        url = `${url}/webservice/rest/server.php`;
+    }
     const options: RequestInit = { method };
 
     if (method === 'GET') {
@@ -134,21 +224,60 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    const courses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
-    if (Array.isArray(courses) && courses.length === 0) {
-      // Force fallback to AJAX/Scraper to discover archive courses in past years
-      throw new Error('REST API returned 0 courses on current instance; falling back to discover archive courses');
+    const allCourses: RawMoodleCourse[] = [];
+    
+    // 1. Root
+    const rootCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    if (Array.isArray(rootCourses)) allCourses.push(...rootCourses);
+    
+    // 2. Archives (Last year)
+    const currentYear = new Date().getFullYear();
+    const archiveYears = [currentYear, currentYear - 1]; 
+    const urlHost = new URL(this.context.baseUrl).origin;
+
+    for (const year of archiveYears) {
+      const archiveData = await this.getArchiveToken(year);
+      if (archiveData) {
+        const archiveUrl = `${urlHost}/${year}`;
+        try {
+          const archiveCourses = await this.apiCall('core_enrol_get_users_courses', { userid: archiveData.userid }, 'POST', archiveUrl, archiveData.token);
+          if (Array.isArray(archiveCourses)) {
+            allCourses.push(...archiveCourses);
+          }
+        } catch (e) {}
+      }
     }
-    return courses;
+    // Deduplicate by course ID (in case the current year archive redirects back to root)
+    const uniqueCourses = Array.from(new Map(allCourses.map(c => [c.id, c])).values());
+    
+    return uniqueCourses;
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
     const res = await this.apiCall('mod_assign_get_assignments');
-    const totalAssigns = res?.courses?.reduce((acc: number, c: any) => acc + (c.assignments?.length || 0), 0) || 0;
-    if (res && Array.isArray(res.courses) && totalAssigns === 0) {
-      // Force fallback to AJAX/Scraper to discover assignments in archive years
-      throw new Error('REST API returned 0 assignments on current instance; falling back to discover archive assignments');
+    
+    const currentYear = new Date().getFullYear();
+    const archiveYears = [currentYear, currentYear - 1]; 
+    const urlHost = new URL(this.context.baseUrl).origin;
+
+    for (const year of archiveYears) {
+      const archiveData = await this.getArchiveToken(year);
+      if (archiveData) {
+        const archiveUrl = `${urlHost}/${year}`;
+        try {
+          const aAssigns = await this.apiCall('mod_assign_get_assignments', {}, 'POST', archiveUrl, archiveData.token);
+          if (aAssigns && Array.isArray(aAssigns.courses)) {
+            if (!res.courses) res.courses = [];
+            res.courses.push(...aAssigns.courses);
+          }
+        } catch (e) {}
+      }
     }
+    
+    if (res && res.courses) {
+      res.courses = Array.from(new Map(res.courses.map((c: any) => [c.id, c])).values());
+    }
+    
     return res;
   }
 

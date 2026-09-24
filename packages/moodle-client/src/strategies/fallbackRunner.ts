@@ -38,10 +38,11 @@ export async function executeWithFallback<T>(
         continue;
       }
 
+      // Rate-limited token reset
       if (
         strategy.name === 'REST' &&
         err instanceof MoodleApiError &&
-        (err.errorcode === 'invalidtoken' || err.errorcode === 'accessexception')
+        err.errorcode === 'invalidtoken'
       ) {
         if (devMode) {
           console.log(`[MoodleClient] REST token expired/invalid. Attempting to automatically refresh token via scraper...`);
