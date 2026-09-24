@@ -11,6 +11,7 @@ import {
   getSettings,
   setSettings,
   getCachedSyncResult,
+  getMoodleCredentials,
 } from '../shared/storage.js';
 
 
@@ -218,7 +219,21 @@ async function fetchEnrolledCourses(token: string) {
         userid = info.userid;
       } catch (err: any) {
         if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.errorcode === 'invalidtoken') {
-          console.warn('[serviceWorker] fetchEnrolledCourses: Moodle token is invalid and no fallback session found. Aborting to trigger re-auth.');
+          console.log('Token invalid/expired during fetchEnrolledCourses. Attempting automatic background re-login...');
+          const creds = await getMoodleCredentials();
+          if (creds && creds.username && creds.idNumber && creds.password) {
+            try {
+              const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+              console.log('Automatic re-login successful! Retrying fetchEnrolledCourses...');
+              const newSesskey = await getStoredSesskey();
+              const newClient = new MoodleClient(newToken, undefined, { sesskey: newSesskey || undefined, devMode: true });
+              const newInfo = await newClient.getSiteInfo();
+              return await newClient.getEnrolledCourses(newInfo.userid);
+            } catch (loginErr: any) {
+              console.error('Automatic background re-login failed during fetch:', loginErr);
+            }
+          }
+          console.warn('[serviceWorker] fetchEnrolledCourses: Moodle token is invalid. Aborting to trigger re-auth.');
           throw err;
         }
         console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
@@ -348,18 +363,51 @@ async function performBackgroundSync() {
         sesskey || undefined
       );
     } catch (err: any) {
+      let retrySuccessful = false;
       if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
-        console.log('Token invalid/expired. Prompting user to re-login.');
-        browser.notifications.create('moodle_token_expired', {
-          type: 'basic',
-          iconUrl: 'icon-128.png',
-          title: 'Moodle Session Expired',
-          message: 'Your Moodle session has expired. Please open Noodle to log in again.',
-        });
-        throw new Error('Moodle session expired');
+        console.log('Token invalid/expired. Attempting automatic background re-login...');
+        const creds = await getMoodleCredentials();
+        if (creds && creds.username && creds.idNumber && creds.password) {
+          try {
+            const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+            console.log('Automatic re-login successful! Retrying sync...');
+            const newSesskey = await getStoredSesskey();
+            
+            result = await runSync(
+              newToken,
+              trackedCourseIds,
+              (msg) => {
+                browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
+                console.log(`[Sync Progress Retry] ${msg}`);
+              },
+              undefined,
+              undefined,
+              undefined,
+              newSesskey || undefined
+            );
+            retrySuccessful = true;
+          } catch (loginErr: any) {
+            console.error('Automatic background re-login failed:', loginErr);
+          }
+        }
+        
+        if (!retrySuccessful) {
+          console.log('Automatic re-login failed or no credentials. Prompting user to re-login.');
+          browser.notifications.create('moodle_token_expired', {
+            type: 'basic',
+            iconUrl: 'icon-128.png',
+            title: 'Moodle Session Expired',
+            message: 'Your Moodle session has expired. Please open Noodle to log in again.',
+          });
+          throw new Error('Moodle session expired');
+        }
       } else {
         throw err;
       }
+    }
+
+    if (!result) {
+      throw new Error('Sync failed: No result returned');
     }
 
     // Save results to storage
