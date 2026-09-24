@@ -2,12 +2,16 @@ import browser from 'webextension-polyfill';
 import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager } from '@tautracker/moodle-client';
 import {
   getStoredToken,
+  setStoredToken,
+  getStoredSesskey,
+  setStoredSesskey,
   getTrackedCourseIds,
   setTrackedCourseIds,
   setCachedSyncResult,
   getSettings,
   setSettings,
   getCachedSyncResult,
+  getMoodleCredentials,
 } from '../shared/storage.js';
 
 
@@ -51,58 +55,56 @@ browser.alarms.onAlarm.addListener(async (alarm: any) => {
 // --------------------------------------------------------------------------
 // Message listeners
 // --------------------------------------------------------------------------
-browser.runtime.onMessage.addListener(((message: any, _sender: any, sendResponse: (response?: any) => void) => {
-
+browser.runtime.onMessage.addListener((message: any, _sender: any) => {
 
   if (message.type === 'LOGIN_TAU_SSO') {
-    loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
-      .then((token) => sendResponse({ success: true, token }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
+      .then((token) => ({ success: true, token }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'VALIDATE_TOKEN') {
-    validateToken(message.token)
-      .then((info) => sendResponse({ success: true, info }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true; // Keep channel open for async response
+    return validateToken(message.token)
+      .then((info) => ({ success: true, info }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'FETCH_ENROLLED_COURSES') {
-    fetchEnrolledCourses(message.token)
-      .then((courses) => sendResponse({ success: true, courses }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return fetchEnrolledCourses(message.token)
+      .then((courses) => {
+        console.log('[serviceWorker] Responding to FETCH_ENROLLED_COURSES with', courses.length, 'courses');
+        return { success: true, courses };
+      })
+      .catch((err) => {
+        console.error('[serviceWorker] Error in fetchEnrolledCourses:', err);
+        return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
+      });
   }
 
   if (message.type === 'SYNC_NOW') {
-    performBackgroundSync()
-      .then((result) => sendResponse({ success: true, result }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return performBackgroundSync()
+      .then((result) => ({ success: true, result }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'SYNC_SETTINGS') {
-    performSettingsSync()
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return performSettingsSync()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'SYNC_GOOGLE_TASKS') {
-    triggerGoogleTasksSync(message.interactive || false)
-      .then((res) => sendResponse({ success: true, status: res }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return triggerGoogleTasksSync(message.interactive || false)
+      .then((res) => ({ success: true, status: res }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (message.type === 'LOGOUT') {
-    clearUserSession()
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
+    return clearUserSession()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
-}) as any);
+});
 
 
 // --------------------------------------------------------------------------
@@ -168,6 +170,7 @@ async function clearUserSession(): Promise<void> {
   // 2. Wipe all user-specific local storage keys
   const userLocalKeys = [
     'wstoken',
+    'sesskey',
     'moodleCredentials',
     'cachedSyncResult',
     'enrolledCoursesCache',
@@ -191,14 +194,59 @@ async function clearUserSession(): Promise<void> {
 
 
 async function validateToken(token: string) {
-  const client = new MoodleClient(token);
+  const sesskey = await getStoredSesskey();
+  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
   return await client.getSiteInfo();
 }
 
+let activeFetchEnrolledCoursesPromise: Promise<any[]> | null = null;
+
 async function fetchEnrolledCourses(token: string) {
-  const client = new MoodleClient(token);
-  const info = await client.getSiteInfo();
-  return await client.getEnrolledCourses(info.userid);
+  if (activeFetchEnrolledCoursesPromise) {
+    console.log('[serviceWorker] Returning existing in-flight fetchEnrolledCourses promise');
+    return await activeFetchEnrolledCoursesPromise;
+  }
+
+  activeFetchEnrolledCoursesPromise = (async () => {
+    try {
+      const sesskey = await getStoredSesskey();
+      const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
+      console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
+      let userid = 0;
+      try {
+        const info = await client.getSiteInfo();
+        console.log('[serviceWorker] SiteInfo resolved:', info);
+        userid = info.userid;
+      } catch (err: any) {
+        if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.errorcode === 'invalidtoken') {
+          console.log('Token invalid/expired during fetchEnrolledCourses. Attempting automatic background re-login...');
+          const creds = await getMoodleCredentials();
+          if (creds && creds.username && creds.idNumber && creds.password) {
+            try {
+              const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+              console.log('Automatic re-login successful! Retrying fetchEnrolledCourses...');
+              const newSesskey = await getStoredSesskey();
+              const newClient = new MoodleClient(newToken, undefined, { sesskey: newSesskey || undefined, devMode: true });
+              const newInfo = await newClient.getSiteInfo();
+              return await newClient.getEnrolledCourses(newInfo.userid);
+            } catch (loginErr: any) {
+              console.error('Automatic background re-login failed during fetch:', loginErr);
+            }
+          }
+          console.warn('[serviceWorker] fetchEnrolledCourses: Moodle token is invalid. Aborting to trigger re-auth.');
+          throw err;
+        }
+        console.warn('[serviceWorker] Failed to get site info, attempting getEnrolledCourses with userid 0:', err?.message || err);
+      }
+      const courses = await client.getEnrolledCourses(userid);
+      console.log('[serviceWorker] fetchEnrolledCourses found courses count:', courses.length);
+      return courses;
+    } finally {
+      activeFetchEnrolledCoursesPromise = null;
+    }
+  })();
+
+  return await activeFetchEnrolledCoursesPromise;
 }
 
 async function performSettingsSync() {
@@ -208,7 +256,8 @@ async function performSettingsSync() {
     return;
   }
 
-  const client = new MoodleClient(token);
+  const sesskey = await getStoredSesskey();
+  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
   const syncManager = new SettingsSyncManager(client, 'chrome-extension');
 
   const settings = await getSettings();
@@ -298,25 +347,67 @@ async function performBackgroundSync() {
     const trackedCourseIds = await getTrackedCourseIds();
     const settings = await getSettings();
     const prevResult = await getCachedSyncResult();
+    const sesskey = await getStoredSesskey();
 
     try {
-      result = await runSync(token, trackedCourseIds, (msg) => {
-        browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-        console.log(`[Sync Progress] ${msg}`);
-      });
+      result = await runSync(
+        token,
+        trackedCourseIds,
+        (msg) => {
+          browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
+          console.log(`[Sync Progress] ${msg}`);
+        },
+        undefined,
+        undefined,
+        undefined,
+        sesskey || undefined
+      );
     } catch (err: any) {
+      let retrySuccessful = false;
       if ((err.message && err.message.toLowerCase().includes('invalidtoken')) || err.name === 'MoodleApiError') {
-        console.log('Token invalid/expired. Prompting user to re-login.');
-        browser.notifications.create('moodle_token_expired', {
-          type: 'basic',
-          iconUrl: 'icon-128.png',
-          title: 'Moodle Session Expired',
-          message: 'Your Moodle session has expired. Please open Noodle to log in again.',
-        });
-        throw new Error('Moodle session expired');
+        console.log('Token invalid/expired. Attempting automatic background re-login...');
+        const creds = await getMoodleCredentials();
+        if (creds && creds.username && creds.idNumber && creds.password) {
+          try {
+            const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+            console.log('Automatic re-login successful! Retrying sync...');
+            const newSesskey = await getStoredSesskey();
+            
+            result = await runSync(
+              newToken,
+              trackedCourseIds,
+              (msg) => {
+                browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
+                console.log(`[Sync Progress Retry] ${msg}`);
+              },
+              undefined,
+              undefined,
+              undefined,
+              newSesskey || undefined
+            );
+            retrySuccessful = true;
+          } catch (loginErr: any) {
+            console.error('Automatic background re-login failed:', loginErr);
+          }
+        }
+        
+        if (!retrySuccessful) {
+          console.log('Automatic re-login failed or no credentials. Prompting user to re-login.');
+          browser.notifications.create('moodle_token_expired', {
+            type: 'basic',
+            iconUrl: 'icon-128.png',
+            title: 'Moodle Session Expired',
+            message: 'Your Moodle session has expired. Please open Noodle to log in again.',
+          });
+          throw new Error('Moodle session expired');
+        }
       } else {
         throw err;
       }
+    }
+
+    if (!result) {
+      throw new Error('Sync failed: No result returned');
     }
 
     // Save results to storage
@@ -515,38 +606,6 @@ async function markNotified(assignId: number, type: '24h' | '1h') {
 // Programmatic TAU SSO Login
 // --------------------------------------------------------------------------
 
-let capturedTokenResolve: ((token: string) => void) | null = null;
-let capturedTokenReject: ((err: Error) => void) | null = null;
-let activeLoginTimeout: ReturnType<typeof setTimeout> | null = null;
-
-browser.webRequest.onBeforeRedirect.addListener(
-  (details) => {
-    const redirectUrl = details.redirectUrl || '';
-    if (redirectUrl.startsWith('moodlemobile://') || redirectUrl.startsWith('moodleapp://')) {
-      const match = redirectUrl.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
-      if (match) {
-        try {
-          const parts = atob(match[1]).split(':::');
-          const token = parts.length > 1 ? parts[1] : parts[0];
-          console.log('Captured token from SSO redirect via webRequest');
-          if (activeLoginTimeout) {
-            clearTimeout(activeLoginTimeout);
-            activeLoginTimeout = null;
-          }
-          if (capturedTokenResolve) {
-            capturedTokenResolve(token);
-            capturedTokenResolve = null;
-            capturedTokenReject = null;
-          }
-        } catch (e) {
-          console.error('Error decoding token', e);
-        }
-      }
-    }
-  },
-  { urls: ['https://moodle.tau.ac.il/*'] }
-);
-
 function decodeHTMLEntities(text: string) {
   return text.replace(/&quot;/g, '"')
     .replace(/&#x3d;/g, '=')
@@ -557,148 +616,176 @@ function decodeHTMLEntities(text: string) {
 }
 
 async function loginTauSso(username: string, idNumber: string, pass: string, skipInvalidate = false): Promise<string> {
-  return new Promise<string>(async (resolve, reject) => {
-    capturedTokenResolve = resolve;
-    capturedTokenReject = reject;
-
-    // Set a global timeout for the entire login process
-    if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
-    activeLoginTimeout = setTimeout(() => {
-      if (capturedTokenReject) {
-        capturedTokenReject(new Error('Timeout waiting for Moodle token redirect'));
-        capturedTokenResolve = null;
-        capturedTokenReject = null;
-      }
-    }, 25000);
-
+  // 0. Force a clean session state unless skipInvalidate is set.
+  if (!skipInvalidate) {
     try {
-      // 0. Force a clean session state unless skipInvalidate is set.
-      if (!skipInvalidate) {
-        try {
-          await invalidateSsoSession();
-        } catch (e) {
-          console.log('Failed to invalidate existing SSO session before login', e);
-        }
-      }
+      await invalidateSsoSession();
+    } catch (e) {
+      console.log('Failed to invalidate existing SSO session before login', e);
+    }
+  }
 
-      const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${Math.random().toString(36).substring(2, 15)}`;
+  // 1. Initial request to login/index.php to get baseUrl
+  let ssoUrl = '';
+  let baseUrl = '';
 
-      // 1. Initial request to get SSO URL (auto-follows to nidp.tau.ac.il, or immediately to moodlemobile:// if already logged in)
-      let res1;
-      try {
-        res1 = await fetch(launchUrl, { credentials: 'include' });
-      } catch (e) {
-        // If fetch throws on the very first request, it's likely because it hit the moodlemobile:// redirect!
-        // We just wait a bit for the webRequest listener to fire and resolve the promise.
-        console.log('fetch(launchUrl) threw, waiting for redirect interceptor...', e);
-        return;
-      }
+  const initialRes = await fetch('https://moodle.tau.ac.il/login/index.php', { credentials: 'include' });
+  const urlAfterLogin = initialRes.url;
+  
+  if (urlAfterLogin.includes('/auth/saml2/login.php')) {
+    baseUrl = urlAfterLogin.split('/auth')[0];
+    const samlRes = await fetch(urlAfterLogin, { credentials: 'include' });
+    ssoUrl = samlRes.url;
+  } else {
+    baseUrl = 'https://moodle.tau.ac.il'; // Fallback
+    ssoUrl = urlAfterLogin;
+  }
 
-      let ssoUrl = res1.url;
-      if (!ssoUrl.includes('nidp.tau.ac.il')) {
-        throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
-      }
+  if (!ssoUrl.includes('nidp.tau.ac.il')) {
+    throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
+  }
 
-      // 2. Parse the auto-submitting form that sets up the SAML session
-      const html1 = await res1.text();
-      const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
-      if (formActionMatch1) {
-        const action = formActionMatch1[1];
-        ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
+  // 2. Parse the auto-submitting form that sets up the SAML session
+  let html1 = await (await fetch(ssoUrl, { credentials: 'include' })).text();
+  const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
+  if (formActionMatch1) {
+    const action = formActionMatch1[1];
+    ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
 
-        const params = new URLSearchParams();
-        const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
-        inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
+    const params = new URLSearchParams();
+    const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']+)["']/gi)];
+    inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
 
-        // Submit the form to initialize the session with SAML context
-        await fetch(ssoUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          credentials: 'include',
-          body: params
-        });
-      }
+    await fetch(ssoUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      credentials: 'include',
+      body: params
+    });
+  }
 
-      // 3. Initiate login sequence
-      await fetch(ssoUrl, {
+  // 3. Initiate login sequence
+  await fetch(ssoUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: 'option=credential&initiateLoginSequence=true&isAjax=true'
+  });
+
+  // 4. Submit credentials
+  const credRes = await fetch(ssoUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
+  });
+
+  const credText = await credRes.text();
+
+  if (credText.replace(/\s/g, '').includes('"isError":true')) {
+    let errorCode = 'Invalid username, ID, or password';
+    try {
+      const credData = JSON.parse(credText);
+      errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש ת.ז. או סיסמה אינם נכונים' : credData.errorCode;
+    } catch (e) { }
+    throw new Error(errorCode);
+  }
+
+  // 5. Complete SSO.
+  const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
+  const html2 = await finalSsoRes.text();
+
+  let samlResponse = '';
+  let relayState = '';
+  const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
+  for (const m of finalInputs) {
+    const nMatch = m[1].match(/name=["']([^"']+)["']/i);
+    const vMatch = m[1].match(/value=["']([^"']+)["']/i);
+    if (nMatch && vMatch) {
+      if (nMatch[1] === 'SAMLResponse') samlResponse = vMatch[1];
+      if (nMatch[1] === 'RelayState') relayState = vMatch[1];
+    }
+  }
+
+  const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
+
+  if (!actionMatch || !samlResponse) {
+    const debugHtml = html2.length > 500 ? html2.substring(0, 500) + '...' : html2;
+    throw new Error('SAML Parsing Failed. HTML: ' + debugHtml);
+  }
+
+  const actionUrl = decodeHTMLEntities(actionMatch[1]);
+  samlResponse = decodeHTMLEntities(samlResponse);
+  relayState = relayState ? decodeHTMLEntities(relayState) : '';
+
+  const bodyParams = new URLSearchParams();
+  bodyParams.append('SAMLResponse', samlResponse);
+  if (relayState) {
+    bodyParams.append('RelayState', relayState);
+  }
+
+  // 6. Submit SAML response back to Moodle.
+  const moodleRes = await fetch(actionUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    credentials: 'include',
+    body: bodyParams
+  });
+
+  const moodleHtml = await moodleRes.text();
+  const sesskeyMatch = moodleHtml.match(/"sesskey":"([^"]+)"/);
+  
+  if (!sesskeyMatch) {
+    throw new Error('Failed to extract sesskey from Moodle dashboard after SSO login');
+  }
+  
+  if (!baseUrl) {
+     const myUrlMatch = moodleRes.url.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
+     baseUrl = myUrlMatch ? myUrlMatch[1].replace(/\/$/, '') : 'https://moodle.tau.ac.il';
+  }
+
+  const sesskey = sesskeyMatch[1];
+  await setStoredSesskey(sesskey);
+  
+  // 7. Try to scrape managetoken.php and reset the token for Moodle Mobile App
+  let scrapedToken: string | null = null;
+  try {
+    const manageUrl = `${baseUrl}/user/managetoken.php`;
+    const manageRes = await fetch(manageUrl, { credentials: 'include' });
+    const manageHtml = await manageRes.text();
+    
+    const tokenMatch = manageHtml.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
+    if (tokenMatch) {
+      const tokenId = tokenMatch[1];
+      
+      // Reset the token (POST to managetoken.php)
+      const resetParams = new URLSearchParams();
+      resetParams.append('tokenid', tokenId);
+      resetParams.append('action', 'resetwstoken');
+      resetParams.append('confirm', '1');
+      resetParams.append('sesskey', sesskey);
+      
+      const resetRes = await fetch(manageUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         credentials: 'include',
-        body: 'option=credential&initiateLoginSequence=true&isAjax=true'
+        body: resetParams
       });
-
-      // 4. Submit credentials
-      const credRes = await fetch(ssoUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        credentials: 'include',
-        body: `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(username)}&Ecom_User_Pid=${encodeURIComponent(idNumber)}&Ecom_Password=${encodeURIComponent(pass)}`
-      });
-
-      const credText = await credRes.text();
-
-      if (credText.replace(/\s/g, '').includes('"isError":true')) {
-        let errorCode = 'Invalid username, ID, or password';
-        try {
-          const credData = JSON.parse(credText);
-          errorCode = credData.errorCode === 'WRONG_USERNAME_OR_PASSWORD' ? 'שם משתמש או סיסמה שהזנתם אינם תקינים' : credData.errorCode;
-        } catch (e) { }
-        throw new Error(errorCode);
-      }
-
-      // 5. Complete SSO. Fetching the SSO URL again yields the auto-submitting SAML form
-      const finalSsoRes = await fetch(ssoUrl, { credentials: 'include' });
-      const html2 = await finalSsoRes.text();
-
-      // Extract SAMLResponse and RelayState robustly (attribute order may vary in NIDP's HTML)
-      let samlResponse = '';
-      let relayState = '';
-      const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
-      for (const m of finalInputs) {
-        const nMatch = m[1].match(/name=["']([^"']+)["']/i);
-        const vMatch = m[1].match(/value=["']([^"']+)["']/i);
-        if (nMatch && vMatch) {
-          if (nMatch[1] === 'SAMLResponse') samlResponse = vMatch[1];
-          if (nMatch[1] === 'RelayState') relayState = vMatch[1];
-        }
-      }
-
-      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
-
-      if (!actionMatch || !samlResponse) {
-        const debugHtml = html2.length > 500 ? html2.substring(0, 500) + '...' : html2;
-        throw new Error('SAML Parsing Failed. HTML: ' + debugHtml);
-      }
-
-      const actionUrl = decodeHTMLEntities(actionMatch[1]);
-      samlResponse = decodeHTMLEntities(samlResponse);
-      relayState = relayState ? decodeHTMLEntities(relayState) : '';
-
-      const bodyParams = new URLSearchParams();
-      bodyParams.append('SAMLResponse', samlResponse);
-      if (relayState) {
-        bodyParams.append('RelayState', relayState);
-      }
-
-      // 6. Submit SAML response back to Moodle.
-      try {
-        await fetch(actionUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          credentials: 'include',
-          body: bodyParams
-        });
-      } catch (e) {
-        console.log('Expected fetch error on custom protocol redirect:', e);
-      }
-    } catch (error) {
-      if (activeLoginTimeout) clearTimeout(activeLoginTimeout);
-      if (capturedTokenReject) {
-        capturedTokenReject(error instanceof Error ? error : new Error(String(error)));
-        capturedTokenResolve = null;
-        capturedTokenReject = null;
+      
+      const resetHtml = await resetRes.text();
+      
+      // Read the redirected HTML to find the newly generated token
+      const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+      if (finalTokenMatch) {
+        scrapedToken = finalTokenMatch[1].trim();
       }
     }
-  });
+  } catch (e) {
+    console.warn('[loginTauSso] Could not scrape mobile token, proceeding with web session fallback:', e);
+  }
+
+  const finalToken = scrapedToken || `web_session_${Date.now()}`;
+  await setStoredToken(finalToken);
+  return finalToken;
 }
 

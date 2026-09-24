@@ -21,7 +21,7 @@ export async function validateTokenOnBackground(
 
 export async function fetchEnrolledCoursesOnBackground(
   token: string
-): Promise<{ success: boolean; courses?: any[]; error?: string }> {
+): Promise<{ success: boolean; courses?: any[]; error?: string; errorcode?: string }> {
   return sendMessageToBackground({ type: 'FETCH_ENROLLED_COURSES', token });
 }
 

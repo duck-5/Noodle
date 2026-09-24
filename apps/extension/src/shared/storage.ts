@@ -50,6 +50,19 @@ export async function setStoredToken(token: string | null): Promise<void> {
   }
 }
 
+export async function getStoredSesskey(): Promise<string | null> {
+  const res = (await browser.storage.local.get('sesskey')) as { sesskey?: string };
+  return res.sesskey || null;
+}
+
+export async function setStoredSesskey(sesskey: string | null): Promise<void> {
+  if (sesskey === null) {
+    await browser.storage.local.remove('sesskey');
+  } else {
+    await browser.storage.local.set({ sesskey });
+  }
+}
+
 export async function getMoodleCredentials(): Promise<{ username?: string; idNumber?: string; password?: string } | null> {
   const res = (await browser.storage.local.get('moodleCredentials')) as {
     moodleCredentials?: { username?: string; idNumber?: string; password?: string };

@@ -233,5 +233,50 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
         expect(patchBody.status).not.toBe('needsAction');
       }
     });
+
+    it('should not delete orphaned tasks that are hidden or completed', async () => {
+      // No active assignments in Moodle, meaning existing tasks are "orphaned"
+      const existingTasks = [
+        {
+          id: 'task_needsAction',
+          title: 'Task 1',
+          notes: 'Noodle:assignId:111',
+          status: 'needsAction',
+        },
+        {
+          id: 'task_hidden',
+          title: 'Task 2',
+          notes: 'Noodle:assignId:222',
+          status: 'needsAction',
+          hidden: true,
+        },
+        {
+          id: 'task_completed',
+          title: 'Task 3',
+          notes: 'Noodle:assignId:333',
+          status: 'completed',
+        }
+      ];
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: existingTasks }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      await syncAssignmentsToGoogleTasks('VALID_TOKEN', 'tasklist_123', []);
+
+      const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
+      
+      // Only the first task (needsAction and NOT hidden) should be deleted
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0].url).toContain('task_needsAction');
+    });
   });
 });

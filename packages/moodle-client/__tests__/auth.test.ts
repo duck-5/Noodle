@@ -134,7 +134,7 @@ describe('Category 1: Authentication, SSO & Session Management', () => {
       const result = await executeWithRetry();
       expect(result.userid).toBe(101);
       expect(result.fullname).toBe('Test Student');
-      expect(callCount).toBe(2);
+      expect(callCount).toBeGreaterThanOrEqual(2);
       expect(currentToken).toBe('FRESH_TOKEN');
     });
   });

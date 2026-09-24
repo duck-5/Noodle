@@ -173,3 +173,15 @@ For each tracked course:
    * Previous: `/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0`
 7. **Extract Direct URLs**: Parses the meetings list and extracts the `m.joinUrl` field, which contains the direct Zoom URL with the password parameter (e.g., `https://tau-ac-il.zoom.us/j/{meetingNumber}?pwd={passcode}`). This direct URL is stored as `joinUrl` in the scraped results.
 
+---
+
+## 5. Moodle Strategy Interfaces (`packages/moodle-client`)
+
+The `IMoodleStrategy` interface defines common operations across REST, AJAX, and Web Scraping tiers:
+
+### Token Lifecycle Methods:
+* `getMobileToken?(): Promise<string>`
+  * Implemented by `ScraperMoodleStrategy`. Performs an authenticated POST to `/user/managetoken.php` with `action=resetwstoken&confirm=1` using active SSO cookies. Extracts and returns the newly generated Web Service token from `id="copytoclipboardtoken"`.
+* `setToken?(token: string): void`
+  * Implemented by all strategies (`RestMoodleStrategy`, `AjaxMoodleStrategy`, `ScraperMoodleStrategy`). Updates the internal `context.token` reference so that subsequent calls immediately use the refreshed token without rebuilding the strategy instances.
+

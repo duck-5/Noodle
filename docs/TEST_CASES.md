@@ -181,6 +181,21 @@ graph LR
 | **TC-EDGE-01** | Token Expiration During Active Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
 | **TC-EDGE-02** | Corrupted / Malformed Course Metadata | All (Mobile + Chrome + Firefox) | Automated | Edge & Stress |
 | **TC-EDGE-03** | High Course Volume Stress (30+ Courses) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
+| **TC-FALLBACK-01** | Primary REST Strategy Execution | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-02** | REST Failure to AJAX Fallback | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-03** | AJAX Unsupported Operation to Scraper Fallback | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-04** | Aggregate Error on Complete Strategy Failure | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-05** | 1-Hour Circuit Breaker on REST Strategy | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-06** | Static AJAX Operation Support Filtering | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-07** | Multi-Page Course Scraping & Resilient Regex/JSON Parsing | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-08** | Multi-Year Academic Archive Course Discovery | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-09** | Year-Aware Endpoint Routing for Sections & Deep Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-10** | (Reserved for Future Regex Extensions) | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-11** | SSO Re-Auth Trigger on Manual Login Form Detection | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-12** | Data-Course-Id Extraction with Nested Span Course Names | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-13** | Course Parsing from Grade Overview Index PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 
 ---
 
@@ -1000,3 +1015,135 @@ graph LR
   * Dashboard load time < 500ms in Chrome, Firefox, and Mobile.
   * Memory usage remains stable.
   * Lists render smoothly using virtualization (`FlatList` on mobile / windowed DOM rendering).
+
+---
+
+### Category 16: Moodle Client Modular Fallback Architecture
+
+#### TC-FALLBACK-01: Primary REST Strategy Execution
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When the Moodle Mobile Web Service is online and enabled, `MoodleClient` resolves requests via `RestMoodleStrategy` immediately without triggering secondary fallbacks.
+* **Automated Test Flow**:
+  1. Initialize `MoodleClient` with valid REST token and mock strategies.
+  2. Execute `client.getSiteInfo()`.
+  3. Assert `RestMoodleStrategy.getSiteInfo` is called once and `AjaxMoodleStrategy` is not called.
+
+#### TC-FALLBACK-02: REST Failure to AJAX Fallback
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When the REST endpoint throws `accessexception` (Access control exception) due to server-side mobile plugin restrictions, `MoodleClient` logs the warning in dev mode and successfully delegates to `AjaxMoodleStrategy`.
+* **Automated Test Flow**:
+  1. Mock `RestMoodleStrategy.getEnrolledCourses` rejecting with `MoodleApiError('accessexception')`.
+  2. Mock `AjaxMoodleStrategy.getEnrolledCourses` resolving with valid enrolled courses.
+  3. Call `client.getEnrolledCourses(userId)`.
+  4. Assert result matches expected courses and both strategies were attempted in sequence.
+
+#### TC-FALLBACK-03: AJAX Unsupported Operation to Scraper Fallback
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When an operation (such as `getCourseContents`) is not exposed over AJAX in Moodle core, `AjaxMoodleStrategy` throws `UnsupportedStrategyError`, immediately falling back to `ScraperMoodleStrategy` without logging a failure.
+* **Automated Test Flow**:
+  1. Mock `RestMoodleStrategy.getCourseContents` rejecting with `accessexception`.
+  2. Mock `AjaxMoodleStrategy.getCourseContents` rejecting with `UnsupportedStrategyError`.
+  3. Mock `ScraperMoodleStrategy.getCourseContents` resolving with parsed course sections.
+  4. Call `client.getCourseContents(courseId)`.
+  5. Assert result matches parsed sections from Scraper strategy.
+
+#### TC-FALLBACK-04: Aggregate Error on Complete Strategy Failure
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When all strategies in the fallback chain fail, `MoodleClient` throws an error detailing the failure message of each strategy.
+* **Automated Test Flow**:
+  1. Mock REST, AJAX, and Scraper rejecting on an operation.
+  2. Call the operation.
+  3. Assert promise rejects with an error matching `All strategies failed for <operation>`.
+
+#### TC-FALLBACK-05: 1-Hour Circuit Breaker on REST Strategy
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: When `RestMoodleStrategy` receives an `accessexception` (`חריגת בקרת גישה`) or `servicenotavailable` response from Moodle (indicating that the university has disabled the mobile web service or plugin), it enters a 1-hour cooldown window. During this cooldown, subsequent API calls bypass REST immediately without making network calls to avoid latency and console error noise.
+* **Automated Test Flow**:
+  1. Invoke `RestMoodleStrategy.getSiteInfo()` where Moodle returns `errorcode: 'accessexception'`.
+  2. Assert `RestMoodleStrategy.isCoolingDown()` is `true`.
+  3. Invoke subsequent API call; assert REST call is rejected immediately with cooldown error and zero fetch requests are dispatched.
+
+#### TC-FALLBACK-06: Static AJAX Operation Support Filtering
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Statically identifies operations not supported by Moodle's internal AJAX endpoint (`/lib/ajax/service.php`). When `isOperationSupported(operationName)` returns `false`, `fallbackRunner` skips `AjaxMoodleStrategy` immediately without throwing errors or creating console log spam.
+* **Automated Test Flow**:
+  1. Initialize `AjaxMoodleStrategy`.
+  2. Assert `isOperationSupported('getEnrolledCourses')` is `true`.
+  3. Assert `isOperationSupported('getSiteInfo')`, `isOperationSupported('getAssignments')`, and `isOperationSupported('getCourseContents')` return `false`.
+
+#### TC-FALLBACK-07: Multi-Page Course Scraping & Resilient Regex/JSON Parsing
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `ScraperMoodleStrategy.getEnrolledCourses()` querying multiple Moodle pages (`/my/courses.php`, `/user/profile.php`, `/my/`) using `Promise.allSettled`. Verifies extraction from HTML card attributes (`data-course-id`), links (`/course/view.php?id=`), and embedded JSON scripts (`"courses": [...]`), properly parsing TAU course numbers (`0368111801`).
+* **Automated Test Flow**:
+  1. Mock responses for `/my/courses.php` (containing card markup with `data-course-id`), `/user/profile.php` (containing standard links and inline JSON script), and `/my/`.
+  2. Call `ScraperMoodleStrategy.getEnrolledCourses(userId)`.
+  3. Assert all enrolled courses are extracted, deduplicated, and contain correct `id`, `fullname`, `shortname`, and `idnumber`.
+
+#### TC-FALLBACK-08: Multi-Year Academic Archive Course Discovery
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `ScraperMoodleStrategy.getEnrolledCourses()` and `AjaxMoodleStrategy.getEnrolledCourses()` discovering and scraping courses across the active semester and past academic archive years (e.g. `/2025/`, `/2024/`). Verifies that courses returned are tagged with their respective academic `year` and `instanceUrl`, and registered into the client's year mapping table.
+* **Automated Test Flow**:
+  1. Mock root Moodle overview returning 0 courses (typical before new academic year starts).
+  2. Mock `/2025/grade/report/overview/index.php` returning past year courses.
+  3. Call `ScraperMoodleStrategy.getEnrolledCourses(userId)`.
+  4. Assert courses from `/2025/` are parsed, deduplicated, and contain `year: '2025'` and `instanceUrl: 'https://moodle.tau.ac.il/2025'`.
+
+#### TC-FALLBACK-09: Year-Aware Endpoint Routing for Sections & Deep Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that requests for course contents (`getCourseContents`), assignments (`getAssignments`), submission status (`getSubmissionStatus`), and grade items (`getGradeItems`) for courses belonging to past academic years are routed to the corresponding year instance URL (e.g., `https://moodle.tau.ac.il/2025/course/view.php?id=...`). Also verifies that module URLs and resource download URLs preserve the year prefix.
+* **Automated Test Flow**:
+  1. Configure course `301` mapped to year `2025`.
+  2. Call `getCourseContents(301)`.
+  3. Verify fetch request is routed to `https://moodle.tau.ac.il/2025/course/view.php?id=301`.
+  4. Assert module URLs and resource file URLs include `/2025/`.
+
+#### TC-FALLBACK-10: (Reserved for Future Regex Extensions)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Placeholder for future regex fallback coverage.
+
+#### TC-FALLBACK-11: SSO Re-Auth Trigger on Manual Login Form Detection
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that when the scraper encounters a page containing an SSO manual login form (`<input type="text" name="Ecom_User_ID" />`), it aborts parsing and throws an `AUTH_SESSION_EXPIRED` error to trigger re-authentication.
+
+#### TC-FALLBACK-12: Data-Course-Id Extraction with Nested Span Course Names
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests `parseCoursesFromHtml` extracting from Moodle 4.x dashboard cards where `data-course-id` is on a container div, and the course name is nested inside child elements like `<span class="multiline">`, rather than as a direct `aria-label` attribute on the container itself.
+
+#### TC-FALLBACK-13: Course Parsing from Grade Overview Index PHP Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests the scraper's ability to extract course IDs and names from links pointing to `/grade/report/overview/index.php?id=...`, which is the primary link type generated on the Moodle grade overview page.
+
+#### TC-FALLBACK-14: Aria-Label Attribute Ordering Resiliency
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Tests that regex parsing of `data-course-id` correctly extracts the course name regardless of whether `aria-label` or `title` appears before or after the `data-course-id` attribute on the same HTML tag.
+
+#### TC-FALLBACK-15: HTML Scraper Execution on Pages without View PHP Links
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Validates that even if a year-specific archive page has no standard `/course/view.php` links (for instance, a grade overview page that only lists grades), the scraper correctly assigns the academic year based on the URL context (`detectedYear = yearContext`) and caches the courses under the correct sub-instance mapping.
+
+#### TC-FALLBACK-16: Automatic Silent Token Renewal via Scraper on REST invalidtoken
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Sandbox`
+* **Description**: Verifies that when `RestMoodleStrategy` fails with an `invalidtoken` or `accessexception` Moodle error code, `fallbackRunner.ts` automatically attempts silent token regeneration via `ScraperMoodleStrategy.getMobileToken()`. It issues an authenticated POST to `/user/managetoken.php` with `action=resetwstoken`, parses the new token from `#copytoclipboardtoken`, synchronizes it across all strategies via `setToken()`, resets the REST cooldown, and retries the REST call without requiring the user to re-enter credentials or log in again.
+
+#### TC-FALLBACK-17: Direct Course-Page Assignment Discovery Across Multi-Year Archives
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Sandbox`
+* **Description**: Verifies that `ScraperMoodleStrategy.getAssignments()` discovers assignments directly by scraping individual course pages (`/course/view.php?id=X`) across all active and archive years registered in `courseYearMap`. Asserts that anchor tags pointing to `/mod/assign/view.php?id=(\d+)` and their assignment titles are correctly extracted, bypassing the Moodle Calendar and successfully discovering past or unlisted course assignments.
+
+

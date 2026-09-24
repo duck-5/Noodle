@@ -45,5 +45,10 @@ export default defineConfig(({ mode }) => {
     build: {
       modulePreload: false,
     },
+    resolve: {
+      alias: {
+        '@tautracker/moodle-client': path.resolve(__dirname, '../../packages/moodle-client/src/index.ts'),
+      },
+    },
   };
 });

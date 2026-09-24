@@ -24,9 +24,10 @@ export async function runSync(
   onProgress: (message: string) => void,
   baseUrl?: string,
   creds?: MoodleCredentials,
-  moodleCookies?: string
+  moodleCookies?: string,
+  sesskey?: string
 ): Promise<SyncResult> {
-  const client = new MoodleClient(token, baseUrl);
+  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: true });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
@@ -83,6 +84,9 @@ export async function runSync(
     userId = siteInfo.userid;
     assignmentsResp = assignmentsData;
   } catch (err: any) {
+    if (err.errorcode || err.name === 'MoodleApiError') {
+      throw err; // Preserve original API error so callers can inspect errorcode
+    }
     throw new Error(`Failed to fetch initial data from Moodle: ${err.message}`);
   }
 
@@ -98,7 +102,7 @@ export async function runSync(
 
   // 1. Fetch Enrolled Courses to map names and parse metadata
   onProgress('Fetching course mapping...');
-  const courseMap = new Map<number, { display_name: string; name: string }>();
+  const courseMap = new Map<number, { display_name: string; name: string; year?: string; instanceUrl?: string }>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {
@@ -115,6 +119,8 @@ export async function runSync(
       courseMap.set(c.id, {
         display_name,
         name: c.fullname,
+        year: c.year,
+        instanceUrl: c.instanceUrl,
       });
     }
   } catch (err: any) {
@@ -149,82 +155,39 @@ export async function runSync(
     });
   }
 
-  // 3. Parallelize fetching submissions, grades, and course contents
-  onProgress(`Fetching details for ${rawAssignments.length} assignments and ${trackedCourseIds.length} courses...`);
-  
-  const submissionsMap = new Map<number, { status: string; extensionDueDate: number; submittedFiles?: Attachment[] }>();
-  const gradesByCmid = new Map<number, RawGradeItem>();
+  // 3. Sequentialize Course Contents to discover missing assignments
+  onProgress(`Fetching contents for ${trackedCourseIds.length} courses...`);
   const cmidToSectionMap = new Map<number, string>();
+  
+  await batchPromises(trackedCourseIds, 100, async (courseId) => {
+    const courseName = getCourseDisplayName(courseId);
+    try {
+      const sections = await client.getCourseContents(courseId);
+      for (const section of sections) {
+        const sectionName = section.name || '';
+        for (const module of section.modules) {
+          const modname = module.modname;
+          const name = module.name || '';
+          const nameLower = name.toLowerCase();
 
-  await Promise.all([
-    // A: Submissions
-    batchPromises(rawAssignments, 100, async (assign) => {
-      try {
-        const statusResp = await client.getSubmissionStatus(assign.id);
-        const subStatus = statusResp.lastattempt?.submission?.status || 'new';
-        const status = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
-        const extensionDueDate = statusResp.lastattempt?.extensionduedate || 0;
-        
-        let submittedFiles: Attachment[] | undefined = undefined;
-        const plugins = statusResp.lastattempt?.submission?.plugins;
-        if (plugins) {
-          const filePlugin = plugins.find(p => p.type === 'file');
-          if (filePlugin && filePlugin.fileareas) {
-            const submissionArea = filePlugin.fileareas.find(a => a.area === 'submission_files');
-            if (submissionArea && submissionArea.files) {
-              submittedFiles = submissionArea.files.map(f => ({
-                name: f.filename,
-                url: f.fileurl,
-              }));
+          // Store mapping of assign modules (which are assignments)
+          if (modname === 'assign') {
+            cmidToSectionMap.set(module.id, sectionName);
+            
+            // If this assignment is missing from rawAssignments (e.g. past assignments missed by calendar scraper)
+            const exists = rawAssignments.some(a => a.cmid === module.id);
+            if (!exists) {
+              rawAssignments.push({
+                id: module.instance || module.id,
+                cmid: module.id,
+                course: courseId,
+                name: name,
+                duedate: 0,
+                cutoffdate: 0,
+                allowsubmissionsfromdate: 0
+              });
             }
           }
-        }
-
-        submissionsMap.set(assign.id, { status, extensionDueDate, submittedFiles });
-      } catch (err: any) {
-        errors.push({
-          context: `Fetching submission status for assignment ${assign.name} (id: ${assign.id})`,
-          message: err.message,
-        });
-        submissionsMap.set(assign.id, { status: 'Assigned', extensionDueDate: 0 });
-      }
-    }),
-
-    // B: Grades
-    batchPromises(trackedCourseIds, 100, async (courseId) => {
-      try {
-        const gradesResp = await client.getGradeItems(courseId, userId);
-        for (const userGrade of gradesResp.usergrades) {
-          for (const item of userGrade.gradeitems) {
-            if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
-              gradesByCmid.set(Number(item.cmid), item);
-            }
-          }
-        }
-      } catch (err: any) {
-        errors.push({
-          context: `Fetching grades for course ${courseId}`,
-          message: err.message,
-        });
-      }
-    }),
-
-    // C: Course Contents
-    batchPromises(trackedCourseIds, 100, async (courseId) => {
-      const courseName = getCourseDisplayName(courseId);
-      try {
-        const sections = await client.getCourseContents(courseId);
-        for (const section of sections) {
-          const sectionName = section.name || '';
-          for (const module of section.modules) {
-            const modname = module.modname;
-            const name = module.name || '';
-            const nameLower = name.toLowerCase();
-
-            // Store mapping of assign modules (which are assignments)
-            if (modname === 'assign') {
-              cmidToSectionMap.set(module.id, sectionName);
-            }
 
             // Files parsing
             if (modname === 'resource' && module.contents) {
@@ -276,7 +239,66 @@ export async function runSync(
           message: err.message,
         });
       }
-    })
+    });
+  
+  // 4. Parallelize fetching submissions and grades
+  onProgress(`Fetching details for ${rawAssignments.length} assignments...`);
+  
+  const submissionsMap = new Map<number, { status: string; extensionDueDate: number; submittedFiles?: Attachment[] }>();
+  const gradesByCmid = new Map<number, RawGradeItem>();
+
+  await Promise.all([
+    // A: Submissions
+    batchPromises(rawAssignments, 100, async (assign) => {
+      try {
+        const statusResp = await client.getSubmissionStatus(assign.id, assign.cmid);
+        const subStatus = statusResp.lastattempt?.submission?.status || 'new';
+        const status = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
+        const extensionDueDate = statusResp.lastattempt?.extensionduedate || 0;
+        
+        let submittedFiles: Attachment[] | undefined = undefined;
+        const plugins = statusResp.lastattempt?.submission?.plugins;
+        if (plugins) {
+          const filePlugin = plugins.find(p => p.type === 'file');
+          if (filePlugin && filePlugin.fileareas) {
+            const submissionArea = filePlugin.fileareas.find(a => a.area === 'submission_files');
+            if (submissionArea && submissionArea.files) {
+              submittedFiles = submissionArea.files.map(f => ({
+                name: f.filename,
+                url: f.fileurl,
+              }));
+            }
+          }
+        }
+
+        submissionsMap.set(assign.id, { status, extensionDueDate, submittedFiles });
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching submission status for assignment ${assign.name} (id: ${assign.id})`,
+          message: err.message,
+        });
+        submissionsMap.set(assign.id, { status: 'Assigned', extensionDueDate: 0 });
+      }
+    }),
+
+    // B: Grades
+    batchPromises(trackedCourseIds, 100, async (courseId) => {
+      try {
+        const gradesResp = await client.getGradeItems(courseId, userId);
+        for (const userGrade of gradesResp.usergrades) {
+          for (const item of userGrade.gradeitems) {
+            if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
+              gradesByCmid.set(Number(item.cmid), item);
+            }
+          }
+        }
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching grades for course ${courseId}`,
+          message: err.message,
+        });
+      }
+    }),
   ]);
 
   // Assemble Assignments
@@ -320,6 +342,13 @@ export async function runSync(
         }))
       : [];
 
+    const courseInfo = courseMap.get(assign.course);
+    const assignBaseUrl = courseInfo?.instanceUrl
+      ? courseInfo.instanceUrl
+      : courseInfo?.year && courseInfo.year !== String(new Date().getFullYear())
+      ? `https://moodle.tau.ac.il/${courseInfo.year}`
+      : 'https://moodle.tau.ac.il';
+
     assignments.push({
       id: assign.id,
       cmid: assign.cmid,
@@ -330,7 +359,7 @@ export async function runSync(
       submittedFiles: sub.submittedFiles,
       deadline: deadlineIso,
       opened: openedIso,
-      link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${assign.cmid}`,
+      link: `${assignBaseUrl}/mod/assign/view.php?id=${assign.cmid}`,
       grade,
       gradeMax,
       attachments,

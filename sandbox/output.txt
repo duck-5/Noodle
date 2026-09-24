@@ -1,0 +1,140 @@
+PS D:\ProgramFiles\Projects\Noodle> node --env-file=moodle_test_credentials.env sandbox/test_moodle.mjs
+=== Moodle API Detailed Test Script ===
+
+[AUTH] Found SSO credentials for: yuvalmantin. Logging in via TAU SSO...
+[AUTH] Successfully logged in and extracted session cookies & token!
+
+--- 1. Testing getSiteInfo ---
+[MoodleClient] Attempting getSiteInfo using strategy 'REST'...
+[SUCCESS] Logged in as: יובל מנטין (ID: 30909)
+
+--- 2. Testing getEnrolledCourses (Multi-Year Discovery) ---
+[ScraperStrategy] Fetching enrolled courses across 13 candidate URLs (including past years: 2025, 2024)...
+[ScraperStrategy] Successfully fetched '/2024/user/profile.php?id=30909' (56628 bytes)
+[ScraperStrategy] Successfully fetched '/2024/my/courses.php' (66971 bytes)
+[ScraperStrategy] Successfully fetched '/2024/my/' (152903 bytes)
+[ScraperStrategy] Successfully fetched '/2025/my/courses.php' (64495 bytes)
+[ScraperStrategy] Successfully fetched '/2025/user/profile.php?id=30909' (64196 bytes)
+[ScraperStrategy] Successfully fetched '/grade/report/overview/index.php' (201717 bytes)
+[ScraperStrategy] Successfully fetched '/2025/my/' (161754 bytes)
+[ScraperStrategy] Successfully fetched '/2024/grade/report/overview/index.php' (190146 bytes)
+[ScraperStrategy] Successfully fetched '/user/profile.php' (205367 bytes)
+[ScraperStrategy] Successfully fetched '/my/' (298331 bytes)
+[ScraperStrategy] Successfully fetched '/user/profile.php?id=30909' (205376 bytes)
+[ScraperStrategy] Successfully fetched '/my/courses.php' (210153 bytes)
+[ScraperStrategy] Successfully fetched '/2025/grade/report/overview/index.php' (266660 bytes)
+[ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+[ScraperStrategy] extractCoursesViaAjax(root): using sesskey=5bgX..., endpoint=https://moodle.tau.ac.il/lib/ajax/service.php?sesskey=5bgXqtF3WZ&info=core_course_get_enrolled_courses_by_timeline_classification
+[ScraperStrategy] AJAX(root/all): HTTP 200
+[ScraperStrategy] AJAX(root/all): error=false, courses=0
+[ScraperStrategy] AJAX(root/inprogress): HTTP 200
+[ScraperStrategy] AJAX(root/inprogress): error=false, courses=0
+[ScraperStrategy] AJAX(root/future): HTTP 200
+[ScraperStrategy] AJAX(root/future): error=false, courses=0
+[ScraperStrategy] AJAX(root/past): HTTP 200
+[ScraperStrategy] AJAX(root/past): error=false, courses=0
+[ScraperStrategy] AJAX(root/favourites): HTTP 200
+[ScraperStrategy] AJAX(root/favourites): error=false, courses=0
+[ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+[ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+[ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+[ScraperStrategy] parseCoursesFromHtml(root): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(root): found 0 new courses (total now: 0)
+[ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 0)
+[ScraperStrategy] extractCoursesViaAjax(2025): using sesskey=2vA5..., endpoint=https://moodle.tau.ac.il/2025/lib/ajax/service.php?sesskey=2vA5QMn117&info=core_course_get_enrolled_courses_by_timeline_classification
+[ScraperStrategy] AJAX(2025/all): HTTP 200
+[ScraperStrategy] AJAX(2025/all): error=false, courses=23
+[ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 23)
+[ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 23)
+[ScraperStrategy] parseCoursesFromHtml(2025): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2025): found 0 new courses (total now: 23)
+[ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=true, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 23)
+[ScraperStrategy] extractCoursesViaAjax(2024): using sesskey=N3DF..., endpoint=https://moodle.tau.ac.il/2024/lib/ajax/service.php?sesskey=N3DFUW8miR&info=core_course_get_enrolled_courses_by_timeline_classification
+[ScraperStrategy] AJAX(2024/all): HTTP 200
+[ScraperStrategy] AJAX(2024/all): error=false, courses=0
+[ScraperStrategy] AJAX(2024/inprogress): HTTP 200
+[ScraperStrategy] AJAX(2024/inprogress): error=false, courses=0
+[ScraperStrategy] AJAX(2024/future): HTTP 200
+[ScraperStrategy] AJAX(2024/future): error=false, courses=0
+[ScraperStrategy] AJAX(2024/past): HTTP 200
+[ScraperStrategy] AJAX(2024/past): error=false, courses=0
+[ScraperStrategy] AJAX(2024/favourites): HTTP 200
+[ScraperStrategy] AJAX(2024/favourites): error=false, courses=0
+[ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 23)
+[ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=true, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 23)
+[ScraperStrategy] parseCoursesFromHtml(2024): HTML indicators: courseViewLink=false, gradeReport=false, dataCourseId=false, coursesJson=false, sesskey=true
+[ScraperStrategy] parseCoursesFromHtml(2024): found 0 new courses (total now: 23)
+[ScraperStrategy] Finished parsing. Total unique courses found across all years: 23
+[SUCCESS] Found 23 courses across all databases.
+
+Year: 2025 (23 courses)
+  - [321110001] 0321110001 - אלגברה לינארית לפיזיקה
+  - [321110401] 0321110401 - מבוא לתרמודינמיקה ומצבי צבירה
+  - [321111101] 0321111101 - מעבדה בפיזיקה א 1
+  - [321111299] 03211112 - מעבדה  בפיזיקה  א 2
+  - [321111801] 0321111801 - פיזיקה קלאסית 1
+  - [321111901] 0321111901 - פיזיקה קלאסית 2
+  - [321120101] 0321120101 - יחסות פרטית
+  - [321170201] 0321170201 - סמינר מצוינות בפיזיקה שנה א'
+  - [321183601] 0321183601 - הסתברות וסטטיסטיקה
+  - [321183801] 0321183801 - מבוא מתמטי לפיזיקה 1
+  - [321183901] 0321183901 - מבוא מתמטי לפיזיקה 2
+  - [366110001] 0366110001 - חשבון דיפרנציאלי ואינטגרלי 1א לפיזיקה
+  - [366110003] 0366110003 - חשבון דיפרנציאלי ואינטגרלי 1א לפיזיקה
+  - [368110599] 03681105 - מבוא מורחב למדעי המחשב
+  - [368111801] 0368111801 - מתמטיקה בדידה 1
+  - [368111906] 0368111906 - מתמטיקה בדידה 2
+  - [368401001] 0368401001 - רובוטיקה אלגוריתמית ותכנון תנועה
+  - [5800030001] 5800030001 - מאגר בחינות, מדעים מדויקים, 2011-2022
+  - [5800070002] 5800070002 - סדנאות אסטרטגיות למידה
+  - [5800103101] 5800103101 - יש(י)ר ולעניין: דמוקרטיה בקמפוס — קולנו. כולנו
+  - [5812011103] 5812011103 - בואו נדבר על כסף - כישורים פיננסיים לחיים
+  - [5900411001] 5900411001 - הדרכה למניעת הטרדה מינית
+  - [5900435001] 5900435001 - הדרכת בטיחות באש ובסביבת עבודה משרדית (לביצוע על פי דרישה)
+
+--- 3. Testing getAssignments ---
+[MoodleClient] Attempting getAssignments using strategy 'REST'...
+[MoodleClient] Strategy 'REST' failed for getAssignments: REST API returned 0 assignments on current instance; falling back to discover archive assignments
+[MoodleClient] Attempting getAssignments using strategy 'Scraper'...
+[MoodleClient] Succeeded getAssignments with fallback strategy 'Scraper'.
+[SUCCESS] Found 0 assignments.
+
+--- 5. Testing getCourseContents (Looking for Zoom links) ---
+Fetching contents for course 321110001 (0321110001 - אלגברה לינארית לפיזיקה)...
+[MoodleClient] Attempting getCourseContents using strategy 'REST'...
+[MoodleClient] Strategy 'REST' failed for getCourseContents: לא ניתן להפעיל פונקציות בהקשר (context) הקורס (course id:321110001).
+הודעת השגיאה היה:
+לא ניתן לגשת לקורס או לפעילות
+[MoodleClient] Attempting getCourseContents using strategy 'Scraper'...
+[MoodleClient] Succeeded getCourseContents with fallback strategy 'Scraper'.
+[SUCCESS] Found 0 Zoom links in this course.
+
+--- 6. Testing Calendar Storage (Save, Get, Delete) ---
+[CALENDAR] Saving test data...
+[MoodleClient] Attempting saveNoodleSettings using strategy 'REST'...
+[CALENDAR] Loading test data...
+[MoodleClient] Attempting loadNoodleSettings using strategy 'REST'...
+[CALENDAR] Data verified: YES
+[CALENDAR] Cleaning up... Deleting test event.
+[CALENDAR] Test event successfully deleted.
+
+=======================================================
+                DETAILED EXECUTION REPORT
+=======================================================
+User Authenticated : יובל מנטין
+Total Courses      : 23
+Years Discovered   : 2025
+Total Assignments  : 0
+Zoom Links Checked : Found 0 in sample course
+Calendar Store     : Saved=true, Loaded=true, Deleted=true
+=======================================================

@@ -5,6 +5,7 @@ import { parseTauCourseMetadata, MoodleClient, isValidIsraeliId } from '@tautrac
 import {
   getStoredToken,
   setStoredToken,
+  getStoredSesskey,
   getTrackedCourseIds,
   setTrackedCourseIds,
   getCachedSyncResult,
@@ -41,14 +42,36 @@ interface GroupedCourses {
   courses: any[];
 }
 
+export function getCourseMoodleUrl(
+  courseIdOrObj: number | string | { id?: number; year?: string; instanceUrl?: string },
+  fallbackLink?: string
+): string {
+  if (typeof courseIdOrObj === 'object' && courseIdOrObj !== null) {
+    if (courseIdOrObj.instanceUrl) {
+      return `${courseIdOrObj.instanceUrl}/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+    }
+    if (courseIdOrObj.year && courseIdOrObj.year !== String(new Date().getFullYear())) {
+      return `https://moodle.tau.ac.il/${courseIdOrObj.year}/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+    }
+    return `https://moodle.tau.ac.il/course/view.php?id=${courseIdOrObj.id ?? ''}`;
+  }
+
+  const courseId = Number(courseIdOrObj);
+  if (fallbackLink && fallbackLink.includes('/mod/')) {
+    const root = fallbackLink.split('/mod/')[0];
+    return `${root}/course/view.php?id=${courseId}`;
+  }
+  return `https://moodle.tau.ac.il/course/view.php?id=${courseId}`;
+}
+
 function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[] {
   const groups: Record<string, any[]> = {};
 
   courses.forEach(c => {
     const idNum = c.idnumber || c.shortname || '';
     const meta = parseTauCourseMetadata(idNum);
-    const year = meta?.year || '';
-    const semester = meta?.semester || 'Other';
+    const year = meta?.year || c.year || '';
+    const semester = meta?.semester || c.semester || 'Other';
 
     const key = year ? `${year}-${semester}` : 'Other';
     if (!groups[key]) {
@@ -72,10 +95,10 @@ function groupAndSortCourses(courses: any[], lang: 'he' | 'en'): GroupedCourses[
       const [year, semester] = key.split('-');
       let label = '';
       if (lang === 'he') {
-        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "אחר";
+        const semName = semester === 'SemesterA' ? "סמסטר א'" : semester === 'SemesterB' ? "סמסטר ב'" : semester === 'Yearly' ? "שנתי" : "קורסים כלליים";
         label = `${semName} (${year})`;
       } else {
-        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "Other";
+        const semName = semester === 'SemesterA' ? "Semester A" : semester === 'SemesterB' ? "Semester B" : semester === 'Yearly' ? "Yearly" : "General";
         label = `${semName} (${year})`;
       }
       result.push({
@@ -283,12 +306,15 @@ export default function App() {
 
     const handleStorageChange = (changes: { [key: string]: any }, areaName: string) => {
       if (areaName === 'local' && changes.wstoken && changes.wstoken.newValue) {
-        loadData();
+        // If the token is identical to our current state or we are in active course selection, avoid re-running onboarding
+        if (changes.wstoken.newValue !== token && onboardingStep !== 2) {
+          loadData();
+        }
       }
     };
     browser.storage.onChanged.addListener(handleStorageChange);
     return () => browser.storage.onChanged.removeListener(handleStorageChange);
-  }, []);
+  }, [token, onboardingStep]);
 
   useEffect(() => {
     if (settings?.theme) {
@@ -351,6 +377,9 @@ export default function App() {
           setTourStep(0);
         }
       } else if (storedToken) {
+        if (cachedCoursesRes.enrolledCoursesCache && cachedCoursesRes.enrolledCoursesCache.length > 0) {
+          setOnboardingStep(2);
+        }
         // Token exists but courses might not be tracked yet — try to restore from Moodle
         restoreMoodleSettingsForOnboarding(storedToken);
       } else {
@@ -386,9 +415,10 @@ export default function App() {
         await setMoodleCredentials(null);
       }
       setToken(fetchedToken);
-      restoreMoodleSettingsForOnboarding(fetchedToken);
+      await restoreMoodleSettingsForOnboarding(fetchedToken);
     } catch (err: any) {
       showToast(`Login failed: ${err.message}`, 'error');
+    } finally {
       setLoading(false);
     }
   }
@@ -396,7 +426,7 @@ export default function App() {
   async function fetchEnrolledCoursesInBackground(t: string) {
     try {
       const res = await fetchEnrolledCoursesOnBackground(t);
-      if (res.success && res.courses) {
+      if (res?.success && res.courses) {
         setAvailableCourses(res.courses);
         await browser.storage.local.set({ enrolledCoursesCache: res.courses });
       }
@@ -406,9 +436,11 @@ export default function App() {
   }
 
   async function restoreMoodleSettingsForOnboarding(t: string) {
+    if (validatingToken) return;
     setValidatingToken(true);
     try {
-      const client = new MoodleClient(t);
+      const sesskey = await getStoredSesskey();
+      const client = new MoodleClient(t, undefined, { sesskey: sesskey || undefined, devMode: true });
       const remoteSettings = await client.loadNoodleSettings();
       if (remoteSettings && Object.keys(remoteSettings).length > 0) {
         // We found existing remote settings, apply them directly!
@@ -471,16 +503,47 @@ export default function App() {
     setValidatingToken(true);
     try {
       const res = await fetchEnrolledCoursesOnBackground(t);
-      if (res.success && res.courses) {
+      console.log('[Onboarding] fetchEnrolledCoursesOnBackground response:', res);
+      if (res?.success && res.courses && res.courses.length > 0) {
         setAvailableCourses(res.courses);
+        await browser.storage.local.set({ enrolledCoursesCache: res.courses });
         setOnboardingStep(2);
+      } else if (res?.success && res.courses && res.courses.length === 0) {
+        console.warn('[Onboarding] Enrolled courses array is empty');
+        showToast(currentLang === 'he' ? 'לא נמצאו קורסים מקושרים לחשבון' : 'No enrolled courses found for account', 'info');
+        setAvailableCourses([]);
+        setOnboardingStep((prev) => prev === 2 ? 2 : 2);
       } else {
-        showToast(res.error || 'Failed to fetch enrolled courses.', 'error');
-        setOnboardingStep(1);
+        const isAuthError = res?.errorcode === 'AUTH_SESSION_EXPIRED' || res?.errorcode === 'invalidtoken';
+        setOnboardingStep((prev) => {
+          if (availableCourses.length > 0 || prev === 2) {
+            if (isAuthError) {
+              showToast(res?.error || 'Session expired. Please log in again.', 'error');
+              return 1;
+            }
+            console.warn('[Onboarding] Background fetch reported error but courses already present:', res?.error);
+            return prev;
+          } else {
+            showToast(res?.error || 'Failed to fetch enrolled courses.', 'error');
+            return 1; // Fallback to login if we can't load courses initially
+          }
+        });
       }
     } catch (e: any) {
-      showToast(e.message, 'error');
-      setOnboardingStep(1);
+      const isAuthError = e?.errorcode === 'AUTH_SESSION_EXPIRED' || e?.errorcode === 'invalidtoken';
+      setOnboardingStep((prev) => {
+        if (availableCourses.length > 0 || prev === 2) {
+          if (isAuthError) {
+            showToast(e?.message || 'Session expired. Please log in again.', 'error');
+            return 1;
+          }
+          console.warn('[Onboarding] Background fetch exception but courses already present:', e?.message || e);
+          return prev;
+        } else {
+          showToast(e?.message || 'Failed to fetch enrolled courses', 'error');
+          return 1;
+        }
+      });
     } finally {
       setValidatingToken(false);
     }
@@ -2424,7 +2487,7 @@ function CoursesTab({
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
                       </h4>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${c.id}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
+                        <a href={getCourseMoodleUrl(c)} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
                         <button
                           className="secondary-btn btn-xs"
                           onClick={() => onSelectCourse(c.id)}
@@ -3283,7 +3346,7 @@ function CourseDetailView({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>{secName}</span>
-                        <a href={`https://moodle.tau.ac.il/course/view.php?id=${courseId}`} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
+                        <a href={getCourseMoodleUrl(courseId, courseAssignments[0]?.link)} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
                       </div>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                         {isCollapsed ? '▼' : '▲'}

@@ -78,6 +78,7 @@ interface GoogleTask {
   notes?: string;
   status: 'needsAction' | 'completed';
   due?: string;
+  hidden?: boolean;
 }
 
 /**
@@ -238,7 +239,8 @@ export async function syncAssignmentsToGoogleTasks(
   for (const task of existingTasks) {
     const taskId = getMoodleAssignIdFromNotes(task.notes);
     // If it has a tautracker ID but it's not in our active assignments list, it was untracked/deleted
-    if (taskId !== null && !currentAssignIds.has(taskId)) {
+    // We only delete tasks that are NOT completed or hidden, to preserve historical completed tasks.
+    if (taskId !== null && !currentAssignIds.has(taskId) && !task.hidden && task.status !== 'completed') {
       try {
         const deleteResponse = await fetch(
           `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${task.id}`,

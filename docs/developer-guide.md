@@ -46,3 +46,22 @@ Web Extensions have two distinct execution environments:
 To test periodic sync without waiting 5 minutes:
 - You can manually reduce the `SYNC_INTERVAL_MINUTES` constant in `serviceWorker.ts` (e.g., to `0.1` for 6 seconds) during development.
 - *Note: Chrome strictly enforces a minimum 1-minute interval for production builds installed from the Web Store.*
+
+## 4. API Sandbox Testing
+
+For low-level testing of the Moodle API endpoints (like fetching courses, assignments, Zoom links, or manipulating the calendar storage) without involving the UI or the background service worker, a sandbox script is provided.
+
+1. Ensure your real testing credentials are populated in the root `moodle_test_credentials.env` file. Do not commit this file.
+2. Run the sandbox script using the native Node.js `--env-file` flag:
+
+```bash
+node --env-file=moodle_test_credentials.env scripts/test-moodle-live.mjs
+```
+
+This will authenticate directly using the credentials and output the API responses to the console.
+
+Alternatively, you can run the live tests alongside the standard test suite by running:
+
+`ash
+pnpm test -- --live
+`
