@@ -25,92 +25,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     return text.replace(/&[#\w]+;/g, (m) => entities[m] || m);
   }
 
-  private async getArchiveToken(year: number): Promise<{ token: string, userid: number } | null> {
-    if (this.archiveTokens.has(year)) {
-      // Return cached token. (Userid can be re-fetched or cached, but let's just fetch it below anyway)
-    }
-    
-    try {
-      const baseUrl = this.context.baseUrl.replace(/\/$/, '');
-      const urlHost = new URL(baseUrl).origin;
-      const archiveLoginUrl = `${urlHost}/${year}/login/index.php`;
-      
-      let res = await fetch(archiveLoginUrl, { credentials: 'include' });
-      let html = await res.text();
-      
-      const samlMatch = html.match(/<form[^>]+action=["']([^"']+)["']/i);
-      const samlValMatch = html.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
-      
-      if (samlMatch && samlValMatch) {
-        const actionUrl = this.decodeHtmlEntities(samlMatch[1]);
-        const samlResponse = this.decodeHtmlEntities(samlValMatch[1]);
-        const body = new URLSearchParams();
-        body.append('SAMLResponse', samlResponse);
-        
-        res = await fetch(actionUrl, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString()
-        });
-        html = await res.text();
-      }
-      
-      const sessMatch = html.match(/"sesskey":"([^"]+)"/);
-      if (!sessMatch) return null;
-      const sesskey = sessMatch[1];
-      
-      const manageUrl = `${urlHost}/${year}/user/managetoken.php`;
-      res = await fetch(manageUrl, { credentials: 'include' });
-      const manageHtml = await res.text();
-      
-      const allTokens = [...manageHtml.matchAll(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/gi)].map(m => m[1]);
-      
-      for (const tokenId of allTokens) {
-        const resetParams = new URLSearchParams();
-        resetParams.append('tokenid', tokenId);
-        resetParams.append('action', 'resetwstoken');
-        resetParams.append('confirm', '1');
-        resetParams.append('sesskey', sesskey);
-        
-        const resetRes = await fetch(manageUrl, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: resetParams.toString()
-        });
-        
-        const resetHtml = await resetRes.text();
-        const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
-        
-        if (finalTokenMatch) {
-          const candidateToken = finalTokenMatch[1].trim();
-          const testUrl = `${urlHost}/${year}`;
-          try {
-            const siteInfo = await this.apiCall('core_webservice_get_site_info', {}, 'POST', testUrl, candidateToken);
-            if (siteInfo && !siteInfo.errorcode && siteInfo.userid) {
-              this.archiveTokens.set(year, candidateToken);
-              return { token: candidateToken, userid: siteInfo.userid };
-            }
-          } catch (e) { /* ignore and try next token */ }
-        }
-      }
-    } catch (e) {
-      if ((this as any).devMode) console.warn(`[RestStrategy] Failed to get archive token for ${year}:`, e);
-    }
-    return null;
-  }
 
-  private async getYearOverrides(year?: number): Promise<{ baseUrlOverride?: string; tokenOverride?: string }> {
-    if (!year) return {};
-    const archiveData = await this.getArchiveToken(year);
-    if (!archiveData) return {};
-    const urlHost = new URL(this.context.baseUrl).origin;
-    return {
-      baseUrlOverride: `${urlHost}/${year}`,
-      tokenOverride: archiveData.token,
-    };
-  }
 
   public setToken(token: string): void {
     this.context.token = token;
@@ -209,10 +124,12 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       const code = data.errorcode || '';
       const message = String(data.message || '');
       const isAccessOrServiceError =
-        code === 'accessexception' ||
         code === 'servicenotavailable' ||
-        message.includes('חריגת בקרת גישה') ||
-        message.includes('Access to the function');
+        (wsfunction === 'core_webservice_get_site_info' && (
+          code === 'accessexception' || 
+          message.includes('חריגת בקרת גישה') || 
+          message.includes('Access to the function')
+        ));
 
       if (isAccessOrServiceError) {
         RestMoodleStrategy.markUnavailable(60 * 60 * 1000);
@@ -241,9 +158,44 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const currentYear = new Date().getFullYear();
     
     // 1. Root
-    const rootCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    let rootCourses: any[] = [];
+    try {
+      rootCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId });
+    } catch (err: any) {
+      if (err instanceof MoodleApiError && err.errorcode === 'accessexception') {
+        if (this.context.devMode) console.log("[MoodleClient] REST fallback: 'core_enrol_get_users_courses' blocked. Trying 'core_course_get_enrolled_courses_by_timeline_classification'...");
+        try {
+          const timelineRes = await this.apiCall('core_course_get_enrolled_courses_by_timeline_classification', {
+            classification: 'all',
+            limit: 100,
+            offset: 0,
+            sort: 'fullname'
+          });
+          if (timelineRes && Array.isArray(timelineRes.courses)) {
+            rootCourses = timelineRes.courses;
+          }
+        } catch (innerErr) {
+          throw err; // throw original if fallback fails
+        }
+      } else {
+        throw err;
+      }
+    }
+
     if (Array.isArray(rootCourses)) {
-      rootCourses.forEach(c => this.courseYearMap.set(c.id, currentYear));
+      rootCourses.forEach(c => {
+        let year = String(currentYear);
+        if (c.idnumber) {
+          const match = c.idnumber.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$/);
+          if (match) year = match[3];
+        } else if (c.fullname) {
+          const match = c.fullname.match(/\b(20\d{2})\b/);
+          if (match) year = match[1];
+        }
+        c.year = year;
+        c.instanceUrl = `${new URL(this.context.baseUrl).origin}/${year === String(currentYear) ? '' : year}`;
+        this.courseYearMap.set(c.id, parseInt(year, 10));
+      });
       allCourses.push(...rootCourses);
     }
     
@@ -252,17 +204,14 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const urlHost = new URL(this.context.baseUrl).origin;
 
     for (const year of archiveYears) {
-      const archiveData = await this.getArchiveToken(year);
-      if (archiveData) {
-        const archiveUrl = `${urlHost}/${year}`;
-        try {
-          const archiveCourses = await this.apiCall('core_enrol_get_users_courses', { userid: archiveData.userid }, 'POST', archiveUrl, archiveData.token);
-          if (Array.isArray(archiveCourses)) {
-            archiveCourses.forEach(c => this.courseYearMap.set(c.id, year));
-            allCourses.push(...archiveCourses);
-          }
-        } catch (e) {}
-      }
+      const archiveUrl = `${urlHost}/${year}`;
+      try {
+        const archiveCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId }, 'POST', archiveUrl);
+        if (Array.isArray(archiveCourses)) {
+          archiveCourses.forEach(c => this.courseYearMap.set(c.id, year));
+          allCourses.push(...archiveCourses);
+        }
+      } catch (e) {}
     }
     // Deduplicate by course ID (in case the current year archive redirects back to root)
     const uniqueCourses = Array.from(new Map(allCourses.map(c => [c.id, c])).values());
@@ -276,9 +225,18 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const currentYear = new Date().getFullYear();
     if (res && Array.isArray(res.courses)) {
       res.courses.forEach((c: any) => {
-        this.courseYearMap.set(c.id, currentYear);
+        let year = String(currentYear);
+        if (c.shortname) {
+          const match = c.shortname.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$/);
+          if (match) year = match[3];
+        } 
+        if (year === String(currentYear) && c.fullname) {
+          const match = c.fullname.match(/\b(20\d{2})\b/);
+          if (match) year = match[1];
+        }
+        this.courseYearMap.set(c.id, parseInt(year, 10));
         if (Array.isArray(c.assignments)) {
-          c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, currentYear));
+          c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, parseInt(year, 10)));
         }
       });
     }
@@ -287,23 +245,20 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const urlHost = new URL(this.context.baseUrl).origin;
 
     for (const year of archiveYears) {
-      const archiveData = await this.getArchiveToken(year);
-      if (archiveData) {
-        const archiveUrl = `${urlHost}/${year}`;
-        try {
-          const aAssigns = await this.apiCall('mod_assign_get_assignments', {}, 'POST', archiveUrl, archiveData.token);
-          if (aAssigns && Array.isArray(aAssigns.courses)) {
-            aAssigns.courses.forEach((c: any) => {
-              this.courseYearMap.set(c.id, year);
-              if (Array.isArray(c.assignments)) {
-                c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, year));
-              }
-            });
-            if (!res.courses) res.courses = [];
-            res.courses.push(...aAssigns.courses);
-          }
-        } catch (e) {}
-      }
+      const archiveUrl = `${urlHost}/${year}`;
+      try {
+        const aAssigns = await this.apiCall('mod_assign_get_assignments', {}, 'POST', archiveUrl);
+        if (aAssigns && Array.isArray(aAssigns.courses)) {
+          aAssigns.courses.forEach((c: any) => {
+            this.courseYearMap.set(c.id, year);
+            if (Array.isArray(c.assignments)) {
+              c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, year));
+            }
+          });
+          if (!res.courses) res.courses = [];
+          res.courses.push(...aAssigns.courses);
+        }
+      } catch (e) {}
     }
     
     if (res && res.courses) {
@@ -315,23 +270,26 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
   public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
     const year = this.assignYearMap.get(assignId);
-    const overrides = await this.getYearOverrides(year);
-    return this.apiCall('mod_assign_get_submission_status', { assignid: assignId }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
+    return this.apiCall('mod_assign_get_submission_status', { assignid: assignId }, 'POST', baseUrlOverride);
   }
 
   public async getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse> {
     const year = this.courseYearMap.get(courseId);
-    const overrides = await this.getYearOverrides(year);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
     return this.apiCall('gradereport_user_get_grade_items', {
       courseid: courseId,
-      userid: userId,
-    }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
+      userid: userId
+    }, 'POST', baseUrlOverride);
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {
     const year = this.courseYearMap.get(courseId);
-    const overrides = await this.getYearOverrides(year);
-    return this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', overrides.baseUrlOverride, overrides.tokenOverride);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
+    return this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', baseUrlOverride);
   }
 
   public async uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }> {

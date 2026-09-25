@@ -194,8 +194,8 @@ export class MoodleClient {
     } else {
       this.strategies = [
         this.restStrategy,
-        new AjaxMoodleStrategy(context),
         new ScraperMoodleStrategy(context),
+        new AjaxMoodleStrategy(context),
       ];
     }
   }
@@ -238,16 +238,60 @@ export class MoodleClient {
   }
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
-    return executeWithFallback(
+    const courses = await executeWithFallback(
       'getEnrolledCourses',
       this.strategies,
       (s) => s.getEnrolledCourses(userId),
       this.devMode
     );
+    
+    // Fallback: If we only got 1 dummy course (or just root courses), actively augment with Scraper to fetch archive years
+    const scraper = this.strategies.find(s => s.name === 'Scraper');
+    if (scraper) {
+      try {
+        const scraperCourses = await scraper.getEnrolledCourses(userId);
+        const map = new Map(courses.map(c => [c.id, c]));
+        scraperCourses.forEach(c => map.set(c.id, c));
+        courses.splice(0, courses.length, ...Array.from(map.values()));
+      } catch (e: any) {
+        if (this.devMode) console.log('[MoodleClient] Non-fatal: Failed to augment enrolled courses with Scraper:', e.message);
+      }
+    }
+    
+    for (const s of this.strategies) {
+      if (s.setKnownCourses) {
+        s.setKnownCourses(courses);
+      }
+    }
+    return courses;
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    return executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(), this.devMode);
+    const res = await executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(), this.devMode);
+    
+    const scraper = this.strategies.find(s => s.name === 'Scraper');
+    if (scraper) {
+      try {
+        const scraperRes = await scraper.getAssignments();
+        const courseMap = new Map((res.courses || []).map((c: any) => [c.id, c]));
+        
+        (scraperRes.courses || []).forEach((c: any) => {
+          if (courseMap.has(c.id)) {
+            const existing = courseMap.get(c.id)!;
+            const assignMap = new Map((existing.assignments || []).map((a: any) => [a.id, a]));
+            (c.assignments || []).forEach((a: any) => assignMap.set(a.id, a));
+            existing.assignments = Array.from(assignMap.values());
+          } else {
+            courseMap.set(c.id, c);
+          }
+        });
+        res.courses = Array.from(courseMap.values());
+      } catch (e: any) {
+        if (this.devMode) console.log('[MoodleClient] Non-fatal: Failed to augment assignments with Scraper:', e.message);
+      }
+    }
+    
+    return res;
   }
 
   public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {

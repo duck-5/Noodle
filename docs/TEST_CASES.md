@@ -176,6 +176,8 @@ graph LR
 | **TC-EXT-BRW-03** | Gecko Protocol Interception Parity | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-04** | Firefox Total Cookie Protection Logout | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-05** | MV3 Ephemeral Service Worker Lifecycle | Extension (Chromium Specific)| Automated | Cross-Browser |
+| **TC-EXT-DEVTOOLS-01** | Chrome DevTools Service Worker & Options Log Stream | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
+| **TC-EXT-DEVTOOLS-02** | Full Sync Pipeline DevTools Network & UI Validation | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-MOB-01** | Animated Splash & Brand Launch Screen | Mobile Only | Browser Agent | Mobile Specials |
 | **TC-MOB-02** | Offline SQLite Cache Rendering | Mobile Only | Automated & Browser Agent | Mobile Specials |
 | **TC-EDGE-01** | Token Expiration During Active Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
@@ -973,7 +975,23 @@ graph LR
 * **Automated Test Flow**:
   1. Simulate service worker process termination (clear in-memory module scope).
   2. Fire `periodicSync` alarm.
-  3. Assert `performBackgroundSync()` reads token from `chrome.storage.local` and completes successfully.
+#### TC-EXT-DEVTOOLS-01: Chrome DevTools Service Worker & Options Log Stream
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated & Browser Agent`
+* **Description**: Verifies that agents and developers can autonomously load the unpacked extension in Chromium, hook into Chrome DevTools console and network streams across both the Options Page and Background Service Worker, trigger synchronization, and inspect diagnostic logs. Tests token absence handling and token expiry recovery flows.
+* **Automated Runner Command**: `pnpm test:devtools` (or `pnpm --filter extension test:devtools`)
+* **Automated Test Flow**:
+  1. Launch Chromium with `--load-extension=dist` and connect to the Service Worker.
+  2. Attach console wrappers and fetch interceptors to the Service Worker.
+  3. Send `SYNC_NOW` without credentials -> assert Service Worker logs unauthenticated skip and returns `{ success: false, error: 'Not authenticated with Moodle' }`.
+  4. Seed state with test token, open `options.html`, click "Sync Now" button.
+  5. Assert Moodle API request and error responses are captured, scraper fallbacks log diagnostics, and session expiration triggers desktop notification.
+
+#### TC-EXT-DEVTOOLS-02: Full Sync Pipeline DevTools Network & UI Validation
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated & Browser Agent`
+* **Description**: Validates the complete end-to-end sync lifecycle under DevTools inspection. Simulates valid Moodle REST API responses (`core_webservice_get_site_info`, `mod_assign_get_assignments`, `core_course_get_contents`, `gradereport_user_get_grade_items`), triggers sync via the Options UI button, streams all Service Worker execution milestones, and verifies that assignment cards immediately render in the Options dashboard DOM and persist in local storage.
+* **Automated Runner Command**: `pnpm test:devtools`
 
 ---
 

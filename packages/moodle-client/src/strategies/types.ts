@@ -46,4 +46,5 @@ export interface IMoodleStrategy {
   loadNoodleSettings(): Promise<any>;
   getMobileToken?(): Promise<string>;
   setToken?(token: string): void;
+  setKnownCourses?(courses: RawMoodleCourse[]): void;
 }

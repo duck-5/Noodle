@@ -27,7 +27,7 @@ export async function runSync(
   moodleCookies?: string,
   sesskey?: string
 ): Promise<SyncResult> {
-  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: true });
+  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: false });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
@@ -72,20 +72,15 @@ export async function runSync(
     return null;
   };
 
-  onProgress('Fetching Moodle user info and assignments...');
+  onProgress('Fetching Moodle user info...');
   let userId: number;
-  let assignmentsResp: any;
 
   try {
-    const [siteInfo, assignmentsData] = await Promise.all([
-      client.getSiteInfo(),
-      client.getAssignments(),
-    ]);
+    const siteInfo = await client.getSiteInfo();
     userId = siteInfo.userid;
-    assignmentsResp = assignmentsData;
   } catch (err: any) {
     if (err.errorcode || err.name === 'MoodleApiError') {
-      throw err; // Preserve original API error so callers can inspect errorcode
+      throw err;
     }
     throw new Error(`Failed to fetch initial data from Moodle: ${err.message}`);
   }
@@ -137,10 +132,11 @@ export async function runSync(
     return rawNameFromAssign || `Course ${moodleCourseId}`;
   };
 
-  // 2. Process Assignments
-  onProgress('Processing assignments...');
+  // 2. Fetch and Process Assignments
+  onProgress('Fetching assignments...');
   let rawAssignments: RawMoodleAssignment[] = [];
   try {
+    const assignmentsResp = await client.getAssignments();
     for (const courseObj of assignmentsResp.courses) {
       if (trackedCourseIds.includes(courseObj.id)) {
         for (const assign of courseObj.assignments) {

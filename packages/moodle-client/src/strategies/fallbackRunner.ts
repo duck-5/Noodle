@@ -1,6 +1,8 @@
 import { MoodleApiError } from '../moodleApi.js';
 import { IMoodleStrategy, UnsupportedStrategyError } from './types.js';
 
+let tokenRefreshPromise: Promise<string | null> | null = null;
+
 export async function executeWithFallback<T>(
   operationName: string,
   strategies: IMoodleStrategy[],
@@ -44,20 +46,39 @@ export async function executeWithFallback<T>(
         err instanceof MoodleApiError &&
         err.errorcode === 'invalidtoken'
       ) {
-        if (devMode) {
-          console.log(`[MoodleClient] REST token expired/invalid. Attempting to automatically refresh token via scraper...`);
-        }
         let newToken: string | null = null;
-        for (const s of strategies) {
-          if (s.getMobileToken) {
-            try {
-              newToken = await s.getMobileToken();
-              break;
-            } catch (tokenErr) {
-              if (devMode) console.warn(`[MoodleClient] Failed to refresh token via '${s.name}':`, tokenErr);
+
+        if (!tokenRefreshPromise) {
+          if (devMode) {
+            console.log(`[MoodleClient] REST token expired/invalid. Attempting to automatically refresh token via scraper...`);
+          }
+          tokenRefreshPromise = (async () => {
+            for (const s of strategies) {
+              if (s.getMobileToken) {
+                try {
+                  const t = await s.getMobileToken();
+                  return t;
+                } catch (tokenErr) {
+                  if (devMode) console.warn(`[MoodleClient] Failed to refresh token via '${s.name}':`, tokenErr);
+                }
+              }
             }
+            return null;
+          })();
+        } else {
+          if (devMode) {
+            console.log(`[MoodleClient] Waiting for in-progress token refresh...`);
           }
         }
+
+        newToken = await tokenRefreshPromise;
+        
+        // After this await, if this was the last awaiter, we could clear the promise.
+        // It's safer to let the first caller clear it after it completes (in a finally block, but here we can just clear it).
+        // Let's clear it immediately after we got the result, so future errors will trigger a new refresh.
+        // Wait, if multiple awaiters run this line, we should only clear it once.
+        // Setting it to null is idempotent.
+        tokenRefreshPromise = null;
         
         if (newToken) {
           if (devMode) console.log(`[MoodleClient] Successfully generated new token. Retrying ${operationName} with REST...`);

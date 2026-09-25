@@ -10,7 +10,9 @@
     "notifications",
     "identity",
     "webRequest",
-    "cookies"
+    "cookies",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "*://moodle.tau.ac.il/*",
@@ -21,6 +23,15 @@
     "https://www.googleapis.com/*",
     "https://applications.zoom.us/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules_1.json"
+      }
+    ]
+  },
   "background": {
     "service_worker": "src/background/serviceWorker.ts",
     "type": "module"

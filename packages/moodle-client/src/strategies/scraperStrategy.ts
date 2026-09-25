@@ -37,6 +37,26 @@ function stripHtmlTags(html: string): string {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, '').trim());
 }
 
+export function parseMoodleDate(str: string): number {
+  if (!str) return 0;
+  const hebrewMonths: Record<string, string> = {
+    'ינואר': 'January', 'פברואר': 'February', 'מרץ': 'March', 'אפריל': 'April',
+    'מאי': 'May', 'יוני': 'June', 'יולי': 'July', 'אוגוסט': 'August',
+    'ספטמבר': 'September', 'אוקטובר': 'October', 'נובמבר': 'November', 'דצמבר': 'December'
+  };
+  
+  let cleanStr = str.trim();
+  cleanStr = cleanStr.replace(/^יום [א-ת]+,\s*/, '');
+  cleanStr = cleanStr.replace(/^[A-Za-z]+,\s*/, '');
+  
+  for (const [heb, eng] of Object.entries(hebrewMonths)) {
+    cleanStr = cleanStr.replace(heb, eng);
+  }
+  
+  const ts = Math.floor(Date.parse(cleanStr) / 1000);
+  return isNaN(ts) ? 0 : ts;
+}
+
 export class ScraperMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'Scraper';
   private courseYearMap = new Map<number, string>();
@@ -46,6 +66,16 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
   public setToken(token: string): void {
     this.context.token = token;
+  }
+
+  public setKnownCourses(courses: RawMoodleCourse[]): void {
+    for (const c of courses) {
+      if (c.year) {
+        this.courseYearMap.set(c.id, String(c.year));
+      } else {
+        this.courseYearMap.set(c.id, ''); // Root instance if no year is provided
+      }
+    }
   }
 
   private getRootUrl(): string {
@@ -143,7 +173,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     if (!sesskeyMatch) throw new Error('Could not find sesskey for token reset');
     const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
 
-    const allTokens = [...html.matchAll(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/gi)].map(m => m[1]);
+    const trs = html.split(/<tr/i);
+    const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+    const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
+    
+    const allTokens = tokenMatch ? [tokenMatch[1]] : [];
     if (allTokens.length === 0) throw new Error('No tokens found to reset');
 
     for (const tokenId of allTokens) {
@@ -165,23 +199,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       const resetHtml = await response.text();
       const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
       if (finalTokenMatch) {
-        const candidateToken = finalTokenMatch[1].trim();
-        try {
-          const testUrl = `${root}/webservice/rest/server.php`;
-          const testRes = await fetch(testUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `wstoken=${candidateToken}&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json`
-          });
-          const testData = await testRes.json();
-          if (testData && !testData.errorcode && testData.userid) {
-            return candidateToken;
-          }
-        } catch (e) {}
+        return finalTokenMatch[1].trim();
       }
     }
     
-    throw new Error('SSO login successful but none of the tokens worked for the REST API');
+    throw new Error('Failed to find or parse the new token HTML');
   }
 
   public async getSiteInfo(): Promise<MoodleSiteInfo> {
@@ -719,60 +741,69 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
   
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    console.log('[ScraperStrategy] getAssignments called! courseYearMap size:', this.courseYearMap.size);
+    if (this.courseYearMap.size === 0) {
+      try {
+        const siteInfo = await this.getSiteInfo();
+        await this.getEnrolledCourses(siteInfo.userid);
+      } catch (e) {
+        console.warn('[ScraperStrategy] Failed to auto-fetch courses before assignments:', e);
+      }
+    }
+    if (this.context.devMode) console.log('[ScraperStrategy] getAssignments called! courseYearMap size:', this.courseYearMap.size);
     const coursesMap = new Map<number, { id: number; fullname: string; shortname: string; assignments: RawMoodleAssignment[] }>();
 
-    // Fetch assignments from course pages instead of calendar
+    // Fetch assignments from the Grade Report since course pages on TAU Moodle often omit assignment links
     for (const [courseId, year] of this.courseYearMap.entries()) {
       if (courseId <= 1) continue;
       
       const prefix = year ? '/' + year : '';
-      const courseUrl = `${prefix}/course/view.php?id=${courseId}`;
+      const reportUrl = `${prefix}/grade/report/user/index.php?id=${courseId}`;
       
       try {
-        const html = await this.fetchHtml(courseUrl);
+        const html = await this.fetchHtml(reportUrl);
         const assignMatchCount = html.match(/mod\/assign\/view\.php/g)?.length || 0;
-        console.log("[ScraperStrategy] Fetching course assignments for ID:", courseId, "Matches:", assignMatchCount);
+        if (this.context.devMode) console.log("[ScraperStrategy] Fetching course assignments (from grades) for ID:", courseId, "Matches:", assignMatchCount);
         
-        // Find course name to populate map
         let courseName = 'Course ' + courseId;
         const nameMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title>([^<]*)<\/title>/i);
         if (nameMatch) {
           courseName = decodeHtmlEntities(nameMatch[1].replace(/<[^>]+>/g, '').trim());
         }
         
+        let sesskey = '';
+        const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
+        if (sesskeyMatch) {
+          sesskey = sesskeyMatch[1] || sesskeyMatch[2];
+        }
+
         const assignments: RawMoodleAssignment[] = [];
-        const assignMatches = html.matchAll(/<a[^>]+href=["'][^"']*\/mod\/assign\/view\.php\?id=(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi);
-        
-        for (const m of assignMatches) {
-          const cmid = parseInt(m[1], 10);
-          let name = m[2];
-          const instancenameMatch = name.match(/<span[^>]*class=["'][^"]*instancename[^"]*["'][^>]*>([\s\S]*?)<\/span>/i);
-          if (instancenameMatch) {
-            name = instancenameMatch[1];
-          }
-          // Remove inner spans like <span class="accesshide">
-          name = name.replace(/<span[^>]*class=["'][^"]*accesshide[^"]*["'][^>]*>[\s\S]*?<\/span>/gi, '');
+        const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        let rowMatch: RegExpExecArray | null;
+
+        while ((rowMatch = rowRegex.exec(html)) !== null) {
+          const rowHtml = rowMatch[1];
+          const assignLinkMatch = rowHtml.match(/\/mod\/assign\/view\.php\?id=(\d+)[^>]*>([^<]+)<\/a>/i);
+          if (!assignLinkMatch) continue;
+
+          const cmid = parseInt(assignLinkMatch[1], 10);
+          let name = assignLinkMatch[2];
           name = decodeHtmlEntities(name.replace(/<[^>]+>/g, '').trim());
           
           if (year) {
             this.assignYearMap.set(cmid, year);
           }
           
-          // Try to extract due date from the assignment snippet if it exists on the course page
-          let duedate = 0;
-          
           assignments.push({
             id: cmid, // Using cmid as id for scraper compatibility
             cmid,
             course: courseId,
             name,
-            duedate,
+            duedate: 0,
             cutoffdate: 0,
             allowsubmissionsfromdate: 0,
           });
         }
-        
+
         coursesMap.set(courseId, {
           id: courseId,
           fullname: courseName,
@@ -782,7 +813,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
         
       } catch (err: any) {
         if (this.context.devMode) {
-          console.warn(`[ScraperStrategy] Failed fetching course page for course ${courseId}:`, err?.message || err);
+          console.warn(`[ScraperStrategy] Failed fetching grade report for course ${courseId}:`, err?.message || err);
         }
       }
     }
@@ -831,6 +862,14 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
       html.includes('Graded') ||
       html.includes('submissiongraded');
 
+    let extensionDueDate = 0;
+    const dueDateMatches = html.matchAll(/<th[^>]*>(?:Due date|תאריך הגשה|Cut-off date|תאריך סגירה|Extension|הארכת זמן)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi);
+    for (const match of dueDateMatches) {
+      const dateStr = stripHtmlTags(match[1]).trim();
+      const ts = parseMoodleDate(dateStr);
+      if (ts > extensionDueDate) extensionDueDate = ts;
+    }
+
     // Extract submitted files if present
     const submittedFiles: RawSubmissionPluginFile[] = [];
     const fileMatches = html.matchAll(/<a[^>]+href="([^"]*\/pluginfile\.php\/[^"]+)"[^>]*>([^<]+)<\/a>/gi);
@@ -849,6 +888,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
     return {
       lastattempt: {
         gradingstatus: isGraded ? 'graded' : 'notgraded',
+        extensionduedate: extensionDueDate,
         submission: {
           status: isSubmitted ? 'submitted' : 'new',
           plugins: [

@@ -9,7 +9,8 @@
     "test:moodle-client": "pnpm --filter @tautracker/moodle-client test",
     "test:parity": "node scripts/test-build-parity.mjs",
     "test:e2e": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e",
-    "test:e2e:headed": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e:headed"
+    "test:e2e:headed": "pnpm --filter extension run build:chrome && pnpm --filter extension test:e2e:headed",
+    "test:devtools": "pnpm --filter extension run build:chrome && pnpm --filter extension test:devtools"
   },
   "keywords": [],
   "author": "",

@@ -271,7 +271,7 @@ async function performSettingsSync() {
     if (value !== undefined) {
       const ts = timestamps[key] || 0;
       // Only send default values if they were explicitly set (ts > 0)
-      if (ts > 0 || (Array.isArray(value) ? value.length > 0 : (typeof value === 'object' ? Object.keys(value).length > 0 : true))) {
+      if (ts > 0 || (Array.isArray(value) ? value.length > 0 : (value !== null && typeof value === 'object' ? Object.keys(value).length > 0 : true))) {
         localShared[key] = {
           value,
           updatedAt: ts,
@@ -395,7 +395,7 @@ async function performBackgroundSync() {
           console.log('Automatic re-login failed or no credentials. Prompting user to re-login.');
           browser.notifications.create('moodle_token_expired', {
             type: 'basic',
-            iconUrl: 'icon-128.png',
+            iconUrl: browser.runtime.getURL('icon-128.png'),
             title: 'Moodle Session Expired',
             message: 'Your Moodle session has expired. Please open Noodle to log in again.',
           });
@@ -551,7 +551,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
 
       browser.notifications.create(`new_assign_${assign.id}`, {
         type: 'basic',
-        iconUrl: 'icon-128.png', // Fallback icon path in public
+        iconUrl: browser.runtime.getURL('icon-128.png'), // Fallback icon path in public
         title: 'New Moodle Assignment',
         message: `${assign.name}\n${assign.courseName}\n${deadlineText}`,
       });
@@ -570,7 +570,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
       if (hoursLeft <= 24 && hoursLeft > 23 && !wasNotified24h) {
         browser.notifications.create(`upcoming_24h_${assign.id}`, {
           type: 'basic',
-          iconUrl: 'icon-128.png',
+          iconUrl: browser.runtime.getURL('icon-128.png'),
           title: 'Assignment Due Tomorrow',
           message: `${assign.name}\n${assign.courseName}\nDue in ${Math.round(hoursLeft)} hours`,
         });
@@ -581,7 +581,7 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
       if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
         browser.notifications.create(`upcoming_1h_${assign.id}`, {
           type: 'basic',
-          iconUrl: 'icon-128.png',
+          iconUrl: browser.runtime.getURL('icon-128.png'),
           title: 'Assignment Due In 1 Hour!',
           message: `${assign.name}\n${assign.courseName}\nDue soon!`,
         });
@@ -747,14 +747,19 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
   const sesskey = sesskeyMatch[1];
   await setStoredSesskey(sesskey);
   
-  // 7. Try to scrape managetoken.php and reset the token for Moodle Mobile App
+    // 7. Try to scrape managetoken.php and reset the token for Moodle Mobile App
   let scrapedToken: string | null = null;
   try {
     const manageUrl = `${baseUrl}/user/managetoken.php`;
     const manageRes = await fetch(manageUrl, { credentials: 'include' });
     const manageHtml = await manageRes.text();
     
-    const tokenMatch = manageHtml.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
+    // Split by tr to ensure we only get the token for the mobile app
+    const trs = manageHtml.split(/<tr/i);
+    const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+    
+    const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
+    
     if (tokenMatch) {
       const tokenId = tokenMatch[1];
       
