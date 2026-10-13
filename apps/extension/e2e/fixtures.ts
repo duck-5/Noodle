@@ -25,6 +25,8 @@ export const test = base.extend<{
 
     const context = await chromium.launchPersistentContext('', {
       headless: false, // In Chromium, extensions only load in headed/non-legacy headless mode
+      deviceScaleFactor: 2,
+      viewport: { width: 1440, height: 900 },
       args: [
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,

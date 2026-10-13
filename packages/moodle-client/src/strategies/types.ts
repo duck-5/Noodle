@@ -27,6 +27,7 @@ export interface StrategyContext {
   sesskey?: string;
   baseUrl: string;
   devMode?: boolean;
+  enableScraping?: boolean;
 }
 
 export interface IMoodleStrategy {

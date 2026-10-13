@@ -178,6 +178,7 @@ graph LR
 | **TC-EXT-BRW-05** | MV3 Ephemeral Service Worker Lifecycle | Extension (Chromium Specific)| Automated | Cross-Browser |
 | **TC-EXT-DEVTOOLS-01** | Chrome DevTools Service Worker & Options Log Stream | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-EXT-DEVTOOLS-02** | Full Sync Pipeline DevTools Network & UI Validation | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
+| **TC-EXT-PROMO-01** | High-Resolution Webstore Promotional Asset Suite Generation | Extension (Chrome & Webstore) | Automated | Extension Branding & Assets |
 | **TC-MOB-01** | Animated Splash & Brand Launch Screen | Mobile Only | Browser Agent | Mobile Specials |
 | **TC-MOB-02** | Offline SQLite Cache Rendering | Mobile Only | Automated & Browser Agent | Mobile Specials |
 | **TC-EDGE-01** | Token Expiration During Active Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
@@ -198,6 +199,7 @@ graph LR
 | **TC-FALLBACK-13** | Course Parsing from Grade Overview Index PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-18** | Scraper Strategy Gated by enableScraping Configuration | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 
 ---
 
@@ -874,10 +876,10 @@ graph LR
 #### TC-BG-02: New Assignment Discovery Notification
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: During sync, any assignment ID not present in the previous sync cache triggers a notification alert ("New Moodle Assignment: [Assignment Name]").
+* **Description**: During sync, any new assignment ID not present in the previous sync cache triggers a notification alert ("New Moodle Assignment: [Assignment Name]") only if it has an active deadline and is unsubmitted. Assignments with no deadline or already submitted do not produce notifications.
 * **Automated Test Flow**:
-  1. Previous cache: IDs `[1, 2]`. New sync: IDs `[1, 2, 3]`.
-  2. Verify notification helper called for ID `3`.
+  1. Previous cache: IDs `[1, 2]`. New sync: ID `3` (with active deadline, unsubmitted), ID `4` (no deadline), ID `5` (submitted).
+  2. Verify notification helper called only for ID `3`.
 
 #### TC-BG-03: 24-Hour and 1-Hour Deadline Alerts
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
@@ -992,6 +994,12 @@ graph LR
 * **Modality**: `Automated & Browser Agent`
 * **Description**: Validates the complete end-to-end sync lifecycle under DevTools inspection. Simulates valid Moodle REST API responses (`core_webservice_get_site_info`, `mod_assign_get_assignments`, `core_course_get_contents`, `gradereport_user_get_grade_items`), triggers sync via the Options UI button, streams all Service Worker execution milestones, and verifies that assignment cards immediately render in the Options dashboard DOM and persist in local storage.
 * **Automated Runner Command**: `pnpm test:devtools`
+
+#### TC-EXT-PROMO-01: High-Resolution Webstore Promotional Asset Suite Generation
+* **Platform Target**: `Extension (Chrome & Webstore)`
+* **Modality**: `Automated`
+* **Description**: Renders and exports 7 pixel-perfect, high-DPI marketing assets for the Chrome Web Store at Retina 2× resolution (2560×1600 slides, 2800×1120 marquee banner, and 880×560 small promo tile). Validates that all fonts load cleanly via `document.fonts.ready`, UI elements use student-first branding ("Smart Moodle Companion") with no official university affiliation claims, BiDi text alignment displays properly for bilingual strings, and all critical product features (deadlines, grades, Zoom hub, course file downloads, dark theme, toolbar popup) are showcased.
+* **Automated Runner Command**: `node apps/extension/scripts/generate-promo-assets.mjs`
 
 ---
 
@@ -1159,9 +1167,52 @@ graph LR
 * **Modality**: `Automated & Sandbox`
 * **Description**: Verifies that when `RestMoodleStrategy` fails with an `invalidtoken` or `accessexception` Moodle error code, `fallbackRunner.ts` automatically attempts silent token regeneration via `ScraperMoodleStrategy.getMobileToken()`. It issues an authenticated POST to `/user/managetoken.php` with `action=resetwstoken`, parses the new token from `#copytoclipboardtoken`, synchronizes it across all strategies via `setToken()`, resets the REST cooldown, and retries the REST call without requiring the user to re-enter credentials or log in again.
 
+#### TC-FALLBACK-18: Scraper Strategy Gated by enableScraping Configuration
+* **Platform Target**: All (Mobile + Chrome + Firefox)
+* **Modality**: Automated & Sandbox
+* **Test Runner**: pnpm --filter @tautracker/moodle-client test fallbackStrategies.test.ts
+* **Description**: Asserts that MoodleClient strictly excludes ScraperMoodleStrategy from its active strategy array by default and whenever enableScraping: false is configured. Validates that ScraperMoodleStrategy is only appended to the fallback list when enableScraping: true is explicitly provided, ensuring pure API operation and zero HTML scraping requests when the feature is turned off.
+
 #### TC-FALLBACK-17: Direct Course-Page Assignment Discovery Across Multi-Year Archives
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated & Sandbox`
 * **Description**: Verifies that `ScraperMoodleStrategy.getAssignments()` discovers assignments directly by scraping individual course pages (`/course/view.php?id=X`) across all active and archive years registered in `courseYearMap`. Asserts that anchor tags pointing to `/mod/assign/view.php?id=(\d+)` and their assignment titles are correctly extracted, bypassing the Moodle Calendar and successfully discovering past or unlisted course assignments.
+
+#### TC-EXT-DEVTOOLS-01: Chrome DevTools Service Worker & Options Log Stream
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated & Browser Agent`
+* **Test Runner**: `pnpm test:devtools` (`apps/extension/e2e/sync-devtools.spec.ts`)
+* **Description**: Launches headless Chromium with the unpacked extension loaded, inspects the ephemeral Service Worker console logs and network traffic via Playwright, triggers a sync with an expired/invalid token, and verifies that the error pipeline, scraper fallbacks, and UI toast messages are properly streamed and surfaced to developers and autonomous agents.
+
+#### TC-EXT-DEVTOOLS-02: Full Sync Pipeline DevTools Network & UI Validation
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated & Browser Agent`
+* **Test Runner**: `pnpm test:devtools` (`apps/extension/e2e/sync-devtools.spec.ts`)
+* **Description**: Executes a complete successful sync lifecycle against a fully mocked Moodle environment comprising 2 tracked courses (`0368-1001-01 מבוא למדעי המחשב` and `0368-2158-01 מבני נתונים`). Intercepts and validates REST API functions (`core_webservice_get_site_info`, `core_enrol_get_users_courses`, `mod_assign_get_assignments`, `core_course_get_contents`, `gradereport_user_get_grade_items`, `mod_assign_get_submission_status`, `mod_lti_get_tool_launch_data`) and Zoom LTI endpoints (`applications.zoom.us/lti/rich` and `/meeting/upComing`). Captures high-resolution visual screenshots of the Main Dashboard (`main-dashboard.png`), Courses Tab (`courses-tab-view.png`), Course 9999 Detail (`course-9999-detail.png`), and Course 9998 Detail (`course-9998-detail.png`) showcasing urgent assignment banners, submitted grades, topic accordions with downloadable files, and live Zoom banners (`● פעיל כעת`).
+
+#### TC-EXT-PROMO-01: Automated High-Res Promotional Asset & Bilingual Popup Generation
+* **Platform Target**: `Extension (Chrome & Firefox Store Assets)`
+* **Modality**: `Automated & Visual Verification`
+* **Test Runner**: `node apps/extension/scripts/generate-promo-assets.mjs`
+* **Description**: Generates pixel-perfect, Retina (2× DPI) promotional graphics tailored for Chrome Web Store and project showcases:
+  - 5 Web Store Carousel slides (1280×800): Hero Overview, Deadlines & Grades, Zoom Lecture Hub, Organized Course Files, and Productivity / Midnight Dark Mode.
+  - 1 Marquee Banner (1400×560) with 3D tilted dashboard mockup and mascot speech bubble.
+  - 1 Small Promo Tile (440×280) with circular framed mascot avatar and value bullets.
+  - High-resolution, zero-whitespace Toolbar Popup container captures in both English (`toolbar-popup.png`) and Hebrew (`toolbar-popup-he.png`), verifying grammatically sound due countdowns ("1 day" / "4 days" vs "יום" / "4 ימים") and proper LTR/RTL text alignment.
+
+#### TC-EXT-LIVE-01: Real Credentials Live E2E Authentication & Scraping Toggle Verification
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated & Real Network (Live Credentials)`
+* **Test Runner**: `pnpm --filter extension exec playwright test e2e/live-extension.spec.ts`
+* **Description**: End-to-end live testing with real student credentials (`moodle_test_credentials.env`) against Tel Aviv University's live SSO server and Moodle platform:
+  - Authenticates through TAU SSO (`nidp.tau.ac.il`), following SAML challenge responses.
+  - Successfully navigates onboarding and course selection, persisting tracked courses.
+  - Verifies that the Fallback Web Scraping toggle (`#scraping-enabled-toggle`) in the Settings page defaults to **OFF** (`scrapingEnabled: false`).
+  - Executes rapid pure API sync with Scraping OFF, verifying fast completion without HTML scraping overhead.
+  - Toggles Web Scraping to ON via UI switch, verifying instant React state update and `chrome.storage.sync` persistence (`scrapingEnabled: true`).
+  - Executes synchronization with Scraping ON, testing fallback scraper activation.
+  - Toggles Scraping back to default OFF state and captures visual validation screenshots (`live-settings-scraping-off.png`, `live-settings-scraping-on.png`, `live-dashboard-after-sync.png`).
+
+
 
 

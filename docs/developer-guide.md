@@ -1,6 +1,6 @@
 # Developer Guide: Testing & Inspecting the Extension
 
-This guide covers how to spin up a local development server for the extension and how to access its background service worker logs.
+This guide covers how to spin up a local development server for the extension, how to access its background service worker logs, and how autonomous agents can run E2E browser tests and capture screenshots.
 
 ## 1. Local Development Server (Hot-Reloading)
 
@@ -62,6 +62,24 @@ This will authenticate directly using the credentials and output the API respons
 
 Alternatively, you can run the live tests alongside the standard test suite by running:
 
-`ash
+```bash
 pnpm test -- --live
-`
+```
+
+---
+
+## 5. Autonomous Agent Browser Execution, DevTools Logs & Screenshots
+
+For automated testing by AI coding agents or CI workflows without requiring manual human browser interaction:
+
+```bash
+# Run headless Chrome with extension loaded, DevTools log interception, and screenshot capture
+pnpm test:devtools
+
+# Run with visible browser window for manual/live inspection
+pnpm test:e2e:headed
+```
+
+- **Logs Captured**: Intercepts UI console logs, unhandled page errors, Service Worker lifecycle events, and Moodle network fetch traffic.
+- **Screenshots Saved**: Visual captures of the Options Dashboard (`options-dashboard.png`) and Toolbar Popup (`toolbar-popup.png`) are saved directly to `apps/extension/screenshots/`.
+- For comprehensive agent implementation patterns, see [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md).

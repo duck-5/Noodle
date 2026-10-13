@@ -614,7 +614,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
 
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
     const currentYear = new Date().getFullYear();
-    const candidatePastYears = [String(currentYear - 1), String(currentYear - 2)];
+    const candidatePastYears = [String(currentYear - 1)];
 
     interface FetchTarget {
       url: string;
@@ -840,7 +840,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
       } catch (err) {
         const currentYear = new Date().getFullYear();
         let found = false;
-        for (const candidateYear of [currentYear - 1, currentYear - 2]) {
+        for (const candidateYear of [currentYear - 1]) {
           try {
             html = await this.fetchHtml(`/${candidateYear}/mod/assign/view.php?id=${targetId}`);
             this.assignYearMap.set(targetId, String(candidateYear));
@@ -853,11 +853,12 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
     }
 
     const isSubmitted =
-      html.includes('הוגש להערכה') ||
+      html.includes('הוגש למתן ציון') ||
       html.includes('Submitted for grading') ||
       html.includes('submissionstatussubmitted');
 
     const isGraded =
+      html.includes('ניתן ציון') ||
       html.includes('הוערך') ||
       html.includes('Graded') ||
       html.includes('submissiongraded');
@@ -885,7 +886,37 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
       }
     }
 
+
+    const _scraperIntroAttachments = [];
+    
+    const introBlockMatch = html.match(/<div[^>]*id="intro"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|<div)/i);
+    if (introBlockMatch) {
+      const introHtml = introBlockMatch[1];
+      const introFileMatches = introHtml.matchAll(/<a[^>]+href="([^"]*pluginfile\.php[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi);
+      for (const fm of introFileMatches) {
+        const fileurl = decodeHtmlEntities(fm[1]);
+        const filename = decodeHtmlEntities(fm[2].replace(/<[^>]+>/g, '').trim());
+        if (fileurl && filename && !fileurl.includes('/user/icon/')) {
+          _scraperIntroAttachments.push({ filename, fileurl });
+        }
+      }
+    }
+
+    const attachmentsBlockMatch = html.match(/<div[^>]*class="[^"]*attachments[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|<div|<table)/i);
+    if (attachmentsBlockMatch) {
+      const attachmentsHtml = attachmentsBlockMatch[1];
+      const attachmentsFileMatches = attachmentsHtml.matchAll(/<a[^>]+href="([^"]*pluginfile\.php[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi);
+      for (const fm of attachmentsFileMatches) {
+        const fileurl = decodeHtmlEntities(fm[1]);
+        const filename = decodeHtmlEntities(fm[2].replace(/<[^>]+>/g, '').trim());
+        if (fileurl && filename && !fileurl.includes('/user/icon/')) {
+          _scraperIntroAttachments.push({ filename, fileurl });
+        }
+      }
+    }
+
     return {
+      _scraperIntroAttachments,
       lastattempt: {
         gradingstatus: isGraded ? 'graded' : 'notgraded',
         extensionduedate: extensionDueDate,

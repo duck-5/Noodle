@@ -28,6 +28,11 @@ Every test case in Noodle belongs to one or both modalities:
   - **Mobile Web Preview**: `pnpm --filter mobile run web` (at `http://localhost:8081`)
 - **Rule**: For UI/UX changes, run the dev server and verify visual components, dark/light themes, tooltips, RTL/LTR layout, and empty states.
 
+### C. Autonomous Extension DevTools Log Interception & Visual Screenshots
+- **Autonomous Feedback Runner**: `pnpm test:devtools` (launches headless Chromium with the unpacked extension loaded, streams console logs from both Options UI and Service Worker, intercepts fetch traffic, and saves UI screenshots to `apps/extension/screenshots/`).
+- **Visual Inspection**: Agents can take full page and popup pictures via Playwright (`page.screenshot()`) and review them directly with `view_file` to eliminate the need for manual user testing.
+- **Reference**: See [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md).
+
 ---
 
 ## 2. Test Tiers & Methodology

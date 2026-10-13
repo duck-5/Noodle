@@ -185,3 +185,24 @@ The `IMoodleStrategy` interface defines common operations across REST, AJAX, and
 * `setToken?(token: string): void`
   * Implemented by all strategies (`RestMoodleStrategy`, `AjaxMoodleStrategy`, `ScraperMoodleStrategy`). Updates the internal `context.token` reference so that subsequent calls immediately use the refreshed token without rebuilding the strategy instances.
 
+---
+
+## 6. Optional Web Scraping Strategy Configuration
+
+To optimize sync performance and ensure compliance with pure API standards, all web scraping functionality is optional and **default OFF**:
+
+### Client Core Options
+* **`MoodleClientOptions.enableScraping`** (`boolean`, default: `false`):
+  * When `false`: `MoodleClient` initializes only `RestMoodleStrategy` and `AjaxMoodleStrategy`. HTML scraper fallback execution is completely bypassed.
+  * When `true`: `ScraperMoodleStrategy` is appended to the fallback chain.
+* **`RunSyncOptions.enableScraping`** (`boolean`, default: `false`):
+  * Passed to `runSync(token, trackedCourseIds, onProgress, baseUrl, creds, moodleCookies, sesskey, onPartialSync, options)`.
+  * When `false`, Zoom LTI module scraping and headless cookie-jar authentication are skipped, executing only standard Moodle API operations.
+
+### Extension Storage & UI
+* **`ExtensionSettings.scrapingEnabled`** (`boolean`, default: `false`):
+  * Persisted in `chrome.storage.sync.get('settings')`.
+  * User-configurable via the `#scraping-enabled-toggle` switch on the extension Settings page.
+  * Forwarded to background service worker synchronization and Moodle client instances.
+
+

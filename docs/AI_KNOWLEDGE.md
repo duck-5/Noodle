@@ -127,3 +127,20 @@ When creating new features, keep the following roadmap milestones in mind:
 
 *   **Panopto Scraping:** Headless Playwright scraping is deferred in the client-side model (cannot run on iOS/Android or extension worker without DOM access). Do not attempt to implement Playwright automation.
 *   **Central JWT & Server DB:** Completely retired. All authentication is client-to-Moodle; all databases are client-local.
+
+---
+
+## 6. Autonomous Browser Execution, Log Streaming & Visual Verification
+
+When testing extension changes or verifying new features, agents must NOT ask the human user to open Chrome, test the extension, or inspect logs manually. Instead, agents can autonomously execute and inspect the extension:
+
+1. **Launch Chromium with Extension**: Run `pnpm test:devtools` (or use `chromium.launchPersistentContext` with `--load-extension=dist` and `--headless=new`).
+2. **Stream Console Logs & Network Traffic**:
+   - UI pages: `optionsPage.on('console')`, `optionsPage.on('pageerror')`.
+   - Background service worker: Wrap `console.log/error/warn` and `globalThis.fetch` via `background.evaluate()`.
+3. **Take Screenshots for Visual Feedback**:
+   - Save full dashboard pictures: `await optionsPage.screenshot({ path: 'apps/extension/screenshots/options-dashboard.png', fullPage: true })`.
+   - Save toolbar popup pictures: `await popupPage.screenshot({ path: 'apps/extension/screenshots/toolbar-popup.png' })`.
+   - Inspect pictures immediately using `view_file`.
+4. **Reference Guide**: Read [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md) for complete implementation patterns.
+

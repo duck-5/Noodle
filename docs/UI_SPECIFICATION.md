@@ -168,6 +168,14 @@ Presented immediately after successful authentication or when manually triggered
 *   **Account Card**: Displays User ID, Full Name, and Moodle connection state.
 *   **Disconnect Button**: Destructive button labeled "Disconnect from Moodle" that wipes all tokens, logs, local databases, and cookie records.
 
+### E. Web Scraping Configuration (Fallback)
+*   **Moodle Web Scraping (Fallback)** (`#scraping-enabled-toggle`):
+    - Switch toggle to enable or disable HTML web scraping fallback.
+    - Default state: **OFF** (`scrapingEnabled: false`).
+    - Bilingual Description: "Scrape Moodle web pages for archived assignments, Zoom links, and files unavailable via the standard API. Default: Off (may slow down sync)." / "סריקת עמודי Moodle לאיתור מטלות בארכיון, קישורי Zoom וקבצים שאינם זמינים ב-API הרגיל. ברירת מחדל: כבוי (עשוי להאט את הסנכרון)."
+    - When disabled, synchronization strictly utilizes pure Moodle REST and AJAX endpoints for high-speed performance and minimal resource consumption.
+
+
 ---
 
 ## 7. About Tab

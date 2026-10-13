@@ -52,15 +52,19 @@ export function getDueTextAndClass(
 
   if (diffDays >= 1) {
     if (shortFormat) {
-      deadlineText = lang === 'he' ? `${diffDays}ימים` : `${diffDays}d`;
+      deadlineText = lang === 'he'
+        ? (diffDays === 1 ? 'יום 1' : `${diffDays} ימים`)
+        : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
     } else {
       deadlineText = lang === 'he'
-        ? `${diffDays === 1 ? 'יום' : `${diffDays} ימים`}`
+        ? `${diffDays === 1 ? 'יום 1' : `${diffDays} ימים`}`
         : `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
     }
   } else if (diffHours >= 1) {
     if (shortFormat) {
-      deadlineText = lang === 'he' ? `${diffHours}ש'` : `${diffHours}h`;
+      deadlineText = lang === 'he'
+        ? (diffHours === 1 ? 'שעה' : `${diffHours} שעות`)
+        : `${diffHours} ${diffHours === 1 ? 'hr' : 'hrs'}`;
     } else {
       deadlineText = lang === 'he'
         ? `${diffHours === 1 ? 'שעה' : `${diffHours} שעות`}`
@@ -69,7 +73,9 @@ export function getDueTextAndClass(
   } else {
     const mins = diffMins > 0 ? diffMins : 1;
     if (shortFormat) {
-      deadlineText = lang === 'he' ? `${mins}דק'` : `${mins}m`;
+      deadlineText = lang === 'he'
+        ? (mins === 1 ? 'דקה' : `${mins} דקות`)
+        : `${mins} min`;
     } else {
       deadlineText = lang === 'he'
         ? `${mins === 1 ? 'דקה' : `${mins} דקות`}`

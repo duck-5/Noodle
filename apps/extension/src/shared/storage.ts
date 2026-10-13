@@ -17,6 +17,7 @@ export interface ExtensionSettings {
   hiddenAssignments?: number[];  // Array of assignment ids that are hidden
   completedAssignments?: number[]; // Array of assignment ids that are marked as completed
   uncompletedAssignments?: number[]; // Array of assignment ids marked as To Do even if submitted
+  scrapingEnabled?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   hiddenAssignments: [],
   completedAssignments: [],
   uncompletedAssignments: [],
+  scrapingEnabled: false,
 };
 
 export async function getStoredToken(): Promise<string | null> {

@@ -878,5 +878,24 @@ describe('Fallback Strategy Architecture', () => {
       global.fetch = originalFetch;
     }
   });
-});
-
+
+  it('TC-FALLBACK-18: should exclude Scraper strategy by default and include only when enableScraping is true', () => {
+    const defaultClient = new MoodleClient('TEST_TOKEN', 'https://moodle.tau.ac.il');
+    const defaultStrategies = (defaultClient as any).strategies.map((s: any) => s.name);
+    expect(defaultStrategies).toEqual(['REST', 'AJAX']);
+    expect(defaultStrategies).not.toContain('Scraper');
+
+    const scrapingOffClient = new MoodleClient('TEST_TOKEN', 'https://moodle.tau.ac.il', {
+      enableScraping: false,
+    });
+    const scrapingOffStrategies = (scrapingOffClient as any).strategies.map((s: any) => s.name);
+    expect(scrapingOffStrategies).toEqual(['REST', 'AJAX']);
+    expect(scrapingOffStrategies).not.toContain('Scraper');
+
+    const scrapingOnClient = new MoodleClient('TEST_TOKEN', 'https://moodle.tau.ac.il', {
+      enableScraping: true,
+    });
+    const scrapingOnStrategies = (scrapingOnClient as any).strategies.map((s: any) => s.name);
+    expect(scrapingOnStrategies).toEqual(['REST', 'AJAX', 'Scraper']);
+  });
+});

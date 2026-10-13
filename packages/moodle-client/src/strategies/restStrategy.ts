@@ -48,6 +48,9 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public isOperationSupported(_operationName: string): boolean {
+    if (this.context.enableScraping === false) {
+      return true;
+    }
     return !RestMoodleStrategy.isCoolingDown();
   }
 
@@ -66,7 +69,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     baseUrlOverride?: string,
     tokenOverride?: string
   ): Promise<any> {
-    if (RestMoodleStrategy.isCoolingDown()) {
+    if (RestMoodleStrategy.isCoolingDown() && this.context.enableScraping !== false) {
       const remainingMins = Math.ceil(RestMoodleStrategy.getCooldownRemainingMs() / 60000);
       throw new UnsupportedStrategyError(
         'REST',
@@ -131,7 +134,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
           message.includes('Access to the function')
         ));
 
-      if (isAccessOrServiceError) {
+      if (isAccessOrServiceError && this.context.enableScraping !== false) {
         RestMoodleStrategy.markUnavailable(60 * 60 * 1000);
       }
 
@@ -241,7 +244,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       });
     }
 
-    const archiveYears = [currentYear, currentYear - 1]; 
+    const archiveYears = [currentYear - 1]; 
     const urlHost = new URL(this.context.baseUrl).origin;
 
     for (const year of archiveYears) {

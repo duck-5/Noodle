@@ -56,9 +56,23 @@ export async function triggerForegroundSync(): Promise<any> {
   const trackedIds = await getTrackedCourseIdsFromDb();
   const creds = await getStoredCredentials();
 
-  const result = await runSync(token, trackedIds, (msg) => {
-    console.log(`[Mobile Foreground Sync] ${msg}`);
-  }, undefined, creds || undefined);
+  const result = await runSync(
+    token, 
+    trackedIds, 
+    (msg) => { console.log(`[Mobile Foreground Sync] ${msg}`); }, 
+    undefined, 
+    creds || undefined, 
+    undefined, 
+    undefined, 
+    (partial) => {
+      saveSyncResultToDatabase({
+        assignments: partial.assignments || [],
+        meetings: partial.meetings || [],
+        files: partial.files || [],
+        errors: partial.errors || []
+      });
+    }
+  );
 
   saveSyncResultToDatabase(result);
   await scheduleDeadlineNotifications(result.assignments);
@@ -89,9 +103,23 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
 
     const creds = await getStoredCredentials();
 
-    const result = await runSync(token, trackedIds, (msg) => {
-      console.log(`[Mobile Background Sync] ${msg}`);
-    }, undefined, creds || undefined);
+    const result = await runSync(
+      token, 
+      trackedIds, 
+      (msg) => { console.log(`[Mobile Background Sync] ${msg}`); }, 
+      undefined, 
+      creds || undefined, 
+      undefined, 
+      undefined, 
+      (partial) => {
+        saveSyncResultToDatabase({
+          assignments: partial.assignments || [],
+          meetings: partial.meetings || [],
+          files: partial.files || [],
+          errors: partial.errors || []
+        });
+      }
+    );
 
     saveSyncResultToDatabase(result);
     await scheduleDeadlineNotifications(result.assignments);

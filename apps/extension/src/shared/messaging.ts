@@ -6,8 +6,19 @@ export async function sendMessageToBackground(message: any): Promise<any> {
     const response = await browser.runtime.sendMessage(message);
     return response;
   } catch (error: any) {
-    // The service worker may have been terminated mid-flight (MV3 lifecycle).
-    // Treat this as a null response rather than a hard error — callers handle null.
+    // The service worker may have been terminated (MV3 lifecycle). The first
+    // sendMessage attempt triggers Chrome to restart the SW, but the message
+    // itself is lost. Wait briefly for the SW to spin up, then retry once.
+    if (error.message?.includes('Receiving end does not exist')) {
+      console.warn('[TauTracker] SW not ready, retrying in 500ms…');
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        return await browser.runtime.sendMessage(message);
+      } catch (retryError: any) {
+        console.warn('[TauTracker] SW retry also failed:', retryError.message);
+        return null;
+      }
+    }
     console.warn('[TauTracker] SW message port closed:', error.message);
     return null;
   }

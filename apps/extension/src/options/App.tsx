@@ -284,8 +284,14 @@ export default function App() {
       if (msg.type === 'SYNC_START') {
         setIsSyncing(true);
       }
+      if (msg.type === 'SYNC_PARTIAL') {
+        getCachedSyncResult().then(cached => {
+          if (cached) setSyncResult(cached);
+        });
+      }
       if (msg.type === 'SYNC_COMPLETE') {
         setIsSyncing(false);
+        setLoading(false);
         // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
         Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
           setTrackedCourseIdsState(ids);
@@ -369,7 +375,7 @@ export default function App() {
       const cached = await getCachedSyncResult();
       setSyncResult(cached);
 
-      if (storedToken && ids.length > 0 && cached) {
+      if (storedToken && ids.length > 0) {
         setOnboardingStep(3); // Fully set up
         fetchEnrolledCoursesInBackground(storedToken);
         if (!tourSeenRes.hasSeenTour) {
@@ -378,7 +384,7 @@ export default function App() {
         }
       } else if (storedToken) {
         if (cachedCoursesRes.enrolledCoursesCache && cachedCoursesRes.enrolledCoursesCache.length > 0) {
-          setOnboardingStep(2);
+          setOnboardingStep((prev) => (prev === 3 ? 3 : 2));
         }
         // Token exists but courses might not be tracked yet — try to restore from Moodle
         restoreMoodleSettingsForOnboarding(storedToken);
@@ -440,7 +446,11 @@ export default function App() {
     setValidatingToken(true);
     try {
       const sesskey = await getStoredSesskey();
-      const client = new MoodleClient(t, undefined, { sesskey: sesskey || undefined, devMode: true });
+      const client = new MoodleClient(t, undefined, {
+        sesskey: sesskey || undefined,
+        devMode: true,
+        enableScraping: settings?.scrapingEnabled ?? false
+      });
       const remoteSettings = await client.loadNoodleSettings();
       if (remoteSettings && Object.keys(remoteSettings).length > 0) {
         // We found existing remote settings, apply them directly!
@@ -507,12 +517,12 @@ export default function App() {
       if (res?.success && res.courses && res.courses.length > 0) {
         setAvailableCourses(res.courses);
         await browser.storage.local.set({ enrolledCoursesCache: res.courses });
-        setOnboardingStep(2);
+        setOnboardingStep((prev) => (prev === 3 ? 3 : 2));
       } else if (res?.success && res.courses && res.courses.length === 0) {
         console.warn('[Onboarding] Enrolled courses array is empty');
         showToast(currentLang === 'he' ? 'לא נמצאו קורסים מקושרים לחשבון' : 'No enrolled courses found for account', 'info');
         setAvailableCourses([]);
-        setOnboardingStep((prev) => prev === 2 ? 2 : 2);
+        setOnboardingStep((prev) => (prev === 3 ? 3 : 2));
       } else {
         const isAuthError = res?.errorcode === 'AUTH_SESSION_EXPIRED' || res?.errorcode === 'invalidtoken';
         setOnboardingStep((prev) => {
@@ -1232,6 +1242,12 @@ export default function App() {
               onSelectCourse={setSelectedCourseId}
               t={t}
               lang={currentLang}
+              onToggleScraping={async (enabled: boolean) => {
+                if (!settings) return;
+                const updated = { ...settings, scrapingEnabled: enabled };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
               tourStep={tourStep}
             />
           )}
@@ -1284,6 +1300,12 @@ export default function App() {
               onUpdateThresholds={async (green: number, yellow: number) => {
                 if (!settings) return;
                 const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
+                setSettingsState(updated);
+                await setSettings(updated);
+              }}
+              onToggleScraping={async (enabled: boolean) => {
+                if (!settings) return;
+                const updated = { ...settings, scrapingEnabled: enabled };
                 setSettingsState(updated);
                 await setSettings(updated);
               }}
@@ -1436,6 +1458,7 @@ const ChevronDownIcon = ({ size = 14, expanded = false }: { size?: number; expan
 interface TabProps {
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, def: string) => string;
+  onToggleScraping?: (enabled: boolean) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
 }
@@ -2689,6 +2712,7 @@ function SettingsTab({
   onUpdateLanguage,
   onUpdateTheme,
   onUpdateThresholds,
+  onToggleScraping,
   tourStep,
 }: {
   settings: ExtensionSettings | null;
@@ -2702,6 +2726,7 @@ function SettingsTab({
   onUpdateLanguage: (l: 'he' | 'en') => void;
   onUpdateTheme: (theme: 'dark' | 'noodle') => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
+  onToggleScraping?: (enabled: boolean) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
   tourStep?: number;
@@ -2810,6 +2835,33 @@ function SettingsTab({
               checked={settings.notificationsEnabled}
               onChange={async (e) => {
                 await setSettings({ notificationsEnabled: e.target.checked });
+              }}
+            />
+            <span className="slider round"></span>
+          </label>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      <div className="settings-section">
+        <h4>{t('scraping_enabled_title')}</h4>
+        <div className="toggle-row">
+          <div>
+            <span className="toggle-label">{t('scraping_enabled_title')}</span>
+            <p className="subtitle">{t('scraping_enabled_desc')}</p>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              id="scraping-enabled-toggle"
+              checked={settings.scrapingEnabled ?? false}
+              onChange={async (e) => {
+                if (onToggleScraping) {
+                  onToggleScraping(e.target.checked);
+                } else {
+                  await setSettings({ scrapingEnabled: e.target.checked });
+                }
               }}
             />
             <span className="slider round"></span>

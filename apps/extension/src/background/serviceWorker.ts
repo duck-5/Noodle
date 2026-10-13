@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager } from '@tautracker/moodle-client';
+import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager, type SyncResult } from '@tautracker/moodle-client';
 import {
   getStoredToken,
   setStoredToken,
@@ -195,7 +195,12 @@ async function clearUserSession(): Promise<void> {
 
 async function validateToken(token: string) {
   const sesskey = await getStoredSesskey();
-  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
+  const settings = await getSettings();
+  const client = new MoodleClient(token, undefined, {
+    sesskey: sesskey || undefined,
+    devMode: true,
+    enableScraping: settings.scrapingEnabled ?? false
+  });
   return await client.getSiteInfo();
 }
 
@@ -210,7 +215,12 @@ async function fetchEnrolledCourses(token: string) {
   activeFetchEnrolledCoursesPromise = (async () => {
     try {
       const sesskey = await getStoredSesskey();
-      const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
+      const settings = await getSettings();
+      const client = new MoodleClient(token, undefined, {
+        sesskey: sesskey || undefined,
+        devMode: true,
+        enableScraping: settings.scrapingEnabled ?? false
+      });
       console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
       let userid = 0;
       try {
@@ -223,10 +233,15 @@ async function fetchEnrolledCourses(token: string) {
           const creds = await getMoodleCredentials();
           if (creds && creds.username && creds.idNumber && creds.password) {
             try {
-              const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+              const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, false);
               console.log('Automatic re-login successful! Retrying fetchEnrolledCourses...');
               const newSesskey = await getStoredSesskey();
-              const newClient = new MoodleClient(newToken, undefined, { sesskey: newSesskey || undefined, devMode: true });
+              const newSettings = await getSettings();
+              const newClient = new MoodleClient(newToken, undefined, {
+                sesskey: newSesskey || undefined,
+                devMode: true,
+                enableScraping: newSettings.scrapingEnabled ?? false
+              });
               const newInfo = await newClient.getSiteInfo();
               return await newClient.getEnrolledCourses(newInfo.userid);
             } catch (loginErr: any) {
@@ -256,11 +271,15 @@ async function performSettingsSync() {
     return;
   }
 
+  const settings = await getSettings();
   const sesskey = await getStoredSesskey();
-  const client = new MoodleClient(token, undefined, { sesskey: sesskey || undefined, devMode: true });
+  const client = new MoodleClient(token, undefined, {
+    sesskey: sesskey || undefined,
+    devMode: true,
+    enableScraping: settings.scrapingEnabled ?? false
+  });
   const syncManager = new SettingsSyncManager(client, 'chrome-extension');
 
-  const settings = await getSettings();
   const trackedCourseIds = await getTrackedCourseIds();
   const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
 
@@ -322,14 +341,22 @@ async function performSettingsSync() {
   console.log('[SettingsSync] Successfully synced settings with Moodle.');
 }
 
-async function performBackgroundSync() {
-  console.log('--- STARTING SYNC (Triggered manually or via periodic alarm) ---');
-  let token = await getStoredToken();
+let activeBackgroundSyncPromise: Promise<SyncResult> | null = null;
 
-  if (!token) {
-    console.log('Sync skipped: No Moodle token stored.');
-    throw new Error('Not authenticated with Moodle');
+async function performBackgroundSync(): Promise<SyncResult> {
+  if (activeBackgroundSyncPromise) {
+    console.log('[serviceWorker] Returning existing in-flight background sync promise');
+    return await activeBackgroundSyncPromise;
   }
+
+  activeBackgroundSyncPromise = (async () => {
+    console.log('--- STARTING SYNC (Triggered manually or via periodic alarm) ---');
+    let token = await getStoredToken();
+
+    if (!token) {
+      console.log('Sync skipped: No Moodle token stored.');
+      throw new Error('Not authenticated with Moodle');
+    }
 
   await browser.storage.local.set({ isSyncing: true });
   browser.runtime.sendMessage({ type: 'SYNC_START' }).catch(() => { });
@@ -360,7 +387,11 @@ async function performBackgroundSync() {
         undefined,
         undefined,
         undefined,
-        sesskey || undefined
+        sesskey || undefined,
+        (partial) => {
+          browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
+        },
+        { enableScraping: settings.scrapingEnabled ?? false }
       );
     } catch (err: any) {
       let retrySuccessful = false;
@@ -369,7 +400,7 @@ async function performBackgroundSync() {
         const creds = await getMoodleCredentials();
         if (creds && creds.username && creds.idNumber && creds.password) {
           try {
-            const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, true);
+            const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, false);
             console.log('Automatic re-login successful! Retrying sync...');
             const newSesskey = await getStoredSesskey();
             
@@ -383,7 +414,11 @@ async function performBackgroundSync() {
               undefined,
               undefined,
               undefined,
-              newSesskey || undefined
+              newSesskey || undefined,
+              (partial) => {
+                browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
+              },
+              { enableScraping: settings.scrapingEnabled ?? false }
             );
             retrySuccessful = true;
           } catch (loginErr: any) {
@@ -436,7 +471,14 @@ async function performBackgroundSync() {
     await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
   }
 
-  return result;
+    return result;
+  })();
+
+  try {
+    return await activeBackgroundSyncPromise;
+  } finally {
+    activeBackgroundSyncPromise = null;
+  }
 }
 
 async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean): Promise<string> {
@@ -542,12 +584,14 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
   const oldIds = new Set(oldAssigns.map((a) => a.id));
 
   for (const assign of newAssigns) {
+    // Only notify for unsubmitted assignments that have an active deadline
+    if (!assign.deadline || assign.status === 'Submitted') {
+      continue;
+    }
+
     // 1. Notify for new assignments
-    if (!oldIds.has(assign.id) && assign.status !== 'Submitted') {
-      let deadlineText = 'No deadline';
-      if (assign.deadline) {
-        deadlineText = `Due: ${new Date(assign.deadline).toLocaleString()}`;
-      }
+    if (!oldIds.has(assign.id)) {
+      const deadlineText = `Due: ${new Date(assign.deadline).toLocaleString()}`;
 
       browser.notifications.create(`new_assign_${assign.id}`, {
         type: 'basic',
@@ -558,7 +602,6 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
     }
 
     // 2. Notify for upcoming deadlines (due within 24 hours)
-    if (assign.deadline && assign.status !== 'Submitted') {
       const deadline = new Date(assign.deadline);
       const hoursLeft = (deadline.getTime() - Date.now()) / (1000 * 60 * 60);
 
@@ -587,7 +630,6 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
         });
         await markNotified(assign.id, '1h');
       }
-    }
   }
 }
 
@@ -642,6 +684,51 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
   }
 
   if (!ssoUrl.includes('nidp.tau.ac.il')) {
+    // We may already be logged in (valid session cookies). If we landed on a
+    // Moodle page, try to extract the sesskey and token directly.
+    if (ssoUrl.includes('moodle.tau.ac.il')) {
+      console.log('[loginTauSso] Already logged into Moodle, extracting sesskey from dashboard...');
+      const dashboardRes = await fetch(ssoUrl, { credentials: 'include' });
+      const dashboardHtml = await dashboardRes.text();
+      const dashSesskeyMatch = dashboardHtml.match(/"sesskey":"([^"]+)"/);
+      if (dashSesskeyMatch) {
+        const sesskey = dashSesskeyMatch[1];
+        await setStoredSesskey(sesskey);
+
+        if (!baseUrl) {
+          const myUrlMatch = dashboardRes.url.match(/^(https:\/\/[^/]+\/(?:[0-9]{4}\/)?)/);
+          baseUrl = myUrlMatch ? myUrlMatch[1].replace(/\/$/, '') : 'https://moodle.tau.ac.il';
+        }
+
+        // Reuse the token-reset logic to get a fresh wstoken
+        let scrapedToken: string | null = null;
+        try {
+          const manageUrl = `${baseUrl}/user/managetoken.php`;
+          const manageRes = await fetch(manageUrl, { credentials: 'include' });
+          const manageHtml = await manageRes.text();
+          const trs = manageHtml.split(/<tr/i);
+          const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+          const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
+          if (tokenMatch) {
+            const tokenId = tokenMatch[1];
+            const resetUrl = `${manageUrl}?action=resetwstoken&tokenid=${tokenId}&confirm=1&sesskey=${sesskey}`;
+            const resetRes = await fetch(resetUrl, { credentials: 'include' });
+            const resetHtml = await resetRes.text();
+            const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([a-f0-9]{32})<\/div>/i) || resetHtml.match(/([a-f0-9]{32})/);
+            if (finalTokenMatch) {
+              scrapedToken = finalTokenMatch[1].trim();
+            }
+          }
+        } catch (e) {
+          console.warn('[loginTauSso] Could not scrape mobile token from dashboard session:', e);
+        }
+
+        const finalToken = scrapedToken || `web_session_${Date.now()}`;
+        await setStoredToken(finalToken);
+        console.log('[loginTauSso] Recovered token from existing dashboard session');
+        return finalToken;
+      }
+    }
     throw new Error('Did not redirect to TAU SSO. URL: ' + ssoUrl);
   }
 
@@ -763,24 +850,13 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
     if (tokenMatch) {
       const tokenId = tokenMatch[1];
       
-      // Reset the token (POST to managetoken.php)
-      const resetParams = new URLSearchParams();
-      resetParams.append('tokenid', tokenId);
-      resetParams.append('action', 'resetwstoken');
-      resetParams.append('confirm', '1');
-      resetParams.append('sesskey', sesskey);
-      
-      const resetRes = await fetch(manageUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        credentials: 'include',
-        body: resetParams
-      });
-      
+      // Reset the token via GET confirmation link
+      const resetUrl = `${manageUrl}?action=resetwstoken&tokenid=${tokenId}&confirm=1&sesskey=${sesskey}`;
+      const resetRes = await fetch(resetUrl, { credentials: 'include' });
       const resetHtml = await resetRes.text();
       
-      // Read the redirected HTML to find the newly generated token
-      const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
+      // Read the redirected HTML to find the newly generated 32-hex wstoken
+      const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([a-f0-9]{32})<\/div>/i) || resetHtml.match(/([a-f0-9]{32})/);
       if (finalTokenMatch) {
         scrapedToken = finalTokenMatch[1].trim();
       }

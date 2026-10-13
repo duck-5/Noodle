@@ -8,12 +8,98 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Optional Web Scraping Toggle & Pure-API Default (`apps/extension/src/options/App.tsx`, `packages/moodle-client/src/moodleApi.ts`)**:
+  - Made all HTML web scraping functionality optional and disabled by default (`scrapingEnabled: false`, `enableScraping: false`).
+  - Added a dedicated bilingual switch (`#scraping-enabled-toggle`) in the Extension Settings page: "Moodle Web Scraping (Fallback)" / "סריקת אתר Moodle (Web Scraping)".
+  - When disabled (default), the sync engine operates in high-speed pure API mode using official Moodle REST and AJAX endpoints with zero HTML scraping overhead.
+  - Users can enable the toggle in Settings whenever they need fallback scraping for legacy archive modules, past unlisted deadlines, or Zoom LTI links.
+- **Real-Time Streaming Sync Data (`packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/background/serviceWorker.ts`, `App.tsx`)**:
+  - Implemented `onPartialSync` streaming callback in `runSync`, emitting incremental `SYNC_PARTIAL` messages to the UI as assignments, files, and meetings are discovered.
+  - The UI updates dynamically without having to wait for the entire multi-course synchronization process to terminate.
+- **High-Resolution Promotional Assets & Store Suite (`apps/extension/scripts/generate-promo-assets.mjs`)**:
+  - Generated full Webstore graphic suite rendered at 2× Retina resolution (2560×1600 slides, 2800×1120 marquee, 880×560 tile) with font preloading and mockups for Hero Overview, Deadlines & Grades, Zoom Lecture Hub, Course Files Explorer, and Midnight Dark Theme + Toolbar Popup.
+  - Enforced unofficial, student-friendly branding ("Smart Moodle Companion" / "Modern Moodle Client") without claiming official university affiliation.
+- **Retina 2× DPI Automation Harness (`apps/extension/e2e/fixtures.ts`, `apps/extension/e2e/sync-devtools.spec.ts`)**:
+  - Configured Playwright browser context with `deviceScaleFactor: 2` and 1440×900 viewport to capture crisp Retina extension screenshots (`main-dashboard.png`, `toolbar-popup.png`, `courses-tab-view.png`).
+- **Live Extension E2E Test Suite with Real Credentials (`apps/extension/e2e/live-extension.spec.ts`, `TC-EXT-LIVE-01`)**:
+  - Added an end-to-end Playwright test suite executing real SSO authentication and data synchronization against Tel Aviv University's live servers using `moodle_test_credentials.env`.
+  - Verifies the scraping toggle defaults to OFF, tests pure API sync, toggles scraping ON, verifies storage persistence, executes scraping-enabled sync, resets to clean default, and captures visual screenshots.
+
+### Changed
+- **Accelerated Synchronization & Parallel Batching (`packages/moodle-client/src/syncEngine.ts`)**:
+  - Parallelized grade items, submission statuses, and course contents fetching using concurrent batch processing (`batchPromises`), reducing sync times from minutes to ~15 seconds.
+- **Archive Scanning Pruning (`packages/moodle-client/src/strategies/scraperStrategy.ts`, `restStrategy.ts`)**:
+  - Pruned archive queries to 1 year back (`currentYear - 1`), stopping redundant scanning of 2-year-old subpaths.
+  - Eliminated redundant multi-phase scraper fetching when courses are already discovered.
+
+### Fixed
+- **White Assignment Title in Next Assignment Banner (`apps/extension/src/options/App.css`, `apps/extension/src/index.css`)**:
+  - Overrode hardcoded `color: white;` in `.next-assign-title` with `var(--text-primary)` (`#1e293b`), ensuring high-contrast dark text on the warm cream noodle theme.
+- **Ambiguous Hebrew Singular Day Badge Format (`apps/extension/src/shared/dateUtils.ts`)**:
+  - Corrected `diffDays === 1` formatting from bare `'יום'` or awkward `'1 ימים'` to clear and grammatically natural `'יום 1'`.
+- **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
+  - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
+- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
+  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
+  - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
+- **REST Strategy 1-Hour Cooldown Blocks All Operations When Scraping Is Disabled (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - The REST strategy entered a 1-hour cooldown when it received a `servicenotavailable` or `accessexception` error, designed to fall back to the scraper. When scraping was disabled, REST was the only strategy, so the cooldown blocked everything with no fallback. Now the cooldown only activates when `enableScraping` is true.
+- **Strict Web Scraper Disablement when Scraping Toggle is OFF (packages/moodle-client/src/moodleApi.ts, settingsSync.ts, pps/extension/src/background/serviceWorker.ts, App.tsx)**:
+  - Resolved an issue where ScraperMoodleStrategy was inadvertently initialized and executed (fetching /grade/report/overview/index.php, archive years, and student profiles) even when the scraping setting was disabled.
+  - Updated MoodleClient constructor to strictly respect options.enableScraping, omitting ScraperMoodleStrategy from the fallback strategy chain by default and whenever enableScraping: false.
+  - Updated alidateToken, etchEnrolledCourses, and 
+estoreMoodleSettingsForOnboarding across the extension background service worker and options UI to explicitly pass enableScraping: settings.scrapingEnabled ?? false.
+  - Wrapped calendar saveNoodleSettings calls in SettingsSyncManager in resilient error handling so calendar-based settings synchronization fails gracefully without throwing unhandled errors when scraping is off.
+  - Verified via unit test TC-FALLBACK-18 and live Playwright test TC-EXT-LIVE-01 that zero scraper network requests or log entries occur while the scraping toggle is off.
+- **Corrupted Hebrew Regex in Scraper Assignment Timestamps (`packages/moodle-client/src/strategies/scraperStrategy.ts`)**:
+  - Fixed UTF-8 encoding corruption in Hebrew month and deadline regex patterns (`הוגש ב`, `מועד הגשה:`, `פתוח מ:`) that caused dates to parse as `null`.
+- **Direct Assignment Attachment Download Links (`packages/moodle-client/src/syncEngine.ts`, `scraperStrategy.ts`)**:
+  - Fixed assignment file links pointing to the intermediate Moodle webpage instead of direct download URLs (`pluginfile.php`) by extracting attachments from `intro` and `attachments` HTML blocks and populating `introattachments`.
+- **Mobile Web Service Token Extraction on SSO Login (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed token reset in `loginTauSso` by sending a GET request with query parameters to `/user/managetoken.php` and parsing the newly generated 32-character hexadecimal wstoken, resolving `invalidtoken` fallback loops.
+- **Onboarding Step State Degradation (`apps/extension/src/options/App.tsx`)**:
+  - Fixed a race condition where `App.tsx` downgraded `onboardingStep` from 3 back to 2 when `cachedSyncResult` was null prior to initial sync completion.
+- **Background Sync Lock & Deduplication (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Added `activeBackgroundSyncPromise` lock to prevent multiple concurrent sync operations from executing simultaneously.
+- **High-Impact Promotional Assets Suite (`apps/extension/scripts/generate-promo-assets.mjs`, `apps/extension/promo/`)**: Created an automated Playwright-based generator for Chrome Web Store and project showcase promotional graphics. Generates 5 high-resolution (1280×800, 2× Retina) carousel slides highlighting core capabilities:
+  1. *Hero Overview*: "Meet Noodle: Study Smarter at TAU" with client-only privacy and instant sync callouts.
+  2. *Deadlines & Grades*: "Never Miss a Deadline Again" with color-coded urgent countdowns, 100/100 grade badges, and progress tracking.
+  3. *Zoom Lecture Hub*: "Join Live Lectures in One Click" with live class banners (`● פעיל כעת`) and unified schedules.
+  4. *Course Files*: "All Course Files, Cleanly Organized" with weekly topic pills, PDF slides, and code skeletons with exact MB sizes.
+  5. *Themes & Productivity*: "Tailored to Your Workflow" featuring Midnight Dark Mode, high-DPI toolbar popup, and bilingual support.
+  Also generates a 1400×560 Marquee Banner (`promo-marquee-banner.png`) and a 440×280 Small Promo Tile (`promo-small-tile.png`) featuring the smiling ramen bowl mascot.
+- **Bilingual High-DPI Toolbar Popup Captures (`apps/extension/screenshots/toolbar-popup.png`, `toolbar-popup-he.png`)**: Enhanced e2e test suite to capture container-focused, high-resolution popup screenshots with zero empty whitespace in both English and Hebrew modes.
 - **Automated Chrome DevTools Inspection & E2E Feedback Loop (`pnpm test:devtools` / `apps/extension/e2e/sync-devtools.spec.ts`)**: Built an automated browser testing feedback loop for agents and developers using Playwright with real unpacked Chrome extension loading (`TC-EXT-DEVTOOLS-01`, `TC-EXT-DEVTOOLS-02`). Hooks into Chrome DevTools console and network streams across both the Options Page UI and the Background Service Worker. Allows agents to trigger synchronization, inspect diagnostic logs, test failure recovery (unauthenticated/expired tokens), verify successful synchronization, assert UI DOM updates, and confirm local storage persistence without manual human intervention.
+
+### Fixed
+- **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
+  - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
+- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
+  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
+  - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
+- **REST Strategy 1-Hour Cooldown Blocks All Operations When Scraping Is Disabled (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - The REST strategy entered a 1-hour cooldown when it received a `servicenotavailable` or `accessexception` error, designed to fall back to the scraper. When scraping was disabled, REST was the only strategy, so the cooldown blocked everything with no fallback. Now the cooldown only activates when `enableScraping` is true.
+- **Toolbar Popup Badge Grammar & English Localization (`apps/extension/src/shared/dateUtils.ts`, `apps/extension/src/popup/Popup.tsx`, `Popup.css`)**: Fixed awkward `"1ימים"` badge text in English mode by generating proper English strings (`"1 day"` / `"${diffDays} days"`), ensuring bilingual parity with Hebrew (`"יום"` / `"${diffDays} ימים"`), localizing header labels ("UPCOMING ASSIGNMENTS" vs "מטלות קרובות"), and fixing assignment title truncation in mixed RTL/LTR layouts.
+- **Enriched Mock Dataset & Multi-Course Visual Validation**: Expanded `apps/extension/e2e/sync-devtools.spec.ts` with comprehensive mock data covering two tracked courses (`0368-1001-01 מבוא למדעי המחשב` and `0368-2158-01 מבני נתונים`). Includes assignments with exact timestamps (allowsubmissionsfromdate, duedate, cutoffdate), urgency badges, submissions, grades (100/100, 96/100), structured topic sections with downloadable files (PDFs, Python, C++ code), and active/upcoming Zoom meetings (`● פעיל כעת` live banner, meeting lists, and direct launch links). Captures full-page screenshots of the Main Dashboard (`main-dashboard.png`), Courses Tab (`courses-tab-view.png`), and both individual Course Detail views (`course-9999-detail.png`, `course-9998-detail.png`).
+- **Agent Browser Execution & Visual Inspection Guide ([`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md))**: Added comprehensive documentation explaining how AI agents can autonomously launch the unpacked extension via Playwright in Chromium, stream console logs and network traffic from both page and worker contexts, take full-page and popup screenshots (`apps/extension/screenshots/`), and verify visual rendering without requiring user intervention.
 - **Multi-Instance REST Orchestrator (`packages/moodle-client`)**: Upgraded `RestMoodleStrategy` to natively support cross-instance REST API fetching. Since TAU physically isolates databases for past academic years (e.g. `/2025/`), the root REST API cannot access historical courses. `RestMoodleStrategy` now uses the user's active SSO cookies to silently follow SAML postback challenges into archive login endpoints, extracts a dedicated REST token per academic year, and aggregates/deduplicates the courses and assignments directly using the mobile web service API without relying on HTML scraping.
 - **Automatic Mobile Web Service Token Renewal on Expiry (`packages/moodle-client`)**: Added `getMobileToken()` to `ScraperMoodleStrategy` and `setToken()` across all strategies. When `RestMoodleStrategy` encounters `invalidtoken`, `fallbackRunner.ts` silently resets and acquires a fresh mobile web service token from `/user/managetoken.php` using active SSO session cookies, updates all strategies, resets circuit breaker cooldowns, and retries the REST request seamlessly without requiring the user to re-authenticate (Fixes #26, resolves D2).
 - **Direct Course-Page Assignment Scraping (`packages/moodle-client`)**: Rewrote `ScraperMoodleStrategy.getAssignments()` to extract assignments directly from individual course pages (`/course/view.php?id=X`) across all discovered academic years. Decoupled assignment discovery from the Moodle Calendar (which filtered out past deadlines), guaranteeing all historical and current course assignments are captured (Fixes #26, resolves D4).
 
 ### Fixed
+- **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
+  - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
+- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
+  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
+  - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
+- **REST Strategy 1-Hour Cooldown Blocks All Operations When Scraping Is Disabled (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - The REST strategy entered a 1-hour cooldown when it received a `servicenotavailable` or `accessexception` error, designed to fall back to the scraper. When scraping was disabled, REST was the only strategy, so the cooldown blocked everything with no fallback. Now the cooldown only activates when `enableScraping` is true.
 - **Settings Sync Null Pointer Exception (`apps/extension/src/background/serviceWorker.ts`)**: Fixed `TypeError: Cannot convert undefined or null to object` in `performSettingsSync()` when examining nullish setting entries with `typeof value === 'object'`.
 - **Notification Icon URL Resolution in MV3 (`apps/extension/src/background/serviceWorker.ts`)**: Replaced relative `'icon-128.png'` strings in `browser.notifications.create` with canonical absolute URLs via `browser.runtime.getURL('icon-128.png')` to prevent background fetch failures.
 - **AJAX Course Year Mapping Bug (`packages/moodle-client`)**: Fixed an issue in `extractCoursesViaAjax` where courses added from timeline AJAX responses bypassed `this.courseYearMap`, preventing them from being scraped for assignments.
@@ -55,6 +141,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Updated `docs/ARCHITECTURE.md` and `docs/TEST_CASES.md`.
 
 ### Fixed
+- **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
+  - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
+- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
+  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
+  - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
+- **REST Strategy 1-Hour Cooldown Blocks All Operations When Scraping Is Disabled (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - The REST strategy entered a 1-hour cooldown when it received a `servicenotavailable` or `accessexception` error, designed to fall back to the scraper. When scraping was disabled, REST was the only strategy, so the cooldown blocked everything with no fallback. Now the cooldown only activates when `enableScraping` is true.
 - **Fixed Onboarding Reversion & Session Termination During Archive Discovery**:
   - Prevented `AjaxMoodleStrategy` from attempting to query past year archive subpaths (`/2025/`, `/2024/`) with the root `sesskey`, which caused Moodle CSRF security errors that terminated active browser session cookies. Archive year course discovery is safely and cleanly delegated to `ScraperMoodleStrategy` via standard HTML GET requests.
   - Fixed a race condition in `apps/extension/src/options/App.tsx` where `browser.storage.onChanged` triggered duplicate concurrent onboarding setup routines that kicked users back to step 1 (login) on background error.
@@ -119,6 +214,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
     - Fixed card squashing and cropping when expanding multiple assignments by applying `flex-shrink: 0; min-height: fit-content;` and expanding `.assignments-list` scroll viewport to `75vh`.
 
 ### Fixed
+- **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
+  - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
+- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
+  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
+  - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
+  - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
+- **REST Strategy 1-Hour Cooldown Blocks All Operations When Scraping Is Disabled (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - The REST strategy entered a 1-hour cooldown when it received a `servicenotavailable` or `accessexception` error, designed to fall back to the scraper. When scraping was disabled, REST was the only strategy, so the cooldown blocked everything with no fallback. Now the cooldown only activates when `enableScraping` is true.
 - **Mobile Attachments Display & Download (`apps/mobile/src/app/index.tsx`, `courses.tsx`)**:
   - Fixed issue where all attachments displayed the literal label "Attachment" / "קובץ מצורף" by resolving property keys across `name`, `fileName`, and `filename`.
   - Fixed attachment download button non-responsiveness by resolving `url`, `fileUrl`, and `fileurl`, and adding a fallback to `Linking.openURL`.

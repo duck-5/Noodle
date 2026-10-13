@@ -50,6 +50,7 @@ Noodle/
 | **Run Mobile App (Expo)** | `pnpm --filter mobile run start` |
 | **Run Mobile Web** | `pnpm --filter mobile run web` |
 | **Run Moodle Client Tests** | `pnpm --filter @tautracker/moodle-client test` |
+| **Run DevTools Log & Visual Test** | `pnpm test:devtools` |
 
 ---
 

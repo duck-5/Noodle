@@ -65,15 +65,17 @@ export default function Popup() {
     );
   }
 
+  const isHe = settings?.language === 'he';
+
   if (!token) {
     return (
-      <div className="popup-container unauth">
+      <div className="popup-container unauth" dir={isHe ? 'rtl' : 'ltr'}>
         <h3>Noodle</h3>
         <p className="subtitle" style={{ margin: '0.5rem 0 1.5rem', textAlign: 'center' }}>
-          Track Moodle assignments directly on Google Tasks
+          {isHe ? 'סנכרן מטלות מודל ישירות ל-Google Tasks' : 'Track Moodle assignments directly on Google Tasks'}
         </p>
         <button className="primary-btn" onClick={handleOpenDashboard}>
-          Connect Moodle
+          {isHe ? 'התחבר למודל' : 'Connect Moodle'}
         </button>
       </div>
     );
@@ -82,29 +84,29 @@ export default function Popup() {
   const pendingAssigns = syncResult?.assignments.filter((a) => a.status !== 'Submitted') || [];
 
   return (
-    <div className="popup-container">
+    <div className="popup-container" dir={isHe ? 'rtl' : 'ltr'}>
       <header className="popup-header">
         <div className="popup-brand" onClick={handleOpenDashboard}>
           <span>Noodle</span>
         </div>
-        <button className="sync-icon-btn" onClick={handleSync} disabled={loading}>
+        <button className="sync-icon-btn" onClick={handleSync} disabled={loading} title={isHe ? 'סנכרן עכשיו' : 'Sync now'}>
           {loading ? '⏳' : '🔄'}
         </button>
       </header>
 
       <main className="popup-main-content">
         <div className="popup-section-title">
-          <span>Upcoming Assignments</span>
+          <span>{isHe ? 'מטלות קרובות' : 'Upcoming Assignments'}</span>
           <span className="count-badge">{pendingAssigns.length}</span>
         </div>
 
         <div className="popup-list">
           {pendingAssigns.length === 0 ? (
-            <div className="popup-empty">No pending assignments! 🎉</div>
+            <div className="popup-empty">{isHe ? 'אין מטלות לביצוע! 🎉' : 'No pending assignments! 🎉'}</div>
           ) : (
             pendingAssigns.slice(0, 5).map((a) => {
-              const color = settings?.coursesColorMap[a.courseId] || '#6366f1';
-              const name = settings?.coursesCustomNames[a.courseId] || a.courseName;
+              const color = settings?.coursesColorMap?.[a.courseId] || '#6366f1';
+              const name = settings?.coursesCustomNames?.[a.courseId] || a.courseName;
 
               const { deadlineText: dueText } = getDueTextAndClass(
                 a.deadline || null,
@@ -118,7 +120,10 @@ export default function Popup() {
                 <div
                   key={a.id}
                   className="popup-assign-card"
-                  style={{ borderLeft: `3px solid ${color}` }}
+                  style={{
+                    borderLeft: isHe ? 'none' : `3.5px solid ${color}`,
+                    borderRight: isHe ? `3.5px solid ${color}` : 'none',
+                  }}
                 >
                   <div className="popup-assign-info">
                     <span className="popup-course-tag" style={{ color }}>
@@ -133,7 +138,7 @@ export default function Popup() {
           )}
           {pendingAssigns.length > 5 && (
             <button className="more-btn" onClick={handleOpenDashboard}>
-              And {pendingAssigns.length - 5} more... Open Dashboard
+              {isHe ? `ועוד ${pendingAssigns.length - 5} נוספות... פתח לוח בקרה` : `And ${pendingAssigns.length - 5} more... Open Dashboard`}
             </button>
           )}
         </div>
@@ -141,7 +146,7 @@ export default function Popup() {
 
       <footer className="popup-footer">
         <button className="footer-link-btn" onClick={handleOpenDashboard}>
-          🚀 Open Full Dashboard
+          {isHe ? '🚀 פתח לוח בקרה מלא' : '🚀 Open Full Dashboard'}
         </button>
       </footer>
     </div>

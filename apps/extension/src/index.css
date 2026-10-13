@@ -234,6 +234,10 @@ body.theme-noodle .next-assignment-banner {
   box-shadow: var(--shadow) !important;
 }
 
+body.theme-noodle .next-assign-title {
+  color: #1e293b !important;
+}
+
 /* Noodle theme active hover states for action buttons */
 body.theme-noodle .action-link-btn.file-btn:hover {
   background: var(--secondary) !important;

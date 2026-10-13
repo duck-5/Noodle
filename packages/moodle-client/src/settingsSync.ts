@@ -88,7 +88,11 @@ export class SettingsSyncManager {
     if (!remoteSettings) {
       // Remote is empty, so we push our local settings as the source of truth
       if (Object.keys(localSettings).length > 0) {
-        await this.moodleClient.saveNoodleSettings(JSON.stringify(localSettings));
+        try {
+          await this.moodleClient.saveNoodleSettings(JSON.stringify(localSettings));
+        } catch (e) {
+          console.warn('[SettingsSyncManager] Failed to save local settings to Moodle.', e);
+        }
       }
       return localSettings;
     }
@@ -96,7 +100,11 @@ export class SettingsSyncManager {
     const { merged, needsUpload } = this.mergeSettings(localSettings, remoteSettings);
 
     if (needsUpload) {
-      await this.moodleClient.saveNoodleSettings(JSON.stringify(merged));
+      try {
+        await this.moodleClient.saveNoodleSettings(JSON.stringify(merged));
+      } catch (e) {
+        console.warn('[SettingsSyncManager] Failed to save merged settings to Moodle.', e);
+      }
     }
 
     return merged;

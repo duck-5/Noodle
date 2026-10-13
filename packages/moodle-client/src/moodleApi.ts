@@ -74,7 +74,8 @@ export interface RawMoodleAssignment {
   duedate: number;
   cutoffdate: number;
   allowsubmissionsfromdate: number;
-  introattachments?: Array<{
+  intro?: string;
+    introattachments?: Array<{
     filename: string;
     fileurl: string;
   }>;
@@ -99,6 +100,7 @@ export interface RawSubmissionPluginFile {
 }
 
 export interface RawSubmissionStatus {
+  _scraperIntroAttachments?: { filename: string, fileurl: string }[];
   lastattempt?: {
     canedit?: boolean;
     cansubmit?: boolean;
@@ -166,6 +168,7 @@ export interface MoodleClientOptions {
   sesskey?: string;
   devMode?: boolean;
   strategies?: IMoodleStrategy[];
+  enableScraping?: boolean;
 }
 
 export class MoodleClient {
@@ -185,18 +188,24 @@ export class MoodleClient {
       sesskey: options?.sesskey,
       baseUrl: this.baseUrl,
       devMode: this.devMode,
+      enableScraping: options?.enableScraping,
     };
 
     this.restStrategy = new RestMoodleStrategy(context);
 
     if (options?.strategies && options.strategies.length > 0) {
-      this.strategies = options.strategies;
+      this.strategies = options.enableScraping === false
+        ? options.strategies.filter(s => s.name !== 'Scraper')
+        : options.strategies;
     } else {
-      this.strategies = [
+      const defaultStrategies: IMoodleStrategy[] = [
         this.restStrategy,
-        new ScraperMoodleStrategy(context),
         new AjaxMoodleStrategy(context),
       ];
+      if (options?.enableScraping) {
+        defaultStrategies.push(new ScraperMoodleStrategy(context));
+      }
+      this.strategies = defaultStrategies;
     }
   }
 

@@ -18,12 +18,20 @@ describe('Category 12: Background Synchronization & Notifications Engine', () =>
   });
 
   describe('TC-BG-02: New Assignment Discovery Notification', () => {
-    it('should detect assignment IDs present in new sync but missing in previous cache', () => {
+    it('should detect assignment IDs present in new sync but missing in previous cache only if they have an active deadline', () => {
       const prevCachedIds = [1, 2];
-      const newAssignments = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+      const newAssignments = [
+        { id: 1, deadline: '2026-10-20T10:00:00Z', status: 'Pending' },
+        { id: 2, deadline: '2026-10-21T10:00:00Z', status: 'Pending' },
+        { id: 3, deadline: '2026-10-22T10:00:00Z', status: 'Pending' },
+        { id: 4, deadline: null, status: 'Pending' }, // no deadline - should NOT notify
+        { id: 5, deadline: '2026-10-23T10:00:00Z', status: 'Submitted' }, // submitted - should NOT notify
+      ];
 
-      const discoveredNew = newAssignments.filter((a) => !prevCachedIds.includes(a.id));
-      expect(discoveredNew.map((a) => a.id)).toEqual([3, 4]);
+      const discoveredNew = newAssignments.filter(
+        (a) => !prevCachedIds.includes(a.id) && Boolean(a.deadline) && a.status !== 'Submitted'
+      );
+      expect(discoveredNew.map((a) => a.id)).toEqual([3]);
     });
   });
 
