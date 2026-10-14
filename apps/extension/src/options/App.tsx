@@ -9,6 +9,7 @@ import {
   getTrackedCourseIds,
   setTrackedCourseIds,
   getCachedSyncResult,
+  setCachedSyncResult,
   getSettings,
   setSettings,
   getMoodleCredentials,
@@ -821,6 +822,223 @@ export default function App() {
     await setSettings(updated);
   }
 
+  async function handleToggleHideAllCourse(courseAssignIds: number[], shouldHideAll: boolean) {
+    if (!settings) return;
+    const currentHidden = new Set(settings.hiddenAssignments || []);
+    if (shouldHideAll) {
+      courseAssignIds.forEach((id) => currentHidden.add(id));
+    } else {
+      courseAssignIds.forEach((id) => currentHidden.delete(id));
+    }
+    const updated = { ...settings, hiddenAssignments: Array.from(currentHidden) };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
+  async function handleAddMockCourse() {
+    const mockCourseId = 9999;
+    const mockCourseName = '0368-2161 מבני נתונים (קורס לדוגמה)';
+    const mockColor = '#8b5cf6';
+    const mockCustomName = 'מבני נתונים 📚';
+    const nowTime = Date.now();
+
+    const mockMeetings: ZoomMeeting[] = [
+      {
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        title: "הרצאה שבועית - פרופ' כהן (פעיל עכשיו)",
+        startTime: new Date(nowTime - 15 * 60 * 1000).toISOString(),
+        meetingUrl: 'https://tau-ac-il.zoom.us/j/9999001',
+        meetingNumber: '9999001',
+        sectionName: 'כללי',
+      },
+      {
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        title: 'תרגול 4 - עצים בינאריים ו-AVL',
+        startTime: new Date(nowTime + 24 * 60 * 60 * 1000).toISOString(),
+        meetingUrl: 'https://tau-ac-il.zoom.us/j/9999002',
+        meetingNumber: '9999002',
+        sectionName: 'שבוע 4: עצים מאוזנים',
+      },
+      {
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        title: 'שעת קבלה - מתרגל דני',
+        startTime: new Date(nowTime + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        meetingUrl: 'https://tau-ac-il.zoom.us/j/9999003',
+        meetingNumber: '9999003',
+        sectionName: 'כללי',
+      },
+    ];
+
+    const mockAssignments: Assignment[] = [
+      {
+        id: 999901,
+        cmid: 999901,
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        name: 'מטלה 3: עצי AVL וטבלאות גיבוב',
+        sectionName: 'שבוע 4: עצים מאוזנים',
+        deadline: new Date(nowTime + 2 * 24 * 3600 * 1000).toISOString(),
+        opened: new Date(nowTime - 7 * 24 * 3600 * 1000).toISOString(),
+        status: 'Assigned',
+        grade: null,
+        gradeMax: 100,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=999901',
+        attachments: [
+          { name: 'hw3_avl_trees.pdf', url: 'https://moodle.tau.ac.il/sample_hw3.pdf' },
+          { name: 'template.zip', url: 'https://moodle.tau.ac.il/template.zip' },
+        ],
+        submittedFiles: [],
+      },
+      {
+        id: 999902,
+        cmid: 999902,
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        name: 'מטלה 4: גרפים וחיפוש לעומק/לרוחב',
+        sectionName: 'שבוע 5: אלגוריתמי גרפים',
+        deadline: new Date(nowTime + 9 * 24 * 3600 * 1000).toISOString(),
+        opened: new Date(nowTime - 3 * 24 * 3600 * 1000).toISOString(),
+        status: 'Assigned',
+        grade: null,
+        gradeMax: 100,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=999902',
+        attachments: [
+          { name: 'hw4_graphs.pdf', url: 'https://moodle.tau.ac.il/hw4.pdf' },
+        ],
+        submittedFiles: [],
+      },
+      {
+        id: 999903,
+        cmid: 999903,
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        name: 'פרויקט אמצע סמסטר: מימוש מנוע חיפוש פנימי',
+        sectionName: 'פרויקט סמסטריאלי',
+        deadline: null,
+        opened: new Date(nowTime - 14 * 24 * 3600 * 1000).toISOString(),
+        status: 'Assigned',
+        grade: null,
+        gradeMax: 100,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=999903',
+        attachments: [
+          { name: 'project_spec.pdf', url: 'https://moodle.tau.ac.il/project_spec.pdf' },
+        ],
+        submittedFiles: [],
+      },
+      {
+        id: 999904,
+        cmid: 999904,
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        name: 'מטלה 2: תורים וערימות בינאריות',
+        sectionName: 'שבוע 3: ערימות',
+        deadline: new Date(nowTime - 3 * 24 * 3600 * 1000).toISOString(),
+        opened: new Date(nowTime - 17 * 24 * 3600 * 1000).toISOString(),
+        status: 'Submitted',
+        grade: 96,
+        gradeMax: 100,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=999904',
+        attachments: [
+          { name: 'hw2_heaps.pdf', url: 'https://moodle.tau.ac.il/hw2_heaps.pdf' },
+        ],
+        submittedFiles: [
+          { name: 'solution_312345678.pdf', url: 'https://moodle.tau.ac.il/submission_2.pdf' },
+          { name: 'code.py', url: 'https://moodle.tau.ac.il/code.py' },
+        ],
+      },
+      {
+        id: 999905,
+        cmid: 999905,
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+        name: 'מטלה 1: ניתוח סיבוכיות ואסימפטוטיקה',
+        sectionName: 'שבוע 1: מבוא',
+        deadline: new Date(nowTime - 14 * 24 * 3600 * 1000).toISOString(),
+        opened: new Date(nowTime - 28 * 24 * 3600 * 1000).toISOString(),
+        status: 'Assigned',
+        grade: null,
+        gradeMax: 100,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=999905',
+        attachments: [],
+        submittedFiles: [],
+      },
+    ];
+
+    const mockFiles: CourseFile[] = [
+      {
+        fileName: 'lecture4_avl_trees_slides.pdf',
+        fileUrl: 'https://moodle.tau.ac.il/lecture4_slides.pdf',
+        fileSize: 2400000,
+        mimeType: 'application/pdf',
+        sectionName: 'שבוע 4: עצים מאוזנים',
+        timeModified: Math.floor(nowTime / 1000),
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+      },
+      {
+        fileName: 'tutorial4_avl_rotations.pdf',
+        fileUrl: 'https://moodle.tau.ac.il/tutorial4.pdf',
+        fileSize: 1100000,
+        mimeType: 'application/pdf',
+        sectionName: 'שבוע 4: עצים מאוזנים',
+        timeModified: Math.floor(nowTime / 1000),
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+      },
+      {
+        fileName: 'graphs_bfs_dfs_notes.pdf',
+        fileUrl: 'https://moodle.tau.ac.il/graphs.pdf',
+        fileSize: 3500000,
+        mimeType: 'application/pdf',
+        sectionName: 'שבוע 5: אלגוריתמי גרפים',
+        timeModified: Math.floor(nowTime / 1000),
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+      },
+      {
+        fileName: 'syllabus_2026.pdf',
+        fileUrl: 'https://moodle.tau.ac.il/syllabus.pdf',
+        fileSize: 520000,
+        mimeType: 'application/pdf',
+        sectionName: 'סילבוס וחומר עזר',
+        timeModified: Math.floor(nowTime / 1000),
+        courseId: mockCourseId,
+        courseName: mockCourseName,
+      },
+    ];
+
+    const newTracked = Array.from(new Set([...trackedCourseIds, mockCourseId]));
+    setTrackedCourseIdsState(newTracked);
+    await setTrackedCourseIds(newTracked, true);
+
+    const updatedSettings = {
+      ...(settings || DEFAULT_SETTINGS),
+      coursesColorMap: { ...(settings?.coursesColorMap || {}), [mockCourseId]: mockColor },
+      coursesCustomNames: { ...(settings?.coursesCustomNames || {}), [mockCourseId]: mockCustomName },
+    };
+    setSettingsState(updatedSettings);
+    await setSettings(updatedSettings);
+
+    const existingAssigns = (syncResult?.assignments || []).filter((a) => a.courseId !== mockCourseId);
+    const existingMeetings = (syncResult?.meetings || []).filter((m) => m.courseId !== mockCourseId);
+    const existingFiles = (syncResult?.files || []).filter((f) => f.courseId !== mockCourseId);
+
+    const newSyncResult: SyncResult = {
+      syncedAt: new Date().toISOString(),
+      assignments: [...mockAssignments, ...existingAssigns],
+      meetings: [...mockMeetings, ...existingMeetings],
+      files: [...mockFiles, ...existingFiles],
+      errors: syncResult?.errors || [],
+    };
+    setSyncResult(newSyncResult);
+    await setCachedSyncResult(newSyncResult);
+
+    showToast(t('mock_course_added'), 'success');
+  }
+
   const getCourseColor = (courseId: number) => {
     return settings?.coursesColorMap[courseId] || '#6366f1';
   };
@@ -1175,20 +1393,28 @@ export default function App() {
           </div>
           <div className="header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button
-              className="secondary-btn btn-sm"
-              title={currentLang === 'he' ? 'ערכת נושא' : 'Theme'}
-              onClick={async () => {
-                if (!settings) return;
-                const nextTheme: 'dark' | 'noodle' | 'coffee' = settings.theme === 'coffee' ? 'dark' : settings.theme === 'dark' ? 'noodle' : 'coffee';
-                const updated = { ...settings, theme: nextTheme };
-                setSettingsState(updated);
-                await setSettings(updated);
-              }}
+              className="primary-btn btn-sm"
+              onClick={handleManualSync}
+              disabled={loading || isSyncing}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}
             >
-              {settings?.theme === 'coffee' ? '☕' : settings?.theme === 'noodle' ? '🍜' : '🌙'}
-            </button>
-            <button className="primary-btn btn-sm" onClick={handleManualSync} disabled={loading}>
-              {loading ? t('syncing') : `🔄 ${t('sync_now')}`}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={loading || isSyncing ? 'spinning-sync-icon' : ''}
+              >
+                <path d="M21 2v6h-6"></path>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                <path d="M3 22v-6h6"></path>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+              </svg>
+              <span>{loading || isSyncing ? t('syncing') : t('sync_now')}</span>
             </button>
           </div>
         </header>
@@ -1211,6 +1437,7 @@ export default function App() {
               onToggleMeetingInterest={handleToggleMeetingInterest}
               onToggleCompleted={handleToggleCompleted}
               onToggleHidden={handleToggleHidden}
+              onToggleHideAllCourse={handleToggleHideAllCourse}
             />
           ) : activeTab === 'dashboard' ? (
             <DashboardTab
@@ -1247,6 +1474,7 @@ export default function App() {
           ) : activeTab === 'assignments' ? (
             <AssignmentsTab
               assignments={assignmentsList}
+              files={filesList}
               token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
@@ -1309,6 +1537,7 @@ export default function App() {
               }}
               onExportConfig={handleExportConfig}
               onImportConfig={handleImportConfig}
+              onAddMockCourse={handleAddMockCourse}
               tourStep={tourStep}
             />
           )}
@@ -1413,7 +1642,7 @@ const CheckIcon = ({ size = 13 }: { size?: number }) => (
   </svg>
 );
 
-const ExternalLinkIcon = ({ size = 12 }: { size?: number }) => (
+export const ExternalLinkIcon = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     <polyline points="15 3 21 3 21 9" />
@@ -1670,36 +1899,35 @@ function DashboardTab({
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
+  const [expandedCourseAssignId, setExpandedCourseAssignId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
   const [isNextMenuOpen, setIsNextMenuOpen] = useState<boolean>(false);
 
   const visibleAssignments = assignments.filter((a) => !settings?.hiddenAssignments?.includes(a.id));
   const now = new Date();
 
-  // Sort assignments by due date ascending
-  const sortedAssigns = [...assignments].sort((a, b) => {
-    if (!a.deadline && !b.deadline) return 0;
-    if (!a.deadline) return 1;
-    if (!b.deadline) return -1;
-    return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-  });
+  // Partition pending tasks to prioritize future -> no-deadline -> overdue
+  const pendingTasks = assignments
+    .filter((a) => !settings?.hiddenAssignments?.includes(a.id) && a.status !== 'Submitted')
+    .sort((a, b) => {
+      const aHasFuture = a.deadline && new Date(a.deadline) > now;
+      const bHasFuture = b.deadline && new Date(b.deadline) > now;
+      if (aHasFuture && !bHasFuture) return -1;
+      if (!aHasFuture && bHasFuture) return 1;
 
-  // Find the closest future assignment (Hero spotlight)
-  const nextAssignment = sortedAssigns.find(
-    (a) => a.deadline && new Date(a.deadline) > now && !settings?.hiddenAssignments?.includes(a.id) && a.status !== 'Submitted'
-  );
+      const aHasNoDl = !a.deadline;
+      const bHasNoDl = !b.deadline;
+      if (aHasNoDl && !bHasNoDl) return -1;
+      if (!aHasNoDl && bHasNoDl) return 1;
 
-  // Top actionable upcoming tasks (excluding hero and completed/hidden)
-  const upcomingTasks = sortedAssigns
-    .filter(
-      (a) =>
-        a.id !== nextAssignment?.id &&
-        !settings?.hiddenAssignments?.includes(a.id) &&
-        a.status !== 'Submitted' &&
-        a.deadline &&
-        new Date(a.deadline) > now
-    )
-    .slice(0, 3);
+      return new Date(a.deadline || 0).getTime() - new Date(b.deadline || 0).getTime();
+    });
+
+  // Closest actionable assignment (Hero spotlight)
+  const nextAssignment = pendingTasks[0] || null;
+
+  // Top actionable upcoming tasks (excluding hero)
+  const upcomingTasks = pendingTasks.slice(1, 4);
 
   // Active Zoom meetings right now
   const activeMeetings = meetings.filter((m) => getMeetingStatus(m.startTime) === 'active');
@@ -2066,7 +2294,7 @@ function DashboardTab({
                 : '';
 
               const isMarked = (m: ZoomMeeting) => {
-                if (!settings?.interestedMeetings) return false;
+                if (!settings?.interestedMeetings) return true;
                 const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
                 return settings.interestedMeetings.includes(id);
               };
@@ -2174,25 +2402,32 @@ function DashboardTab({
                     <div className="course-expanded-section">
                       <div className="course-expanded-section-title">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                        <span>{t('visible_zoom_links')} ({visibleMeetings.length})</span>
+                        <span>{t('visible_zoom_links')} ({visibleMeetings.length}/{dedupedMeetings.length})</span>
                       </div>
 
-                      {visibleMeetings.length === 0 ? (
+                      {dedupedMeetings.length === 0 ? (
                         <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', padding: '0.4rem 0' }}>
                           {t('no_zoom')}
                         </div>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {visibleMeetings.map((m, mIdx) => {
+                          {dedupedMeetings.map((m, mIdx) => {
                             const isActive = getMeetingStatus(m.startTime) === 'active';
+                            const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
+                            const isVisible = isMarked(m);
                             return (
-                              <div key={mIdx} className="zoom-meeting-row">
+                              <div key={mIdx} className="zoom-meeting-row" style={{ opacity: isVisible ? 1 : 0.65 }}>
                                 <div className="zoom-meeting-info">
                                   <span className="zoom-meeting-title">
                                     {m.title}
                                     {isActive && (
                                       <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 700, marginInlineStart: '0.5rem' }}>
                                         ● {t('active_now')}
+                                      </span>
+                                    )}
+                                    {!isVisible && (
+                                      <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginInlineStart: '0.5rem' }}>
+                                        ({t('hidden_tag')})
                                       </span>
                                     )}
                                   </span>
@@ -2206,7 +2441,6 @@ function DashboardTab({
                                 <div className="zoom-meeting-actions">
                                   <button
                                     onClick={() => {
-                                      const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
                                       if (keyId) onToggleMeetingInterest(keyId, allMeetingIds);
                                     }}
                                     style={{
@@ -2214,14 +2448,14 @@ function DashboardTab({
                                       border: 'none',
                                       cursor: 'pointer',
                                       padding: 4,
-                                      color: 'var(--primary)',
+                                      color: isVisible ? 'var(--primary)' : 'var(--text-muted)',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center'
                                     }}
-                                    title={t('hide_from_dashboard')}
+                                    title={isVisible ? t('hide_from_dashboard') : t('show_on_dashboard')}
                                   >
-                                    <EyeIcon />
+                                    {isVisible ? <EyeIcon /> : <EyeOffIcon />}
                                   </button>
                                   <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981' }}>
                                     {t('join_zoom')}
@@ -2246,8 +2480,11 @@ function DashboardTab({
                           {t('no_pending_assignments')}
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                           {next5Assignments.map((a) => {
+                            const isAssignExpanded = expandedCourseAssignId === a.id;
+                            const isHidden = settings?.hiddenAssignments?.includes(a.id);
+                            const isCompleted = a.isCompleted;
                             const { badgeClass, deadlineText } = getDueTextAndClass(
                               a.deadline || null,
                               lang,
@@ -2257,38 +2494,210 @@ function DashboardTab({
                               a.status
                             );
 
+                            const assignSubjectFiles = (syncResult?.files || []).filter(
+                              (f) =>
+                                f.courseId === cid &&
+                                f.sectionName &&
+                                a.sectionName &&
+                                f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
+                            );
+
                             return (
-                              <div key={a.id} className="course-mini-assign-item">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-                                  <span style={{ fontSize: '0.9rem', color: a.status === 'Submitted' ? '#10b981' : 'var(--text-muted)' }}>
-                                    {a.status === 'Submitted' ? '✓' : '○'}
-                                  </span>
-                                  <span className="course-mini-assign-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {a.name}
-                                  </span>
+                              <div
+                                key={a.id}
+                                className={`assignment-card course-mini-assign-item glass-panel ${isCompleted ? 'assignment-completed' : ''}`}
+                                style={{
+                                  padding: '0.65rem 0.85rem',
+                                  borderRadius: 'var(--radius-sm)',
+                                  borderInlineStartColor: color,
+                                  cursor: 'pointer'
+                                }}
+                                onClick={() => setExpandedCourseAssignId(isAssignExpanded ? null : a.id)}
+                              >
+                                <div className="assignment-card-compact-row">
+                                  <div className="assign-left-info">
+                                    <span style={{ fontSize: '0.85rem', color: isCompleted ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
+                                      {isCompleted ? '✓' : '○'}
+                                    </span>
+                                    <span className="assign-title-span" style={{ fontSize: '0.85rem' }} title={a.name}>
+                                      {a.name}
+                                    </span>
+                                    {isHidden && <span className="badge-hidden-tag">{t('hidden_tag')}</span>}
+                                    {a.isCompleted && !a.isMoodleSubmitted && (
+                                      <span
+                                        className="assignment-tag"
+                                        style={{
+                                          background: 'rgba(16, 185, 129, 0.15)',
+                                          color: 'var(--secondary)',
+                                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                                          padding: '0.1rem 0.35rem',
+                                          borderRadius: '4px',
+                                          fontSize: '0.7rem'
+                                        }}
+                                      >
+                                        {t('marked_as_done')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="assign-right-meta">
+                                    <span className={`badge ${badgeClass}`} style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
+                                      {deadlineText}
+                                    </span>
+                                    <button
+                                      className="card-chevron-btn btn-ghost"
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        setExpandedCourseAssignId(isAssignExpanded ? null : a.id);
+                                      }}
+                                    >
+                                      <ChevronDownIcon size={12} expanded={isAssignExpanded} />
+                                    </button>
+                                  </div>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                                  <span className={`badge ${badgeClass}`} style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
-                                    {deadlineText}
-                                  </span>
+                                {/* Expanded Assignment Details */}
+                                <div
+                                  className={`assignment-card-expanded-body expanded-subject-container ${isAssignExpanded ? 'open' : ''}`}
+                                  style={{
+                                    maxHeight: isAssignExpanded ? '600px' : '0px',
+                                    opacity: isAssignExpanded ? 1 : 0,
+                                    overflow: 'hidden',
+                                    transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin 0.2s ease, padding 0.2s ease',
+                                    marginTop: isAssignExpanded ? '0.5rem' : '0px',
+                                    paddingTop: isAssignExpanded ? '0.5rem' : '0px',
+                                    borderTop: isAssignExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Attachments */}
                                   {a.attachments && a.attachments.length > 0 && (
-                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                        {t('attachments')}:
+                                      </span>
                                       {a.attachments.map((att, attIdx) => {
                                         const downloadUrl = token ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}` : att.url;
                                         return (
-                                          <a key={attIdx} href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" title={att.name}>
-                                            <DownloadIcon size={11} />
-                                          </a>
+                                          <div key={attIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                                            <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
+                                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: '0.4rem' }}>
+                                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                {t('open_file')}
+                                              </a>
+                                              <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn">
+                                                <span>{t('download_file')}</span>
+                                                <DownloadIcon size={10} />
+                                              </a>
+                                            </div>
+                                          </div>
                                         );
                                       })}
                                     </div>
                                   )}
-                                  {a.link && (
-                                    <a href={a.link} target="_blank" rel="noreferrer" className="file-action-btn" data-moodle-link="true">
-                                      <ExternalLinkIcon size={11} />
-                                    </a>
+
+                                  {/* Subject Files */}
+                                  {assignSubjectFiles.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                        {t('subject_files')}:
+                                      </span>
+                                      {assignSubjectFiles.map((sf, sfIdx) => {
+                                        const downloadUrl = token ? `${sf.fileUrl}${sf.fileUrl.includes('?') ? '&' : '?'}token=${token}` : sf.fileUrl;
+                                        return (
+                                          <div key={sfIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                                            <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
+                                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: '0.4rem' }}>
+                                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                {t('open_file')}
+                                              </a>
+                                              <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn">
+                                                <span>{t('download_file')}</span>
+                                                <DownloadIcon size={10} />
+                                              </a>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   )}
+
+                                  {/* Submitted Files */}
+                                  {a.submittedFiles && a.submittedFiles.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                        {t('submitted_files')}:
+                                      </span>
+                                      {a.submittedFiles.map((sub, sIdx) => {
+                                        const downloadUrl = token ? `${sub.url}${sub.url.includes('?') ? '&' : '?'}token=${token}` : sub.url;
+                                        return (
+                                          <div key={sIdx} className="submitted-file-chip">
+                                            <CheckIcon size={11} />
+                                            <span style={{ fontSize: '0.75rem' }}>{sub.name}</span>
+                                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: '0.4rem' }}>
+                                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                {t('open_file')}
+                                              </a>
+                                              <a href={downloadUrl} download={sub.name} target="_blank" rel="noreferrer" className="file-action-btn">
+                                                <span>{t('download_file')}</span>
+                                                <DownloadIcon size={10} />
+                                              </a>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Toolbar */}
+                                  <div className="card-expanded-toolbar" style={{ marginTop: '0.35rem' }}>
+                                    <span className="subject-pill">
+                                      <FolderIcon size={12} />
+                                      <span className="subject-label" style={{ fontSize: '0.72rem' }}>{t('subject_label')}:</span>
+                                      <span className="subject-val" style={{ fontSize: '0.72rem' }}>{a.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                                    </span>
+
+                                    <div className="toolbar-buttons-group">
+                                      <button
+                                        className="primary-btn btn-xs"
+                                        onClick={() => onGoToCourse(cid)}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                      >
+                                        <BookOpenIcon size={11} />
+                                        <span>{t('go_to_course')}</span>
+                                      </button>
+
+                                      <button
+                                        className="secondary-btn btn-xs"
+                                        onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                      >
+                                        <CheckIcon size={11} />
+                                        <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                                      </button>
+
+                                      <button
+                                        className="secondary-btn btn-xs"
+                                        onClick={() => onToggleHidden && onToggleHidden(a.id)}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                      >
+                                        {isHidden ? <EyeIcon /> : <EyeOffIcon />}
+                                        <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                                      </button>
+
+                                      {a.link && (
+                                        <a
+                                          href={a.link}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="secondary-btn btn-xs"
+                                          data-moodle-link="true"
+                                        >
+                                          <span>{t('open_in_moodle')}</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -2365,6 +2774,7 @@ function DashboardTab({
 // 2. ASSIGNMENTS TAB (Dedicated v4 Redesign Page)
 function AssignmentsTab({
   assignments,
+  files,
   token,
   getCourseColor,
   getCourseDisplayName,
@@ -2378,6 +2788,7 @@ function AssignmentsTab({
   onToggleHidden,
 }: {
   assignments: EnhancedAssignment[];
+  files?: CourseFile[];
   token: string | null;
   filterCourseId: number | null;
   onClearFilter: () => void;
@@ -2522,6 +2933,14 @@ function AssignmentsTab({
             const isExpanded = expandedAssignId === a.id;
             const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
 
+            const subjectFiles = (files || []).filter(
+              (f) =>
+                f.courseId === a.courseId &&
+                f.sectionName &&
+                a.sectionName &&
+                f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
+            );
+
             return (
               <div
                 key={a.id}
@@ -2544,8 +2963,18 @@ function AssignmentsTab({
                     </span>
                     {isHidden && <span className="badge-hidden-tag">{t('hidden_tag')}</span>}
                     {a.isCompleted && !a.isMoodleSubmitted && (
-                      <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
-                        {t('not_submitted_tag')}
+                      <span
+                        className="assignment-tag"
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: 'var(--secondary)',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem'
+                        }}
+                      >
+                        {t('marked_as_done')}
                       </span>
                     )}
                     {!a.isCompleted && a.isMoodleSubmitted && (
@@ -2611,10 +3040,36 @@ function AssignmentsTab({
                           <div key={attIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                             <span className="file-name">📄 {att.name}</span>
                             <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: '0.5rem' }}>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
                                 {t('open_file')}
                               </a>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                              <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn">
+                                <span>{t('download_file')}</span>
+                                <DownloadIcon size={11} />
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Subject Files */}
+                  {subjectFiles.length > 0 && (
+                    <div className="subject-files-row" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.4rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        {t('subject_files')}:
+                      </span>
+                      {subjectFiles.map((sf, sfIdx) => {
+                        const downloadUrl = token ? `${sf.fileUrl}${sf.fileUrl.includes('?') ? '&' : '?'}token=${token}` : sf.fileUrl;
+                        return (
+                          <div key={sfIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                            <span className="file-name">📂 {sf.fileName}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: '0.5rem' }}>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                {t('open_file')}
+                              </a>
+                              <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn">
                                 <span>{t('download_file')}</span>
                                 <DownloadIcon size={11} />
                               </a>
@@ -2627,7 +3082,7 @@ function AssignmentsTab({
 
                   {/* Submitted Files */}
                   {a.submittedFiles && a.submittedFiles.length > 0 && (
-                    <div className="submitted-files-row" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div className="submitted-files-row" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.4rem' }}>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                         {t('submitted_files')}:
                       </span>
@@ -2640,10 +3095,10 @@ function AssignmentsTab({
                             </span>
                             <span className="file-name">{sub.name}</span>
                             <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: '0.5rem' }}>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
                                 {t('open_file')}
                               </a>
-                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                              <a href={downloadUrl} download={sub.name} target="_blank" rel="noreferrer" className="file-action-btn">
                                 <span>{t('download_file')}</span>
                                 <DownloadIcon size={11} />
                               </a>
@@ -2664,25 +3119,25 @@ function AssignmentsTab({
 
                     <div className="toolbar-buttons-group">
                       <button
-                        className="secondary-btn btn-sm"
+                        className="primary-btn btn-xs"
                         onClick={() => onGoToCourse(a.courseId)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
-                        <BookOpenIcon size={13} />
+                        <BookOpenIcon size={12} />
                         <span>{t('go_to_course')}</span>
                       </button>
 
                       <button
-                        className="secondary-btn btn-sm"
+                        className="secondary-btn btn-xs"
                         onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
-                        <CheckIcon size={13} />
+                        <CheckIcon size={12} />
                         <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
                       </button>
 
                       <button
-                        className="secondary-btn btn-sm"
+                        className="secondary-btn btn-xs"
                         onClick={() => onToggleHidden && onToggleHidden(a.id)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
@@ -2695,7 +3150,7 @@ function AssignmentsTab({
                           href={a.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="primary-btn btn-sm"
+                          className="secondary-btn btn-xs"
                           data-moodle-link="true"
                         >
                           <span>{t('open_in_moodle')}</span>
@@ -2811,6 +3266,7 @@ function SettingsTab({
   onUpdateTheme,
   onUpdateThresholds,
   onToggleScraping,
+  onAddMockCourse,
   tourStep,
 }: {
   settings: ExtensionSettings | null;
@@ -2825,6 +3281,7 @@ function SettingsTab({
   onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee') => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
   onToggleScraping?: (enabled: boolean) => void;
+  onAddMockCourse?: () => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
   tourStep?: number;
@@ -3048,6 +3505,26 @@ function SettingsTab({
           </label>
         </div>
       </div>
+
+      <hr className="settings-divider" />
+
+      {/* Mock Course Section */}
+      <div className="settings-section">
+        <h4>{lang === 'he' ? 'קורס לדוגמה (לבדיקות ותצוגה)' : 'Mock Course (Testing & Showcase)'}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {lang === 'he'
+            ? 'הוסף קורס עשיר עם מפגשי זום פעילים, מטלות עם קבצים מצורפים, קבצים שהוגשו ונושאים לצורך בדיקת ממשק המשתמש.'
+            : 'Add a rich sample course with active Zoom meetings, assignments with attachments, submissions, and sections to test the UI.'}
+        </p>
+        <button
+          className="primary-btn btn-sm"
+          onClick={onAddMockCourse}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <span>➕</span>
+          <span>{t('add_mock_course')}</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -3068,6 +3545,7 @@ function CourseDetailView({
   onToggleMeetingInterest,
   onToggleCompleted,
   onToggleHidden,
+  onToggleHideAllCourse,
 }: {
   courseId: number;
   assignments: Assignment[];
@@ -3081,6 +3559,7 @@ function CourseDetailView({
   onToggleMeetingInterest: (meetingNumber: string, allMeetingNumbers: string[]) => void;
   onToggleCompleted?: (assignmentId: number) => void;
   onToggleHidden?: (assignmentId: number) => void;
+  onToggleHideAllCourse?: (courseAssignIds: number[], shouldHideAll: boolean) => void;
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const [expandedDetailAssignId, setExpandedDetailAssignId] = useState<number | null>(null);
@@ -3572,11 +4051,27 @@ function CourseDetailView({
                               return (
                                 <div key={fIdx} className="section-file-item">
                                   <span className="item-name">📄 {f.fileName}</span>
-                                  <div className="file-meta">
-                                    <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                    <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                      <span>{t('download_file')}</span>
-                                      <DownloadIcon size={11} />
+                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
+                                    <a
+                                      href={downloadUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="file-action-btn"
+                                      style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
+                                    >
+                                      {t('open_file')}
+                                    </a>
+                                    <a
+                                      href={downloadUrl}
+                                      download={f.fileName}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="file-action-btn"
+                                      title={t('download_file')}
+                                      style={{ padding: '0.2rem 0.45rem' }}
+                                    >
+                                      <DownloadIcon size={12} />
                                     </a>
                                   </div>
                                 </div>
@@ -3599,7 +4094,24 @@ function CourseDetailView({
 
         {/* Right column: Assignments Quick Overview */}
         <div className="detail-sidebar">
-          <h4>{t('all_assignments_label')}</h4>
+          {(() => {
+            const allHidden = sortedCourseAssigns.length > 0 && sortedCourseAssigns.every((a) => settings?.hiddenAssignments?.includes(a.id));
+            return (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h4 style={{ margin: 0 }}>{t('all_assignments_label')}</h4>
+                {sortedCourseAssigns.length > 0 && onToggleHideAllCourse && (
+                  <button
+                    className="secondary-btn btn-xs"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => onToggleHideAllCourse(sortedCourseAssigns.map((a) => a.id), !allHidden)}
+                  >
+                    {allHidden ? <EyeIcon /> : <EyeOffIcon />}
+                    <span>{allHidden ? t('unhide_all_assignments') : t('hide_all_assignments')}</span>
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {sortedCourseAssigns.length === 0 ? (
             <div className="empty-state">{lang === 'he' ? 'לא נמצאו מטלות.' : 'No assignments found.'}</div>
           ) : (
@@ -3607,6 +4119,14 @@ function CourseDetailView({
               {sortedCourseAssigns.map((a) => {
                 const isExpanded = expandedDetailAssignId === a.id;
                 const isHidden = settings?.hiddenAssignments?.includes(a.id);
+                const assignSubjectFiles = (files || []).filter(
+                  (f) =>
+                    f.courseId === courseId &&
+                    f.sectionName &&
+                    a.sectionName &&
+                    f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
+                );
+
                 return (
                   <div
                     key={a.id}
@@ -3627,8 +4147,18 @@ function CourseDetailView({
                           </span>
                         )}
                         {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
-                          <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
-                            {t('not_submitted_tag')}
+                          <span
+                            className="assignment-tag"
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: 'var(--secondary)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem'
+                            }}
+                          >
+                            {t('marked_as_done')}
                           </span>
                         )}
                         {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
@@ -3643,7 +4173,7 @@ function CourseDetailView({
                     </div>
 
                     <p className="assign-status" style={{ margin: '0.35rem 0' }}>
-                      {t('status_label')}: {lang === 'he' ? (a.status === 'Submitted' ? 'הוגש' : a.status === 'Not submitted' ? 'טרם הוגש' : a.status === 'Assigned' ? 'הוקצה' : a.status) : a.status}
+                      {t('status_label')}: {(a as any).isCompleted && !(a as any).isMoodleSubmitted ? t('marked_as_done') : lang === 'he' ? (a.status === 'Submitted' ? 'הוגש' : a.status === 'Not submitted' ? 'טרם הוגש' : a.status === 'Assigned' ? 'הוקצה' : a.status) : a.status}
                     </p>
                     {a.status === 'Submitted' ? (
                       <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
@@ -3685,10 +4215,34 @@ function CourseDetailView({
                             return (
                               <div key={attIdx} className="submitted-file-chip" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                 <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
                                   {t('open_file')}
                                 </a>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn">
+                                  <span>{t('download_file')}</span>
+                                  <DownloadIcon size={11} />
+                                </a>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Subject Files */}
+                      {assignSubjectFiles.length > 0 && (
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.7, display: 'block', width: '100%', marginBottom: '0.2rem' }}>
+                            {t('subject_files')}:
+                          </span>
+                          {assignSubjectFiles.map((sf, sfIdx) => {
+                            const downloadUrl = token ? `${sf.fileUrl}${sf.fileUrl.includes('?') ? '&' : '?'}token=${token}` : sf.fileUrl;
+                            return (
+                              <div key={sfIdx} className="submitted-file-chip" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
+                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  {t('open_file')}
+                                </a>
+                                <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn">
                                   <span>{t('download_file')}</span>
                                   <DownloadIcon size={11} />
                                 </a>
@@ -3710,10 +4264,10 @@ function CourseDetailView({
                                 <div key={`sub-${attIdx}`} className="submitted-file-chip">
                                   <CheckIcon size={11} />
                                   <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
                                     {t('open_file')}
                                   </a>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                  <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn">
                                     <span>{t('download_file')}</span>
                                     <DownloadIcon size={11} />
                                   </a>
@@ -3746,7 +4300,7 @@ function CourseDetailView({
                             href={a.link}
                             target="_blank"
                             rel="noreferrer"
-                            className="primary-btn btn-xs"
+                            className="secondary-btn btn-xs"
                             data-moodle-link="true"
                           >
                             <span>{t('submit_assignment')}</span>

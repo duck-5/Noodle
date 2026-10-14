@@ -54,8 +54,8 @@
 }
 
 .sidebar-logo-img {
-  width: 48px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
   max-width: 100%;
   object-fit: contain;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -148,6 +148,19 @@
 .btn-sm {
   font-size: 0.875rem;
   padding: 0.5rem 1rem;
+}
+
+.btn-xs {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.spinning-sync-icon {
+  animation: spin 0.8s linear infinite;
 }
 
 .error-message {
@@ -281,9 +294,9 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: 1.25rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
   transition: margin 0.3s ease;
 }
 
@@ -294,8 +307,8 @@
 }
 
 .sidebar.collapsed .sidebar-logo-img {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
 }
 
 .sidebar.collapsed .sidebar-logo span {
@@ -752,21 +765,22 @@ body.theme-noodle .expanded-subject-container.open {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.82rem;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
-  padding: 0.25rem 0.65rem;
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-body.theme-noodle .subject-pill {
-  background: rgba(194, 112, 68, 0.06);
-  border-color: rgba(194, 112, 68, 0.16);
-  color: var(--text-secondary);
+body.theme-noodle .subject-pill,
+body.theme-coffee .subject-pill {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
 }
 
 .subject-pill .subject-label {

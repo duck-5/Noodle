@@ -130,10 +130,13 @@ graph LR
 | **TC-DASH-REHAUL-02** | Upcoming To-Do Queue Item Filtering & Drawer Expansion | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-03** | Manage Courses Modal Dialog & Semester Partitioning | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-04** | Dark Noodle "Coffee" Theme Visual Verification | Extension (Chrome & Firefox) | Automated & Browser Agent | Theming |
+| **TC-DASH-REHAUL-05** | Settings Mock Course Sandbox Generation & Multi-State Data | Extension (Chrome & Firefox) | Automated & Browser Agent | Settings / Sandbox |
+| **TC-DASH-REHAUL-06** | Zoom Meeting Unhide & Direct Action Controls | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DET-01** | Horizontal Topic / Section Pill Bar | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-02** | Expand / Collapse All Sections | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-03** | Course Statistics Summary Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
 | **TC-DET-04** | Section Materials & Attachments | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
+| **TC-DET-05** | Course Detail "Hide All" Toggle & Dual File Actions | Extension (Chrome & Firefox) | Automated & Browser Agent | Course Detail |
 | **TC-ZM-01** | Zoom Module & Schedule Scraping | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
 | **TC-ZM-02** | Active Meeting Detection (`● פעיל כעת`) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
 | **TC-ZM-03** | Zoom Meeting Interest / Favorite Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
@@ -546,12 +549,32 @@ graph LR
 #### TC-DASH-REHAUL-04: Dark Noodle "Coffee" Theme Visual Verification
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that selecting the `coffee` theme activates deep roast background (`#0f0a07`), rich dark brown cards (`rgba(36, 22, 12, 0.92)`), terracotta/sage accents, and updates the header quick cycle button to ☕.
+* **Description**: Verifies that selecting the `coffee` theme activates the warm dark roast palette (`#1e1612` background), lighter mocha glass cards (`rgba(44, 34, 27, 0.94)`), caramel crema accents (`#e28743`), and high-contrast milk froth typography (`#fff8f0`) with high legibility across all views.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-04"`
 * **Browser Agent Prompt / Action**:
-  1. Toggle theme to "Coffee" in Settings or via quick header button.
+  1. Toggle theme to "Coffee" in Settings.
   2. Verify document body receives `.theme-coffee`.
-  3. Verify background is darker than the cards with high-contrast text.
+  3. Verify cards and panels are visually lighter than the background with sharp, readable text.
+
+#### TC-DASH-REHAUL-05: Settings Mock Course Sandbox Generation & Multi-State Data
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "➕ הוסף קורס לדוגמה" (Add Mock Course) in the Settings Tab injects Course 9999 ("0368-9999-01 קורס לדוגמה - מבני נתונים ואלגוריתמים") containing an active live Zoom meeting, an upcoming meeting, assignments across all states (with attachments, submitted files, and no-deadline tasks), and course topic files.
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Settings Tab.
+  2. Click "➕ הוסף קורס לדוגמה" (`#add-mock-course-btn`).
+  3. Verify toast notification confirms mock course injection.
+  4. Navigate to Dashboard; verify Course 9999 is tracked, live Zoom banner appears, and Hero spotlight displays the nearest task.
+  5. Expand course row; assert active Zoom and next 5 assignments render with expandable cards.
+
+#### TC-DASH-REHAUL-06: Zoom Meeting Unhide & Direct Action Controls
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that all Zoom meetings in course row accordions display an interactive eye icon (`EyeIcon` / `EyeOffIcon`), enabling users to hide and subsequently unhide meetings without permanently losing them.
+* **Browser Agent Prompt / Action**:
+  1. Expand a course row with Zoom meetings.
+  2. Click the eye toggle icon to hide a meeting; verify the icon switches to slashed eye (`EyeOffIcon`).
+  3. Click the eye icon again; verify the meeting returns to visible state (`EyeIcon`).
 
 ---
 
@@ -592,6 +615,16 @@ graph LR
 * **Browser Agent Prompt / Action**:
   1. Expand a section containing files.
   2. Verify file size (e.g. `2.4 MB`) and upload date are visible on file pills.
+
+#### TC-DET-05: Course Detail "Hide All" Toggle & Dual File Actions
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the Course Detail View provides a "הסתר את כל המטלות" / "בטל הסתרת הכל" (Hide All / Unhide All) button that bulk-toggles hidden status across all assignments in that course. In addition, each course file item displays both a green "פתח ↗" direct view button and an SVG "הורדה ↓" download button with the `download` HTML attribute.
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Course Detail View.
+  2. Click "הסתר את כל המטלות"; verify all assignments in this course are marked hidden.
+  3. Click "בטל הסתרת הכל"; verify all assignments return to unhidden state.
+  4. Inspect course files list; verify "פתח" is green and adjacent "הורדה" button is present.
 
 ---
 

@@ -157,6 +157,13 @@ export const translations = {
     mark_todo: "סמן לביצוע",
     submit_in_moodle: "הגש במודל ↗",
     back_to_dashboard: "← חזרה ללוח הבקרה",
+    add_mock_course: "הוסף קורס לדוגמה",
+    mock_course_added: "קורס לדוגמה נוסף בהצלחה!",
+    hide_all_assignments: "הסתר את כל המטלות",
+    unhide_all_assignments: "בטל הסתרת הכל",
+    subject_files: "קבצי הנושא",
+    marked_as_done: "סומן כהושלם",
+    show_all_meetings: "הצג את כל הקישורים",
   },
   en: {
     dashboard: "Dashboard",
@@ -316,5 +323,12 @@ export const translations = {
     mark_todo: "Mark as To Do",
     submit_in_moodle: "Submit in Moodle ↗",
     back_to_dashboard: "← Back to Dashboard",
+    add_mock_course: "Add Mock Course",
+    mock_course_added: "Mock course added successfully!",
+    hide_all_assignments: "Hide All Assignments",
+    unhide_all_assignments: "Unhide All",
+    subject_files: "Subject files",
+    marked_as_done: "Marked as done",
+    show_all_meetings: "Show all Zoom links",
   }
 };
