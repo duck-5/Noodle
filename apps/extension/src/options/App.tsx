@@ -29,8 +29,6 @@ import { translations } from '../shared/i18n';
 import './App.css';
 import logoImg from '../assets/logo.png';
 import aboutIcon from '../assets/about.svg';
-import coursesIcon from '../assets/courses.svg';
-import filesIcon from '../assets/files.svg';
 import settingsIcon from '../assets/settings.svg';
 import dashboardIcon from '../assets/dashboard.svg';
 
@@ -139,6 +137,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [assignmentFilterCourseId, setAssignmentFilterCourseId] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   useEffect(() => {
@@ -244,9 +243,6 @@ export default function App() {
   const [googleSyncStatus, setGoogleSyncStatus] = useState<string | null>(null);
   const [googleSyncLoading, setGoogleSyncLoading] = useState<boolean>(false);
 
-  // Search/Filters states
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [fileSearchQuery, setFileSearchQuery] = useState<string>('');
 
   // Backup and custom disconnect states
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
@@ -1101,37 +1097,31 @@ export default function App() {
 
         <nav className="sidebar-nav">
           <button
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); }}
+            className={`nav-item ${activeTab === 'dashboard' && selectedCourseId === null ? 'active' : ''}`}
+            onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
           >
             <img src={dashboardIcon} alt="" className="nav-icon" /> <span>{t('dashboard')}</span>
           </button>
           <button
-            className={`nav-item ${activeTab === 'courses' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('courses'); setSelectedCourseId(null); }}
+            className={`nav-item ${activeTab === 'assignments' && selectedCourseId === null ? 'active' : ''}`}
+            onClick={() => { setActiveTab('assignments'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
           >
-            <img src={coursesIcon} alt="" className="nav-icon" /> <span>{t('courses')}</span>
+            <AssignmentsIcon size={18} /> <span>{t('assignments')}</span>
           </button>
           <button
-            className={`nav-item ${activeTab === 'files' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('files'); setSelectedCourseId(null); }}
-          >
-            <img src={filesIcon} alt="" className="nav-icon" /> <span>{t('files')}</span>
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'grades' ? 'active' : ''}`}
+            className={`nav-item ${activeTab === 'grades' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
           >
             <span className="nav-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🎓</span> <span>{t('grades')}</span>
           </button>
           <button
-            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+            className={`nav-item ${activeTab === 'settings' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('settings'); setSelectedCourseId(null); }}
           >
             <img src={settingsIcon} alt="" className="nav-icon" /> <span>{t('settings')}</span>
           </button>
           <button
-            className={`nav-item ${activeTab === 'about' ? 'active' : ''}`}
+            className={`nav-item ${activeTab === 'about' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
           >
             <img src={aboutIcon} alt="" className="nav-icon" /> <span>{t('about')}</span>
@@ -1160,7 +1150,16 @@ export default function App() {
       <main className="main-content">
         <header className="content-header">
           <div className="header-title">
-            <h2>{t(activeTab as any)}</h2>
+            <h2>
+              {selectedCourseId !== null
+                ? getCourseDisplayName(
+                    selectedCourseId,
+                    assignmentsList.find((a) => a.courseId === selectedCourseId)?.courseName ||
+                      filesList.find((f) => f.courseId === selectedCourseId)?.courseName ||
+                      `Course ${selectedCourseId}`
+                  )
+                : t(activeTab as any)}
+            </h2>
             <p className="subtitle" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
               <span>{t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}</span>
               {isSyncing ? (
@@ -1196,40 +1195,7 @@ export default function App() {
 
         {/* Tab Contents */}
         <div className="tab-pane">
-          {activeTab === 'dashboard' && (
-            <DashboardTab
-              assignments={assignmentsList}
-              meetings={meetingsList}
-              token={token}
-              getCourseColor={getCourseColor}
-              getCourseDisplayName={getCourseDisplayName}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              settings={settings}
-              t={t}
-              lang={currentLang}
-              tourStep={tourStep}
-              onToggleMeetingInterest={handleToggleMeetingInterest}
-              trackedCourseIds={trackedCourseIds}
-              enrolledCourses={availableCourses}
-              onUpdateColor={handleUpdateCourseColor}
-              onUpdateCustomName={handleUpdateCourseCustomName}
-              onSaveTrackedCourses={async (newIds) => {
-                setTrackedCourseIdsState(newIds);
-                await setTrackedCourseIds(newIds);
-                handleManualSync();
-              }}
-              onGoToCourse={(courseId) => {
-                setSelectedCourseId(courseId);
-                setActiveTab('courses');
-              }}
-              syncResult={syncResult}
-              onToggleCompleted={handleToggleCompleted}
-              onToggleHidden={handleToggleHidden}
-            />
-          )}
-
-          {activeTab === 'courses' && selectedCourseId !== null ? (
+          {selectedCourseId !== null ? (
             <CourseDetailView
               courseId={selectedCourseId}
               assignments={assignmentsList}
@@ -1246,13 +1212,20 @@ export default function App() {
               onToggleCompleted={handleToggleCompleted}
               onToggleHidden={handleToggleHidden}
             />
-          ) : activeTab === 'courses' && (
-            <CoursesTab
-              trackedCourseIds={trackedCourseIds}
-              syncResult={syncResult}
-              enrolledCourses={availableCourses}
+          ) : activeTab === 'dashboard' ? (
+            <DashboardTab
+              assignments={assignmentsList}
+              meetings={meetingsList}
+              token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
+              settings={settings}
+              t={t}
+              lang={currentLang}
+              tourStep={tourStep}
+              onToggleMeetingInterest={handleToggleMeetingInterest}
+              trackedCourseIds={trackedCourseIds}
+              enrolledCourses={availableCourses}
               onUpdateColor={handleUpdateCourseColor}
               onUpdateCustomName={handleUpdateCourseCustomName}
               onSaveTrackedCourses={async (newIds) => {
@@ -1260,31 +1233,35 @@ export default function App() {
                 await setTrackedCourseIds(newIds);
                 handleManualSync();
               }}
-              onSelectCourse={setSelectedCourseId}
-              t={t}
-              lang={currentLang}
-              onToggleScraping={async (enabled: boolean) => {
-                if (!settings) return;
-                const updated = { ...settings, scrapingEnabled: enabled };
-                setSettingsState(updated);
-                await setSettings(updated);
+              onGoToCourse={(courseId) => {
+                setSelectedCourseId(courseId);
               }}
-              tourStep={tourStep}
+              onViewCourseAssignments={(courseId) => {
+                setAssignmentFilterCourseId(courseId);
+                setActiveTab('assignments');
+              }}
+              syncResult={syncResult}
+              onToggleCompleted={handleToggleCompleted}
+              onToggleHidden={handleToggleHidden}
             />
-          )}
-
-          {activeTab === 'files' && (
-            <FilesTab
-              files={filesList}
+          ) : activeTab === 'assignments' ? (
+            <AssignmentsTab
+              assignments={assignmentsList}
               token={token}
               getCourseColor={getCourseColor}
               getCourseDisplayName={getCourseDisplayName}
-              fileSearchQuery={fileSearchQuery}
-              setFileSearchQuery={setFileSearchQuery}
+              filterCourseId={assignmentFilterCourseId}
+              onClearFilter={() => setAssignmentFilterCourseId(null)}
+              onGoToCourse={(courseId) => {
+                setSelectedCourseId(courseId);
+              }}
+              settings={settings}
               t={t}
               lang={currentLang}
+              onToggleCompleted={handleToggleCompleted}
+              onToggleHidden={handleToggleHidden}
             />
-          )}
+          ) : null}
 
           {activeTab === 'grades' && (
             <GradesTab
@@ -1483,6 +1460,14 @@ const DownloadIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const AssignmentsIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-icon" style={{ verticalAlign: 'middle' }}>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+    <path d="M9 14l2 2 4-4" />
+  </svg>
+);
+
 interface TabProps {
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, def: string) => string;
@@ -1490,6 +1475,11 @@ interface TabProps {
   t: (key: any) => string;
   lang: 'he' | 'en';
 }
+
+type EnhancedAssignment = Assignment & {
+  isMoodleSubmitted?: boolean;
+  isCompleted?: boolean;
+};
 
 // Reusable Tracked Courses Configuration Table (Used in CoursesTab and Dashboard Manage Courses Modal)
 function CoursesConfigTable({
@@ -1644,8 +1634,6 @@ function DashboardTab({
   token,
   getCourseColor,
   getCourseDisplayName,
-  searchQuery,
-  setSearchQuery,
   settings,
   t,
   lang,
@@ -1657,15 +1645,14 @@ function DashboardTab({
   onUpdateCustomName,
   onSaveTrackedCourses,
   onGoToCourse,
+  onViewCourseAssignments,
   syncResult,
   onToggleCompleted,
   onToggleHidden,
 }: {
-  assignments: Assignment[];
+  assignments: EnhancedAssignment[];
   meetings: ZoomMeeting[];
   token: string | null;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
   settings: ExtensionSettings | null;
   tourStep?: number;
   onToggleMeetingInterest: (meetingNumber: string, allMeetingIds: string[]) => void;
@@ -1675,22 +1662,16 @@ function DashboardTab({
   onUpdateCustomName?: (id: number, name: string) => void;
   onSaveTrackedCourses?: (newIds: number[]) => void;
   onGoToCourse: (courseId: number) => void;
+  onViewCourseAssignments: (courseId: number) => void;
   syncResult: SyncResult | null;
   onToggleCompleted?: (assignmentId: number) => void;
   onToggleHidden?: (assignmentId: number) => void;
 } & TabProps) {
-  const [expandedAssignId, setExpandedAssignId] = useState<any>(null);
   const [isNextExpanded, setIsNextExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
-  const [menuOpenAssignId, setMenuOpenAssignId] = useState<any>(null);
   const [isNextMenuOpen, setIsNextMenuOpen] = useState<boolean>(false);
-
-  const [filterPending, setFilterPending] = useState<boolean>(true);
-  const [filterPast, setFilterPast] = useState<boolean>(false);
-  const [filterHidden, setFilterHidden] = useState<boolean>(false);
-  const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
 
   const visibleAssignments = assignments.filter((a) => !settings?.hiddenAssignments?.includes(a.id));
   const now = new Date();
@@ -1701,27 +1682,6 @@ function DashboardTab({
     if (!a.deadline) return 1;
     if (!b.deadline) return -1;
     return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-  });
-
-  const filteredAssigns = sortedAssigns.filter((a) => {
-    const isSearchMatch =
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.courseName.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!isSearchMatch) return false;
-
-    const isHidden = settings?.hiddenAssignments?.includes(a.id);
-    const isCompleted = a.status === 'Submitted';
-    const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
-
-    if (isHidden && filterHidden) return true;
-    if (!isHidden && isCompleted && filterCompleted) return true;
-
-    if (!isHidden && !isCompleted) {
-      if (hasDeadlinePassed && filterPast) return true;
-      if (!hasDeadlinePassed && filterPending) return true;
-    }
-
-    return false;
   });
 
   // Find the closest future assignment (Hero spotlight)
@@ -1871,14 +1831,14 @@ function DashboardTab({
                 {isNextMenuOpen && (
                   <div className="card-revealed-menu" onClick={(ev) => ev.stopPropagation()}>
                     <button
-                      className={`card-action-btn ${(nextAssignment as any).isCompleted ? 'card-action-btn-completed' : 'card-action-btn-complete'}`}
+                      className={`card-action-btn ${nextAssignment.isCompleted ? 'card-action-btn-completed' : 'card-action-btn-complete'}`}
                       onClick={() => {
                         onToggleCompleted && onToggleCompleted(nextAssignment.id);
                         setIsNextMenuOpen(false);
                       }}
                     >
                       <CheckIcon size={13} />
-                      <span>{(nextAssignment as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                      <span>{nextAssignment.isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
                     </button>
                     <button
                       className="card-action-btn card-action-btn-ghost"
@@ -2182,7 +2142,7 @@ function DashboardTab({
                         className="secondary-btn btn-sm"
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          setSearchQuery(rawCourseName);
+                          onViewCourseAssignments(cid);
                         }}
                       >
                         <span>{t('view_assignments')}</span>
@@ -2344,281 +2304,7 @@ function DashboardTab({
         </div>
       </div>
 
-      {/* 5. Assignments Calendar Section */}
-      <div className={`dashboard-section glass-panel ${tourStep === 2 ? 'tour-highlight' : ''}`}>
-        <div className="section-header-row">
-          <h3 style={{ margin: 0 }}>{t('assignments_calendar')}</h3>
-          <input
-            type="text"
-            className="search-input"
-            placeholder={t('search_assignments')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem', fontSize: '0.85rem' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={filterPending} onChange={(e) => setFilterPending(e.target.checked)} />
-            {lang === 'he' ? 'לביצוע' : 'To Do'}
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={filterPast} onChange={(e) => setFilterPast(e.target.checked)} />
-            {lang === 'he' ? 'עברו' : 'Past'}
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={filterCompleted} onChange={(e) => setFilterCompleted(e.target.checked)} />
-            {lang === 'he' ? 'הושלמו' : 'Completed'}
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={filterHidden} onChange={(e) => setFilterHidden(e.target.checked)} />
-            {lang === 'he' ? 'מוסתרים' : 'Hidden'}
-          </label>
-        </div>
-
-        <div className="assignments-list">
-          {filteredAssigns.length === 0 ? (
-            <div className="empty-state">{t('empty_state_pending')}</div>
-          ) : (
-            filteredAssigns.map((a) => {
-              const color = getCourseColor(a.courseId);
-              const { badgeClass, deadlineText } = getDueTextAndClass(
-                a.deadline || null,
-                lang,
-                settings?.assignmentGreenDaysThreshold,
-                settings?.assignmentYellowDaysThreshold,
-                false,
-                a.status
-              );
-
-              const isCompleted = a.status === 'Submitted';
-              const isHidden = settings?.hiddenAssignments?.includes(a.id);
-              const isExpanded = expandedAssignId === a.id;
-              const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
-
-              return (
-                <div
-                  key={a.id}
-                  className={`assignment-card glass-panel clickable-card ${isExpanded ? 'expanded' : ''}`}
-                  onClick={(e) => {
-                    if ((e.target as HTMLElement).closest('a, button, input')) return;
-                    setExpandedAssignId(isExpanded ? null : a.id);
-                  }}
-                >
-                  <div className="assignment-accent-bar" style={{ backgroundColor: color }} />
-
-                  <div className="assignment-card-header">
-                    <div className="assign-main" style={{ textAlign: lang === 'he' ? 'right' : 'left' }}>
-                      {courseDisplayName ? (
-                        <div className="assign-course-tag" style={{ color }}>
-                          <span className="assign-course-dot" style={{ backgroundColor: color }} />
-                          {courseDisplayName}
-                        </div>
-                      ) : null}
-                      <h4 className="assign-name">
-                        {a.name}
-                        {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
-                          <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
-                            {t('not_submitted_tag')}
-                          </span>
-                        )}
-                        {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
-                          <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
-                            {t('submitted_tag')}
-                          </span>
-                        )}
-                      </h4>
-                      {a.attachments && a.attachments.length > 0 && (
-                        <div className="attachment-button-row" style={{ marginTop: '0.4rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {a.attachments.map((att, attIdx) => {
-                            const downloadUrl = token
-                              ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                              : att.url;
-                            return (
-                              <div key={attIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                <span style={{ fontSize: '0.78rem' }}>📄 {att.name}</span>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => ev.stopPropagation()}>
-                                  {t('open_file')}
-                                </a>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => ev.stopPropagation()}>
-                                  <span>{t('download_file')}</span>
-                                  <DownloadIcon size={11} />
-                                </a>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {a.submittedFiles && a.submittedFiles.length > 0 && (
-                        <div className="attachment-button-row" style={{ marginTop: '0.4rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>
-                            {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                          </span>
-                          {a.submittedFiles.map((att, attIdx) => {
-                            const downloadUrl = token
-                              ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}`
-                              : att.url;
-                            return (
-                              <div key={`sub-${attIdx}`} className="submitted-file-chip">
-                                <CheckIcon size={11} />
-                                <span style={{ fontSize: '0.78rem' }}>{att.name}</span>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => ev.stopPropagation()}>
-                                  {t('open_file')}
-                                </a>
-                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => ev.stopPropagation()}>
-                                  <span>{t('download_file')}</span>
-                                  <DownloadIcon size={11} />
-                                </a>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="assign-meta">
-                      <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                      {!(a as any).isCompleted && !(a as any).isMoodleSubmitted && a.link && (
-                        <a
-                          href={a.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="action-submit-btn"
-                          onClick={(ev) => ev.stopPropagation()}
-                          data-moodle-link="true"
-                        >
-                          <span>{t('submit_assignment')}</span>
-                        </a>
-                      )}
-                      <button
-                        className="card-chevron-btn"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setExpandedAssignId(isExpanded ? null : a.id);
-                        }}
-                        title={isExpanded ? (lang === 'he' ? 'צמצם' : 'Collapse') : (lang === 'he' ? 'הרחב' : 'Expand')}
-                      >
-                        <ChevronDownIcon size={14} expanded={isExpanded} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expanding subject (section) element */}
-                  <div
-                    className={`expanded-subject-container ${isExpanded ? 'open' : ''}`}
-                    onClick={(ev) => ev.stopPropagation()}
-                    style={{
-                      textAlign: lang === 'he' ? 'right' : 'left'
-                    }}
-                  >
-                    <div className="expanded-toolbar-row">
-                      <div className="expanded-subject-info">
-                        <span className="subject-pill">
-                          <FolderIcon size={13} />
-                          <span className="subject-label">{t('subject_label')}:</span>
-                          <span className="subject-val">{a.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
-                        </span>
-                      </div>
-
-                      <div className="expanded-actions-group">
-                        <button
-                          className="card-action-btn card-action-btn-ghost"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            setMenuOpenAssignId(menuOpenAssignId === a.id ? null : a.id);
-                          }}
-                          title={t('more_actions')}
-                        >
-                          <span>⋯</span>
-                          <span>{t('more_actions')}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {menuOpenAssignId === a.id && (
-                      <div className="card-revealed-menu" onClick={(ev) => ev.stopPropagation()}>
-                        <button
-                          className={`card-action-btn ${isCompleted ? 'card-action-btn-completed' : 'card-action-btn-complete'}`}
-                          onClick={() => {
-                            onToggleCompleted && onToggleCompleted(a.id);
-                            setMenuOpenAssignId(null);
-                          }}
-                        >
-                          <CheckIcon size={13} />
-                          <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                        </button>
-                        <button
-                          className="card-action-btn card-action-btn-ghost"
-                          onClick={() => {
-                            onGoToCourse(a.courseId);
-                            setMenuOpenAssignId(null);
-                          }}
-                        >
-                          <BookOpenIcon size={13} />
-                          <span>{t('go_to_course')}</span>
-                        </button>
-                        {a.link && (
-                          <a
-                            href={a.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="card-action-btn card-action-btn-ghost"
-                            style={{ textDecoration: 'none' }}
-                          >
-                            <ExternalLinkIcon size={13} />
-                            <span>{t('open_in_moodle')}</span>
-                          </a>
-                        )}
-                        <button
-                          className="card-action-btn card-action-btn-ghost"
-                          onClick={() => {
-                            onToggleHidden && onToggleHidden(a.id);
-                            setMenuOpenAssignId(null);
-                          }}
-                        >
-                          {isHidden ? <EyeIcon /> : <EyeOffIcon />}
-                          <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {(() => {
-                      const subjectFiles = (syncResult?.files || []).filter(
-                        (f) => f.courseId === a.courseId && f.sectionName === (a.sectionName || 'General')
-                      );
-                      if (subjectFiles.length === 0) return null;
-                      return (
-                        <div className="section-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
-                          {subjectFiles.map((f, fIdx) => {
-                            const downloadUrl = token
-                              ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                              : f.fileUrl;
-                            return (
-                              <div key={fIdx} className="section-file-item">
-                                <span className="item-name" style={{ fontSize: '0.85rem' }}>📄 {f.fileName}</span>
-                                <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                  {f.fileSize > 0 && (
-                                    <span className="file-size" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                  )}
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-link-btn file-btn" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                    <span>{t('download_file')}</span>
-                                    <DownloadIcon size={11} />
-                                  </a>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* 6. Manage Courses Modal */}
+      {/* 5. Manage Courses Modal */}
       {isManageModalOpen && (
         <div
           className="modal-backdrop"
@@ -2676,218 +2362,360 @@ function DashboardTab({
   );
 }
 
-// 2. COURSES TAB
-function CoursesTab({
-  trackedCourseIds,
-  syncResult,
-  enrolledCourses,
-  getCourseColor,
-  getCourseDisplayName,
-  onUpdateColor,
-  onUpdateCustomName,
-  onSaveTrackedCourses,
-  onSelectCourse,
-  t,
-  lang,
-  tourStep,
-}: {
-  trackedCourseIds: number[];
-  syncResult: SyncResult | null;
-  enrolledCourses: any[];
-  onUpdateColor: (id: number, color: string) => void;
-  onUpdateCustomName: (id: number, name: string) => void;
-  onSaveTrackedCourses: (newIds: number[]) => void;
-  onSelectCourse: (id: number) => void;
-  tourStep?: number;
-} & TabProps) {
-  const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
-
-  if (enrolledCourses && enrolledCourses.length > 0) {
-    enrolledCourses.forEach(c => {
-      coursesMap.set(c.id, { id: c.id, name: c.fullname || c.shortname || `Course ${c.id}`, idnumber: c.idnumber || c.shortname || '' });
-    });
-  } else if (syncResult) {
-    syncResult.assignments.forEach((a) => {
-      coursesMap.set(a.courseId, { id: a.courseId, name: a.courseName, idnumber: '' });
-    });
-    syncResult.files.forEach((f) => {
-      coursesMap.set(f.courseId, { id: f.courseId, name: f.courseName, idnumber: '' });
-    });
-  }
-
-  const coursesList = Array.from(coursesMap.values());
-  const [configExpanded, setConfigExpanded] = useState<boolean>(false);
-
-  return (
-    <div className="courses-tab-container" dir={lang === 'he' ? 'rtl' : 'ltr'}>
-      {/* 1. Configuration Button & Expandable Panel */}
-      <div className={`dashboard-section glass-panel ${tourStep === 3 ? 'tour-highlight' : ''}`} style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
-          <button
-            className="courses-config-toggle-btn"
-            onClick={() => setConfigExpanded(!configExpanded)}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', cursor: 'pointer' }}
-          >
-            {t('courses_configuration_btn')} {configExpanded ? '▲' : '▼'}
-          </button>
-        </div>
-
-        {configExpanded && (
-          <div className="config-expanded-content" style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem' }}>
-            <CoursesConfigTable
-              trackedCourseIds={trackedCourseIds}
-              syncResult={syncResult}
-              enrolledCourses={enrolledCourses || []}
-              getCourseColor={getCourseColor}
-              getCourseDisplayName={getCourseDisplayName}
-              onUpdateColor={onUpdateColor}
-              onUpdateCustomName={onUpdateCustomName}
-              onSaveTrackedCourses={onSaveTrackedCourses}
-              t={t}
-              lang={lang}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* 2. Navigation Pane */}
-      <div className={`dashboard-section glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}>
-        <h3>{t('navigation_pane_title')}</h3>
-
-        {trackedCourseIds.length === 0 ? (
-          <div className="empty-state">
-            {lang === 'he'
-              ? 'אנא בחר קורסים למעקב בהגדרות למעלה.'
-              : 'Please select courses to track in the configuration menu above.'}
-          </div>
-        ) : (
-          <div className="navigation-pane-list" style={{ marginTop: '1.5rem' }}>
-            {coursesList
-              .filter(c => trackedCourseIds.includes(c.id))
-              .map(c => {
-                const color = getCourseColor(c.id);
-                const displayName = getCourseDisplayName(c.id, c.name);
-                return (
-                  <div key={c.id} className="nav-course-card glass-panel" style={{ borderLeft: lang !== 'he' ? `4px solid ${color}` : undefined, borderRight: lang === 'he' ? `4px solid ${color}` : undefined, marginBottom: '0.8rem', padding: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h4
-                        className="nav-course-title"
-                        onClick={() => onSelectCourse(c.id)}
-                        style={{ color: color, cursor: 'pointer', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                      >
-                        📖 {displayName}
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({c.name.split('-')[0]})</span>
-                      </h4>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <a href={getCourseMoodleUrl(c)} target="_blank" rel="noreferrer" className="action-icon-link" data-moodle-link="true" onClick={(ev) => ev.stopPropagation()}>{lang === 'he' ? 'מודל ↗' : 'Moodle ↗'}</a>
-                        <button
-                          className="secondary-btn btn-xs"
-                          onClick={() => onSelectCourse(c.id)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                        >
-                          {t('go_to_course_page')}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// 3. FILES TAB
-function FilesTab({
-  files,
+// 2. ASSIGNMENTS TAB (Dedicated v4 Redesign Page)
+function AssignmentsTab({
+  assignments,
   token,
   getCourseColor,
   getCourseDisplayName,
-  fileSearchQuery,
-  setFileSearchQuery,
+  filterCourseId,
+  onClearFilter,
+  onGoToCourse,
+  settings,
   t,
   lang,
+  onToggleCompleted,
+  onToggleHidden,
 }: {
-  files: CourseFile[];
+  assignments: EnhancedAssignment[];
   token: string | null;
-  fileSearchQuery: string;
-  setFileSearchQuery: (q: string) => void;
+  filterCourseId: number | null;
+  onClearFilter: () => void;
+  onGoToCourse: (courseId: number) => void;
+  settings: ExtensionSettings | null;
+  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleHidden?: (assignmentId: number) => void;
 } & TabProps) {
-  const filteredFiles = files.filter(
-    (f) =>
-      f.fileName.toLowerCase().includes(fileSearchQuery.toLowerCase()) ||
-      f.courseName.toLowerCase().includes(fileSearchQuery.toLowerCase())
-  );
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filterPending, setFilterPending] = useState<boolean>(true);
+  const [filterPast, setFilterPast] = useState<boolean>(false);
+  const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
+  const [filterHidden, setFilterHidden] = useState<boolean>(false);
+  const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
 
-  // Group files by course
-  const filesByCourse: Record<number, { courseName: string; list: CourseFile[] }> = {};
-  filteredFiles.forEach((f) => {
-    if (!filesByCourse[f.courseId]) {
-      filesByCourse[f.courseId] = { courseName: f.courseName, list: [] };
+  const now = new Date();
+
+  // Sort assignments by due date ascending
+  const sortedAssigns = [...assignments].sort((a, b) => {
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+  });
+
+  const filteredAssigns = sortedAssigns.filter((a) => {
+    if (filterCourseId && a.courseId !== filterCourseId) return false;
+
+    const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName).toLowerCase();
+    const taskName = a.name.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    if (q && !taskName.includes(q) && !courseDisplayName.includes(q) && !a.courseName.toLowerCase().includes(q)) {
+      return false;
     }
-    filesByCourse[f.courseId].list.push(f);
+
+    const isHidden = !!settings?.hiddenAssignments?.includes(a.id);
+    const isCompleted = a.status === 'Submitted';
+    const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
+
+    if (isHidden && filterHidden) return true;
+    if (!isHidden && isCompleted && filterCompleted) return true;
+
+    if (!isHidden && !isCompleted) {
+      if (hasDeadlinePassed && filterPast) return true;
+      if (!hasDeadlinePassed && filterPending) return true;
+    }
+
+    return false;
   });
 
   return (
-    <div className="dashboard-section glass-panel">
-      <div className="section-header-row">
-        <h3>{lang === 'he' ? 'משאבי קורסים וקבצים' : 'Course Resources & Files'}</h3>
-        <input
-          type="text"
-          className="search-input"
-          placeholder={t('search_files_placeholder')}
-          value={fileSearchQuery}
-          onChange={(e) => setFileSearchQuery(e.target.value)}
-        />
+    <div className="tab-assignments">
+      {/* Filter Bar */}
+      <div className="filter-bar glass-panel" style={{ padding: '0.85rem 1.25rem' }}>
+        <div className="search-input-box">
+          <input
+            type="text"
+            className="search-input"
+            placeholder={t('search_assignments_feed')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        {/* 4 Filter Checkboxes */}
+        <div className="filter-checkboxes">
+          <label>
+            <input
+              type="checkbox"
+              checked={filterPending}
+              onChange={(e) => setFilterPending(e.target.checked)}
+            />
+            <span>{t('filter_todo')}</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filterPast}
+              onChange={(e) => setFilterPast(e.target.checked)}
+            />
+            <span>{t('filter_past')}</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filterCompleted}
+              onChange={(e) => setFilterCompleted(e.target.checked)}
+            />
+            <span>{t('filter_completed')}</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filterHidden}
+              onChange={(e) => setFilterHidden(e.target.checked)}
+            />
+            <span>{t('filter_hidden')}</span>
+          </label>
+        </div>
       </div>
 
-      {files.length === 0 ? (
-        <div className="empty-state">{t('empty_state_files')}</div>
-      ) : Object.keys(filesByCourse).length === 0 ? (
-        <div className="empty-state">{lang === 'he' ? 'לא נמצאו קבצים התואמים לחיפוש.' : 'No files matching search criteria.'}</div>
-      ) : (
-        <div className="files-grouped-list">
-          {Object.entries(filesByCourse).map(([courseIdStr, group]) => {
-            const courseId = Number(courseIdStr);
-            const color = getCourseColor(courseId);
-            return (
-              <div key={courseId} className="course-files-group glass-panel" style={{ borderLeft: `4px solid ${color}` }}>
-                <h4 className="group-course-title" style={{ color }}>
-                  {getCourseDisplayName(courseId, group.courseName)}
-                </h4>
-                <div className="files-table">
-                  {group.list.map((f, idx) => {
-                    const downloadUrl = token
-                      ? `${f.fileUrl}${f.fileUrl.includes('?') ? '&' : '?'}token=${token}`
-                      : f.fileUrl;
+      {/* Course Filter Banner (When navigating from specific course) */}
+      {filterCourseId && (
+        <div
+          className="glass-panel course-filter-banner"
+          style={{ borderInlineStartColor: getCourseColor(filterCourseId) }}
+        >
+          <span>
+            {t('filter_by_course')}{' '}
+            <strong style={{ color: getCourseColor(filterCourseId) }}>
+              {getCourseDisplayName(
+                filterCourseId,
+                assignments.find((a) => a.courseId === filterCourseId)?.courseName || `Course ${filterCourseId}`
+              )}
+            </strong>
+          </span>
+          <button className="file-action-btn" onClick={onClearFilter}>
+            {t('clear_filter')}
+          </button>
+        </div>
+      )}
 
-                    return (
-                      <div key={idx} className="file-row">
-                        <div className="file-info-cell">
-                          <span className="file-name-span">{f.fileName}</span>
-                          <span className="file-section-tag">{f.sectionName}</span>
-                        </div>
-                        <div className="file-size-cell">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</div>
-                        <div className="file-action-cell">
-                          <a href={downloadUrl} target="_blank" rel="noreferrer" className="action-icon-link">
-                            {t('download')}
-                          </a>
-                        </div>
-                      </div>
-                    );
-                  })}
+      {/* Assignments Feed */}
+      <div className="assignments-feed assignments-list">
+        {filteredAssigns.length === 0 ? (
+          <div className="glass-panel empty-state" style={{ padding: '2.5rem', textAlign: 'center' }}>
+            {t('no_assignments_match')}
+          </div>
+        ) : (
+          filteredAssigns.map((a) => {
+            const color = getCourseColor(a.courseId);
+            const { badgeClass, deadlineText } = getDueTextAndClass(
+              a.deadline || null,
+              lang,
+              settings?.assignmentGreenDaysThreshold,
+              settings?.assignmentYellowDaysThreshold,
+              false,
+              a.status
+            );
+            const isCompleted = a.status === 'Submitted';
+            const isHidden = !!settings?.hiddenAssignments?.includes(a.id);
+            const isExpanded = expandedAssignId === a.id;
+            const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
+
+            return (
+              <div
+                key={a.id}
+                className={`assignment-card glass-panel clickable-card ${isExpanded ? 'expanded is-expanded' : ''} ${isHidden ? 'is-hidden' : ''}`}
+                style={{ borderInlineStartColor: color }}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('a, button, input')) return;
+                  setExpandedAssignId(isExpanded ? null : a.id);
+                }}
+              >
+                {/* Minimized compact row */}
+                <div className="assignment-card-compact-row">
+                  <div className="assign-left-info">
+                    <span className="course-color-dot" style={{ backgroundColor: color }} />
+                    <span style={{ fontWeight: 700, color, fontSize: '0.85rem' }}>
+                      {courseDisplayName}
+                    </span>
+                    <span className="assign-title-span" title={a.name}>
+                      {a.name}
+                    </span>
+                    {isHidden && <span className="badge-hidden-tag">{t('hidden_tag')}</span>}
+                    {a.isCompleted && !a.isMoodleSubmitted && (
+                      <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                        {t('not_submitted_tag')}
+                      </span>
+                    )}
+                    {!a.isCompleted && a.isMoodleSubmitted && (
+                      <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                        {t('submitted_tag')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="assign-right-meta">
+                    <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                    {!isCompleted && a.link && (
+                      <a
+                        href={a.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="file-action-btn"
+                        onClick={(ev) => ev.stopPropagation()}
+                        data-moodle-link="true"
+                      >
+                        {t('submit_in_moodle')}
+                      </a>
+                    )}
+                    {isCompleted && (
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>✓</span>
+                    )}
+                    <button
+                      className="card-chevron-btn btn-ghost"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setExpandedAssignId(isExpanded ? null : a.id);
+                      }}
+                      title={isExpanded ? (lang === 'he' ? 'צמצם' : 'Collapse') : (lang === 'he' ? 'הרחב' : 'Expand')}
+                    >
+                      <ChevronDownIcon size={14} expanded={isExpanded} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded body (smoothly animated) */}
+                <div
+                  className={`assignment-card-expanded-body expanded-subject-container ${isExpanded ? 'open' : ''}`}
+                  style={{
+                    maxHeight: isExpanded ? '600px' : '0px',
+                    opacity: isExpanded ? 1 : 0,
+                    overflow: 'hidden',
+                    transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin 0.2s ease, padding 0.2s ease',
+                    marginTop: isExpanded ? '0.75rem' : '0px',
+                    paddingTop: isExpanded ? '0.75rem' : '0px',
+                    borderTop: isExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Attachments */}
+                  {a.attachments && a.attachments.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        {t('attachments')}:
+                      </span>
+                      {a.attachments.map((att, attIdx) => {
+                        const downloadUrl = token ? `${att.url}${att.url.includes('?') ? '&' : '?'}token=${token}` : att.url;
+                        return (
+                          <div key={attIdx} className="submitted-file-chip" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                            <span className="file-name">📄 {att.name}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: '0.5rem' }}>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                {t('open_file')}
+                              </a>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                <span>{t('download_file')}</span>
+                                <DownloadIcon size={11} />
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Submitted Files */}
+                  {a.submittedFiles && a.submittedFiles.length > 0 && (
+                    <div className="submitted-files-row" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        {t('submitted_files')}:
+                      </span>
+                      {a.submittedFiles.map((sub, sIdx) => {
+                        const downloadUrl = token ? `${sub.url}${sub.url.includes('?') ? '&' : '?'}token=${token}` : sub.url;
+                        return (
+                          <div key={`sub-${sIdx}`} className="submitted-file-chip">
+                            <span className="file-check-badge">
+                              <CheckIcon size={12} />
+                            </span>
+                            <span className="file-name">{sub.name}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: '0.5rem' }}>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                {t('open_file')}
+                              </a>
+                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn">
+                                <span>{t('download_file')}</span>
+                                <DownloadIcon size={11} />
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Toolbar */}
+                  <div className="card-expanded-toolbar">
+                    <span className="subject-pill">
+                      <FolderIcon size={13} />
+                      <span className="subject-label">{t('subject_label')}:</span>
+                      <span className="subject-val">{a.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                    </span>
+
+                    <div className="toolbar-buttons-group">
+                      <button
+                        className="secondary-btn btn-sm"
+                        onClick={() => onGoToCourse(a.courseId)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <BookOpenIcon size={13} />
+                        <span>{t('go_to_course')}</span>
+                      </button>
+
+                      <button
+                        className="secondary-btn btn-sm"
+                        onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <CheckIcon size={13} />
+                        <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                      </button>
+
+                      <button
+                        className="secondary-btn btn-sm"
+                        onClick={() => onToggleHidden && onToggleHidden(a.id)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        {isHidden ? <EyeIcon /> : <EyeOffIcon />}
+                        <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                      </button>
+
+                      {a.link && (
+                        <a
+                          href={a.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="primary-btn btn-sm"
+                          data-moodle-link="true"
+                        >
+                          <span>{t('open_in_moodle')}</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
     </div>
   );
 }
+
+
+
+
 
 // 4. GRADES TAB
 function GradesTab({

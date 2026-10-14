@@ -49,11 +49,11 @@ Presented immediately after successful authentication or when manually triggered
 ### A. Navigation Sidebar (Desktop Options Page)
 *   **Header**: Scaled Noodle Logo (`576px` responsive, transitions to `40px` when collapsed) and "Noodle" application title.
 *   **Navigation Menu Items**:
-    - **Dashboard**: Chronological tasks list.
-    - **Courses**: Course personalized settings.
-    - **Files**: Resources browser.
-    - **Settings**: Configuration settings.
-    - **About**: Credits and application details.
+    - **Dashboard** (`dashboard`): Central overview cockpit (Hero Action Strip, Multi-Active Zoom, Semester Progress, My Tracked Courses).
+    - **Assignments** (`assignments`): Dedicated full-page assignments feed with search, status filters, course filter banner, and expandable cards.
+    - **Grades** (`grades`): Course grades breakdown, averages, and overall GPA tracker.
+    - **Settings** (`settings`): Configuration settings, scraping fallback toggle, Google Tasks, and backup.
+    - **About** (`about`): Credits, application details, and interactive tour launcher.
 *   **Sidebar Collapse Toggle**:
     - Flat button at the bottom of the sidebar with an arrow icon.
     - Clicking toggles width state (`240px` expanded vs `72px` collapsed).
@@ -96,23 +96,29 @@ The top of the dashboard features a split horizontal action strip designed for r
      - **Visible Zoom Links**: All meetings configured as visible/interested for this course.
      - **Next 5 Assignments**: Up to 5 upcoming assignments with status indicators, due badges, and direct links.
 
-### D. Unified Assignments Calendar ("לוח הגשות")
-* **Filter Checkboxes**: Real-time filters for Pending ("לביצוע"), Past ("עברו"), Completed ("הושלמו"), and Hidden ("מוסתרים").
-* **Full Text Search**: Immediate debounced filter by assignment or course name.
-* **Expandable Assignment Cards**:
-  - Color-accented course indicator.
-  - Attached file chips with separate "Open" and "Download" (SVG arrow) actions.
-  - Expanding accordion drawer with subject topic, attachments, Moodle link, completion toggle, and hide/unhide button.
-*   **Inline Course Section accordion**:
-    - Slides down on clicking the assignment card using height and opacity transitions.
-    - Lists related course resources:
-        - **Files**: PDF slides or links to downloads.
-        - **Zoom Link**: Clickable button to join lecture.
-        - **Go to Course Button**: Jumps to the Course Detail view for the parent course.
+---
+
+## 4. Dedicated Assignments Tab ("מטלות")
+
+A dedicated full-page assignment feed providing comprehensive management of all academic tasks:
+* **Filter Bar**:
+  - **Full Text Search**: Immediate debounced filter by assignment or course name.
+  - **Filter Checkboxes**: Real-time filters for Pending ("לביצוע"), Past ("עברו"), Completed ("הושלמו"), and Hidden ("מוסתרים").
+* **Course Filter Banner**:
+  - Appears when navigating from a course row's "מטלות" button: `מסנן לפי קורס: [Course Name]`.
+  - Includes an inline "הצג את כל הקורסים ✕" button to easily clear the filter and return to the complete assignments feed.
+* **Compact / Minimized Cards**:
+  - Collapsed by default to maximize visible density.
+  - Shows course dot, course display name, task title, manual completion/submission tags, proximity deadline badge, direct Moodle submission link, and expansion chevron.
+* **Smooth Accordion Drawer**:
+  - **Attachments**: Downloadable files with separate "פתח ↗" (Open) and "הורדה ↓" (SVG down-arrow icon) action buttons.
+  - **Submitted Files**: Files uploaded by the student with checkmark indicator and open/download buttons.
+  - **Subject / Topic Pill**: Displays the course section or topic folder (`נושא: ...`).
+  - **Action Toolbar**: "עבור לקורס", "סמן כבוצע / לביצוע", "הסתר / בטל הסתרה", and "פתח במודל ↗".
 
 ---
 
-## 4. Courses Tab
+## 5. Course Detail View
 
 ### A. Tracked Courses Catalog
 *   Grid of cards representing active courses.

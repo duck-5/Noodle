@@ -120,10 +120,10 @@ graph LR
 | **TC-ASN-03** | Submission Status & Grade Pill | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-04** | Manual Completion Toggle (Override) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-05** | Hide & Unhide Assignments | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-06** | Status Filter Tabs (Pending/Past/Done/Hidden) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-07** | Global Assignment & Course Text Search | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-08** | In-Place Subject & Material Accordion | All (Mobile + Chrome + Firefox) | Browser Agent | Dashboard |
-| **TC-ASN-09** | Direct Moodle Submission Link Launch | All (Mobile + Chrome + Firefox) | Browser Agent | Dashboard |
+| **TC-ASN-06** | Status Filter Tabs (Pending/Past/Done/Hidden) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-07** | Global Assignment & Course Text Search | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-08** | In-Place Subject & Material Accordion | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-09** | Course-Specific Filter Banner & Deep Navigation | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
 | **TC-ASN-10** | "Next Up" Urgent Deadline Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-11** | Pull-to-Refresh Gesture | Mobile Only | Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-01** | Tracked Course Card Row Expansion (Zoom & 5 Assignments) | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
@@ -480,14 +480,19 @@ graph LR
   1. Click on an assignment card.
   2. Assert accordion expands smoothly, revealing assignment description and downloadable attachments.
 
-#### TC-ASN-09: Direct Moodle Submission Link Launch
+#### TC-ASN-09: Course-Specific Assignment Filtering & Deep Navigation
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
-* **Modality**: `Browser Agent`
-* **Description**: Clicking the Moodle icon or "Open in Moodle" on an assignment opens `https://moodle.tau.ac.il/mod/assign/view.php?id={id}`.
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "מטלות" (Assignments) on any tracked course card row navigates to the dedicated Assignments tab pre-filtered to that specific course. Displays the course filter banner (`מסנן לפי קורס: [Course Name]`) with a clear button ("הצג את כל הקורסים ✕") that restores the full assignment feed.
+* **Automated Test Flow**:
+  1. Click "מטלות" button inside course card row (e.g. courseId: 1).
+  2. Verify navigation to Assignments tab and `.course-filter-banner` visibility with course name.
+  3. Verify only assignments belonging to course 1 are listed.
+  4. Click clear filter button (`.course-filter-banner button`); assert banner disappears and full assignment feed is restored.
 * **Browser Agent Prompt / Action**:
-  1. Expand an assignment card.
-  2. Click "הגש במודל" / "Submit in Moodle".
-  3. Assert tab opens to assignment URL.
+  1. Click "מטלות" on a course row.
+  2. Confirm the filter banner is visible and matches the course name.
+  3. Click "הצג את כל הקורסים ✕" and confirm all courses' assignments return.
 
 #### TC-ASN-10: "Next Up" Urgent Deadline Banner
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`

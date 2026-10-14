@@ -2676,6 +2676,114 @@ button:active:not(:disabled) {
   transform: scale(0.98);
 }
 
+/* ==========================================================================
+   v4 REDESIGN - ASSIGNMENTS TAB & FEED
+   ========================================================================== */
+
+.filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.search-input-box {
+  position: relative;
+  flex: 1;
+  max-width: 450px;
+}
+
+.filter-checkboxes {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  flex-wrap: wrap;
+}
+
+.filter-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.assignments-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.assignment-card-compact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.assign-left-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.assign-title-span {
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-hidden-tag {
+  font-size: 0.7rem;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-xs);
+  margin-inline-start: 0.35rem;
+}
+
+.assign-right-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.card-expanded-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.toolbar-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.course-filter-banner {
+  margin-bottom: 1rem;
+  border-inline-start: 4px solid var(--primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 1rem;
+}
+
+
 
 
 
