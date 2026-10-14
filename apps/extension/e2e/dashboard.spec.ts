@@ -127,4 +127,77 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await expect(subjectContainer).toHaveClass(/open/);
     await expect(firstCard.locator('.subject-pill')).toBeVisible();
   });
+
+  test('TC-DASH-REHAUL-01: Should expand course row on click and show Zoom links & next assignments', async ({ optionsPage }) => {
+    // 1. Locate the first course row card
+    const firstCourseCard = optionsPage.locator('.course-row-card').first();
+    await expect(firstCourseCard).toBeVisible();
+
+    // 2. Click the card to expand
+    await firstCourseCard.click();
+
+    // 3. Expanded panel should be visible
+    const expandedPanel = firstCourseCard.locator('.course-expanded-panel');
+    await expect(expandedPanel).toBeVisible();
+
+    // 4. Check for next assignments section inside expanded panel
+    await expect(expandedPanel.locator('.course-mini-assign-item').first()).toBeVisible();
+
+    // Take screenshot of expanded course
+    await optionsPage.screenshot({ path: 'screenshots/dashboard-course-expanded.png' });
+  });
+
+  test('TC-DASH-REHAUL-02: Upcoming To-Do queue excludes completed tasks and shows expandable cards', async ({ optionsPage }) => {
+    // 1. Check queue card exists
+    const queueCard = optionsPage.locator('.queue-card');
+    await expect(queueCard).toBeVisible();
+
+    // 2. The completed assignment (מטלה 0 - חזרה על C++) must NOT be in the queue
+    await expect(queueCard).not.toContainText('מטלה 0 - חזרה על C++');
+
+    // 3. Pending assignment should be visible in the queue
+    const queueItem = queueCard.locator('.queue-item').first();
+    await expect(queueItem).toBeVisible();
+
+    // 4. Click queue item to expand
+    await queueItem.click();
+    await expect(queueItem.locator('.queue-item-expanded')).toHaveClass(/open/);
+  });
+
+  test('TC-DASH-REHAUL-03: Manage courses modal opens from dashboard and groups courses', async ({ optionsPage }) => {
+    // 1. Click manage courses button
+    const manageBtn = optionsPage.locator('.manage-courses-trigger-btn');
+    await expect(manageBtn).toBeVisible();
+    await manageBtn.click();
+
+    // 2. Modal backdrop and table should appear
+    const modalBackdrop = optionsPage.locator('.modal-backdrop');
+    await expect(modalBackdrop).toBeVisible();
+    await expect(modalBackdrop.locator('.courses-settings-table').first()).toBeVisible();
+
+    // Take screenshot of manage courses modal
+    await optionsPage.screenshot({ path: 'screenshots/dashboard-manage-modal.png' });
+
+    // 3. Close modal
+    await modalBackdrop.locator('button').first().click();
+    await expect(modalBackdrop).toBeHidden();
+  });
+
+  test('TC-DASH-REHAUL-04: Coffee theme switches and displays warm dark brown styling', async ({ optionsPage }) => {
+    // 1. Set theme to coffee
+    await optionsPage.evaluate(async () => {
+      const data = await chrome.storage.sync.get('settings');
+      const settings = data.settings || {};
+      settings.theme = 'coffee';
+      await chrome.storage.sync.set({ settings });
+    });
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+
+    // 2. Assert body has theme-coffee class
+    await expect(optionsPage.locator('body')).toHaveClass(/theme-coffee/);
+
+    // Take screenshot of coffee theme
+    await optionsPage.screenshot({ path: 'screenshots/dashboard-coffee-theme.png' });
+  });
 });

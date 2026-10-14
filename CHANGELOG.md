@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Noodle v4 Dashboard & UI Rehaul (Issues #14, #20)**:
+  - Added Dark Noodle "Coffee" theme (`coffee`) featuring deep dark brown background (`#0f0a07`), rich card panels (`rgba(36, 22, 12, 0.92)`), terracotta and sage accents, and quick 3-way cycle button (`☕ / 🍜 / 🌙`) in header.
+  - Added Hero Action Strip on Dashboard: tranquil "המטלה הקרובה" ("Next Task") spotlight card with attachment chips ("פתח ↗", SVG "הורדה ↓") and Upcoming To-Do Queue excluding completed and hidden tasks with smooth expandable drawers.
+  - Added smooth accordion drawer for course rows in "My Tracked Courses", expanding to reveal active/visible Zoom meetings and next 5 course assignments without page transitions.
+  - Added "Manage Courses" modal dialog on Dashboard with semester groupings (`groupAndSortCourses`), custom nicknames, color pickers, and tracking checkboxes.
+  - Added pure SVG `DownloadIcon` replacing emoji icons on file action buttons throughout the extension.
+  - Added E2E tests `TC-DASH-REHAUL-01` to `TC-DASH-REHAUL-04` validating course row expansion, upcoming to-do queue exclusion logic, manage courses modal, and Coffee theme styling.
 - **Optional Web Scraping Toggle & Pure-API Default (`apps/extension/src/options/App.tsx`, `packages/moodle-client/src/moodleApi.ts`)**:
   - Made all HTML web scraping functionality optional and disabled by default (`scrapingEnabled: false`, `enableScraping: false`).
   - Added a dedicated bilingual switch (`#scraping-enabled-toggle`) in the Extension Settings page: "Moodle Web Scraping (Fallback)" / "סריקת אתר Moodle (Web Scraping)".
@@ -26,6 +33,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Verifies the scraping toggle defaults to OFF, tests pure API sync, toggles scraping ON, verifies storage persistence, executes scraping-enabled sync, resets to clean default, and captures visual screenshots.
 
 ### Changed
+- **Streamlined Dashboard Course Management & Unified Config Table (`apps/extension/src/options/App.tsx`)**:
+  - Removed course manual reordering arrows (`▲/▼`) for a clean, deterministic list of tracked courses.
+  - Enlarged Noodle bowl logo in sidebar to 48px for enhanced brand presence.
+  - Refactored `CoursesConfigTable` into a unified shared component reused across both `CoursesTab` and Dashboard Manage Courses modal.
 - **Accelerated Synchronization & Parallel Batching (`packages/moodle-client/src/syncEngine.ts`)**:
   - Parallelized grade items, submission statuses, and course contents fetching using concurrent batch processing (`batchPromises`), reducing sync times from minutes to ~15 seconds.
 - **Archive Scanning Pruning (`packages/moodle-client/src/strategies/scraperStrategy.ts`, `restStrategy.ts`)**:
@@ -33,6 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Eliminated redundant multi-phase scraper fetching when courses are already discovered.
 
 ### Fixed
+- **Course Detail View Localization & UI Polish (`apps/extension/src/options/App.tsx`)**:
+  - Fixed Hebrew/English localization mixups in `CourseDetailView` by translating raw Moodle status strings into Hebrew (`הוגש`, `טרם הוגש`, `הוקצה`).
+  - Removed unstyled, non-functional placeholder button in `CourseDetailView` Zoom empty state.
 - **White Assignment Title in Next Assignment Banner (`apps/extension/src/options/App.css`, `apps/extension/src/index.css`)**:
   - Overrode hardcoded `color: white;` in `.next-assign-title` with `var(--text-primary)` (`#1e293b`), ensuring high-contrast dark text on the warm cream noodle theme.
 - **Ambiguous Hebrew Singular Day Badge Format (`apps/extension/src/shared/dateUtils.ts`)**:

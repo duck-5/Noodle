@@ -11,7 +11,7 @@ export interface ExtensionSettings {
   language: 'he' | 'en';
   assignmentGreenDaysThreshold?: number;
   assignmentYellowDaysThreshold?: number;
-  theme?: 'dark' | 'noodle';
+  theme?: 'dark' | 'noodle' | 'coffee';
   interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
   showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
   hiddenAssignments?: number[];  // Array of assignment ids that are hidden

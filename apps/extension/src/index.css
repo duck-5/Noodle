@@ -98,8 +98,159 @@ body {
   background: var(--text-muted);
 }
 
+/* Coffee Theme - Dark warm brown, like Noodle but dark (bg darker than elements) */
+body.theme-coffee {
+  --bg-dark: #0f0a07;
+  --bg-card: rgba(36, 22, 12, 0.92);
+  --bg-card-hover: rgba(52, 32, 18, 0.98);
+
+  --primary: #c27044;   /* terracotta */
+  --primary-glow: rgba(194, 112, 68, 0.2);
+  --secondary: #8aad6e; /* muted sage */
+  --secondary-glow: rgba(138, 173, 110, 0.15);
+  --warning: #d4923a;   /* warm amber */
+  --danger: #c0503f;    /* muted red */
+
+  --text-primary: #f0e0cc;
+  --text-secondary: #b89070;
+  --text-muted: #7a5e44;
+
+  --border: rgba(194, 112, 68, 0.18);
+  --border-focus: rgba(194, 112, 68, 0.45);
+
+  --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 20px rgba(194, 112, 68, 0.25);
+
+  background-image:
+    radial-gradient(at 0% 0%, rgba(150, 80, 30, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(100, 60, 20, 0.12) 0px, transparent 50%) !important;
+}
+
+/* Coffee theme sidebar and card overrides */
+body.theme-coffee .glass-panel {
+  background: var(--bg-card);
+  border-color: rgba(194, 112, 68, 0.14);
+}
+
+body.theme-coffee .glass-panel:hover {
+  border-color: rgba(194, 112, 68, 0.28);
+}
+
+body.theme-coffee .item-name,
+body.theme-coffee .file-name-span,
+body.theme-coffee .settings-section h4,
+body.theme-coffee .stat-val,
+body.theme-coffee h1,
+body.theme-coffee h2,
+body.theme-coffee h3,
+body.theme-coffee h4,
+body.theme-coffee h5,
+body.theme-coffee h6 {
+  color: var(--text-primary) !important;
+}
+
+body.theme-coffee .logo-section h1 {
+  background: linear-gradient(to right, #c27044, #e09a66);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.theme-coffee .settings-text-input,
+body.theme-coffee input[type="text"],
+body.theme-coffee input[type="password"],
+body.theme-coffee select,
+body.theme-coffee textarea,
+body.theme-coffee .search-input {
+  color: var(--text-primary) !important;
+  background: rgba(194, 112, 68, 0.07) !important;
+  border-color: var(--border) !important;
+}
+
+body.theme-coffee .settings-text-input::placeholder,
+body.theme-coffee input[type="text"]::placeholder,
+body.theme-coffee input[type="password"]::placeholder,
+body.theme-coffee .search-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+body.theme-coffee .badge-muted {
+  background: rgba(194, 112, 68, 0.15) !important;
+  color: var(--text-secondary) !important;
+}
+
+body.theme-coffee .badge-success {
+  background: rgba(138, 173, 110, 0.15) !important;
+  color: var(--secondary) !important;
+}
+
+body.theme-coffee .badge-warning {
+  background: rgba(212, 146, 58, 0.15) !important;
+  color: var(--warning) !important;
+}
+
+body.theme-coffee .badge-danger {
+  background: rgba(192, 80, 63, 0.15) !important;
+  color: var(--danger) !important;
+}
+
+body.theme-coffee .secondary-btn,
+body.theme-coffee .secondaryBtn {
+  background: rgba(194, 112, 68, 0.1) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+}
+
+body.theme-coffee .secondary-btn:hover,
+body.theme-coffee .secondaryBtn:hover {
+  background: rgba(194, 112, 68, 0.2) !important;
+}
+
+body.theme-coffee .action-icon-link {
+  color: var(--primary) !important;
+}
+
+body.theme-coffee .action-icon-link:hover {
+  color: var(--text-primary) !important;
+}
+
+body.theme-coffee .pulse-glow-effect {
+  animation: none !important;
+  box-shadow: var(--shadow) !important;
+}
+
+body.theme-coffee .next-assignment-banner {
+  background: linear-gradient(135deg, rgba(194, 112, 68, 0.1) 0%, rgba(150, 80, 30, 0.18) 100%) !important;
+  border-color: rgba(194, 112, 68, 0.35) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+body.theme-coffee .next-assign-title {
+  color: #f0e0cc !important;
+}
+
+body.theme-coffee .active-row,
+body.theme-coffee .semester-group-title {
+  border-color: var(--border) !important;
+}
+
+body.theme-coffee .action-link-btn.file-btn:hover {
+  background: var(--secondary) !important;
+  color: white !important;
+}
+
+body.theme-coffee .action-link-btn:hover {
+  background: var(--primary) !important;
+  color: white !important;
+}
+
+body.theme-coffee .file-size-cell,
+body.theme-coffee .file-section-tag {
+  color: var(--text-secondary) !important;
+}
+
 /* Noodle Theme - Cream/Brown and Pastel colors (less futuristic) */
 body.theme-noodle {
+
   --bg-dark: #faf5eb;
   --bg-card: rgba(255, 253, 249, 0.95);
   --bg-card-hover: rgba(255, 250, 240, 1);

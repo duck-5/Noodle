@@ -126,6 +126,10 @@ graph LR
 | **TC-ASN-09** | Direct Moodle Submission Link Launch | All (Mobile + Chrome + Firefox) | Browser Agent | Dashboard |
 | **TC-ASN-10** | "Next Up" Urgent Deadline Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-11** | Pull-to-Refresh Gesture | Mobile Only | Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-01** | Tracked Course Card Row Expansion (Zoom & 5 Assignments) | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-02** | Upcoming To-Do Queue Item Filtering & Drawer Expansion | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-03** | Manage Courses Modal Dialog & Semester Partitioning | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-04** | Dark Noodle "Coffee" Theme Visual Verification | Extension (Chrome & Firefox) | Automated & Browser Agent | Theming |
 | **TC-DET-01** | Horizontal Topic / Section Pill Bar | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-02** | Expand / Collapse All Sections | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-03** | Course Statistics Summary Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
@@ -501,6 +505,48 @@ graph LR
   1. Perform downward drag gesture at top of list.
   2. Verify refresh spinner activates.
   3. Verify toast/sync complete status appears upon completion.
+
+#### TC-DASH-REHAUL-01: Tracked Course Card Row Expansion (Zoom & 5 Assignments)
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking a course row card (`.course-row-card`) in "My Tracked Courses" expands a smooth accordion drawer (`.course-expanded-panel`) that displays active and visible Zoom meetings followed by up to 5 next chronological assignments for that course with inline direct links.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-01"`
+* **Browser Agent Prompt / Action**:
+  1. Click anywhere on a course card row (excluding action buttons).
+  2. Verify smooth downward expansion animation.
+  3. Verify chevron flips upward.
+  4. Verify visible Zoom meetings section and up to 5 next course assignments are displayed.
+
+#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Drawer Expansion
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer displaying attachments with download links, subject pill, and course navigation.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
+* **Browser Agent Prompt / Action**:
+  1. Verify queue list does not contain completed or hidden assignments.
+  2. Click a queue item card.
+  3. Verify `.queue-item-expanded` expands smoothly with attachment pills and "Go to Course" button.
+
+#### TC-DASH-REHAUL-03: Manage Courses Modal Dialog & Semester Partitioning
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "Manage Courses" (`⚙️ ניהול קורסים`) opens a modal dialog with a frosted glass backdrop, partitioning courses by semester (`groupAndSortCourses`), allowing custom display nickname editing, course color picking, and tracking checkbox toggles.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-03"`
+* **Browser Agent Prompt / Action**:
+  1. Click `.manage-courses-trigger-btn`.
+  2. Verify modal appears with backdrop blur.
+  3. Verify courses are grouped by semester with full table controls.
+  4. Close modal via `✕` button or backdrop click.
+
+#### TC-DASH-REHAUL-04: Dark Noodle "Coffee" Theme Visual Verification
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that selecting the `coffee` theme activates deep roast background (`#0f0a07`), rich dark brown cards (`rgba(36, 22, 12, 0.92)`), terracotta/sage accents, and updates the header quick cycle button to ☕.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-04"`
+* **Browser Agent Prompt / Action**:
+  1. Toggle theme to "Coffee" in Settings or via quick header button.
+  2. Verify document body receives `.theme-coffee`.
+  3. Verify background is darker than the cards with high-contrast text.
 
 ---
 

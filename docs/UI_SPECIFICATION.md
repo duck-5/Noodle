@@ -65,39 +65,44 @@ Presented immediately after successful authentication or when manually triggered
 
 ---
 
-## 3. Dashboard Tab (Home View)
+## 3. Dashboard Tab (v4 Home View)
 
-### A. Header Section
-*   **Search Bar**: Real-time filter input field. Filters matching items across Assignments, Courses, and Files.
-*   **Quick Stats Widget**: Horizontal row of 3 stat cards:
-    1.  **Pending Assignments**: Count of untracked incomplete deadlines.
-    2.  **Completed Assignments**: Count of submitted tasks.
-    3.  **Impending Deadline**: Relative countdown to the closest pending assignment.
+### A. Hero Action Strip
+The top of the dashboard features a split horizontal action strip designed for rapid orientation and zero-anxiety productivity:
+1. **Hero Spotlight Card ("המטלה הקרובה" / Next Task)**:
+   - High-contrast card spotlighting the single nearest pending deadline.
+   - Non-stressful header badge with countdown timer and course tag.
+   - Attachment preview chips with direct `Open ↗` and SVG `Download ↓` links.
+   - Expandable inline details drawer showing subject topic and assignment actions.
+   - Primary "Go to Course" and "Submit ↗" quick actions.
+2. **Upcoming To-Do Queue ("תור משימות קרובות")**:
+   - Secondary vertical card listing imminent tasks.
+   - **Exclusion Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
+   - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer containing topic pill and attachment downloads.
 
-### B. Next Assignment Banner
-*   High-priority card anchored at the top of the dashboard page.
-*   **Content**:
-    - Prominent countdown timer (e.g. `12 hours, 4 minutes remaining`).
-    - Assignment Name.
-    - Course Name (with custom nickname and color tag).
-*   **Interactions**: Pressing/clicking this banner automatically expands the course section inline on the dashboard to reveal other related files.
+### B. Live Session & Progress Bar
+* **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, supporting multiple simultaneous meetings.
+* **Semester Progress**: Visual progress bar tracking overall completion percentage across all assignments in tracked courses (`X/Y (Z%)`).
 
-### C. Assignments Feed
-*   **Chronological Section Headers**:
-    - **Overdue**: Overdue tasks (status not submitted).
-    - **Today**: Deadlines within 24 hours.
-    - **This Week**: Deadlines within 7 days.
-    - **Later**: Future deadlines.
-*   **Assignment Card Component**:
-    - **Status Indicator**: Round badge colored by submission state:
-        - *Submitted*: Green checkbox.
-        - *Pending*: Yellow (safe) or Red (urgent).
-        - *Overdue*: Dark Red outline.
-    - **Course Tag**: Rounded colored tag utilizing the custom course color and displaying the course nickname.
-    - **Assignment Title**: Text name.
-    - **Due Date Label**: Absolute deadline timestamp.
-    - **Remaining Time Label**: Dynamic text indicating remaining time (e.g., `2 hours remaining`, `6 days left`).
-    - **Accordion Expand Indicator**: Chevron arrow representing expand status.
+### C. My Tracked Courses ("הקורסים שלי")
+* **Deterministic Course Order**: Manual reordering arrows are removed for a predictable, clean list.
+* **Manage Courses Modal Trigger**: "⚙️ ניהול קורסים" button opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
+* **Interactive Course Rows**:
+   - Course color indicator dot, customized nickname, and course code.
+   - Mini progress bar reflecting per-course completion.
+   - Next task indicator for that course with deadline badge.
+   - Direct "Assignments" filter and "Go to Course" buttons.
+   - **Smooth Row Expansion**: Clicking anywhere on the course row smoothly expands an inline drawer revealing:
+     - **Visible Zoom Links**: All meetings configured as visible/interested for this course.
+     - **Next 5 Assignments**: Up to 5 upcoming assignments with status indicators, due badges, and direct links.
+
+### D. Unified Assignments Calendar ("לוח הגשות")
+* **Filter Checkboxes**: Real-time filters for Pending ("לביצוע"), Past ("עברו"), Completed ("הושלמו"), and Hidden ("מוסתרים").
+* **Full Text Search**: Immediate debounced filter by assignment or course name.
+* **Expandable Assignment Cards**:
+  - Color-accented course indicator.
+  - Attached file chips with separate "Open" and "Download" (SVG arrow) actions.
+  - Expanding accordion drawer with subject topic, attachments, Moodle link, completion toggle, and hide/unhide button.
 *   **Inline Course Section accordion**:
     - Slides down on clicking the assignment card using height and opacity transitions.
     - Lists related course resources:
@@ -210,3 +215,24 @@ Users can filter out Zoom links they are not interested in (e.g., hiding other r
 2. **Show All Filter**:
    - **Show All = OFF (Default)**: Uninterested Zoom links are hidden from the dashboard entirely.
    - **Show All = ON**: All Zoom links are shown, but uninterested links are rendered in a faded/transparent state with a slashed eye icon.
+
+---
+
+## 9. Theming Engine & Palettes
+
+The extension and companion platforms support three distinct, high-contrast visual themes switchable via the Settings Tab or the quick header toggle (`☕ / 🍜 / 🌙`):
+
+1. **Slate Dark (`dark`)**:
+   - Modern, ultra-deep dark palette optimized for late-night study sessions.
+   - Background: `#0b0f19` / Card panels: `rgba(20, 27, 45, 0.75)`.
+   - Accent borders: `rgba(255, 255, 255, 0.08)` / Primary: `#6366f1`.
+2. **Warm Cream Noodle (`noodle`)**:
+   - Soft, paper-like warm aesthetic inspired by artisanal noodle bowls.
+   - Background: `#faf6ee` / Card panels: `rgba(255, 255, 255, 0.75)`.
+   - Accent borders: `rgba(215, 204, 184, 0.6)` / Primary: `#b85d19`.
+3. **Dark Noodle "Coffee" (`coffee`)**:
+   - Rich, dark-roast coffee theme with a darker background than the elements.
+   - Background: `#0f0a07` (deep espresso).
+   - Card panels: `rgba(36, 22, 12, 0.92)` (roasted mocha glassmorphism).
+   - Primary: `#c27044` (warm terracotta) / Secondary: `#8aad6e` (warm sage).
+   - Card borders: `rgba(212, 163, 115, 0.18)` / Text: `#ede0d4` (warm cream).
