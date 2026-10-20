@@ -98,8 +98,160 @@ body {
   background: var(--text-muted);
 }
 
+/* Coffee Theme - Elegant warm dark roast (background darker than warm mocha cards) */
+body.theme-coffee {
+  --bg-dark: #1e1612;
+  --bg-card: rgba(44, 34, 27, 0.94);
+  --bg-card-hover: rgba(58, 45, 36, 0.98);
+
+  --primary: #e28743;   /* warm caramel crema */
+  --primary-glow: rgba(226, 135, 67, 0.22);
+  --secondary: #7fae78; /* matcha sage green */
+  --secondary-glow: rgba(127, 174, 120, 0.18);
+  --warning: #e5a93c;   /* warm golden honey */
+  --danger: #e26d5c;    /* warm terracotta rose */
+
+  --text-primary: #fff8f0;   /* crisp warm milk froth */
+  --text-secondary: #d4c2b2; /* warm light oat milk */
+  --text-muted: #a6917f;     /* soft cocoa */
+
+  --border: rgba(226, 135, 67, 0.22);
+  --border-focus: rgba(226, 135, 67, 0.55);
+
+  --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(226, 135, 67, 0.25);
+
+  background-image:
+    radial-gradient(at 0% 0%, rgba(226, 135, 67, 0.16) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(127, 174, 120, 0.12) 0px, transparent 50%) !important;
+}
+
+/* Coffee theme sidebar and card overrides */
+body.theme-coffee .glass-panel {
+  background: var(--bg-card);
+  border-color: rgba(226, 135, 67, 0.18);
+}
+
+body.theme-coffee .glass-panel:hover {
+  border-color: rgba(226, 135, 67, 0.35);
+}
+
+body.theme-coffee .item-name,
+body.theme-coffee .file-name-span,
+body.theme-coffee .settings-section h4,
+body.theme-coffee .stat-val,
+body.theme-coffee h1,
+body.theme-coffee h2,
+body.theme-coffee h3,
+body.theme-coffee h4,
+body.theme-coffee h5,
+body.theme-coffee h6 {
+  color: var(--text-primary) !important;
+}
+
+body.theme-coffee .logo-section h1 {
+  background: linear-gradient(to right, #e28743, #f5b971);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.theme-coffee .settings-text-input,
+body.theme-coffee input[type="text"],
+body.theme-coffee input[type="password"],
+body.theme-coffee select,
+body.theme-coffee textarea,
+body.theme-coffee .search-input {
+  color: var(--text-primary) !important;
+  background: rgba(30, 22, 18, 0.75) !important;
+  border-color: var(--border) !important;
+}
+
+body.theme-coffee .settings-text-input::placeholder,
+body.theme-coffee input[type="text"]::placeholder,
+body.theme-coffee input[type="password"]::placeholder,
+body.theme-coffee .search-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+body.theme-coffee .badge-muted {
+  background: rgba(226, 135, 67, 0.15) !important;
+  color: var(--text-secondary) !important;
+}
+
+body.theme-coffee .badge-success {
+  background: rgba(127, 174, 120, 0.2) !important;
+  color: var(--secondary) !important;
+}
+
+body.theme-coffee .badge-warning {
+  background: rgba(229, 169, 60, 0.2) !important;
+  color: var(--warning) !important;
+}
+
+body.theme-coffee .badge-danger {
+  background: rgba(226, 109, 92, 0.2) !important;
+  color: var(--danger) !important;
+}
+
+body.theme-coffee .primary-btn {
+  background: linear-gradient(to right, #e28743, #c56a28) !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+body.theme-coffee .secondary-btn,
+body.theme-coffee .secondaryBtn {
+  background: rgba(226, 135, 67, 0.12) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+}
+
+body.theme-coffee .secondary-btn:hover,
+body.theme-coffee .secondaryBtn:hover {
+  background: rgba(226, 135, 67, 0.22) !important;
+}
+
+body.theme-coffee .action-icon-link {
+  color: var(--primary) !important;
+}
+
+body.theme-coffee .action-icon-link:hover {
+  color: var(--text-primary) !important;
+}
+
+body.theme-coffee .next-assignment-banner {
+  background: linear-gradient(135deg, rgba(226, 135, 67, 0.16) 0%, rgba(44, 34, 27, 0.95) 100%) !important;
+  border-color: rgba(226, 135, 67, 0.35) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+body.theme-coffee .next-assign-title {
+  color: #fff8f0 !important;
+}
+
+body.theme-coffee .active-row,
+body.theme-coffee .semester-group-title {
+  border-color: var(--border) !important;
+}
+
+body.theme-coffee .action-link-btn.file-btn:hover {
+  background: var(--secondary) !important;
+  color: white !important;
+}
+
+body.theme-coffee .action-link-btn:hover {
+  background: var(--primary) !important;
+  color: white !important;
+}
+
+body.theme-coffee .file-size-cell,
+body.theme-coffee .file-section-tag {
+  color: var(--text-secondary) !important;
+}
+
 /* Noodle Theme - Cream/Brown and Pastel colors (less futuristic) */
 body.theme-noodle {
+
   --bg-dark: #faf5eb;
   --bg-card: rgba(255, 253, 249, 0.95);
   --bg-card-hover: rgba(255, 250, 240, 1);

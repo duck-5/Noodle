@@ -71,7 +71,7 @@ test.describe('Category 11: Localization & Theming (TC-UI-01, TC-UI-02, TC-UI-03
     await expect(dashboardLayout).toHaveAttribute('dir', 'rtl');
   });
 
-  test('TC-UI-02: Slate Dark vs Warm Cream Noodle Theme Toggle', async ({ optionsPage }) => {
+  test('TC-UI-02: Slate Dark vs Warm Cream Noodle vs Coffee Theme Toggle', async ({ optionsPage }) => {
     // 1. Navigate to Settings
     const settingsNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /הגדרות|Settings/ });
     await settingsNavBtn.click();
@@ -83,9 +83,16 @@ test.describe('Category 11: Localization & Theming (TC-UI-01, TC-UI-02, TC-UI-03
     // 3. Switch to Dark theme
     await themeSelect.selectOption('dark');
     await expect(optionsPage.locator('body')).toBeVisible();
+    await expect(optionsPage.locator('body')).toHaveClass(/theme-dark/);
 
     // 4. Switch to Noodle theme
     await themeSelect.selectOption('noodle');
     await expect(optionsPage.locator('body')).toBeVisible();
+    await expect(optionsPage.locator('body')).toHaveClass(/theme-noodle/);
+
+    // 5. Switch to Coffee theme
+    await themeSelect.selectOption('coffee');
+    await expect(optionsPage.locator('body')).toBeVisible();
+    await expect(optionsPage.locator('body')).toHaveClass(/theme-coffee/);
   });
 });

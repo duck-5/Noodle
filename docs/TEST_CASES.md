@@ -120,16 +120,23 @@ graph LR
 | **TC-ASN-03** | Submission Status & Grade Pill | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-04** | Manual Completion Toggle (Override) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-05** | Hide & Unhide Assignments | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-06** | Status Filter Tabs (Pending/Past/Done/Hidden) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-07** | Global Assignment & Course Text Search | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-08** | In-Place Subject & Material Accordion | All (Mobile + Chrome + Firefox) | Browser Agent | Dashboard |
-| **TC-ASN-09** | Direct Moodle Submission Link Launch | All (Mobile + Chrome + Firefox) | Browser Agent | Dashboard |
+| **TC-ASN-06** | Status Filter Tabs (Pending/Past/Done/Hidden) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-07** | Global Assignment & Course Text Search | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-08** | In-Place Subject & Material Accordion | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-09** | Course-Specific Filter Banner & Deep Navigation | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
 | **TC-ASN-10** | "Next Up" Urgent Deadline Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-11** | Pull-to-Refresh Gesture | Mobile Only | Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-01** | Tracked Course Card Row Expansion (Zoom & 5 Assignments) | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-02** | Upcoming To-Do Queue Item Filtering & Drawer Expansion | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-03** | Manage Courses Modal Dialog & Semester Partitioning | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-04** | Dark Noodle "Coffee" Theme Visual Verification | Extension (Chrome & Firefox) | Automated & Browser Agent | Theming |
+| **TC-DASH-REHAUL-05** | Settings Mock Course Sandbox Generation & Multi-State Data | Extension (Chrome & Firefox) | Automated & Browser Agent | Settings / Sandbox |
+| **TC-DASH-REHAUL-06** | Zoom Meeting Unhide & Direct Action Controls | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DET-01** | Horizontal Topic / Section Pill Bar | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-02** | Expand / Collapse All Sections | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-03** | Course Statistics Summary Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
 | **TC-DET-04** | Section Materials & Attachments | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
+| **TC-DET-05** | Course Detail "Hide All" Toggle & Dual File Actions | Extension (Chrome & Firefox) | Automated & Browser Agent | Course Detail |
 | **TC-ZM-01** | Zoom Module & Schedule Scraping | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
 | **TC-ZM-02** | Active Meeting Detection (`● פעיל כעת`) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
 | **TC-ZM-03** | Zoom Meeting Interest / Favorite Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
@@ -476,14 +483,19 @@ graph LR
   1. Click on an assignment card.
   2. Assert accordion expands smoothly, revealing assignment description and downloadable attachments.
 
-#### TC-ASN-09: Direct Moodle Submission Link Launch
+#### TC-ASN-09: Course-Specific Assignment Filtering & Deep Navigation
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
-* **Modality**: `Browser Agent`
-* **Description**: Clicking the Moodle icon or "Open in Moodle" on an assignment opens `https://moodle.tau.ac.il/mod/assign/view.php?id={id}`.
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "מטלות" (Assignments) on any tracked course card row navigates to the dedicated Assignments tab pre-filtered to that specific course. Displays the course filter banner (`מסנן לפי קורס: [Course Name]`) with a clear button ("הצג את כל הקורסים ✕") that restores the full assignment feed.
+* **Automated Test Flow**:
+  1. Click "מטלות" button inside course card row (e.g. courseId: 1).
+  2. Verify navigation to Assignments tab and `.course-filter-banner` visibility with course name.
+  3. Verify only assignments belonging to course 1 are listed.
+  4. Click clear filter button (`.course-filter-banner button`); assert banner disappears and full assignment feed is restored.
 * **Browser Agent Prompt / Action**:
-  1. Expand an assignment card.
-  2. Click "הגש במודל" / "Submit in Moodle".
-  3. Assert tab opens to assignment URL.
+  1. Click "מטלות" on a course row.
+  2. Confirm the filter banner is visible and matches the course name.
+  3. Click "הצג את כל הקורסים ✕" and confirm all courses' assignments return.
 
 #### TC-ASN-10: "Next Up" Urgent Deadline Banner
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
@@ -501,6 +513,68 @@ graph LR
   1. Perform downward drag gesture at top of list.
   2. Verify refresh spinner activates.
   3. Verify toast/sync complete status appears upon completion.
+
+#### TC-DASH-REHAUL-01: Tracked Course Card Row Expansion (Zoom & 5 Assignments)
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking a course row card (`.course-row-card`) in "My Tracked Courses" expands a smooth accordion drawer (`.course-expanded-panel`) that displays active and visible Zoom meetings followed by up to 5 next chronological assignments for that course with inline direct links.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-01"`
+* **Browser Agent Prompt / Action**:
+  1. Click anywhere on a course card row (excluding action buttons).
+  2. Verify smooth downward expansion animation.
+  3. Verify chevron flips upward.
+  4. Verify visible Zoom meetings section and up to 5 next course assignments are displayed.
+
+#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Drawer Expansion
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer displaying attachments with download links, subject pill, and course navigation.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
+* **Browser Agent Prompt / Action**:
+  1. Verify queue list does not contain completed or hidden assignments.
+  2. Click a queue item card.
+  3. Verify `.queue-item-expanded` expands smoothly with attachment pills and "Go to Course" button.
+
+#### TC-DASH-REHAUL-03: Manage Courses Modal Dialog & Semester Partitioning
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "Manage Courses" (`⚙️ ניהול קורסים`) opens a modal dialog with a frosted glass backdrop, partitioning courses by semester (`groupAndSortCourses`), allowing custom display nickname editing, course color picking, and tracking checkbox toggles.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-03"`
+* **Browser Agent Prompt / Action**:
+  1. Click `.manage-courses-trigger-btn`.
+  2. Verify modal appears with backdrop blur.
+  3. Verify courses are grouped by semester with full table controls.
+  4. Close modal via `✕` button or backdrop click.
+
+#### TC-DASH-REHAUL-04: Dark Noodle "Coffee" Theme Visual Verification
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that selecting the `coffee` theme activates the warm dark roast palette (`#1e1612` background), lighter mocha glass cards (`rgba(44, 34, 27, 0.94)`), caramel crema accents (`#e28743`), and high-contrast milk froth typography (`#fff8f0`) with high legibility across all views.
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-04"`
+* **Browser Agent Prompt / Action**:
+  1. Toggle theme to "Coffee" in Settings.
+  2. Verify document body receives `.theme-coffee`.
+  3. Verify cards and panels are visually lighter than the background with sharp, readable text.
+
+#### TC-DASH-REHAUL-05: Settings Mock Course Sandbox Generation & Multi-State Data
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Clicking "➕ הוסף קורס לדוגמה" (Add Mock Course) in the Settings Tab injects Course 9999 ("0368-9999-01 קורס לדוגמה - מבני נתונים ואלגוריתמים") containing an active live Zoom meeting, an upcoming meeting, assignments across all states (with attachments, submitted files, and no-deadline tasks), and course topic files.
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Settings Tab.
+  2. Click "➕ הוסף קורס לדוגמה" (`#add-mock-course-btn`).
+  3. Verify toast notification confirms mock course injection.
+  4. Navigate to Dashboard; verify Course 9999 is tracked, live Zoom banner appears, and Hero spotlight displays the nearest task.
+  5. Expand course row; assert active Zoom and next 5 assignments render with expandable cards.
+
+#### TC-DASH-REHAUL-06: Zoom Meeting Unhide & Direct Action Controls
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that all Zoom meetings in course row accordions display an interactive eye icon (`EyeIcon` / `EyeOffIcon`), enabling users to hide and subsequently unhide meetings without permanently losing them.
+* **Browser Agent Prompt / Action**:
+  1. Expand a course row with Zoom meetings.
+  2. Click the eye toggle icon to hide a meeting; verify the icon switches to slashed eye (`EyeOffIcon`).
+  3. Click the eye icon again; verify the meeting returns to visible state (`EyeIcon`).
 
 ---
 
@@ -541,6 +615,16 @@ graph LR
 * **Browser Agent Prompt / Action**:
   1. Expand a section containing files.
   2. Verify file size (e.g. `2.4 MB`) and upload date are visible on file pills.
+
+#### TC-DET-05: Course Detail "Hide All" Toggle & Dual File Actions
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the Course Detail View provides a "הסתר את כל המטלות" / "בטל הסתרת הכל" (Hide All / Unhide All) button that bulk-toggles hidden status across all assignments in that course. In addition, each course file item displays both a green "פתח ↗" direct view button and an SVG "הורדה ↓" download button with the `download` HTML attribute.
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Course Detail View.
+  2. Click "הסתר את כל המטלות"; verify all assignments in this course are marked hidden.
+  3. Click "בטל הסתרת הכל"; verify all assignments return to unhidden state.
+  4. Inspect course files list; verify "פתח" is green and adjacent "הורדה" button is present.
 
 ---
 

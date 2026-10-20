@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Mock Course Sandbox Generator (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Added "➕ הוסף קורס לדוגמה" (Add Mock Course) button under Settings to inject Course 9999 into local storage with active live Zoom, upcoming meetings, files, and multi-state assignments (with attachments, submissions, and no-deadline tasks) for instantaneous UI and feature testing.
+- **Subject Files Integration in Assignments Drawer (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Expanding an assignment card (in Assignments Feed, Course Detail View, or Course row) resolves and displays subject files (`קבצי הנושא`) matching the assignment's course ID and section topic alongside assignment attachments and submitted files.
+- **Course-Level "Hide All" Assignments Toggle (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Added a bulk "הסתר את כל המטלות" / "בטל הסתרת הכל" button in `CourseDetailView` allowing one-click hiding or unhiding of all assignments within a course.
+- **Dual File Actions (Open & Download) (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Provided distinct actions for all course and assignment files: green "פתח ↗" link (`#10b981`) and a dedicated SVG "הורדה ↓" button with the HTML `download` attribute.
+- **Noodle v4 Dashboard & UI Rehaul (Issues #14, #20)**:
+  - Added dedicated full-page **Assignments Tab (`assignments`)** matching redesign specifications with search bar (`search_assignments_feed`), 4 filter checkboxes ("לביצוע", "עברו", "הושלמו", "מוסתרים"), course filter banner with clear button, compact/minimized default cards, smooth accordion drawer with attachment download/open buttons, submitted files, topic pill, and action buttons.
+  - Streamlined sidebar navigation to 5 focused items: `dashboard`, `assignments`, `grades`, `settings`, and `about`, removing legacy separate `courses` and `files` tabs.
+  - Cleaned up Dashboard home view by removing duplicate assignments calendar at the bottom, converting the Dashboard into a clean, focused cockpit (Hero Action Strip + Multi-active Zoom + Semester Progress + My Tracked Courses).
+  - Wired Dashboard course row "מטלות" button to navigate directly to the Assignments tab pre-filtered to the selected course with a dismissible course filter banner.
+  - Added Dark Noodle "Coffee" theme (`coffee`) featuring deep dark brown background (`#0f0a07`), rich card panels (`rgba(36, 22, 12, 0.92)`), terracotta and sage accents, and quick 3-way cycle button (`☕ / 🍜 / 🌙`) in header.
+  - Added Hero Action Strip on Dashboard: tranquil "המטלה הקרובה" ("Next Task") spotlight card with attachment chips ("פתח ↗", SVG "הורדה ↓") and Upcoming To-Do Queue excluding completed and hidden tasks with smooth expandable drawers.
+  - Added smooth accordion drawer for course rows in "My Tracked Courses", expanding to reveal active/visible Zoom meetings and next 5 course assignments without page transitions.
+  - Added "Manage Courses" modal dialog on Dashboard with semester groupings (`groupAndSortCourses`), custom nicknames, color pickers, and tracking checkboxes.
+  - Added pure SVG `DownloadIcon` replacing emoji icons on file action buttons throughout the extension.
+  - Added E2E tests `TC-DASH-REHAUL-01` to `TC-DASH-REHAUL-04` and `TC-ASN-09` validating course row expansion, upcoming to-do queue exclusion logic, manage courses modal, Coffee theme styling, and course-specific assignment filtering.
 - **Optional Web Scraping Toggle & Pure-API Default (`apps/extension/src/options/App.tsx`, `packages/moodle-client/src/moodleApi.ts`)**:
   - Made all HTML web scraping functionality optional and disabled by default (`scrapingEnabled: false`, `enableScraping: false`).
   - Added a dedicated bilingual switch (`#scraping-enabled-toggle`) in the Extension Settings page: "Moodle Web Scraping (Fallback)" / "סריקת אתר Moodle (Web Scraping)".
@@ -26,6 +45,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Verifies the scraping toggle defaults to OFF, tests pure API sync, toggles scraping ON, verifies storage persistence, executes scraping-enabled sync, resets to clean default, and captures visual screenshots.
 
 ### Changed
+- **Coffee Theme Re-Engineered from Scratch (`apps/extension/src/index.css`)**:
+  - Completely recreated the Coffee dark theme with dark roast background (`#1e1612`), lighter warm mocha cards (`rgba(44, 34, 27, 0.94)`), caramel crema accents (`#e28743`), and high-contrast milk froth typography (`#fff8f0`), guaranteeing excellent readability and pleasant aesthetics.
+- **Enlarged Sidebar Brand Logo (`apps/extension/src/options/App.css`)**:
+  - Scaled the Noodle bowl logo from 48px to 72px (expanded) and 44px (collapsed), increasing application title font size to 1.45rem for improved visual balance.
+- **Assignment Action Button & Pill Hierarchy (`apps/extension/src/options/App.css`, `App.tsx`)**:
+  - Converted the subject/topic pill (`.subject-pill`) into unframed metadata text to prevent button-like confusion.
+  - Sized action buttons down to compact `.btn-xs` (`font-size: 0.75rem; padding: 0.25rem 0.55rem;`).
+  - Styled "Open in Moodle" as a secondary subtle button while preserving "Go to Course" as the vibrant primary action.
+- **Streamlined Dashboard Header & Sync Animation (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed the theme switcher from the dashboard header (retained in Settings) and added a minimal SVG sync icon with smooth spinning animation (`.spinning-sync-icon`) during sync.
+- **Interactive Course Row Assignments (`apps/extension/src/options/App.tsx`)**:
+  - Transformed the 5 next assignments inside expanded course rows into full interactive, expandable assignment cards.
+- **Streamlined Dashboard Course Management & Unified Config Table (`apps/extension/src/options/App.tsx`)**:
+  - Removed course manual reordering arrows (`▲/▼`) for a clean, deterministic list of tracked courses.
+  - Enlarged Noodle bowl logo in sidebar to 48px for enhanced brand presence.
+  - Refactored `CoursesConfigTable` into a unified shared component reused across both `CoursesTab` and Dashboard Manage Courses modal.
 - **Accelerated Synchronization & Parallel Batching (`packages/moodle-client/src/syncEngine.ts`)**:
   - Parallelized grade items, submission statuses, and course contents fetching using concurrent batch processing (`batchPromises`), reducing sync times from minutes to ~15 seconds.
 - **Archive Scanning Pruning (`packages/moodle-client/src/strategies/scraperStrategy.ts`, `restStrategy.ts`)**:
@@ -33,6 +68,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Eliminated redundant multi-phase scraper fetching when courses are already discovered.
 
 ### Fixed
+- **Upcoming To-Do Queue & Hero Spotlight for Undated Tasks (`apps/extension/src/options/App.tsx`)**:
+  - Resolved an issue where assignments without explicit deadlines were excluded from the upcoming to-do queue and hero task computation, falsely displaying "All completed! 🎉". Tasks are now partitioned (future -> undated -> overdue) to ensure all pending tasks remain visible.
+- **Hero Card In-Place Expansion (`apps/extension/src/options/App.tsx`)**:
+  - Prevented automatic navigation to the assignments tab when clicking the Hero spotlight card, maintaining the user's dashboard context and expanding/collapsing details inline.
+- **Zoom Meeting Unhiding in Course Rows (`apps/extension/src/options/App.tsx`)**:
+  - Rendered all Zoom meetings in course row accordions with eye toggle icons (`EyeIcon` / `EyeOffIcon`), allowing users to easily unhide previously hidden meetings.
+  - Added "הצג את כל המפגשים" toggle button in `CourseDetailView` to review and unhide hidden meetings.
+- **Accurate Manual Completion Status Tag (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Replaced misleading "הוגש" (submitted) badge on manually marked-done assignments with "סומן כהושלם" (`marked_as_done`).
+- **Course Detail View Localization & UI Polish (`apps/extension/src/options/App.tsx`)**:
+  - Fixed Hebrew/English localization mixups in `CourseDetailView` by translating raw Moodle status strings into Hebrew (`הוגש`, `טרם הוגש`, `הוקצה`).
+  - Removed unstyled, non-functional placeholder button in `CourseDetailView` Zoom empty state.
 - **White Assignment Title in Next Assignment Banner (`apps/extension/src/options/App.css`, `apps/extension/src/index.css`)**:
   - Overrode hardcoded `color: white;` in `.next-assign-title` with `var(--text-primary)` (`#1e293b`), ensuring high-contrast dark text on the warm cream noodle theme.
 - **Ambiguous Hebrew Singular Day Badge Format (`apps/extension/src/shared/dateUtils.ts`)**:
