@@ -8,6 +8,7 @@ import {
   TextInput,
   Switch,
   Alert,
+  Linking,
 } from 'react-native';
 import { setMoodleToken, getMoodleToken } from '../services/backgroundSync';
 import { clearCredentials } from '../services/auth';
@@ -37,12 +38,16 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
   const [showAdvancedGoogle, setShowAdvancedGoogle] = useState<boolean>(false);
   const [customClientId, setCustomClientId] = useState<string>('');
   const [customClientSecret, setCustomClientSecret] = useState<string>('');
+  const [syncWithoutDeadline, setSyncWithoutDeadline] = useState<boolean>(false);
 
 
   const loadSettings = async () => {
     try {
       const enabled = getPreference('google_tasks_enabled') === 'true';
       setGoogleTasksEnabled(enabled);
+
+      const noDeadline = getPreference('sync_without_deadline') === 'true';
+      setSyncWithoutDeadline(noDeadline);
 
       const listName = getPreference('google_tasks_list_name') || 'University';
       setGoogleListName(listName);
@@ -83,6 +88,16 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
       setGoogleTasksEnabled(val);
       setPreference('google_tasks_enabled', val ? 'true' : 'false');
       markSettingUpdatedAndSync(['googleTasksEnabled']);
+      onSettingsChanged?.();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleSyncWithoutDeadline = (val: boolean) => {
+    try {
+      setSyncWithoutDeadline(val);
+      setPreference('sync_without_deadline', val ? 'true' : 'false');
       onSettingsChanged?.();
     } catch (e) {
       console.error(e);
@@ -498,6 +513,18 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
                 placeholderTextColor={theme.placeholder}
               />
 
+              <View style={[styles.row, { flexDirection: isRtl ? 'row-reverse' : 'row', marginTop: 10 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowLabel, { color: theme.text, fontSize: 13, textAlign: isRtl ? 'right' : 'left' }]}>
+                    {t('sync_without_deadline_title')}
+                  </Text>
+                  <Text style={{ color: theme.textSecondary, fontSize: 11, textAlign: isRtl ? 'right' : 'left' }}>
+                    {t('sync_without_deadline_desc')}
+                  </Text>
+                </View>
+                <Switch value={syncWithoutDeadline} onValueChange={handleToggleSyncWithoutDeadline} />
+              </View>
+
               <Pressable
                 style={[styles.primaryActionBtn, { backgroundColor: theme.primary }]}
                 onPress={handleAuthAndSyncGoogle}
@@ -625,6 +652,39 @@ export default function SettingsScreen({ onDisconnect, onSettingsChanged }: Sett
               <Text style={styles.secondaryBtnText}>📁 {t('import_config_btn')}</Text>
             </Pressable>
           </View>
+        </View>
+
+        {/* Account & Development Section */}
+        <View style={[styles.section, { backgroundColor: theme.backgroundElement, marginTop: 24 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text, textAlign: isRtl ? 'right' : 'left' }]}>
+            👤 {t('account_credits_title')}
+          </Text>
+          <Text style={{ color: theme.text, fontSize: 13, fontWeight: 'bold', marginBottom: 4, textAlign: isRtl ? 'right' : 'left' }}>
+            {t('developed_by')}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 12, textAlign: isRtl ? 'right' : 'left' }}>
+            {t('support_email_label')}
+          </Text>
+          <View style={[styles.btnRow, { flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 8 }]}>
+            <Pressable
+              style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSelected, paddingVertical: 10 }]}
+              onPress={() => Linking.openURL('https://github.com/duck-5/Noodle')}
+            >
+              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>🐙 {t('github_repo_link')}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSelected, paddingVertical: 10 }]}
+              onPress={() => Linking.openURL('https://github.com/duck-5/Noodle/issues')}
+            >
+              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>🐛 {t('github_issues_link')}</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={[styles.primaryActionBtn, { backgroundColor: theme.primary, marginTop: 8 }]}
+            onPress={() => Linking.openURL('https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope')}
+          >
+            <Text style={styles.primaryActionBtnText}>⭐ {t('review_extension_label')}</Text>
+          </Pressable>
         </View>
 
         {/* Danger Zone */}

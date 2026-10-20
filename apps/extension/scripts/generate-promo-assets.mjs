@@ -27,7 +27,11 @@ function getBase64Image(filePath) {
 
 const logoData = getBase64Image(path.join(assetsDir, 'logo.png'));
 const dashData = getBase64Image(path.join(screenshotsDir, 'main-dashboard.png'));
+const dashCoffeeData = getBase64Image(path.join(screenshotsDir, 'dashboard-coffee-theme.png'));
 const dashDarkData = getBase64Image(path.join(screenshotsDir, 'main-dashboard-dark.png'));
+const assignsData = getBase64Image(path.join(screenshotsDir, 'assignments-page-expanded.png'));
+const courseDetailData = getBase64Image(path.join(screenshotsDir, 'course-9999-detail.png'));
+const modalData = getBase64Image(path.join(screenshotsDir, 'dashboard-manage-modal.png'));
 const popupData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup.png'));
 const popupHeData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup-he.png'));
 
@@ -280,7 +284,7 @@ const sharedCss = `
 `;
 
 const slides = [
-  // Slide 1: Hero Overview
+  // Slide 1: Hero Overview - The Modern Study Cockpit
   {
     name: 'promo-1-hero-overview',
     html: `
@@ -302,7 +306,7 @@ const slides = [
           .dashboard-scaled-container img {
             width: 100%;
             height: auto;
-            transform: scale(0.97);
+            transform: scale(0.96);
             transform-origin: top center;
             display: block;
             image-rendering: -webkit-optimize-contrast;
@@ -315,10 +319,10 @@ const slides = [
             <div>
               <div class="brand-pill">
                 <img src="${logoData}" alt="Noodle logo">
-                <span>Smart Moodle Companion</span>
+                <span>The Modern Study Cockpit</span>
               </div>
               <h1 class="slide-title">Meet <span class="highlight">Noodle</span>: Study Smarter</h1>
-              <p class="slide-subtitle">A decentralized, beautifully designed dashboard that replaces clunky Moodle with real-time deadlines, Zoom links, and instant sync.</p>
+              <p class="slide-subtitle">A distraction-free Moodle client featuring an urgent deadline spotlight, live Zoom detection, and instant background sync.</p>
             </div>
             <div class="pill-group">
               <div class="feature-tag"><span class="dot"></span>100% Client-Only</div>
@@ -340,26 +344,26 @@ const slides = [
             </div>
             <div class="browser-content">
               <div class="dashboard-scaled-container">
-                <img src="${dashData}" alt="Main Dashboard Preview">
+                <img src="${dashData}" alt="Cockpit Dashboard Preview">
               </div>
             </div>
           </div>
 
           <!-- Callout 1 -->
           <div class="badge-callout" style="bottom: 45px; left: 40px;">
-            <div class="badge-icon-box" style="background: #ecfdf5; color: #059669;">⚡</div>
+            <div class="badge-icon-box" style="background: #ecfdf5; color: #059669;">🎯</div>
             <div>
-              <div class="badge-text-title">Fast Background Sync</div>
-              <div class="badge-text-sub">Pulls deadlines & files seamlessly</div>
+              <div class="badge-text-title">Urgent Deadline Spotlight</div>
+              <div class="badge-text-sub">Next due assignment with topic files & attachments</div>
             </div>
           </div>
 
           <!-- Callout 2 -->
           <div class="badge-callout" style="top: 140px; right: 40px;">
-            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎯</div>
+            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎥</div>
             <div>
-              <div class="badge-text-title">Clean & Clutter-Free</div>
-              <div class="badge-text-sub">Only what matters for your courses</div>
+              <div class="badge-text-title">Live Zoom Detection</div>
+              <div class="badge-text-sub">1-click join banner when your lecture is live</div>
             </div>
           </div>
         </div>
@@ -368,7 +372,7 @@ const slides = [
     `,
   },
 
-  // Slide 2: Deadlines & Grades (Crisp dedicated deadline cards mockup)
+  // Slide 2: Dedicated Assignments Hub
   {
     name: 'promo-2-deadlines-grades',
     html: `
@@ -378,100 +382,22 @@ const slides = [
         <meta charset="utf-8">
         <style>
           ${sharedCss}
-          .split-grid {
-            position: relative;
-            z-index: 10;
-            flex: 1;
-            display: grid;
-            grid-template-columns: 1.25fr 0.75fr;
-            gap: 24px;
-            align-items: stretch;
-          }
-          .highlight-card {
-            background: #ffffff;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
-            padding: 24px;
-            box-shadow: 0 16px 36px -8px rgba(15, 23, 42, 0.1);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-          }
-          .feature-item {
-            display: flex;
-            gap: 14px;
-            padding: 14px 16px;
-            border-radius: 12px;
-            background: #f8fafc;
-            border: 1px solid #f1f5f9;
-            align-items: flex-start;
-          }
-          .mockup-inner {
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            background: #fdfaf5;
+          .dashboard-scaled-container {
+            width: 100%;
             height: 100%;
-          }
-          .task-card-mock {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            padding: 18px 22px;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-            position: relative;
-          }
-          .task-card-header {
-            display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: flex-start;
+            background: #fdfaf5;
           }
-          .course-pill-tag {
-            font-size: 12px;
-            font-weight: 700;
-            padding: 3px 10px;
-            border-radius: 999px;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-          }
-          .due-badge-pill {
-            font-size: 13px;
-            font-weight: 700;
-            padding: 6px 14px;
-            border-radius: 999px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-          }
-          .task-action-btn {
-            background: #c2410c;
-            color: #ffffff;
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            border: none;
-            cursor: pointer;
-            box-shadow: 0 2px 6px rgba(194, 65, 12, 0.25);
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-          }
-          .file-attachment-chip {
-            background: #f1f5f9;
-            border: 1px solid #e2e8f0;
-            padding: 5px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            color: #475569;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(0.98);
+            transform-origin: top center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
           }
         </style>
       </head>
@@ -481,125 +407,51 @@ const slides = [
             <div>
               <div class="brand-pill">
                 <img src="${logoData}" alt="Noodle logo">
-                <span>Deadline & Grade Management</span>
+                <span>Dedicated Assignments Hub</span>
               </div>
-              <h1 class="slide-title">Never Miss a <span class="highlight">Deadline</span> Again</h1>
-              <p class="slide-subtitle">Clear countdown timers, urgent deadline banners, and live grade tracking at your fingertips.</p>
+              <h1 class="slide-title">All Assignments & Files in <span class="highlight">One View</span></h1>
+              <p class="slide-subtitle">Filter by pending, past, or completed. Search instantly and access attached assignment prompts and weekly topic files directly from the drawer.</p>
             </div>
             <div class="pill-group">
+              <div class="feature-tag">🔍 Instant Search</div>
+              <div class="feature-tag">📂 Topic Files in Drawer</div>
               <div class="feature-tag">⏰ Live Countdowns</div>
-              <div class="feature-tag">💯 100/100 Grade Tracking</div>
-              <div class="feature-tag">📅 Google Tasks Sync</div>
             </div>
           </div>
 
-          <div class="split-grid">
-            <div class="browser-frame">
-              <div class="browser-topbar">
-                <div class="traffic-lights">
-                  <span class="traffic-light tl-red"></span>
-                  <span class="traffic-light tl-yellow"></span>
-                  <span class="traffic-light tl-green"></span>
-                </div>
-                <div class="browser-address">
-                  <span>🎯 Deadlines & Submissions View</span>
-                </div>
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
               </div>
-              <div class="mockup-inner">
-                <!-- Task 1: Urgent Deadline -->
-                <div class="task-card-mock" style="border-left: 6px solid #ef4444;">
-                  <div class="task-card-header">
-                    <div>
-                      <span class="course-pill-tag" style="background: #ecfdf5; color: #047857;">מבוא למדעי המחשב • CS101</span>
-                      <h4 style="font-size: 17px; font-weight: 800; color: #0f172a; margin-top: 6px;">מטלה 1 - רקורסיה ויעילות אלגוריתמית</h4>
-                    </div>
-                    <div class="due-badge-pill" style="background: #fee2e2; color: #b91c1c;">
-                      🔥 בעוד יום (Urgent!)
-                    </div>
-                  </div>
-
-                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <div class="file-attachment-chip">📄 instructions_hw1.pdf (0.44 MB)</div>
-                    <div class="file-attachment-chip">🐍 hw1_template.py (24 KB)</div>
-                  </div>
-
-                  <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 10px;">
-                    <span style="font-size: 12px; font-weight: 600; color: #64748b;">מועד הגשה: מחר, 23:59</span>
-                    <button class="task-action-btn">הגש במודל ↗</button>
-                  </div>
-                </div>
-
-                <!-- Task 2: Approaching Deadline -->
-                <div class="task-card-mock" style="border-left: 6px solid #6366f1;">
-                  <div class="task-card-header">
-                    <div>
-                      <span class="course-pill-tag" style="background: #eef2ff; color: #4338ca;">מבני נתונים • DS201</span>
-                      <h4 style="font-size: 17px; font-weight: 800; color: #0f172a; margin-top: 6px;">תרגיל בית 2 - עצי חיפוש בינאריים ועצי AVL</h4>
-                    </div>
-                    <div class="due-badge-pill" style="background: #f1f5f9; color: #4338ca;">
-                      ⏱ בעוד 4 ימים
-                    </div>
-                  </div>
-
-                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <div class="file-attachment-chip">📄 instructions_hw2.pdf (0.87 MB)</div>
-                    <div class="file-attachment-chip">💻 avl_tree_skeleton.cpp (48 KB)</div>
-                  </div>
-
-                  <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 10px;">
-                    <span style="font-size: 12px; font-weight: 600; color: #64748b;">מועד הגשה: יום ראשון, 23:59</span>
-                    <button class="task-action-btn" style="background: #4338ca;">הגש במודל ↗</button>
-                  </div>
-                </div>
-
-                <!-- Task 3: Submitted & Graded -->
-                <div class="task-card-mock" style="border-left: 6px solid #10b981; opacity: 0.92;">
-                  <div class="task-card-header">
-                    <div>
-                      <span class="course-pill-tag" style="background: #ecfdf5; color: #047857;">מבוא למדעי המחשב • CS101</span>
-                      <h4 style="font-size: 16px; font-weight: 700; color: #334155; margin-top: 4px;">מטלה 0 - מבוא לסביבת הפיתוח</h4>
-                    </div>
-                    <div class="due-badge-pill" style="background: #dcfce7; color: #15803d;">
-                      🏆 100 / 100 (הוגש)
-                    </div>
-                  </div>
-                </div>
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#assignments</span>
               </div>
             </div>
-
-            <div class="highlight-card">
-              <div style="display: flex; flex-direction: column; gap: 12px;">
-                <h3 style="font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 2px;">Smart Assignment Highlights</h3>
-
-                <div class="feature-item" style="border-left: 4px solid #ef4444; background: #fff5f5;">
-                  <div style="font-size: 24px;">🔥</div>
-                  <div>
-                    <div style="font-weight: 700; color: #991b1b; font-size: 15px;">Urgent Deadline Alerts</div>
-                    <div style="color: #7f1d1d; font-size: 13px; margin-top: 2px;">Color-coded countdown badges ("1 day", "4 days") warn you ahead of time.</div>
-                  </div>
-                </div>
-
-                <div class="feature-item" style="border-left: 4px solid #10b981; background: #f0fdf4;">
-                  <div style="font-size: 24px;">🏆</div>
-                  <div>
-                    <div style="font-weight: 700; color: #065f46; font-size: 15px;">Real-Time Grade Feedback</div>
-                    <div style="color: #047857; font-size: 13px; margin-top: 2px;">Inspect 100/100 grades immediately without digging through gradebooks.</div>
-                  </div>
-                </div>
-
-                <div class="feature-item" style="border-left: 4px solid #6366f1; background: #eef2ff;">
-                  <div style="font-size: 24px;">📊</div>
-                  <div>
-                    <div style="font-weight: 700; color: #3730a3; font-size: 15px;">Course Progress Tracking</div>
-                    <div style="color: #4338ca; font-size: 13px; margin-top: 2px;">Visual progress bars calculate completed vs pending tasks instantly.</div>
-                  </div>
-                </div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${assignsData}" alt="Assignments Page Preview">
               </div>
+            </div>
+          </div>
 
-              <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); padding: 14px 18px; border-radius: 12px; border: 1px solid #fed7aa; display: flex; align-items: center; gap: 12px;">
-                <span style="font-size: 22px;">🚀</span>
-                <span style="font-size: 13px; font-weight: 600; color: #9a3412;">One-click direct links to Moodle submission pages!</span>
-              </div>
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #fef3c7; color: #d97706;">📂</div>
+            <div>
+              <div class="badge-text-title">Smart Topic Files & Prompts</div>
+              <div class="badge-text-sub">Slides, code templates & guidelines in one drawer</div>
+            </div>
+          </div>
+
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #fdf2f8; color: #db2777;">⚡</div>
+            <div>
+              <div class="badge-text-title">One-Click Moodle Submission</div>
+              <div class="badge-text-sub">Direct link to dropzone with zero extra clicks</div>
             </div>
           </div>
         </div>
@@ -608,7 +460,7 @@ const slides = [
     `,
   },
 
-  // Slide 3: Zoom Hub
+  // Slide 3: Course Materials & Live Lecture Hub
   {
     name: 'promo-3-zoom-hub',
     html: `
@@ -618,49 +470,22 @@ const slides = [
         <meta charset="utf-8">
         <style>
           ${sharedCss}
-          .zoom-stack {
-            position: relative;
-            z-index: 10;
-            flex: 1;
+          .dashboard-scaled-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
             display: flex;
-            flex-direction: column;
-            gap: 16px;
+            justify-content: center;
+            align-items: flex-start;
+            background: #fdfaf5;
           }
-          .zoom-banner-mockup {
-            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
-            color: #ffffff;
-            border-radius: 14px;
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.35);
-          }
-          .upcoming-meetings-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-          }
-          .meeting-card {
-            background: #ffffff;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            padding: 16px 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .zoom-hub-detail {
-            background: #ffffff;
-            border-radius: 14px;
-            border: 1px solid #e2e8f0;
-            padding: 20px 24px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.08);
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(0.96) translateY(-460px);
+            transform-origin: top center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
           }
         </style>
       </head>
@@ -670,93 +495,51 @@ const slides = [
             <div>
               <div class="brand-pill">
                 <img src="${logoData}" alt="Noodle logo">
-                <span>Unified Zoom Lecture Hub</span>
+                <span>Course Materials & Lecture Hub</span>
               </div>
-              <h1 class="slide-title">Join Live Lectures in <span class="highlight">One Click</span></h1>
-              <p class="slide-subtitle">Active classes are detected automatically. No more searching for lost meeting links, passcodes, or dates.</p>
+              <h1 class="slide-title">Course Files & Zoom in <span class="highlight">One Click</span></h1>
+              <p class="slide-subtitle">Browse weekly topics, download course slides and code skeletons with exact file sizes, and join live lectures without hunting for links.</p>
             </div>
             <div class="pill-group">
-              <div class="feature-tag">🎥 Automatic Link Discovery</div>
-              <div class="feature-tag">● Live Class Banner</div>
-              <div class="feature-tag">📅 Weekly Schedule</div>
+              <div class="feature-tag">🎥 Auto-Discovered Zoom</div>
+              <div class="feature-tag">📥 1-Click Downloads</div>
+              <div class="feature-tag">🗂️ Weekly Topic Pills</div>
             </div>
           </div>
 
-          <div class="zoom-stack">
-            <!-- Prominent Live Meeting Banner -->
-            <div class="zoom-banner-mockup">
-              <div style="display: flex; align-items: center; gap: 14px;">
-                <span style="display: inline-block; width: 12px; height: 12px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 12px #22c55e;"></span>
-                <div>
-                  <div style="font-size: 16px; font-weight: 700; letter-spacing: 0.2px;">שיעור שבועי - מבוא למדעי המחשב (● פעיל כעת)</div>
-                  <div style="font-size: 13px; opacity: 0.85; margin-top: 2px;">מרצה: פרופ' ישראלי | זמין עכשיו להצטרפות ישירה</div>
-                </div>
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
               </div>
-              <div style="background: #ffffff; color: #1e3a8a; padding: 10px 20px; border-radius: 10px; font-weight: 800; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                🚀 הצטרף לשיעור עכשיו
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#course/9999</span>
               </div>
             </div>
-
-            <!-- Scheduled Meetings Row -->
-            <div class="upcoming-meetings-grid">
-              <div class="meeting-card" style="border-right: 4px solid #10b981;">
-                <div>
-                  <div style="font-size: 12px; font-weight: 700; color: #10b981; text-transform: uppercase;">מבוא למדעי המחשב</div>
-                  <div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 2px;">תרגול 03 - רקורסיה והוכחות נכונות</div>
-                  <div style="font-size: 12px; color: #64748b; margin-top: 2px;">יום שלישי, 14:00 • חדר זום של מתרגל</div>
-                </div>
-                <div style="background: #f1f5f9; color: #334155; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;">
-                  במועד 📅
-                </div>
-              </div>
-
-              <div class="meeting-card" style="border-right: 4px solid #6366f1;">
-                <div>
-                  <div style="font-size: 12px; font-weight: 700; color: #6366f1; text-transform: uppercase;">מבני נתונים</div>
-                  <div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 2px;">הרצאה 05 - עצי AVL ואיזון עצים בינאריים</div>
-                  <div style="font-size: 12px; color: #64748b; margin-top: 2px;">יום חמישי, 10:00 • חדר הרצאות ראשי</div>
-                </div>
-                <div style="background: #f1f5f9; color: #334155; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;">
-                  במועד 📅
-                </div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${courseDetailData}" alt="Course Detail Preview">
               </div>
             </div>
+          </div>
 
-            <!-- Zoom Hub Value Callout -->
-            <div class="zoom-hub-detail">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-                <span style="font-size: 14px; font-weight: 700; color: #0f172a;">📅 שאר המפגשים השבועיים המסונכרנים</span>
-                <span style="font-size: 12px; font-weight: 600; color: #10b981;">● 4 פגישות מקושרות אוטומטית</span>
-              </div>
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎥</div>
+            <div>
+              <div class="badge-text-title">Live Meeting Detection</div>
+              <div class="badge-text-sub">Active Zoom lecture highlighted with direct join button</div>
+            </div>
+          </div>
 
-              <div style="display: flex; flex-direction: column; gap: 8px; margin: 4px 0;">
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 18px;">💻</span>
-                    <div>
-                      <div style="font-size: 13px; font-weight: 700; color: #1e293b;">הרצאה 04: סיבוכיות זמן ומקום וחישוביות</div>
-                      <div style="font-size: 11px; color: #64748b;">מבוא למדעי המחשב • יום ראשון, 11:00</div>
-                    </div>
-                  </div>
-                  <span style="font-size: 11px; font-weight: 700; color: #2563eb; background: #eff6ff; padding: 4px 10px; border-radius: 6px;">מקושר לזום 🔗</span>
-                </div>
-
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 18px;">🙋</span>
-                    <div>
-                      <div style="font-size: 13px; font-weight: 700; color: #1e293b;">שעת קבלה שבועית עם מתרגלי הקורס</div>
-                      <div style="font-size: 11px; color: #64748b;">מבני נתונים • יום רביעי, 16:00</div>
-                    </div>
-                  </div>
-                  <span style="font-size: 11px; font-weight: 700; color: #2563eb; background: #eff6ff; padding: 4px 10px; border-radius: 6px;">מקושר לזום 🔗</span>
-                </div>
-              </div>
-
-              <div style="display: flex; gap: 12px; align-items: center; font-size: 13px; color: #475569; border-top: 1px solid #f1f5f9; padding-top: 10px;">
-                <span style="font-size: 20px;">💡</span>
-                <span>Noodle סורק את מודול הזום של מודל ומציג את הפגישות הפעילות בראש הדשבורד עם קישור הצטרפות ישיר ללא צורך במעבר בין לשוניות.</span>
-              </div>
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #f0fdf4; color: #16a34a;">📦</div>
+            <div>
+              <div class="badge-text-title">Exact File Sizes & Downloads</div>
+              <div class="badge-text-sub">Download slides, syllabi and zip archives directly</div>
             </div>
           </div>
         </div>
@@ -765,7 +548,7 @@ const slides = [
     `,
   },
 
-  // Slide 4: Clean Course Files Explorer (Crystal clear, readable files UI mockup)
+  // Slide 4: Personalized Course Management & Colors
   {
     name: 'promo-4-course-files',
     html: `
@@ -775,96 +558,22 @@ const slides = [
         <meta charset="utf-8">
         <style>
           ${sharedCss}
-          .files-mockup-container {
-            flex: 1;
-            background: #ffffff;
-            border-radius: 14px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 16px 36px -8px rgba(15, 23, 42, 0.12);
-            display: flex;
-            flex-direction: column;
+          .dashboard-scaled-container {
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-          }
-          .course-header-bar {
-            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-            border-bottom: 1px solid #e2e8f0;
-            padding: 14px 24px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .topic-pills-row {
-            display: flex;
-            gap: 8px;
-            padding: 10px 24px;
-            background: #faf5ed;
-            border-bottom: 1px solid #f1f5f9;
-            align-items: center;
-          }
-          .topic-pill {
-            padding: 5px 13px;
-            border-radius: 999px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #64748b;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            cursor: pointer;
-          }
-          .topic-pill.active {
-            background: #c2410c;
-            color: #ffffff;
-            border-color: #c2410c;
-            box-shadow: 0 2px 6px rgba(194, 65, 12, 0.25);
-          }
-          .files-list-table {
-            flex: 1;
-            padding: 10px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            overflow-y: auto;
-          }
-          .file-row-card {
-            background: #ffffff;
-            border: 1px solid #f1f5f9;
-            border-radius: 10px;
-            padding: 9px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-          }
-          .file-row-card:hover {
-            border-color: #fed7aa;
-            background: #fffaf5;
-          }
-          .file-badge-type {
-            font-size: 18px;
-            width: 36px;
-            height: 36px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
             justify-content: center;
-            flex-shrink: 0;
-          }
-          .file-download-btn {
-            background: #f1f5f9;
-            color: #1e293b;
-            border: 1px solid #cbd5e1;
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 700;
-            display: inline-flex;
             align-items: center;
-            gap: 6px;
-            cursor: pointer;
+            background: #fdfaf5;
           }
-          .file-download-btn:hover {
-            background: #e2e8f0;
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(1.08);
+            transform-origin: center center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
           }
         </style>
       </head>
@@ -874,137 +583,51 @@ const slides = [
             <div>
               <div class="brand-pill">
                 <img src="${logoData}" alt="Noodle logo">
-                <span>Clean Course Files & Navigation</span>
+                <span>Personalized Course Management</span>
               </div>
-              <h1 class="slide-title">All Course Files, <span class="highlight">Cleanly Organized</span></h1>
-              <p class="slide-subtitle">Filter by weekly topic and download slides, code skeletons, and syllabi in one click with exact file sizes.</p>
+              <h1 class="slide-title">Organize Your Semester, <span class="highlight">Your Way</span></h1>
+              <p class="slide-subtitle">Track only active courses, set custom Hebrew and English nicknames, and customize color tags for total visual clarity.</p>
             </div>
             <div class="pill-group">
-              <div class="feature-tag">📑 1-Click Downloads</div>
-              <div class="feature-tag">📦 Exact File Sizes</div>
-              <div class="feature-tag">🗂️ Weekly Topic Pills</div>
+              <div class="feature-tag">🎨 Custom Color Tags</div>
+              <div class="feature-tag">✏️ Custom Nicknames</div>
+              <div class="feature-tag">🎯 Semester Focus</div>
             </div>
           </div>
 
-          <div class="files-mockup-container">
-            <!-- Course Header -->
-            <div class="course-header-bar">
-              <div>
-                <span style="font-size: 12px; font-weight: 700; color: #047857; text-transform: uppercase;">0368-1001-01</span>
-                <h3 style="font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 2px;">מבוא למדעי המחשב (CS101) - כל חומרי ההוראה</h3>
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
               </div>
-              <div style="font-size: 13px; font-weight: 600; color: #64748b; background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 14px; border-radius: 8px;">
-                🔍 חיפוש קבצים ומצגות...
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#manage-courses</span>
               </div>
             </div>
-
-            <!-- Topic Pills -->
-            <div class="topic-pills-row">
-              <span style="font-size: 12px; font-weight: 700; color: #94a3b8; margin-right: 4px;">נושאים:</span>
-              <div class="topic-pill">הכל 🌐</div>
-              <div class="topic-pill">מידע וסילבוס 📋</div>
-              <div class="topic-pill active">שבוע 1: רקורסיה ויעילות ✨</div>
-              <div class="topic-pill">שבוע 2: סיבוכיות ו-Big O 📊</div>
-              <div class="topic-pill">שבוע 3: עצים בינאריים 🌲</div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${modalData}" alt="Manage Courses Modal Preview">
+              </div>
             </div>
+          </div>
 
-            <!-- File List for Topic -->
-            <div class="files-list-table">
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #fee2e2; color: #dc2626;">📑</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                      <bdi>מצגת 01 - רקורסיה ומגדלי האנוי</bdi> <span style="color: #64748b; font-size: 12px; font-weight: 600;">(PDF)</span>
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">שקפי הרצאה מורחבים • עודכן השבוע</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">3.77 MB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #eef2ff; color: #4338ca;">🎨</div>
+            <div>
+              <div class="badge-text-title">Vibrant Color Coding</div>
+              <div class="badge-text-sub">Identify courses across all views with custom palettes</div>
+            </div>
+          </div>
 
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #e0f2fe; color: #0284c7;">🐍</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace;" dir="ltr">
-                      recursion_starter_template.py
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">שלד פייתון ותרגילי דוגמה למטלה 1</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">24 KB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
-
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #fef3c7; color: #d97706;">📄</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                      <bdi>הנחיות התקנת סביבת פיתוח פייתון</bdi> <span style="color: #64748b; font-size: 12px; font-weight: 600;">(PDF)</span>
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">מדריך הגדרת VS Code ואינטרפרטר</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">1.23 MB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
-
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #f3e8ff; color: #7e22ce;">📦</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                      <bdi>תרגול 01 - פתרונות ושלדי קוד</bdi> <span style="color: #64748b; font-size: 12px; font-weight: 600;">(ZIP)</span>
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">תרגילי חזרה למבחן ופתרונות בית ספר</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">4.12 MB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
-
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #fee2e2; color: #dc2626;">📑</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                      <bdi>מצגת 02 - סיבוכיות זמן וחסמים אסימפטוטיים</bdi> <span style="color: #64748b; font-size: 12px; font-weight: 600;">(PDF)</span>
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">שקפי הרצאה שבוע 2 • פונקציות Big-O</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">2.85 MB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
-
-              <div class="file-row-card">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <div class="file-badge-type" style="background: #ede9fe; color: #7c3aed;">💻</div>
-                  <div>
-                    <div style="font-size: 15px; font-weight: 700; color: #0f172a;">
-                      <bdi>סילבוס תשפ"ו - מבוא למדעי המחשב</bdi> <span style="color: #64748b; font-size: 12px; font-weight: 600;">(PDF)</span>
-                    </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;">מבנה ציון, מועדי בחינות ושעות קבלה</div>
-                  </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 14px;">
-                  <span style="font-size: 13px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">0.44 MB</span>
-                  <button class="file-download-btn">הורדה 📥</button>
-                </div>
-              </div>
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #fdf4ff; color: #a855f7;">✏️</div>
+            <div>
+              <div class="badge-text-title">Human-Readable Names</div>
+              <div class="badge-text-sub">Replace cryptic course IDs with memorable names</div>
             </div>
           </div>
         </div>
@@ -1028,9 +651,43 @@ const slides = [
             z-index: 10;
             flex: 1;
             display: grid;
-            grid-template-columns: 1.35fr 0.85fr;
+            grid-template-columns: 1.32fr 0.88fr;
             gap: 24px;
             align-items: center;
+          }
+          .coffee-frame {
+            height: 100%;
+            background: #231b17;
+            border-radius: 14px;
+            border: 1px solid #3d2f28;
+            box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.28);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          }
+          .coffee-topbar {
+            height: 36px;
+            background: #1b1512;
+            border-bottom: 1px solid #332720;
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            gap: 12px;
+          }
+          .coffee-address {
+            flex: 1;
+            max-width: 440px;
+            height: 24px;
+            background: #29201a;
+            border: 1px solid #3d2f28;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #d6c7b2;
+            gap: 6px;
           }
           .popup-wrapper {
             display: flex;
@@ -1074,31 +731,31 @@ const slides = [
                 <img src="${logoData}" alt="Noodle logo">
                 <span>Everyday Productivity & Customization</span>
               </div>
-              <h1 class="slide-title">Tailored to <span class="highlight">Your Workflow</span></h1>
-              <p class="slide-subtitle">Dark mode for late-night study sessions, quick 1-click toolbar popup, and full bilingual Hebrew & English support.</p>
+              <h1 class="slide-title">Built for Late Nights: <span class="highlight">Coffee & Dark</span> Themes</h1>
+              <p class="slide-subtitle">Switch between Cozy Coffee, Midnight Dark, and Clean Noodle themes. Check deadlines instantly with the browser toolbar popup.</p>
             </div>
             <div class="pill-group">
+              <div class="feature-tag">☕ Cozy Coffee Theme</div>
               <div class="feature-tag">🌙 Midnight Dark Mode</div>
-              <div class="feature-tag">⚡ 1-Click Browser Popup</div>
-              <div class="feature-tag">🌐 Hebrew & English</div>
+              <div class="feature-tag">⚡ 1-Click Toolbar Popup</div>
             </div>
           </div>
 
           <div class="themes-layout">
-            <!-- Dark Mode Dashboard -->
-            <div class="browser-frame" style="height: 100%;">
-              <div class="browser-topbar" style="background: #1e293b; border-color: #334155;">
+            <!-- Coffee Theme Dashboard -->
+            <div class="coffee-frame">
+              <div class="coffee-topbar">
                 <div class="traffic-lights">
                   <span class="traffic-light tl-red"></span>
                   <span class="traffic-light tl-yellow"></span>
                   <span class="traffic-light tl-green"></span>
                 </div>
-                <div class="browser-address" style="background: #0f172a; border-color: #334155; color: #94a3b8;">
-                  <span>🌙 Midnight Dark Theme</span>
+                <div class="coffee-address">
+                  <span>☕ Cozy Coffee Theme • Relaxing Espresso Aesthetic</span>
                 </div>
               </div>
-              <div class="browser-content" style="background: #0f172a;">
-                <img src="${dashDarkData}" alt="Dark Mode Dashboard Preview" style="width: 100%; height: auto; transform: scale(0.97); transform-origin: top center; image-rendering: -webkit-optimize-contrast;">
+              <div class="browser-content" style="background: #1f1814;">
+                <img src="${dashCoffeeData}" alt="Coffee Theme Dashboard Preview" style="width: 100%; height: auto; transform: scale(0.98); transform-origin: top center; image-rendering: -webkit-optimize-contrast;">
               </div>
             </div>
 
@@ -1110,7 +767,7 @@ const slides = [
               <div class="popup-shadow">
                 <img src="${popupData}" alt="Toolbar Popup Preview">
               </div>
-              <div style="font-size: 13px; font-weight: 600; color: #64748b; text-align: center; max-width: 320px;">
+              <div style="font-size: 13px; font-weight: 600; color: #64748b; text-align: center; max-width: 320px; line-height: 1.4;">
                 Check upcoming tasks with zero tab switching right from your browser toolbar!
               </div>
             </div>
@@ -1195,13 +852,13 @@ const marqueeBanner = {
             Upgrade Your <br><span class="highlight">Study Life</span>
           </h1>
           <p style="font-size: 18px; color: #64748b; font-weight: 500; line-height: 1.45; max-width: 520px;">
-            The fast, private, and delightful frontend for university students. Deadlines, Zoom classes, and course files in one seamless interface.
+            The fast, private, and delightful frontend for university students. Deadlines, Zoom classes, and course files in one seamless cockpit.
           </p>
           <div class="badge-bar">
             <div class="feature-tag"><span class="dot"></span>100% Client-Only</div>
             <div class="feature-tag">⚡ Instant Sync</div>
             <div class="feature-tag">🎥 Zoom Hub</div>
-            <div class="feature-tag">🌙 Dark Mode</div>
+            <div class="feature-tag">☕ Coffee Theme</div>
           </div>
         </div>
 
@@ -1223,7 +880,7 @@ const marqueeBanner = {
   `,
 };
 
-// Small Promo Tile: 440x280 (No TAU specification)
+// Small Promo Tile: 440x280 (No TAU specification, perfectly framed avatar Option B)
 const smallTile = {
   name: 'promo-small-tile',
   width: 440,
@@ -1259,8 +916,8 @@ const smallTile = {
             </div>
             <div style="font-size: 15px; font-weight: 700; color: #ea580c;">Smart Study Companion</div>
           </div>
-          <div style="width: 76px; height: 76px; overflow: hidden; border-radius: 50%; background: #ffffff; border: 2px solid #fed7aa; box-shadow: 0 6px 14px rgba(224, 138, 60, 0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-            <img src="${logoData}" style="width: 130px; height: 130px; object-fit: contain; transform: translateY(14px);" alt="Logo">
+          <div style="width: 76px; height: 76px; overflow: hidden; border-radius: 50%; background: #ffffff; border: 2.5px solid #fed7aa; box-shadow: 0 6px 16px rgba(224, 138, 60, 0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <img src="${logoData}" style="width: 105px; height: 105px; object-fit: cover; transform: translateY(-25px) scale(1.35);" alt="Logo">
           </div>
         </div>
 
@@ -1271,7 +928,7 @@ const smallTile = {
           <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #334155;">
             <span style="color: #2563eb; font-weight: 800;">✓</span> 1-Click Live Zoom Lectures
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #334155;">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #8b5cf6;">
             <span style="color: #8b5cf6; font-weight: 800;">✓</span> 100% Private & Client-Only
           </div>
         </div>
@@ -1299,7 +956,6 @@ async function main() {
     console.log(`Generating ${slide.name}.png (1280x800)...`);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.setContent(slide.html, { waitUntil: 'networkidle' });
-    // Wait for fonts to fully resolve
     await page.waitForFunction(() => document.fonts.ready);
     await page.waitForTimeout(400);
 

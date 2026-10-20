@@ -6,6 +6,7 @@ credentials.json
 token.json
 *.secret
 *.kotlin
+
 .gradle/
 .idea/
 # ==========================================
@@ -73,6 +74,7 @@ desktop.ini
 node_modules/
 .turbo/
 dist/
+dist-*/
 build/
 *.zip
 .expo/

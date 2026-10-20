@@ -103,10 +103,13 @@ Noodle/
 ### B. Chrome Extension (`apps/extension`)
 *   **Bundler:** Vite paired with the CRXJS plugin, which parses `manifest.json` to automatically compile background service worker files, assets, and popup HTML pages.
 *   **CORS Bypass:** Bypasses Moodle's lack of CORS headers by declaring `*://moodle.tau.ac.il/*` in the manifest's `host_permissions` block. This elevates network requests originating from the **Service Worker** background context.
-*   **Ephemeral Service Worker Lifecycle:** Chrome MV3 Service Workers are designed to shut down after 30 seconds of inactivity. To prevent data corruption:
-    1.  No in-memory state is maintained globally.
+*   **Ephemeral Service Worker Lifecycle & Message Passing:** Chrome MV3 Service Workers are designed to shut down after 30 seconds of inactivity. To prevent data corruption and connection drops:
+    1.  No in-memory state is maintained globally across worker lifecycles.
     2.  State is fully restored from `chrome.storage.local` at the beginning of any event handler (alarm or message).
-    3.  A synchronization run checkpoints course progress incrementally. If the Service Worker is terminated mid-sync, the next alarm resumes from the last successfully synced course.
+    3.  Message listeners (`chrome.runtime.onMessage`) are registered synchronously at the very top-level scope before alarms or async code, ensuring Chromium's C++ static event analyzer binds wake-up routes on cold boots.
+    4.  Listeners accept `(message, sender, sendResponse)` and return `true` synchronously while invoking `sendResponse` upon promise completion, preserving the one-time messaging port across dormant wake-ups and eliminating `Could not establish connection. Receiving end does not exist` errors.
+    5.  Alarms (`periodicSync`) are scheduled exclusively in `onInstalled` and `onStartup` guarded with `try/catch`, preventing unhandled promise rejections during worker evaluation.
+    6.  A synchronization run checkpoints course progress incrementally. If the Service Worker is terminated mid-sync, the next alarm resumes from the last successfully synced course.
 
 ### C. Mobile App (`apps/mobile`)
 *   **Framework:** Expo SDK 56 + React Native.
@@ -190,3 +193,57 @@ To prevent missing past or unlisted assignments caused by calendar filtering:
 
 ### Observability in DevMode:
 When `devMode: true` is enabled, the coordinator logs every strategy attempt, unsupported function skip, failure reason, and successful fallback transition to the developer console for transparent debugging.
+
+---
+
+## 7. Zoom Meeting Architecture & Lifecycle
+
+### Multi-Modal Meeting Discovery
+Moodle courses configure Zoom sessions using disparate modules across departments. Noodle captures all variations without fragile heuristics:
+1. **Zoom LTI Pro Modules (`modname === 'lti'`)**:
+   Calls Moodle WS `mod_lti_get_tool_launch_data` with the user's `wstoken` to get official LTI launch parameters and query Zoom LTI Pro API endpoints (`applications.zoom.us/api/v1/lti/rich/meeting/upComing`). Extracts meeting topics, exact join links, meeting numbers, passcodes, and ISO start timestamps. Falls back to Moodle LTI view page if tool launch data fails.
+2. **Official Zoom Modules (`modname === 'zoom'`)**:
+   Inspects `contents` and URL attributes for direct Zoom room links.
+3. **URL Modules (`modname === 'url'`)**:
+   Matches direct Zoom URLs or Hebrew videoconferencing keywords ("קישור לזום", "מפגש מקוון", "שיעור זום", "היוועדות חזותית", "כיתה וירטואלית").
+4. **Embedded HTML Links (`label`, `page`, section summaries)**:
+   Scans inner HTML for `<a href="...">` and raw URLs pointing to `*.zoom.us/j/*` or `/my/*`.
+
+### Recurring Meeting Collapsing, Timestamp Sanitization & Uncluttered UI
+Courses with multiple lecture/recitation groups or repeating weekly meetings generate 10+ entries in Moodle.
+* **Timestamp Sanitization (`normalizeZoomStartTime`)**: Zoom LTI Pro returns room creation timestamps (often months old with arbitrary hours/minutes/seconds) for "No Fixed Time" recurring rooms (`type === 3`), instant meetings (`type === 1`), and PMI rooms (`type === 4`). `normalizeZoomStartTime` strips these creation timestamps so permanent rooms do not display bogus dates/hours.
+* **`collapseRecurringMeetings` Engine**: Collapses recurring series sharing the same room into a single entry representing the currently active session (`startTime <= now <= startTime + 2h`), the nearest upcoming session, or the latest past session if all ended.
+* **Uncluttered UI Partitioning**: Dashboard course cards and Course Detail views render only visible sessions by default.
+* **Collapsible "Show Hidden" Toggle**: Users can expand hidden sessions with one click to adjust selections.
+* **Course-Level Bulk Actions**: Single-click "הצג הכל" (Show all) and "הסתר הכל" (Hide all) allow students to configure 10+ group instances in two clicks without polluting other courses.
+
+---
+
+## 8. Cross-Browser Extension Build Architecture
+
+To guarantee strict parity between Chromium and Firefox while preventing runtime manifest corruption:
+* **Output Directory Separation**:
+  - Chrome / Chromium: Outputs to `apps/extension/dist/`. Uses Manifest V3 with `"background": { "service_worker": "...", "type": "module" }`.
+  - Firefox: Outputs to `apps/extension/dist-firefox/`. Uses Manifest V3 with `"background": { "scripts": ["..."], "type": "module" }` and `browser_specific_settings.gecko`.
+* **Zero Collision**:
+  - Automated parity tests (`scripts/test-build-parity.mjs`) and manual builds compile each target into its dedicated output folder.
+  - Chromium never encounters Firefox's `background.scripts` array (which causes Chrome to omit registering the service worker and reject all runtime messages with `Could not establish connection. Receiving end does not exist`).
+
+---
+
+## 9. Google Tasks Two-Way Sync & Deletion Architecture
+
+To ensure the student's Google Tasks list operates as a clean, actionable to-do list rather than an archive of finished or dismissed work:
+* **Strict Exclusion of Hidden Tasks**:
+  - Any assignment present in `hiddenAssignments` (or with `isHidden: true`) is completely skipped during task creation and updates.
+  - If a task matching a hidden assignment already exists in Google Tasks, Noodle immediately issues a `DELETE` request to remove it.
+* **Deletion of Completed & Marked-Done Tasks**:
+  - Assignments that are submitted in Moodle, marked done in Noodle (`completedAssignments`), or completed directly in Google Tasks (`status: 'completed'`) are purged from the task list via `DELETE`.
+  - This eliminates stale completed items from cluttering the user's Google Tasks interface.
+* **Active Tasks Synchronization**:
+  - Only active, uncompleted, non-hidden assignments are pushed to Google Tasks with `status: 'needsAction'` and formatted due dates.
+  - If an assignment was submitted but the student explicitly flagged it as "To Do" (`uncompletedAssignments`), it remains active in Google Tasks.
+* **Orphaned Task Purging with Personal Task Isolation**:
+  - Noodle scans for tasks tagged with `Noodle:assignId:{id}`. Any tagged task whose assignment is no longer tracked or active is deleted.
+    - Personal tasks created manually by the user in the same list (lacking Noodle metadata) are strictly untouched.
+

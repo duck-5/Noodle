@@ -18,6 +18,7 @@ export interface ExtensionSettings {
   completedAssignments?: number[]; // Array of assignment ids that are marked as completed
   uncompletedAssignments?: number[]; // Array of assignment ids marked as To Do even if submitted
   scrapingEnabled?: boolean;
+  syncWithoutDeadline?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   completedAssignments: [],
   uncompletedAssignments: [],
   scrapingEnabled: false,
+  syncWithoutDeadline: false,
 };
 
 export async function getStoredToken(): Promise<string | null> {
@@ -86,13 +88,25 @@ export async function getTrackedCourseIds(): Promise<number[]> {
   return res.trackedCourseIds || [];
 }
 
+let settingsSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSettingsSyncBroadcast() {
+  if (settingsSyncTimer) {
+    clearTimeout(settingsSyncTimer);
+  }
+  settingsSyncTimer = setTimeout(() => {
+    settingsSyncTimer = null;
+    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+  }, 600);
+}
+
 export async function setTrackedCourseIds(ids: number[], skipSync = false): Promise<void> {
   await browser.storage.sync.set({ trackedCourseIds: ids });
   if (!skipSync) {
     const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
     timestamps['trackedCourseIds'] = Date.now();
     await browser.storage.sync.set({ settings_timestamps: timestamps });
-    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+    scheduleSettingsSyncBroadcast();
   }
 }
 
@@ -122,6 +136,6 @@ export async function setSettings(settings: Partial<ExtensionSettings>, skipSync
       timestamps[key] = now;
     }
     await browser.storage.sync.set({ settings_timestamps: timestamps });
-    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => {});
+    scheduleSettingsSyncBroadcast();
   }
 }

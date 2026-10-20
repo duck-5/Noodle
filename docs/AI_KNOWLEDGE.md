@@ -63,14 +63,17 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   Moodle files fetched from `/pluginfile.php/` require authentication.
     *   *Rule:* Use the helper `buildAuthenticatedFileUrl(rawUrl, token)` to append `?token={wstoken}` to the file URL before launching the browser tab or file download task.
 
-### E. Google Tasks Matching Logic
+### E. Google Tasks Matching & Deletion Policy
 *   Google Tasks does not have custom metadata storage.
     *   *Rule:* Insert a structured metadata string into the task's `notes` (description) field:
         ```
         Noodle:assignId:{moodle_assign_id}
         ```
-    *   *Rule:* During sync, scan existing tasks' descriptions using this prefix to find matches. Do not match tasks by title, as the user might rename them.
-    *   *Rule:* If a task is marked `completed` in Google Tasks by the user, **do not** change it back to `needsAction` even if Moodle reports it is not submitted. Respect user overrides.
+    *   *Rule:* During sync, scan existing tasks' descriptions using this prefix (and fallback title match) to find matches.
+    *   *Rule:* **Hidden tasks must NEVER be synced to Google Tasks.** If an assignment is in `hiddenAssignments` (or `isHidden: true`), skip creation and issue a `DELETE` request for any existing task matching it in Google Tasks.
+    *   *Rule:* **If a task is marked as done or completed, delete it from Google Tasks.** When an assignment is submitted in Moodle, marked done in Noodle (`completedAssignments`), or completed in Google Tasks (`status: 'completed'`), delete it via `DELETE` to keep the Google Tasks list clean and actionable.
+    *   *Rule:* **Assignments without deadline are excluded by default (`syncWithoutDeadline: false`).** When `syncWithoutDeadline` is falsy / `false`, undated assignments (`duedate === 0` or missing) are never created in Google Tasks, and any existing Google Task for an undated assignment is pruned via `DELETE`. When `syncWithoutDeadline` is explicitly enabled, undated assignments are synced without `due`.
+    *   *Rule:* If an assignment was submitted in Moodle but the student explicitly set it to "To Do" (`uncompletedAssignments`), retain or sync it with `status: 'needsAction'`.
 
 ### F. Cookie-less Token Interception
 *   **No Cookies Permission:** Do not use `chrome.cookies` or request the `"cookies"` permission in the extension manifest.
@@ -94,6 +97,11 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   **Calendar Decoupling:** Historically, the scraper strategy parsed assignments via `/calendar/view.php?view=upcoming`. This was flawed because the calendar filters out past assignments and assignments that professors did not link to calendar events.
     *   *Rule:* `ScraperMoodleStrategy.getAssignments()` must NOT rely on the Moodle calendar. Instead, it iterates over all known courses in `this.courseYearMap`, fetches individual course pages (`/course/view.php?id=X`) across all academic instances (e.g. `2025/course/view.php?id=X`), and extracts all anchor tags matching `/mod/assign/view.php?id=(\d+)` along with `.instancename` titles.
     *   *Rule:* All courses enrolled via timeline AJAX (`extractCoursesViaAjax`) must record their course-to-year mapping in `this.courseYearMap` so they are fully included in course page assignment scraping.
+
+### K. Zoom LTI REST Discovery, Recurring Session Collapsing & Uncluttered UI
+*   **REST-Based LTI Session Extraction**: In Moodle, Zoom activities are typically LTI Pro modules (`modname === 'lti'`). Noodle invokes Moodle WS `mod_lti_get_tool_launch_data` using `wstoken` to acquire the LTI launch parameters and query Zoom LTI Pro JSON endpoints (`/api/v1/lti/rich/meeting/upComing`). This retrieves exact session topics, direct join URLs, room numbers, passcodes, and ISO start timestamps without requiring HTML web scraping or user credentials.
+*   **Recurring Session Collapsing (`collapseRecurringMeetings`)**: University courses often define recurring weekly slots or multiple recitation groups. `collapseRecurringMeetings` automatically condenses repeating instances of the same room into a single entry representing the nearest upcoming meeting (or latest past meeting if all concluded).
+*   **Uncluttered Course Cards & Show-Hidden Toggle**: Rather than displaying all 10+ meetings with muted opacity, course cards render only user-selected (visible) meetings by default. If a course contains hidden meetings, a collapsible button (`👁️‍🗨️ הצג פגישות מוסתרות (X)`) reveals the hidden list with unhide toggles. Bulk "הצג הכל" / "הסתר הכל" buttons allow quick group customization in two clicks.
 
 ---
 
@@ -143,4 +151,6 @@ When testing extension changes or verifying new features, agents must NOT ask th
    - Save toolbar popup pictures: `await popupPage.screenshot({ path: 'apps/extension/screenshots/toolbar-popup.png' })`.
    - Inspect pictures immediately using `view_file`.
 4. **Reference Guide**: Read [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md) for complete implementation patterns.
+
+
 

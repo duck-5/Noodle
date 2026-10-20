@@ -52,7 +52,12 @@ All requests must include the following query parameters:
 *   **Purpose:** Fetches the full section-by-section breakdown of a course page, listing files, quizzes, assignments, and external URL resources.
 *   **Parsing Logic:**
     *   **Files:** Identify modules where `modname === 'resource'`. Retrieve `fileurl` and `filename` from the `contents` array.
-    *   **Zoom Meetings:** Identify modules where `modname === 'lti'` and the name contains Zoom (or `modname === 'url'` with a `zoom.us` target link).
+    *   **Zoom Meetings:** Multi-modal extraction detects Zoom sessions across all common Moodle configurations:
+        *   **URL Modules (`modname === 'url'`):** Modules pointing directly to Zoom domains (`*.zoom.us`, `*.zoom.com`, `zoomgov.com`) or containing English/Hebrew meeting keywords in their title (e.g. "קישור לזום", "מפגש מקוון", "שיעור זום", "הרצאה מקוונת", "Zoom").
+        *   **Zoom Activities (`modname === 'zoom'`):** Dedicated Moodle `mod_zoom` integration activities.
+        *   **LTI Modules (`modname === 'lti'`):** LTI Zoom Pro modules with automatic fallback to the Moodle LTI launch URL (`/mod/lti/view.php?id={cmid}`) when scraping is disabled, unavailable, or yields no scheduled sessions.
+        *   **Embedded HTML Links (`label`, `page`, descriptions, and section summaries):** Regular expression scans over HTML bodies to locate anchor links (`<a href="...zoom.us...">`) and plain-text URLs, extracting meeting IDs, passcodes, and direct links normalized to the university tenant (`https://tau-ac-il.zoom.us/j/...`).
+        *   **Deduplication:** Collapses identical recurring links within the same course based on meeting number or URL and start time.
 
 #### 4. Retrieve Assignments List
 *   **Function Name:** `mod_assign_get_assignments`
@@ -115,6 +120,7 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
 *   **Create Task:** `POST https://tasks.googleapis.com/tasks/v1/lists/{tasklist_id}/tasks`
 *   **Update Task:** `PUT https://tasks.googleapis.com/tasks/v1/lists/{tasklist_id}/tasks/{task_id}`
 *   **Patch Task:** `PATCH https://tasks.googleapis.com/tasks/v1/lists/{tasklist_id}/tasks/{task_id}`
+*   **Delete Task:** `DELETE https://tasks.googleapis.com/tasks/v1/lists/{tasklist_id}/tasks/{task_id}`
 
 ### Data Synchronization Mapping
 *   **Task Title:** Constructed as `[Course Code] Assignment Title` (e.g. `[03681118] Assignment 1`).
@@ -123,11 +129,13 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
     ```
     Noodle:assignId:{moodle_assign_id}
     ```
-    This allow the sync engine to identify existing tasks without relying on unstable title matching.
-*   **Status Mapping:**
-    *   If Moodle assignment status is `Submitted` $\rightarrow$ set Google Task status to `completed`.
-    *   If Moodle assignment status is not submitted $\rightarrow$ leave status as `needsAction`.
-    *   If a Google Task has been marked `completed` by the user manually, it is **never** overwritten back to `needsAction` by the sync engine (preserves user intent).
+    This allows the sync engine to identify existing tasks without relying on unstable title matching.
+*   **Hidden & Completed Task Deletion Policy (`GoogleTasksSyncOptions`):**
+    *   **Hidden Tasks:** Assignments in `hiddenAssignmentIds` or marked `isHidden` **must never** be synced to Google Tasks. If an existing Google Task exists for a hidden assignment, it is immediately deleted via `DELETE`.
+    *   **Marked as Done / Completed Tasks:** Assignments that are submitted in Moodle, marked in `completedAssignmentIds`, or marked completed in Google Tasks (`status: 'completed'`) are **deleted** from Google Tasks to prevent to-do clutter.
+    *   **To Do Override:** If an assignment was submitted in Moodle but the student explicitly marked it as To Do (`uncompletedAssignmentIds`), it remains active with `status: 'needsAction'`.
+    *   **Assignments Without Deadline Policy (`syncWithoutDeadline`):** If `syncWithoutDeadline` is falsy or `false` (default), assignments lacking explicit deadlines (`duedate === 0` or missing) are excluded from Google Tasks synchronization. Any pre-existing Google Task matching an undated assignment is pruned via `DELETE`. When `syncWithoutDeadline === true`, undated assignments are synchronized with the `due` field omitted.
+    *   **Orphaned Cleanup:** Any task bearing a `Noodle:assignId` that is untracked or deleted is removed via `DELETE`. Personal non-Noodle tasks are strictly preserved.
 
 ---
 
@@ -197,12 +205,47 @@ To optimize sync performance and ensure compliance with pure API standards, all 
   * When `true`: `ScraperMoodleStrategy` is appended to the fallback chain.
 * **`RunSyncOptions.enableScraping`** (`boolean`, default: `false`):
   * Passed to `runSync(token, trackedCourseIds, onProgress, baseUrl, creds, moodleCookies, sesskey, onPartialSync, options)`.
-  * When `false`, Zoom LTI module scraping and headless cookie-jar authentication are skipped, executing only standard Moodle API operations.
+  * When `false`, HTML web scraping and headless cookie-jar authentication are skipped, executing only standard Moodle API operations. Note: Zoom LTI discovery (`mod_lti_get_tool_launch_data`) runs via Moodle REST WS and does not require HTML scraping.
 
 ### Extension Storage & UI
 * **`ExtensionSettings.scrapingEnabled`** (`boolean`, default: `false`):
-  * Persisted in `chrome.storage.sync.get('settings')`.
+  * Persisted in `browser.storage.local.get('settings')`.
   * User-configurable via the `#scraping-enabled-toggle` switch on the extension Settings page.
   * Forwarded to background service worker synchronization and Moodle client instances.
 
+---
 
+## 7. Zoom Meeting Extraction & Utilities (`@tautracker/moodle-client`)
+
+### Multi-Modal Detection & Scraping
+* **`scrapeZoomMeetingsWithToken(token: string, instanceId: number, baseUrl?: string): Promise<LtiZoomMeeting[]>`**:
+  * Calls Moodle WS `mod_lti_get_tool_launch_data` using `wstoken` to get the Zoom LTI launch signature, fetches the Zoom session JSON endpoints (`/api/v1/lti/rich/meeting/upComing` and `/previous`), deduplicates `previous` rooms against `upComing`, normalizes start timestamps via `normalizeZoomStartTime`, and returns structured meeting objects with topic, direct `joinUrl`, `meetingNumber`, `password`, and ISO `startTime`.
+* **`normalizeZoomStartTime(m: Record<string, any>, isUpcoming: boolean, referenceDate?: Date): string | undefined`**:
+  * Sanitizes Zoom LTI Pro meeting timestamps. Strips creation timestamps returned by Zoom for "No Fixed Time" recurring rooms (`type === 3`), instant meetings (`type === 1`), PMI rooms (`type === 4`), and past/stale timestamps not aligned to 5-minute `:00` boundaries.
+* **`collapseRecurringMeetings(meetings: ZoomMeeting[], referenceDate?: Date): ZoomMeeting[]`**:
+  * Collapses recurring weekly sessions of the same room/meetingNumber into a single entry representing the currently active session (`startTime <= now <= startTime + 2h`), the nearest upcoming meeting, or the latest past meeting if none are active/upcoming.
+  * Sorts active/upcoming sessions chronologically, then non-timestamped, then past sessions.
+* **`isZoomUrl(url: string): boolean`**: Tests if a URL points to Zoom (`tau-ac-il.zoom.us`, `zoom.us`, `zoomgov.com`, etc.).
+* **`isZoomOrMeetingName(name: string): boolean`**: Tests for English and Hebrew Zoom/meeting keywords (`זום`, `מפגש מקוון`, `שיעור מקוון`, `היוועדות חזותית`, `כיתה וירטואלית`, etc.).
+* **`parseZoomUrl(rawUrl: string): { meetingUrl: string; meetingNumber?: string; password?: string }`**: Normalizes join links to `https://tau-ac-il.zoom.us/j/{id}?pwd={pwd}`.
+* **`extractZoomLinksFromHtml(html: string): { url: string; title?: string }[]`**: Scans HTML strings (labels, section summaries, descriptions) for embedded Zoom hyperlinks.
+
+---
+
+## 8. Extension Background Message Passing Protocol (`apps/extension`)
+
+Communication between the UI frontends (Options Page, Popup) and the background Service Worker uses a strongly-typed, synchronous one-time messaging protocol:
+
+### Request Message Types
+* **`SYNC_NOW`**: Triggers immediate full data synchronization (`performBackgroundSync()`). Returns `{ success: true, result: SyncResult }` or `{ success: false, error: string }`.
+* **`SYNC_SETTINGS`**: Pulls and merges remote NOODLE_SYNC_DATA calendar settings (`performSettingsSync()`). Returns `{ success: true }` or `{ success: false, error: string }`.
+* **`SYNC_GOOGLE_TASKS`**: Triggers Google Tasks synchronization (`interactive?: boolean`). Returns `{ success: true, status: string }` or `{ success: false, error: string }`.
+* **`LOGIN_TAU_SSO`**: Programmatically executes TAU SSO SAML flow with student credentials. Returns `{ success: true, token: string }` or `{ success: false, error: string }`.
+* **`VALIDATE_TOKEN`**: Validates a Moodle `wstoken` via `getSiteInfo()`. Returns `{ success: true, info: SiteInfo }` or `{ success: false, error: string }`.
+* **`FETCH_ENROLLED_COURSES`**: Retrieves course list for onboarding. Returns `{ success: true, courses: Course[] }` or `{ success: false, error: string, errorcode?: string }`.
+* **`LOGOUT`**: Clears cookies, local storage keys, and sync cache (`clearUserSession()`). Returns `{ success: true }` or `{ success: false, error: string }`.
+
+### MV3 Service Worker Protocol
+* **Synchronous Registration**: The listener is registered unconditionally at the top level of `serviceWorker.ts` before alarms or async operations.
+* **Synchronous Channel Retention**: The handler invokes `sendResponse(result)` when its asynchronous promise resolves and returns `true` synchronously, preserving the native Chromium message port across cold-boot worker wake-ups.
+* **Progressive Backoff**: Senders (`sendMessageToBackground`) utilize a 4-stage backoff (`200, 500, 1000, 1500 ms`, ~3.2s total) to wait for dormant workers to spin up, returning structured error objects on failure.

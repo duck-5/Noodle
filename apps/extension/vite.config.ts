@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
                manifest.background.scripts = [manifest.background.service_worker];
                delete manifest.background.service_worker;
             }
+          } else {
+            delete manifest.browser_specific_settings;
           }
           return manifest;
         },
@@ -43,7 +45,9 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     build: {
+      outDir: targetBrowser === 'firefox' ? 'dist-firefox' : 'dist',
       modulePreload: false,
+      emptyOutDir: true,
     },
     resolve: {
       alias: {

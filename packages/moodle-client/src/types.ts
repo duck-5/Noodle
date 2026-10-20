@@ -27,6 +27,8 @@ export interface Assignment {
   sectionName?: string;
   attachments?: Attachment[];
   submittedFiles?: Attachment[];
+  isCompleted?: boolean;
+  isHidden?: boolean;
 }
 
 export interface CourseFile {

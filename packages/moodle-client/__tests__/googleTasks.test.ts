@@ -119,15 +119,15 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
       expect(body.status).toBe('needsAction');
     });
 
-    it('should update existing task instead of creating duplicate (idempotency)', async () => {
+    it('should update existing active task instead of creating duplicate (idempotency)', async () => {
       const mockAssignment: Assignment = {
         id: 999,
         cmid: 100,
         courseId: 101,
         courseName: 'אלגוריתמים',
-        name: 'מטלה 2',
-        status: 'Submitted', // changed to submitted
-        deadline: '2026-10-15T23:59:00.000Z',
+        name: 'מטלה 2 - מעודכן',
+        status: 'Not submitted',
+        deadline: '2026-10-20T23:59:00.000Z',
         opened: null,
         link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=100',
         grade: null,
@@ -169,40 +169,60 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
       );
 
       expect(syncedCount).toBe(1);
-      // Ensure PATCH was called on the existing task and POST was not called
       const patchCall = fetchCalls.find((c) => c.init?.method === 'PATCH');
       const postCall = fetchCalls.find((c) => c.init?.method === 'POST');
 
       expect(patchCall).toBeDefined();
       expect(postCall).toBeUndefined();
 
-      // Ensure status updated to completed because assignment was submitted (TC-GT-05)
       const patchBody = JSON.parse(patchCall.init.body);
-      expect(patchBody.status).toBe('completed');
+      expect(patchBody.title).toBe('[אלגוריתמים] מטלה 2 - מעודכן');
+      expect(patchBody.due).toContain('2026-10-20');
     });
 
-    it('should preserve user overrides when task is completed in Google Tasks (TC-GT-06)', async () => {
-      const mockAssignment: Assignment = {
-        id: 999,
-        cmid: 100,
-        courseId: 101,
-        courseName: 'אלגוריתמים',
-        name: 'מטלה 2',
-        status: 'Not submitted', // Still open in Moodle
+    it('should delete task from Google Tasks if marked as done (TC-GT-05)', async () => {
+      // Assignment 1: Submitted in Moodle
+      const submittedAssign: Assignment = {
+        id: 101,
+        cmid: 201,
+        courseId: 301,
+        courseName: 'חדו״א',
+        name: 'תרגיל 1',
+        status: 'Submitted',
         deadline: '2026-10-15T23:59:00.000Z',
         opened: null,
-        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=100',
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=201',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      // Assignment 2: Not submitted in Moodle, but manually marked as done
+      const manuallyDoneAssign: Assignment = {
+        id: 102,
+        cmid: 202,
+        courseId: 301,
+        courseName: 'חדו״א',
+        name: 'תרגיל 2',
+        status: 'Not submitted',
+        deadline: '2026-10-18T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=202',
         grade: null,
         gradeMax: 100,
       };
 
       const existingTasks = [
         {
-          id: 'existing_g_task_999',
-          title: '[אלגוריתמים] מטלה 2',
-          notes: 'Noodle:assignId:999',
-          status: 'completed', // User marked done in Google Tasks
-          due: '2026-10-15T00:00:00.000Z',
+          id: 'g_task_101',
+          title: '[חדו״א] תרגיל 1',
+          notes: 'Noodle:assignId:101',
+          status: 'needsAction',
+        },
+        {
+          id: 'g_task_102',
+          title: '[חדו״א] תרגיל 2',
+          notes: 'Noodle:assignId:102',
+          status: 'needsAction',
         },
       ];
 
@@ -215,47 +235,88 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
             json: async () => ({ items: existingTasks }),
           };
         }
-        if (init?.method === 'PATCH') {
-          return {
-            ok: true,
-            json: async () => ({ id: 'existing_g_task_999' }),
-          };
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
         }
         return { ok: true, json: async () => ({}) };
       });
 
-      await syncAssignmentsToGoogleTasks('VALID_TOKEN', 'tasklist_123', [mockAssignment]);
+      const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [submittedAssign, manuallyDoneAssign],
+        {
+          completedAssignmentIds: [102], // 102 is manually completed
+        }
+      );
 
-      const patchCall = fetchCalls.find((c) => c.init?.method === 'PATCH');
-      if (patchCall) {
-        const patchBody = JSON.parse(patchCall.init.body);
-        // It must NOT revert completed back to needsAction
-        expect(patchBody.status).not.toBe('needsAction');
-      }
+      expect(errors).toHaveLength(0);
+      expect(syncedCount).toBe(0); // None synced as active
+
+      // Both tasks must be deleted from Google Tasks
+      const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
+      expect(deleteCalls).toHaveLength(2);
+      expect(deleteCalls.some((c) => c.url.includes('g_task_101'))).toBe(true);
+      expect(deleteCalls.some((c) => c.url.includes('g_task_102'))).toBe(true);
+
+      // No POST or PATCH calls should have occurred
+      expect(fetchCalls.find((c) => c.init?.method === 'POST')).toBeUndefined();
+      expect(fetchCalls.find((c) => c.init?.method === 'PATCH')).toBeUndefined();
     });
 
-    it('should not delete orphaned tasks that are hidden or completed', async () => {
-      // No active assignments in Moodle, meaning existing tasks are "orphaned"
+    it('should not sync hidden tasks and should delete existing tasks if set as hidden (TC-GT-06)', async () => {
+      // Assignment 1: Hidden, already exists in Google Tasks
+      const hiddenExistingAssign: Assignment = {
+        id: 201,
+        cmid: 301,
+        courseId: 401,
+        courseName: 'מבני נתונים',
+        name: 'מטלה 1',
+        status: 'Not submitted',
+        deadline: '2026-10-25T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=301',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      // Assignment 2: Hidden, does not exist in Google Tasks yet
+      const hiddenNewAssign: Assignment = {
+        id: 202,
+        cmid: 302,
+        courseId: 401,
+        courseName: 'מבני נתונים',
+        name: 'מטלה 2',
+        status: 'Not submitted',
+        deadline: '2026-10-30T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=302',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      // Assignment 3: Active and visible
+      const activeAssign: Assignment = {
+        id: 203,
+        cmid: 303,
+        courseId: 401,
+        courseName: 'מבני נתונים',
+        name: 'מטלה 3',
+        status: 'Not submitted',
+        deadline: '2026-11-05T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=303',
+        grade: null,
+        gradeMax: 100,
+      };
+
       const existingTasks = [
         {
-          id: 'task_needsAction',
-          title: 'Task 1',
-          notes: 'Noodle:assignId:111',
+          id: 'g_task_201',
+          title: '[מבני נתונים] מטלה 1',
+          notes: 'Noodle:assignId:201',
           status: 'needsAction',
         },
-        {
-          id: 'task_hidden',
-          title: 'Task 2',
-          notes: 'Noodle:assignId:222',
-          status: 'needsAction',
-          hidden: true,
-        },
-        {
-          id: 'task_completed',
-          title: 'Task 3',
-          notes: 'Noodle:assignId:333',
-          status: 'completed',
-        }
       ];
 
       const fetchCalls: any[] = [];
@@ -266,6 +327,149 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
             ok: true,
             json: async () => ({ items: existingTasks }),
           };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
+        }
+        if (init?.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 'new_g_task_203' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [hiddenExistingAssign, hiddenNewAssign, activeAssign],
+        {
+          hiddenAssignmentIds: [201, 202], // 201 and 202 are hidden
+        }
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(syncedCount).toBe(1); // Only activeAssign (203) synced
+
+      // Existing task for hidden assignment 201 must be deleted
+      const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0].url).toContain('g_task_201');
+
+      // Hidden new assignment 202 must never be posted, only activeAssign (203) posted
+      const postCalls = fetchCalls.filter((c) => c.init?.method === 'POST');
+      expect(postCalls).toHaveLength(1);
+      const postBody = JSON.parse(postCalls[0].init.body);
+      expect(postBody.title).toBe('[מבני נתונים] מטלה 3');
+      expect(postBody.notes).toContain('Noodle:assignId:203');
+    });
+
+    it('should delete task from Google Tasks if marked completed in Google Tasks or uncompleted override is applied', async () => {
+      // Assignment 1: Active in Moodle, but marked completed in Google Tasks
+      const assign1: Assignment = {
+        id: 301,
+        cmid: 401,
+        courseId: 501,
+        courseName: 'פיזיקה',
+        name: 'דוח מעבדה 1',
+        status: 'Not submitted',
+        deadline: '2026-10-25T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=401',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      // Assignment 2: Submitted in Moodle, but user explicitly marked as To Do (uncompleted override)
+      const assign2: Assignment = {
+        id: 302,
+        cmid: 402,
+        courseId: 501,
+        courseName: 'פיזיקה',
+        name: 'דוח מעבדה 2',
+        status: 'Submitted',
+        deadline: '2026-10-26T23:59:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=402',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      const existingTasks = [
+        {
+          id: 'g_task_301',
+          title: '[פיזיקה] דוח מעבדה 1',
+          notes: 'Noodle:assignId:301',
+          status: 'completed', // Marked done in Google Tasks
+        },
+      ];
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: existingTasks }),
+          };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
+        }
+        if (init?.method === 'POST') {
+          return { ok: true, json: async () => ({ id: 'new_g_task_302' }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { syncedCount } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [assign1, assign2],
+        {
+          uncompletedAssignmentIds: [302], // Kept active as To Do even though submitted
+        }
+      );
+
+      // assign1 completed in Google Tasks is deleted
+      const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0].url).toContain('g_task_301');
+
+      // assign2 (marked To Do) is created as an active task
+      expect(syncedCount).toBe(1);
+      const postCalls = fetchCalls.filter((c) => c.init?.method === 'POST');
+      expect(postCalls).toHaveLength(1);
+      const postBody = JSON.parse(postCalls[0].init.body);
+      expect(postBody.title).toBe('[פיזיקה] דוח מעבדה 2');
+      expect(postBody.status).toBe('needsAction');
+    });
+
+    it('should delete orphaned tasks and preserve non-Noodle personal tasks', async () => {
+      const existingTasks = [
+        {
+          id: 'noodle_orphaned_task',
+          title: 'Old Assignment',
+          notes: 'Noodle:assignId:9999',
+          status: 'needsAction',
+        },
+        {
+          id: 'personal_user_task',
+          title: 'Buy Groceries',
+          notes: 'Personal reminder - do not touch',
+          status: 'needsAction',
+        },
+      ];
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: existingTasks }),
+          };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
         }
         return { ok: true, json: async () => ({}) };
       });
@@ -274,9 +478,117 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
 
       const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
       
-      // Only the first task (needsAction and NOT hidden) should be deleted
+      // Only the Noodle orphaned task should be deleted, personal user task preserved
       expect(deleteCalls).toHaveLength(1);
-      expect(deleteCalls[0].url).toContain('task_needsAction');
+      expect(deleteCalls[0].url).toContain('noodle_orphaned_task');
+    });
+
+    it('should not sync assignments without deadline by default and delete existing tasks if syncWithoutDeadline is false', async () => {
+      const assignNoDeadline: Assignment = {
+        id: 701,
+        cmid: 701,
+        courseId: 101,
+        courseName: 'מבני נתונים',
+        name: 'פרויקט גמר (ללא תאריך הגשה)',
+        status: 'Not submitted',
+        deadline: null,
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=701',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      const existingTasks = [
+        {
+          id: 'existing_no_deadline_task',
+          title: '[מבני נתונים] פרויקט גמר (ללא תאריך הגשה)',
+          notes: 'Noodle:assignId:701',
+          status: 'needsAction',
+        },
+      ];
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: existingTasks }),
+          };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [assignNoDeadline],
+        { syncWithoutDeadline: false }
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(syncedCount).toBe(0);
+
+      const deleteCalls = fetchCalls.filter((c) => c.init?.method === 'DELETE');
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0].url).toContain('existing_no_deadline_task');
+
+      const postCalls = fetchCalls.filter((c) => c.init?.method === 'POST');
+      expect(postCalls).toHaveLength(0);
+    });
+
+    it('should sync assignments without deadline when syncWithoutDeadline is enabled', async () => {
+      const assignNoDeadline: Assignment = {
+        id: 702,
+        cmid: 702,
+        courseId: 101,
+        courseName: 'מבני נתונים',
+        name: 'תרגיל רשות',
+        status: 'Not submitted',
+        deadline: null,
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=702',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: [] }),
+          };
+        }
+        if (init?.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({ id: 'new_task_702' }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [assignNoDeadline],
+        { syncWithoutDeadline: true }
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(syncedCount).toBe(1);
+
+      const postCall = fetchCalls.find((c) => c.init?.method === 'POST');
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall.init.body);
+      expect(body.title).toBe('[מבני נתונים] תרגיל רשות');
+      expect(body.due).toBeUndefined();
+      expect(body.status).toBe('needsAction');
     });
   });
 });

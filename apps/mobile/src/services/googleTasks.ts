@@ -359,7 +359,27 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
       }
     }
 
-    const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(accessToken, listId, mappedAssignments);
+    const hiddenRaw = getPreference('hidden_assignments');
+    const hiddenAssignments: number[] = hiddenRaw ? JSON.parse(hiddenRaw) : [];
+
+    const completedRaw = getPreference('completed_assignments');
+    const completedAssignments: number[] = completedRaw ? JSON.parse(completedRaw) : [];
+
+    const uncompletedRaw = getPreference('uncompleted_assignments');
+    const uncompletedAssignments: number[] = uncompletedRaw ? JSON.parse(uncompletedRaw) : [];
+    const syncWithoutDeadline = getPreference('sync_without_deadline') === 'true';
+
+    const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+      accessToken,
+      listId,
+      mappedAssignments,
+      {
+        hiddenAssignmentIds: hiddenAssignments,
+        completedAssignmentIds: completedAssignments,
+        uncompletedAssignmentIds: uncompletedAssignments,
+        syncWithoutDeadline,
+      }
+    );
     const allErrors = [...syncErrors, ...errors];
 
     if (allErrors.length > 0) {

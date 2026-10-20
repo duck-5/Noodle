@@ -7,7 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const extensionDir = path.join(rootDir, 'apps', 'extension');
-const manifestPath = path.join(extensionDir, 'dist', 'manifest.json');
+const chromeManifestPath = path.join(extensionDir, 'dist', 'manifest.json');
+const firefoxManifestPath = path.join(extensionDir, 'dist-firefox', 'manifest.json');
 
 console.log('====================================================');
 console.log('TC-EXT-BRW-01 & TC-EXT-BRW-02: Manifest Build Parity');
@@ -18,7 +19,7 @@ try {
   console.log('1. Testing Chrome Extension Build (TC-EXT-BRW-01)...');
   execSync('pnpm --filter extension run build:chrome', { cwd: rootDir, stdio: 'pipe' });
 
-  const chromeManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const chromeManifest = JSON.parse(fs.readFileSync(chromeManifestPath, 'utf-8'));
   if (chromeManifest.manifest_version !== 3) {
     throw new Error(`Expected manifest_version 3, got ${chromeManifest.manifest_version}`);
   }
@@ -28,13 +29,13 @@ try {
   if (chromeManifest.background.scripts) {
     throw new Error('Chrome manifest should not have background.scripts');
   }
-  console.log('   ✓ Chrome MV3 service worker properly configured');
+  console.log('   ✓ Chrome MV3 service worker properly configured in dist/');
 
   // 2. Test Firefox Build
   console.log('2. Testing Firefox Extension Build (TC-EXT-BRW-01)...');
   execSync('pnpm --filter extension run build:firefox', { cwd: rootDir, stdio: 'pipe' });
 
-  const firefoxManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const firefoxManifest = JSON.parse(fs.readFileSync(firefoxManifestPath, 'utf-8'));
   if (firefoxManifest.manifest_version !== 3) {
     throw new Error(`Expected manifest_version 3, got ${firefoxManifest.manifest_version}`);
   }
@@ -64,9 +65,13 @@ try {
   console.log(`   ✓ Chrome OAuth URL: ${chromeRedirect}`);
   console.log(`   ✓ Firefox OAuth URL: ${firefoxRedirect}`);
 
-  // 4. Restore Chrome build for browser tests
-  console.log('4. Restoring Chrome Extension build in dist/...');
-  execSync('pnpm --filter extension run build:chrome', { cwd: rootDir, stdio: 'pipe' });
+  // 4. Verify Chrome build intact in dist/
+  console.log('4. Verifying Chrome Extension build remains intact in dist/...');
+  const preservedChromeManifest = JSON.parse(fs.readFileSync(chromeManifestPath, 'utf-8'));
+  if (!preservedChromeManifest.background?.service_worker) {
+    throw new Error('Chrome manifest was corrupted by Firefox build!');
+  }
+  console.log('   ✓ Chrome dist/ completely isolated from Firefox build!');
 
   console.log('\n[SUCCESS] TC-EXT-BRW-01 & TC-EXT-BRW-02 passed with full parity!');
   process.exit(0);

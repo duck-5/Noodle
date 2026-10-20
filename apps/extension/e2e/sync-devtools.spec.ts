@@ -857,64 +857,107 @@ test.describe('DevTools & Sync Feedback Loop', () => {
     await optionsPage.screenshot({ path: dashboardScreenshot, fullPage: true });
     console.log(`[DevTools UI] Captured Main Dashboard screenshot: ${dashboardScreenshot}`);
 
-    // 2. Navigate to "Courses" tab in the sidebar and take a screenshot of the 2 courses view
-    const coursesNavButton = optionsPage.locator('.nav-item').filter({ hasText: /קורסים|Courses/ });
-    await coursesNavButton.click();
-    await optionsPage.waitForTimeout(500);
-
-    // Expand configuration panel to show full course management table alongside navigation cards
-    const configToggle = optionsPage.locator('.courses-config-toggle-btn');
-    if (await configToggle.isVisible()) {
-      await configToggle.click();
-      await optionsPage.waitForTimeout(300);
+    // 2. Open Manage Courses Modal and capture it
+    const manageCoursesBtn = optionsPage.locator('.manage-courses-trigger-btn');
+    if (await manageCoursesBtn.isVisible()) {
+      await manageCoursesBtn.click();
+      await optionsPage.waitForTimeout(500);
+      const manageModalScreenshot = path.join(screenshotsDir, 'dashboard-manage-modal.png');
+      await optionsPage.screenshot({ path: manageModalScreenshot, fullPage: true });
+      console.log(`[DevTools UI] Captured Manage Courses Modal: ${manageModalScreenshot}`);
+      // Close modal
+      const closeBtn = optionsPage.locator('.modal-backdrop button').first();
+      if (await closeBtn.isVisible()) {
+        await closeBtn.click();
+        await optionsPage.waitForTimeout(300);
+      }
     }
 
-    const coursesTabScreenshot = path.join(screenshotsDir, 'courses-tab-view.png');
-    await optionsPage.screenshot({ path: coursesTabScreenshot, fullPage: true });
-    console.log(`[DevTools UI] Captured Courses Tab screenshot: ${coursesTabScreenshot}`);
+    // 3. Navigate to dedicated "Assignments" tab and capture both normal and expanded view
+    const assignsNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /מטלות|Assignments/ });
+    if (await assignsNavBtn.isVisible()) {
+      await assignsNavBtn.click();
+      await optionsPage.waitForTimeout(500);
+      const assignsScreenshot = path.join(screenshotsDir, 'assignments-page.png');
+      await optionsPage.screenshot({ path: assignsScreenshot, fullPage: true });
+      console.log(`[DevTools UI] Captured Assignments Tab screenshot: ${assignsScreenshot}`);
 
-    // 3. Click into first course ("מבוא למדעי המחשב") to view its detail page
-    const firstCourseCard = optionsPage.locator('.nav-course-card').first();
-    await firstCourseCard.locator('button, .nav-course-title').first().click();
-    await optionsPage.waitForTimeout(600);
-
-    // Expand Zoom section if it's there
-    const zoomHeader1 = optionsPage.locator('.zoom-course-header');
-    if (await zoomHeader1.isVisible()) {
-      await zoomHeader1.click();
-      await optionsPage.waitForTimeout(300);
+      // Expand first assignment card
+      const firstCard = optionsPage.locator('.assignment-card').first();
+      if (await firstCard.isVisible()) {
+        await firstCard.click();
+        await optionsPage.waitForTimeout(400);
+        const assignsExpandedScreenshot = path.join(screenshotsDir, 'assignments-page-expanded.png');
+        await optionsPage.screenshot({ path: assignsExpandedScreenshot, fullPage: true });
+        console.log(`[DevTools UI] Captured Expanded Assignments screenshot: ${assignsExpandedScreenshot}`);
+      }
     }
 
-    const course1DetailScreenshot = path.join(screenshotsDir, 'course-9999-detail.png');
-    await optionsPage.screenshot({ path: course1DetailScreenshot, fullPage: true });
-    // Also save as course-detail-view.png for backward compatibility
-    fs.copyFileSync(course1DetailScreenshot, path.join(screenshotsDir, 'course-detail-view.png'));
-    console.log(`[DevTools UI] Captured Course 9999 Detail screenshot: ${course1DetailScreenshot}`);
-
-    // 4. Return to Courses tab and click into second course ("מבני נתונים")
-    const backBtn = optionsPage.locator('.back-btn');
-    await backBtn.click();
-    await optionsPage.waitForTimeout(500);
-
-    const secondCourseCard = optionsPage.locator('.nav-course-card').nth(1);
-    await secondCourseCard.locator('button, .nav-course-title').first().click();
-    await optionsPage.waitForTimeout(600);
-
-    const zoomHeader2 = optionsPage.locator('.zoom-course-header');
-    if (await zoomHeader2.isVisible()) {
-      await zoomHeader2.click();
-      await optionsPage.waitForTimeout(300);
-    }
-
-    const course2DetailScreenshot = path.join(screenshotsDir, 'course-9998-detail.png');
-    await optionsPage.screenshot({ path: course2DetailScreenshot, fullPage: true });
-    console.log(`[DevTools UI] Captured Course 9998 Detail screenshot: ${course2DetailScreenshot}`);
-
-    // 5. Navigate back to Dashboard and switch to Dark Theme for promo showcase
+    // 4. Return to Dashboard and navigate to Course Detail Views
     const dashNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /לוח בקרה|Dashboard/ });
     await dashNavBtn.click();
     await optionsPage.waitForTimeout(400);
 
+    const firstCourseGoBtn = optionsPage.locator('.course-row-card').first().locator('button').filter({ hasText: /עבור לקורס|Go to/ });
+    if (await firstCourseGoBtn.isVisible()) {
+      await firstCourseGoBtn.click();
+      await optionsPage.waitForTimeout(600);
+
+      // Expand Zoom section if visible
+      const zoomHeader1 = optionsPage.locator('.zoom-course-header');
+      if (await zoomHeader1.isVisible()) {
+        await zoomHeader1.click();
+        await optionsPage.waitForTimeout(300);
+      }
+
+      const course1DetailScreenshot = path.join(screenshotsDir, 'course-9999-detail.png');
+      await optionsPage.screenshot({ path: course1DetailScreenshot, fullPage: true });
+      fs.copyFileSync(course1DetailScreenshot, path.join(screenshotsDir, 'course-detail-view.png'));
+      console.log(`[DevTools UI] Captured Course 9999 Detail screenshot: ${course1DetailScreenshot}`);
+
+      const backBtn = optionsPage.locator('.back-btn');
+      if (await backBtn.isVisible()) {
+        await backBtn.click();
+        await optionsPage.waitForTimeout(400);
+      }
+    }
+
+    const secondCourseGoBtn = optionsPage.locator('.course-row-card').nth(1).locator('button').filter({ hasText: /עבור לקורס|Go to/ });
+    if (await secondCourseGoBtn.isVisible()) {
+      await secondCourseGoBtn.click();
+      await optionsPage.waitForTimeout(600);
+
+      const zoomHeader2 = optionsPage.locator('.zoom-course-header');
+      if (await zoomHeader2.isVisible()) {
+        await zoomHeader2.click();
+        await optionsPage.waitForTimeout(300);
+      }
+
+      const course2DetailScreenshot = path.join(screenshotsDir, 'course-9998-detail.png');
+      await optionsPage.screenshot({ path: course2DetailScreenshot, fullPage: true });
+      console.log(`[DevTools UI] Captured Course 9998 Detail screenshot: ${course2DetailScreenshot}`);
+
+      const backBtn = optionsPage.locator('.back-btn');
+      if (await backBtn.isVisible()) {
+        await backBtn.click();
+        await optionsPage.waitForTimeout(400);
+      }
+    }
+
+    // 5. Capture Coffee Theme
+    await optionsPage.evaluate(async () => {
+      const syncData = await chrome.storage.sync.get('settings');
+      const settings = syncData.settings || {};
+      settings.theme = 'coffee';
+      await chrome.storage.sync.set({ settings });
+      document.body.className = 'theme-coffee';
+    });
+    await optionsPage.waitForTimeout(400);
+    const coffeeDashboardScreenshot = path.join(screenshotsDir, 'dashboard-coffee-theme.png');
+    await optionsPage.screenshot({ path: coffeeDashboardScreenshot, fullPage: true });
+    console.log(`[DevTools UI] Captured Coffee Dashboard screenshot: ${coffeeDashboardScreenshot}`);
+
+    // 6. Capture Dark Theme
     await optionsPage.evaluate(async () => {
       const syncData = await chrome.storage.sync.get('settings');
       const settings = syncData.settings || {};
@@ -936,6 +979,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       await chrome.storage.sync.set({ settings });
       document.body.className = 'theme-noodle';
     });
+    await optionsPage.waitForTimeout(300);
 
     // 6. Capture Toolbar Popup view in English (crisp high-DPI container capture)
     // Set English language via optionsPage which is already in extension context

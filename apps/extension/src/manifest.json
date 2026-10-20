@@ -9,7 +9,6 @@
     "alarms",
     "notifications",
     "identity",
-    "webRequest",
     "cookies",
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess"

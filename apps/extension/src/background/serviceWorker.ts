@@ -15,29 +15,180 @@ import {
 } from '../shared/storage.js';
 
 
+// --------------------------------------------------------------------------
+// Message listeners — registered immediately at top-level for MV3 event routing
+// --------------------------------------------------------------------------
+const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) => void) => {
+  if (!message || typeof message !== 'object') return false;
+
+  let promise: Promise<any> | null = null;
+
+  if (message.type === 'LOGIN_TAU_SSO') {
+    promise = loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
+      .then((token) => ({ success: true, token }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'VALIDATE_TOKEN') {
+    promise = validateToken(message.token)
+      .then((info) => ({ success: true, info }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'FETCH_ENROLLED_COURSES') {
+    promise = fetchEnrolledCourses(message.token)
+      .then((courses) => {
+        console.log('[serviceWorker] Responding to FETCH_ENROLLED_COURSES with', courses.length, 'courses');
+        return { success: true, courses };
+      })
+      .catch((err) => {
+        console.error('[serviceWorker] Error in fetchEnrolledCourses:', err);
+        return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
+      });
+  } else if (message.type === 'SYNC_NOW') {
+    promise = performBackgroundSync()
+      .then((result) => ({ success: true, result }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'SYNC_SETTINGS') {
+    promise = performSettingsSync()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'SYNC_GOOGLE_TASKS') {
+    promise = triggerGoogleTasksSync(message.interactive || false)
+      .then((res) => ({ success: true, status: res }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOGOUT') {
+    promise = clearUserSession()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  }
+
+  if (promise) {
+    if (typeof sendResponse === 'function') {
+      promise.then(sendResponse).catch((err) => {
+        sendResponse({ success: false, error: err?.message || String(err) });
+      });
+    }
+    // Return true synchronously to keep the message port open in Chromium MV3
+    return true;
+  }
+
+  return false;
+};
+
+// Register synchronously on the active extension runtime
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener(messageHandler);
+} else {
+  browser.runtime.onMessage.addListener(messageHandler);
+}
+
 const SYNC_INTERVAL_MINUTES = 5;
+
+// Setup alarm checking function to register the alarm on startup without resetting it if it already exists
+async function setupAlarm() {
+  try {
+    const alarm = await browser.alarms.get('periodicSync');
+    if (!alarm || alarm.periodInMinutes !== SYNC_INTERVAL_MINUTES) {
+      await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+      console.log(`Created periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes`);
+    } else {
+      console.log(`periodicSync alarm already exists with ${SYNC_INTERVAL_MINUTES} minutes`);
+    }
+  } catch (e) {
+    console.warn('Non-fatal: Failed to check/create periodicSync alarm:', e);
+  }
+}
 
 // Setup periodic alarms on install / startup
 browser.runtime.onInstalled.addListener(async () => {
   console.log('TauTracker Extension Installed');
-  // Always recreate the alarm on install/update to ensure correct period
-  await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
-  console.log(`Forced creation of periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes onInstalled`);
+  try {
+    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+    console.log(`Forced creation of periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes onInstalled`);
+  } catch (e) {
+    console.warn('Non-fatal: Failed to create periodicSync alarm onInstalled:', e);
+  }
+  updateActionBadge().catch(() => {});
 });
 
-// Setup alarm checking function to register the alarm on startup without resetting it if it already exists
-async function setupAlarm() {
-  const alarm = await browser.alarms.get('periodicSync');
-  if (!alarm || alarm.periodInMinutes !== SYNC_INTERVAL_MINUTES) {
-    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
-    console.log(`Created periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes`);
-  } else {
-    console.log(`periodicSync alarm already exists with ${SYNC_INTERVAL_MINUTES} minutes`);
+browser.runtime.onStartup.addListener(() => {
+  setupAlarm().catch(() => {});
+  updateActionBadge().catch(() => {});
+});
+
+// Update toolbar badge whenever cachedSyncResult or settings change
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (
+    (areaName === 'local' && (changes.cachedSyncResult || changes.wstoken)) ||
+    (areaName === 'sync' && changes.settings)
+  ) {
+    updateActionBadge().catch(() => {});
+  }
+});
+
+// Initialize badge when service worker wakes up
+updateActionBadge().catch(() => {});
+
+async function updateActionBadge() {
+  try {
+    const actionApi: any = (browser as any).action || (browser as any).browserAction;
+    if (!actionApi || typeof actionApi.setBadgeText !== 'function') return;
+
+    const token = await getStoredToken();
+    const cached = await getCachedSyncResult();
+    if (!token || !cached || !Array.isArray(cached.assignments)) {
+      await actionApi.setBadgeText({ text: '' });
+      return;
+    }
+
+    const settings = await getSettings();
+    const hiddenSet = new Set(settings.hiddenAssignments || []);
+    const completedSet = new Set(settings.completedAssignments || []);
+    const uncompletedSet = new Set(settings.uncompletedAssignments || []);
+
+    const isDone = (a: any) => {
+      if (uncompletedSet.has(a.id)) return false;
+      if (completedSet.has(a.id) || a.isCompleted === true) return true;
+      return a.status === 'Submitted';
+    };
+
+    const now = Date.now();
+    const activeAssigns = cached.assignments.filter((a: any) => {
+      if (hiddenSet.has(a.id) || a.isHidden) return false;
+      if (isDone(a)) return false;
+      if (!a.deadline) return true;
+      // Only count upcoming/active deadlines or recently due within 24h
+      return new Date(a.deadline).getTime() >= now;
+    });
+
+    const count = activeAssigns.length;
+    if (count === 0) {
+      await actionApi.setBadgeText({ text: '' });
+      return;
+    }
+
+    let minHoursLeft = Infinity;
+    for (const a of activeAssigns) {
+      if (a.deadline) {
+        const hoursLeft = (new Date(a.deadline).getTime() - now) / (1000 * 60 * 60);
+        if (hoursLeft >= 0 && hoursLeft < minHoursLeft) {
+          minHoursLeft = hoursLeft;
+        }
+      }
+    }
+
+    let badgeColor = '#6366f1'; // Primary indigo
+    if (minHoursLeft <= 24) {
+      badgeColor = '#ef4444'; // Urgent red (<= 24h)
+    } else if (minHoursLeft <= 72) {
+      badgeColor = '#f59e0b'; // Warning amber (<= 72h)
+    }
+
+    await actionApi.setBadgeText({ text: count > 99 ? '99+' : String(count) });
+    if (typeof actionApi.setBadgeBackgroundColor === 'function') {
+      await actionApi.setBadgeBackgroundColor({ color: badgeColor });
+    }
+  } catch (e) {
+    // Non-fatal if browser action API is unavailable
   }
 }
-setupAlarm();
-
-browser.runtime.onStartup.addListener(setupAlarm);
 
 browser.alarms.onAlarm.addListener(async (alarm: any) => {
   if (alarm.name === 'periodicSync') {
@@ -47,62 +198,6 @@ browser.alarms.onAlarm.addListener(async (alarm: any) => {
     } catch (e) {
       console.error('Error during periodic sync:', e);
     }
-  }
-});
-
-
-
-// --------------------------------------------------------------------------
-// Message listeners
-// --------------------------------------------------------------------------
-browser.runtime.onMessage.addListener((message: any, _sender: any) => {
-
-  if (message.type === 'LOGIN_TAU_SSO') {
-    return loginTauSso(message.username, message.idNumber, message.pass, message.skipInvalidate)
-      .then((token) => ({ success: true, token }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
-  }
-
-  if (message.type === 'VALIDATE_TOKEN') {
-    return validateToken(message.token)
-      .then((info) => ({ success: true, info }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
-  }
-
-  if (message.type === 'FETCH_ENROLLED_COURSES') {
-    return fetchEnrolledCourses(message.token)
-      .then((courses) => {
-        console.log('[serviceWorker] Responding to FETCH_ENROLLED_COURSES with', courses.length, 'courses');
-        return { success: true, courses };
-      })
-      .catch((err) => {
-        console.error('[serviceWorker] Error in fetchEnrolledCourses:', err);
-        return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
-      });
-  }
-
-  if (message.type === 'SYNC_NOW') {
-    return performBackgroundSync()
-      .then((result) => ({ success: true, result }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
-  }
-
-  if (message.type === 'SYNC_SETTINGS') {
-    return performSettingsSync()
-      .then(() => ({ success: true }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
-  }
-
-  if (message.type === 'SYNC_GOOGLE_TASKS') {
-    return triggerGoogleTasksSync(message.interactive || false)
-      .then((res) => ({ success: true, status: res }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
-  }
-
-  if (message.type === 'LOGOUT') {
-    return clearUserSession()
-      .then(() => ({ success: true }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 });
 
@@ -190,6 +285,7 @@ async function clearUserSession(): Promise<void> {
 
   // 3. Wipe user-specific sync storage keys
   await browser.storage.sync.remove('trackedCourseIds');
+  await updateActionBadge();
 }
 
 
@@ -447,10 +543,11 @@ async function performBackgroundSync(): Promise<SyncResult> {
 
     // Save results to storage
     await setCachedSyncResult(result);
+    await updateActionBadge();
 
     // Check and fire notifications for new or upcoming assignments
     if (settings.notificationsEnabled) {
-      await checkAndNotify(result.assignments, prevResult?.assignments || []);
+      await checkAndNotify(result.assignments, prevResult?.assignments || [], settings);
     }
 
     // Trigger Google Tasks sync if enabled
@@ -539,7 +636,7 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   }
 
   const cachedResult = await getCachedSyncResult();
-  if (!cachedResult || cachedResult.assignments.length === 0) {
+  if (!cachedResult) {
     return 'No assignments found to sync';
   }
 
@@ -559,7 +656,8 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
     syncErrors.push(err);
   });
 
-  const mappedAssignments = cachedResult.assignments.map((a: any) => {
+  const rawAssignments = cachedResult.assignments || [];
+  const mappedAssignments = rawAssignments.map((a: any) => {
     const nickname = settings.coursesCustomNames?.[a.courseId];
     return nickname && nickname.trim() ? { ...a, courseName: nickname.trim() } : a;
   });
@@ -567,7 +665,13 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
     accessToken,
     listId,
-    mappedAssignments
+    mappedAssignments,
+    {
+      hiddenAssignmentIds: settings.hiddenAssignments || [],
+      completedAssignmentIds: settings.completedAssignments || [],
+      uncompletedAssignmentIds: settings.uncompletedAssignments || [],
+      syncWithoutDeadline: settings.syncWithoutDeadline ?? false,
+    }
   );
 
   const allErrors = [...syncErrors, ...errors];
@@ -580,68 +684,74 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   }
 }
 
-async function checkAndNotify(newAssigns: any[], oldAssigns: any[]) {
+async function checkAndNotify(newAssigns: any[], oldAssigns: any[], settings?: any) {
+  const activeSettings = settings || (await getSettings());
+  const hiddenSet = new Set(activeSettings.hiddenAssignments || []);
+  const completedSet = new Set(activeSettings.completedAssignments || []);
+  const uncompletedSet = new Set(activeSettings.uncompletedAssignments || []);
+
+  const isDone = (a: any) => {
+    if (uncompletedSet.has(a.id)) return false;
+    if (completedSet.has(a.id) || a.isCompleted === true) return true;
+    return a.status === 'Submitted';
+  };
+
   const oldIds = new Set(oldAssigns.map((a) => a.id));
+  const allLocal = await browser.storage.local.get(null);
+  const newNotifiedUpdates: Record<string, boolean> = {};
 
   for (const assign of newAssigns) {
-    // Only notify for unsubmitted assignments that have an active deadline
-    if (!assign.deadline || assign.status === 'Submitted') {
+    // Skip hidden, completed/submitted, or undated assignments
+    if (!assign.deadline || hiddenSet.has(assign.id) || assign.isHidden || isDone(assign)) {
       continue;
     }
 
-    // 1. Notify for new assignments
-    if (!oldIds.has(assign.id)) {
+    const courseDisplayName = activeSettings.coursesCustomNames?.[assign.courseId]?.trim() || assign.courseName;
+
+    // 1. Notify for new assignments (only if we already had a previous sync snapshot)
+    if (oldAssigns.length > 0 && !oldIds.has(assign.id)) {
       const deadlineText = `Due: ${new Date(assign.deadline).toLocaleString()}`;
 
       browser.notifications.create(`new_assign_${assign.id}`, {
         type: 'basic',
-        iconUrl: browser.runtime.getURL('icon-128.png'), // Fallback icon path in public
+        iconUrl: browser.runtime.getURL('icon-128.png'),
         title: 'New Moodle Assignment',
-        message: `${assign.name}\n${assign.courseName}\n${deadlineText}`,
+        message: `${assign.name}\n${courseDisplayName}\n${deadlineText}`,
       });
     }
 
-    // 2. Notify for upcoming deadlines (due within 24 hours)
-      const deadline = new Date(assign.deadline);
-      const hoursLeft = (deadline.getTime() - Date.now()) / (1000 * 60 * 60);
+    // 2. Notify for upcoming deadlines
+    const deadline = new Date(assign.deadline);
+    const hoursLeft = (deadline.getTime() - Date.now()) / (1000 * 60 * 60);
 
-      // Only notify if it's less than 24 hours but greater than 0,
-      // and we haven't already notified (we can track this in local storage if needed,
-      // but let's just make it simple: notify if it's within a window, say 23-24 hours left,
-      // or 1-2 hours left, to avoid double notification on every sync).
-      const wasNotified24h = await wasAlreadyNotified(assign.id, '24h');
-      if (hoursLeft <= 24 && hoursLeft > 23 && !wasNotified24h) {
-        browser.notifications.create(`upcoming_24h_${assign.id}`, {
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('icon-128.png'),
-          title: 'Assignment Due Tomorrow',
-          message: `${assign.name}\n${assign.courseName}\nDue in ${Math.round(hoursLeft)} hours`,
-        });
-        await markNotified(assign.id, '24h');
-      }
+    const key24h = `notified_24h_${assign.id}`;
+    const wasNotified24h = !!allLocal[key24h] || !!newNotifiedUpdates[key24h];
+    if (hoursLeft <= 24 && hoursLeft > 1 && !wasNotified24h) {
+      browser.notifications.create(`upcoming_24h_${assign.id}`, {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icon-128.png'),
+        title: 'Assignment Due Within 24 Hours',
+        message: `${assign.name}\n${courseDisplayName}\nDue in ${Math.max(1, Math.round(hoursLeft))} hours`,
+      });
+      newNotifiedUpdates[key24h] = true;
+    }
 
-      const wasNotified1h = await wasAlreadyNotified(assign.id, '1h');
-      if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
-        browser.notifications.create(`upcoming_1h_${assign.id}`, {
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('icon-128.png'),
-          title: 'Assignment Due In 1 Hour!',
-          message: `${assign.name}\n${assign.courseName}\nDue soon!`,
-        });
-        await markNotified(assign.id, '1h');
-      }
+    const key1h = `notified_1h_${assign.id}`;
+    const wasNotified1h = !!allLocal[key1h] || !!newNotifiedUpdates[key1h];
+    if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
+      browser.notifications.create(`upcoming_1h_${assign.id}`, {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icon-128.png'),
+        title: 'Assignment Due In 1 Hour!',
+        message: `${assign.name}\n${courseDisplayName}\nDue soon!`,
+      });
+      newNotifiedUpdates[key1h] = true;
+    }
   }
-}
 
-async function wasAlreadyNotified(assignId: number, type: '24h' | '1h'): Promise<boolean> {
-  const key = `notified_${type}_${assignId}`;
-  const res = await browser.storage.local.get(key);
-  return !!res[key];
-}
-
-async function markNotified(assignId: number, type: '24h' | '1h') {
-  const key = `notified_${type}_${assignId}`;
-  await browser.storage.local.set({ [key]: true });
+  if (Object.keys(newNotifiedUpdates).length > 0) {
+    await browser.storage.local.set(newNotifiedUpdates);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -707,7 +817,8 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
           const manageRes = await fetch(manageUrl, { credentials: 'include' });
           const manageHtml = await manageRes.text();
           const trs = manageHtml.split(/<tr/i);
-          const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+          const targetTr = trs.find(t => /moodle\s+mobile\s+web\s+service/i.test(t) || /moodle_mobile_app/i.test(t))
+                        || trs.find(t => /mobile/i.test(t));
           const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
           if (tokenMatch) {
             const tokenId = tokenMatch[1];
@@ -843,7 +954,8 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
     
     // Split by tr to ensure we only get the token for the mobile app
     const trs = manageHtml.split(/<tr/i);
-    const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+    const targetTr = trs.find(t => /moodle\s+mobile\s+web\s+service/i.test(t) || /moodle_mobile_app/i.test(t))
+                  || trs.find(t => /mobile/i.test(t));
     
     const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
     
