@@ -98,42 +98,42 @@ body {
   background: var(--text-muted);
 }
 
-/* Coffee Theme - Elegant warm dark roast (background darker than warm mocha cards) */
+/* Coffee Theme - Refined dark espresso roast with silky golden crema and oat milk tones */
 body.theme-coffee {
-  --bg-dark: #1e1612;
-  --bg-card: rgba(44, 34, 27, 0.94);
-  --bg-card-hover: rgba(58, 45, 36, 0.98);
+  --bg-dark: #14100d;
+  --bg-card: rgba(29, 23, 19, 0.94);
+  --bg-card-hover: rgba(40, 32, 26, 0.98);
 
-  --primary: #e28743;   /* warm caramel crema */
-  --primary-glow: rgba(226, 135, 67, 0.22);
-  --secondary: #7fae78; /* matcha sage green */
-  --secondary-glow: rgba(127, 174, 120, 0.18);
-  --warning: #e5a93c;   /* warm golden honey */
-  --danger: #e26d5c;    /* warm terracotta rose */
+  --primary: #c4996c;   /* warm golden crema */
+  --primary-glow: rgba(196, 153, 108, 0.2);
+  --secondary: #8da882; /* matcha sage green */
+  --secondary-glow: rgba(141, 168, 130, 0.16);
+  --warning: #d8a45b;   /* honey caramel */
+  --danger: #c76b5d;    /* subdued roasted berry */
 
-  --text-primary: #fff8f0;   /* crisp warm milk froth */
-  --text-secondary: #d4c2b2; /* warm light oat milk */
-  --text-muted: #a6917f;     /* soft cocoa */
+  --text-primary: #fbf6f0;   /* velvety steamed milk froth */
+  --text-secondary: #d0c3b6; /* warm oat milk latte */
+  --text-muted: #928377;     /* ground coffee beans */
 
-  --border: rgba(226, 135, 67, 0.22);
-  --border-focus: rgba(226, 135, 67, 0.55);
+  --border: rgba(196, 153, 108, 0.18);
+  --border-focus: rgba(196, 153, 108, 0.45);
 
-  --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(226, 135, 67, 0.25);
+  --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px rgba(196, 153, 108, 0.18);
 
   background-image:
-    radial-gradient(at 0% 0%, rgba(226, 135, 67, 0.16) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(127, 174, 120, 0.12) 0px, transparent 50%) !important;
+    radial-gradient(at 0% 0%, rgba(196, 153, 108, 0.10) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(141, 168, 130, 0.08) 0px, transparent 50%) !important;
 }
 
 /* Coffee theme sidebar and card overrides */
 body.theme-coffee .glass-panel {
   background: var(--bg-card);
-  border-color: rgba(226, 135, 67, 0.18);
+  border-color: rgba(196, 153, 108, 0.16);
 }
 
 body.theme-coffee .glass-panel:hover {
-  border-color: rgba(226, 135, 67, 0.35);
+  border-color: rgba(196, 153, 108, 0.32);
 }
 
 body.theme-coffee .item-name,
@@ -150,7 +150,7 @@ body.theme-coffee h6 {
 }
 
 body.theme-coffee .logo-section h1 {
-  background: linear-gradient(to right, #e28743, #f5b971);
+  background: linear-gradient(to right, #cca47c, #f5ebd9);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -162,7 +162,7 @@ body.theme-coffee select,
 body.theme-coffee textarea,
 body.theme-coffee .search-input {
   color: var(--text-primary) !important;
-  background: rgba(30, 22, 18, 0.75) !important;
+  background: rgba(22, 17, 14, 0.8) !important;
   border-color: var(--border) !important;
 }
 
@@ -174,41 +174,42 @@ body.theme-coffee .search-input::placeholder {
 }
 
 body.theme-coffee .badge-muted {
-  background: rgba(226, 135, 67, 0.15) !important;
+  background: rgba(196, 153, 108, 0.12) !important;
   color: var(--text-secondary) !important;
 }
 
 body.theme-coffee .badge-success {
-  background: rgba(127, 174, 120, 0.2) !important;
+  background: rgba(141, 168, 130, 0.18) !important;
   color: var(--secondary) !important;
 }
 
 body.theme-coffee .badge-warning {
-  background: rgba(229, 169, 60, 0.2) !important;
+  background: rgba(216, 164, 91, 0.18) !important;
   color: var(--warning) !important;
 }
 
 body.theme-coffee .badge-danger {
-  background: rgba(226, 109, 92, 0.2) !important;
+  background: rgba(199, 107, 93, 0.18) !important;
   color: var(--danger) !important;
 }
 
 body.theme-coffee .primary-btn {
-  background: linear-gradient(to right, #e28743, #c56a28) !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, #c4996c, #a87d52) !important;
+  color: #14100d !important;
+  font-weight: 700 !important;
   border: none !important;
 }
 
 body.theme-coffee .secondary-btn,
 body.theme-coffee .secondaryBtn {
-  background: rgba(226, 135, 67, 0.12) !important;
+  background: rgba(196, 153, 108, 0.10) !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border) !important;
 }
 
 body.theme-coffee .secondary-btn:hover,
 body.theme-coffee .secondaryBtn:hover {
-  background: rgba(226, 135, 67, 0.22) !important;
+  background: rgba(196, 153, 108, 0.20) !important;
 }
 
 body.theme-coffee .action-icon-link {
@@ -220,13 +221,13 @@ body.theme-coffee .action-icon-link:hover {
 }
 
 body.theme-coffee .next-assignment-banner {
-  background: linear-gradient(135deg, rgba(226, 135, 67, 0.16) 0%, rgba(44, 34, 27, 0.95) 100%) !important;
-  border-color: rgba(226, 135, 67, 0.35) !important;
+  background: linear-gradient(135deg, rgba(196, 153, 108, 0.15) 0%, rgba(35, 27, 22, 0.96) 100%) !important;
+  border-color: rgba(196, 153, 108, 0.3) !important;
   box-shadow: var(--shadow) !important;
 }
 
 body.theme-coffee .next-assign-title {
-  color: #fff8f0 !important;
+  color: #fbf6f0 !important;
 }
 
 body.theme-coffee .active-row,
@@ -236,12 +237,12 @@ body.theme-coffee .semester-group-title {
 
 body.theme-coffee .action-link-btn.file-btn:hover {
   background: var(--secondary) !important;
-  color: white !important;
+  color: #14100d !important;
 }
 
 body.theme-coffee .action-link-btn:hover {
   background: var(--primary) !important;
-  color: white !important;
+  color: #14100d !important;
 }
 
 body.theme-coffee .file-size-cell,

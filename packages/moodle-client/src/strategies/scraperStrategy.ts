@@ -174,7 +174,8 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
 
     const trs = html.split(/<tr/i);
-    const targetTr = trs.find(t => t.includes('Moodle mobile web service') || t.includes('moodle_mobile_app') || t.includes('Mobile'));
+    const targetTr = trs.find(t => /moodle\s+mobile\s+web\s+service/i.test(t) || /moodle_mobile_app/i.test(t))
+                  || trs.find(t => /mobile/i.test(t));
     const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
     
     const allTokens = tokenMatch ? [tokenMatch[1]] : [];
@@ -1079,6 +1080,22 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
               timemodified: 0,
             });
           }
+        } else if (modname === 'url') {
+          const urlMatch = modHtml.match(/<a[^>]+href="([^"]*)"[^>]*>/i);
+          if (urlMatch) {
+            let fileurl = decodeHtmlEntities(urlMatch[1]);
+            if (fileurl.startsWith('/')) {
+              fileurl = `${this.getRootUrl()}${fileurl}`;
+            }
+            contents.push({
+              type: 'url',
+              filename: modName,
+              fileurl,
+              filesize: 0,
+              mimetype: 'text/html',
+              timemodified: 0,
+            });
+          }
         }
 
         const yearPrefix = effectiveYear ? `/${effectiveYear}` : '';
@@ -1088,6 +1105,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
           modname,
           url: `${this.getRootUrl()}${yearPrefix}/mod/${modname}/view.php?id=${moduleId}`,
           instance: moduleId,
+          description: modHtml,
           contents: contents.length > 0 ? contents : undefined,
         });
       }

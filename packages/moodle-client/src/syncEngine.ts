@@ -1,7 +1,7 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
 import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials, Attachment } from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
-import { CookieJar, performLogin, scrapeZoomMeetingsWithToken } from './zoomScraper.js';
+import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml } from './zoomScraper.js';
 
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
@@ -138,6 +138,8 @@ export async function runSync(
 
   onProgress('Fetching assignments and grades...');
   let rawAssignments: RawMoodleAssignment[] = [];
+  const rawOrderMap = new Map<number, number>();
+  let nextOrderIndex = 0;
   const gradesByCmid = new Map<number, RawGradeItem>();
 
   await Promise.all([
@@ -148,6 +150,9 @@ export async function runSync(
           if (trackedCourseIds.includes(courseObj.id)) {
             for (const assign of courseObj.assignments) {
               rawAssignments.push(assign);
+              if (!rawOrderMap.has(assign.id)) {
+                rawOrderMap.set(assign.id, nextOrderIndex++);
+              }
             }
           }
         }
@@ -300,14 +305,50 @@ export async function runSync(
     // Process course contents to find files, zoom meetings, and missing assignments
     batchPromises(trackedCourseIds, 20, async (courseId) => {
       const courseName = getCourseDisplayName(courseId);
+      const courseInfo = courseMap.get(courseId);
+      const courseBaseUrl = courseInfo?.instanceUrl
+        ? courseInfo.instanceUrl
+        : courseInfo?.year && courseInfo.year !== String(new Date().getFullYear())
+        ? `https://moodle.tau.ac.il/${courseInfo.year}`
+        : (baseUrl || 'https://moodle.tau.ac.il');
+
+      const seenMeetingKeys = new Set<string>();
+
+      const addMeeting = (m: ZoomMeeting) => {
+        const key = m.startTime
+          ? `${courseId}:${m.meetingNumber || m.meetingUrl}:${m.startTime}`
+          : `${courseId}:${m.meetingNumber || m.meetingUrl}`;
+        if (seenMeetingKeys.has(key)) return;
+        seenMeetingKeys.add(key);
+        meetings.push(m);
+        if (onPartialSync) onPartialSync({ meetings: [m] });
+      };
+
       try {
         const sections = await client.getCourseContents(courseId);
         for (const section of sections) {
           const sectionName = section.name || '';
+
+          // 1. Scan section summary for embedded Zoom links
+          if (section.summary) {
+            const summaryLinks = extractZoomLinksFromHtml(section.summary);
+            for (const link of summaryLinks) {
+              const parsed = parseZoomUrl(link.url);
+              addMeeting({
+                title: link.title || `${sectionName} Zoom`,
+                meetingUrl: parsed.meetingUrl,
+                sectionName,
+                courseId,
+                courseName,
+                meetingNumber: parsed.meetingNumber,
+                password: parsed.password,
+              });
+            }
+          }
+
           for (const module of section.modules) {
             const modname = module.modname;
             const name = module.name || '';
-            const nameLower = name.toLowerCase();
 
             if (modname === 'assign') {
               cmidToSectionMap.set(module.id, sectionName);
@@ -322,6 +363,9 @@ export async function runSync(
                   cutoffdate: 0,
                   allowsubmissionsfromdate: 0
                 };
+                if (!rawOrderMap.has(newAssign.id)) {
+                  rawOrderMap.set(newAssign.id, nextOrderIndex++);
+                }
                 // It was discovered here, process it right away
                 await processAssignment(newAssign, sectionName);
               }
@@ -346,29 +390,136 @@ export async function runSync(
               }
             }
 
-            if (modname === 'lti' && nameLower.includes('zoom') && module.instance !== undefined && enableScraping) {
-              try {
-                const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, baseUrl);
-                for (const lm of ltiMeetings) {
-                  const newMeeting: ZoomMeeting = {
-                    title: lm.topic,
-                    meetingUrl: lm.joinUrl,
+            // --- ZOOM MEETING DETECTION ---
+            // A. LTI Module (e.g. Zoom LTI Pro activity)
+            if (modname === 'lti' && isZoomOrMeetingName(name)) {
+              let scrapedSuccessfully = false;
+              if (module.instance !== undefined) {
+                try {
+                  const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, courseBaseUrl);
+                  if (ltiMeetings.length > 0) {
+                    scrapedSuccessfully = true;
+                    for (const lm of ltiMeetings) {
+                      addMeeting({
+                        title: lm.topic || name,
+                        meetingUrl: lm.joinUrl,
+                        sectionName,
+                        courseId,
+                        courseName,
+                        startTime: lm.startTime,
+                        meetingNumber: lm.meetingNumber,
+                        password: lm.password,
+                      });
+                    }
+                  }
+                } catch (err: any) {
+                  console.warn(`[SyncEngine] Failed to scrape Zoom meetings for course ${courseName} (module ID: ${module.id}):`, err);
+                  errors.push({
+                    context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
+                    message: err.message,
+                  });
+                }
+              }
+
+              // Fallback if scraping is disabled, returns 0 meetings, or fails:
+              if (!scrapedSuccessfully) {
+                const fallbackUrl = module.url || `${courseBaseUrl}/mod/lti/view.php?id=${module.id}`;
+                addMeeting({
+                  title: name,
+                  meetingUrl: fallbackUrl,
+                  sectionName,
+                  courseId,
+                  courseName,
+                });
+              }
+            }
+
+            // B. Official Zoom Module (mod_zoom)
+            else if (modname === 'zoom') {
+              let zoomUrl = '';
+              if (module.contents && module.contents.length > 0) {
+                const direct = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
+                if (direct?.fileurl) zoomUrl = direct.fileurl;
+              }
+              if (!zoomUrl && module.url) {
+                zoomUrl = module.url;
+              }
+              if (!zoomUrl) {
+                zoomUrl = `${courseBaseUrl}/mod/zoom/view.php?id=${module.id}`;
+              }
+              const parsed = parseZoomUrl(zoomUrl);
+              addMeeting({
+                title: name,
+                meetingUrl: parsed.meetingUrl,
+                sectionName,
+                courseId,
+                courseName,
+                meetingNumber: parsed.meetingNumber,
+                password: parsed.password,
+              });
+            }
+
+            // C. URL Module (mod_url)
+            else if (modname === 'url') {
+              let directUrl = '';
+              if (module.contents && module.contents.length > 0) {
+                const zoomContent = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
+                if (zoomContent?.fileurl) {
+                  directUrl = zoomContent.fileurl;
+                } else if (isZoomOrMeetingName(name)) {
+                  const firstUrl = module.contents.find(c => c.fileurl);
+                  if (firstUrl?.fileurl) directUrl = firstUrl.fileurl;
+                }
+              }
+
+              if (!directUrl && (isZoomUrl(module.url || '') || isZoomOrMeetingName(name))) {
+                directUrl = module.url || `${courseBaseUrl}/mod/url/view.php?id=${module.id}`;
+              }
+
+              if (directUrl) {
+                const parsed = parseZoomUrl(directUrl);
+                addMeeting({
+                  title: name,
+                  meetingUrl: parsed.meetingUrl,
+                  sectionName,
+                  courseId,
+                  courseName,
+                  meetingNumber: parsed.meetingNumber,
+                  password: parsed.password,
+                });
+              }
+            }
+
+            // D. Labels, Pages, or Module Descriptions/Intros with embedded Zoom links
+            else {
+              const htmlSources: string[] = [];
+              if (module.description) htmlSources.push(module.description);
+              if (module.intro) htmlSources.push(module.intro);
+              if (modname === 'label' || modname === 'page') {
+                if (name && isZoomUrl(name)) htmlSources.push(name);
+                if (module.contents) {
+                  for (const c of module.contents) {
+                    if (c.fileurl && isZoomUrl(c.fileurl)) {
+                      htmlSources.push(c.fileurl);
+                    }
+                  }
+                }
+              }
+
+              for (const html of htmlSources) {
+                const foundLinks = extractZoomLinksFromHtml(html);
+                for (const fl of foundLinks) {
+                  const parsed = parseZoomUrl(fl.url);
+                  addMeeting({
+                    title: fl.title || name || `${sectionName} Zoom`,
+                    meetingUrl: parsed.meetingUrl,
                     sectionName,
                     courseId,
                     courseName,
-                    startTime: lm.startTime,
-                    meetingNumber: lm.meetingNumber,
-                    password: lm.password,
-                  };
-                  meetings.push(newMeeting);
-                  if (onPartialSync) onPartialSync({ meetings: [newMeeting] });
+                    meetingNumber: parsed.meetingNumber,
+                    password: parsed.password,
+                  });
                 }
-              } catch (err: any) {
-                console.warn(`[SyncEngine] Failed to scrape Zoom meetings for course ${courseName} (module ID: ${module.id}):`, err);
-                errors.push({
-                  context: `Scraping Zoom meetings for course ${courseName} (module ID: ${module.id})`,
-                  message: err.message,
-                });
               }
             }
           }
@@ -389,6 +540,13 @@ export async function runSync(
       if (secName) assign.sectionName = secName;
     }
   }
+
+  // Ensure assignments are deterministically ordered matching raw Moodle discovery sequence
+  assignments.sort((a, b) => {
+    const orderA = rawOrderMap.has(a.id) ? rawOrderMap.get(a.id)! : 999999 + a.id;
+    const orderB = rawOrderMap.has(b.id) ? rawOrderMap.get(b.id)! : 999999 + b.id;
+    return orderA - orderB;
+  });
 
   onProgress('Sync completed.');
   return {

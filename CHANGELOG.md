@@ -8,6 +8,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Interactive Split-Pane Calendar View in Assignments Tab (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`, `TC-ASN-12`)**:
+  - Added a "📅 תצוגת לוח שנה" / "📅 Calendar View" toggle button in the Assignments tab filter bar.
+  - Opening the calendar shrinks the assignments feed column into a responsive split-pane workspace (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`) and displays a sticky monthly calendar grid alongside the assignments list.
+  - Displays color-coded assignment pills on their due dates with month navigation (`◀`, `היום` / `Today`, `▶`) and completion status styling.
+  - Clicking any assignment pill in the calendar automatically ensures its status filter (To Do / Past / Completed / Hidden) is enabled, expands the assignment card in the feed, and smoothly scrolls it into view.
+- **Extension Toolbar Action Badge (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-05`)**:
+  - Implemented `updateActionBadge()` to display the live count of active, uncompleted, non-hidden assignments directly on the browser extension toolbar icon.
+  - Dynamically colors the badge background based on the most urgent upcoming deadline: red (`#ef4444`) when $\le 24$ hours remain, amber (`#f59e0b`) when $\le 72$ hours remain, and indigo (`#6366f1`) otherwise.
+  - Automatically updates on background sync, storage changes, startup, and clears upon logout.
+- **Actionable Toolbar Popup with Live Zoom Banner & Quick Actions (`apps/extension/src/popup/Popup.tsx`, `Popup.css`, `TC-EXT-01`)**:
+  - Added a pulsing "פעיל כעת" / "Live Now" Zoom banner at the top of the popup when a visible course Zoom session is currently active, with a 1-click "הצטרף" / "Join" button.
+  - Added a 1-click Mark Done (`✓`) button on each assignment card in the popup, immediately updating local storage, refreshing the toolbar badge, and triggering a silent Google Tasks sync if enabled.
+  - Made popup assignment cards clickable to open the assignment directly in Moodle.
+- **Laboratory Course Bulk Assignment Hiding Suggestion (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`)**:
+
+  - Added automatic detection for courses containing the Hebrew keyword `"מעבדה"` (laboratory) when adding them to tracking (in both the onboarding course selection and the "Manage Courses" configuration modal).
+  - Prompts the user with a confirmation dialog offering to automatically hide all assignments for the lab course, preventing dashboard clutter from extensive catalogs of optional/unassigned lab experiments while allowing manual unhiding when needed.
+- **Google Tasks Sync for Assignments Without Deadline Option (`packages/moodle-client/src/googleTasksSync.ts`, `apps/extension`, `apps/mobile`)**:
+  - Added `syncWithoutDeadline` configuration setting across the shared sync engine (`GoogleTasksSyncOptions`), extension settings (`DEFAULT_SETTINGS`, `ExtensionSettings`), and mobile settings (`performGoogleTasksSync`).
+  - Default is **OFF** (`false`), preventing assignments lacking explicit due dates from cluttering Google Tasks.
+  - When disabled, existing tasks in Google Tasks that lack deadlines are automatically cleaned up / deleted on synchronization.
+  - Added setting switch and localized explanatory description ("סנכרון מטלות ללא תאריך יעד ל-Google Tasks") in Settings tab and mobile settings.
+  - Added unit tests in `packages/moodle-client/__tests__/googleTasks.test.ts` covering both `syncWithoutDeadline: false` and `true`.
+- **Elaborated About Tab & Account Section Credits (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/mobile/src/app/settings.tsx`, `i18n.ts`)**:
+  - Added official GitHub repository (`https://github.com/duck-5/Noodle`) and GitHub Issues (`https://github.com/duck-5/Noodle/issues`) links in the Account card and About tab.
+  - Added developer credits for **Yuval Mantin** and **Michael Kushnir**.
+  - Added direct support and suggestions contact email: `noodle.d3v@gmail.com`.
+  - Added Chrome Web Store review link (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`).
+  - Elaborated the About page with an interactive brand hero, quick action cards, and 3 collapsible accordion sections (`<details className="about-accordion">`) detailing Core Features, Pro Tips & Tricks, and Privacy & Security architecture.
+- **Comprehensive 10-Step Interactive Landing & Onboarding Tour (v4 Redesign)**:
+  - Completely redesigned and expanded the extension onboarding tour into an immersive, 10-step guided cockpit walkthrough:
+    1. **Step 0 (Cockpit Overview)**: Centered glassmorphic welcome card detailing Noodle's local-first architecture and zero-backend privacy.
+    2. **Step 1 (Real-Time Sync Button)**: Highlights `.header-sync-btn` in the header, demonstrating direct Moodle sync and automated Google Tasks updates.
+    3. **Step 2 (Next Task Spotlight)**: Docks to bottom viewport; highlights `.hero-spotlight-card` with live countdown, 1-click submission, assignment attachments, and topic section files.
+    4. **Step 3 (Task Controls: Done & Hidden)**: Highlights `.hero-actions-row` & `.queue-card`, demonstrating 1-click completion (`✓`) and task hiding (`👁`) with dynamic removal from the active To-Do queue.
+    5. **Step 4 (Manage Courses Modal)**: Automatically opens the "Manage Courses" modal (`isManageModalOpen: true`), highlights `.modal-content` aligned to the top viewport, and guides the user through setting custom nicknames, assigning colors, tracking checkboxes, and semester grouping.
+    6. **Step 5 (Live Zoom & Link Filtering)**: Automatically closes the modal and expands the first course row (`expandedCourseId`), highlighting `.course-row-card`. Guides the user on using the eye icon (`👁`) to filter out recitations they don't attend, joining live sessions via the "Active Now" banner, and accessing hidden sessions.
+    7. **Step 6 (Assignments Hub & Feed)**: Automatically switches to the `assignments` tab, highlighting `.filter-bar`. Explains fast global search, 4 status filters (To Do, Past, Completed, Hidden), and expandable materials drawers.
+    8. **Step 7 (Grades & GPA Tracker)**: Automatically switches to the `grades` tab, highlighting `.stat-card`. Explains cumulative GPA estimation, grade distributions per course, and auto-calculated averages.
+    9. **Step 8 (Settings & Google Tasks Sync)**: Automatically switches to the `settings` tab, highlighting `.google-tasks-section`. Covers two-way sync with Google Tasks and Calendar, theme options, and custom urgency alerts.
+    10. **Step 9 (Ready to Roll & About)**: Automatically switches to the `about` tab, highlighting `.tab-about`. Explains tour relaunching anytime, keyboard shortcuts (`[←] [→] [Esc]`), developer credits, and version details. Exiting cleanly returns user to the Dashboard (`setActiveTab('dashboard')`).
+  - Added 10-segment segmented progress stepper with direct click-to-step navigation.
+  - Added desktop keyboard navigation (`ArrowRight` / `ArrowLeft` adapted to RTL/LTR directionality, `Escape` to exit).
+  - Added bottom viewport docking for interactive steps (`1–8`) so target UI elements remain visible with glowing outline pulses (`.tour-highlight`).
+  - Added comprehensive multi-theme support across Slate Dark, Warm Noodle, and Dark Espresso Coffee themes.
+  - Fully bilingual in Hebrew and English with dedicated translation keys in `i18n.ts`.
+- **Direct Zoom LTI REST Discovery & Session Extraction (`packages/moodle-client/src/syncEngine.ts`, `zoomScraper.ts`)**:
+  - Un-gated Zoom LTI session retrieval from the optional web scraping flag. Zoom sessions with direct join URLs, passcodes, and ISO timestamps are now retrieved directly via Moodle's REST endpoint `mod_lti_get_tool_launch_data` and Zoom LTI Pro JSON API without requiring HTML scraping or user credentials.
+  - Made Zoom LTI configuration parsing (`parseAppConf`) resilient to strict JSON blocks and flexible key/value parameter orderings.
+  - Automatically stripped forbidden browser headers (such as `User-Agent`) in `mfetch` during extension runtime to avoid browser console warnings.
+- **Recurring Zoom Session Collapsing (`@tautracker/moodle-client`, `TC-ZM-06`)**:
+  - Exported `collapseRecurringMeetings(meetings, referenceDate)` from `@tautracker/moodle-client`. Automatically condenses recurring weekly sessions of the same room/meetingNumber into a single entry representing the nearest upcoming meeting (or latest past meeting if all sessions concluded).
+  - Added unit test suite `TC-ZM-06` covering recurring meeting collapsing, past-only session fallback, undated link preservation, and appConf parsing.
+- **Uncluttered Zoom Panels, "Show Hidden" Toggle & Bulk Actions (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Redesigned the Zoom links section in Dashboard course cards and `CourseDetailView` to render only user-selected (visible) meetings by default, eliminating visual clutter in courses with 10+ recitation/lecture groups.
+  - Added a collapsible "הצג פגישות מוסתרות" / "Show hidden meetings" toggle button displaying hidden meetings in a distinct muted container with single-click unhide actions.
+  - Added single-click "הצג הכל" (Show all) and "הסתר הכל" (Hide all) bulk action buttons per course, allowing students to configure 10+ group instances in two clicks.
+  - Fixed a critical scoping bug in `handleToggleMeetingInterest` where toggling a meeting in one course wiped visibility across all other courses when `interestedMeetings` was uninitialized.
+- **Comprehensive Multi-Modal Zoom Detection (`packages/moodle-client/src/syncEngine.ts`, `zoomScraper.ts`)**:
+  - Added automatic Zoom meeting extraction for standard Moodle URL modules (`modname === 'url'`), direct Zoom plugins (`modname === 'zoom'`), Hebrew Zoom titles ("קישור לזום", "מפגש מקוון", "שיעור זום", "הרצאה מקוונת"), embedded HTML links in label modules (`modname === 'label'`), page modules, and section summaries.
+  - Added automatic URL normalization to the TAU tenant (`https://tau-ac-il.zoom.us/j/...`) and automatic extraction of `meetingNumber` and passcode parameters (`pwd`).
+  - Added automated unit and integration tests (`TC-ZM-05`) verifying extraction across all modalities and course-level deduplication.
 - **Mock Course Sandbox Generator (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
   - Added "➕ הוסף קורס לדוגמה" (Add Mock Course) button under Settings to inject Course 9999 into local storage with active live Zoom, upcoming meetings, files, and multi-state assignments (with attachments, submissions, and no-deadline tasks) for instantaneous UI and feature testing.
 - **Subject Files Integration in Assignments Drawer (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
@@ -35,6 +97,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Real-Time Streaming Sync Data (`packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/background/serviceWorker.ts`, `App.tsx`)**:
   - Implemented `onPartialSync` streaming callback in `runSync`, emitting incremental `SYNC_PARTIAL` messages to the UI as assignments, files, and meetings are discovered.
   - The UI updates dynamically without having to wait for the entire multi-course synchronization process to terminate.
+- **High-Resolution Promotional Assets Suite for v4 Redesign (`apps/extension/scripts/generate-promo-assets.mjs`)**:
+  - Completely refreshed the store promotional graphics suite rendered at 2× Retina resolution (2560×1600 slides, 2800×1120 marquee, 880×560 small tile) tailored specifically to the v4 Cockpit UI redesign:
+    - **Slide 1 (`promo-1-hero-overview.png`)**: Showcases the new Cockpit Dashboard featuring the Hero Action Strip ("המטלה הקרובה"), Upcoming To-Do queue ("תור משימות קרובות"), and active Live Zoom strip.
+    - **Slide 2 (`promo-2-deadlines-grades.png`)**: Showcases the dedicated full-page Assignments Hub with instant search, 4 filter checkboxes ("לביצוע", "עברו", "הושלמו", "מוסתרים"), and expanded drawer featuring attached prompts and weekly topic files.
+    - **Slide 3 (`promo-3-zoom-hub.png`)**: Showcases Course Materials & Lecture Hub with active Zoom detection, weekly topic pills, and direct file downloads with exact file size badges.
+    - **Slide 4 (`promo-4-course-files.png`)**: Showcases the centered frosted-glass Course Management modal with custom course nicknames, semester tracking toggles, and custom color tags.
+    - **Slide 5 (`promo-5-productivity-themes.png`)**: Showcases the new dark espresso Coffee Theme (`theme-coffee`) side-by-side with the high-DPI English Toolbar Popup.
+    - **Marquee Banner (`promo-marquee-banner.png`)**: 3D tilted v4 Cockpit dashboard and mascot with student-friendly branding ("Smart Moodle Companion").
+    - **Small Promo Tile (`promo-small-tile.png`)**: Centered circular avatar featuring the smiling mascot bowl, real-time deadlines, and 1-click zoom with zero university mentions.
 - **High-Resolution Promotional Assets & Store Suite (`apps/extension/scripts/generate-promo-assets.mjs`)**:
   - Generated full Webstore graphic suite rendered at 2× Retina resolution (2560×1600 slides, 2800×1120 marquee, 880×560 tile) with font preloading and mockups for Hero Overview, Deadlines & Grades, Zoom Lecture Hub, Course Files Explorer, and Midnight Dark Theme + Toolbar Popup.
   - Enforced unofficial, student-friendly branding ("Smart Moodle Companion" / "Modern Moodle Client") without claiming official university affiliation.
@@ -45,10 +116,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Verifies the scraping toggle defaults to OFF, tests pure API sync, toggles scraping ON, verifies storage persistence, executes scraping-enabled sync, resets to clean default, and captures visual screenshots.
 
 ### Changed
-- **Coffee Theme Re-Engineered from Scratch (`apps/extension/src/index.css`)**:
-  - Completely recreated the Coffee dark theme with dark roast background (`#1e1612`), lighter warm mocha cards (`rgba(44, 34, 27, 0.94)`), caramel crema accents (`#e28743`), and high-contrast milk froth typography (`#fff8f0`), guaranteeing excellent readability and pleasant aesthetics.
-- **Enlarged Sidebar Brand Logo (`apps/extension/src/options/App.css`)**:
-  - Scaled the Noodle bowl logo from 48px to 72px (expanded) and 44px (collapsed), increasing application title font size to 1.45rem for improved visual balance.
+- **Subject, Assignment, and Submitted Files Ordered in a Vertical Column (`apps/extension/src/options/App.tsx`, `App.css`, `TC-DASH-REHAUL-07`)**:
+  - Updated all file lists (assignment attachments, subject/topic files `קבצי הנושא`, and student submitted files) across the Dashboard Hero Spotlight, Upcoming To-Do Queue, Tracked Course Rows, Assignments Tab feed, and Course Detail View to render in a clean vertical column layout (`.files-column-group`, `.files-column-list`, `.file-column-item`) instead of wrapping horizontally.
+- **Isolated Sync Countdown Timer & Memoized Assignment Derivation (`apps/extension/src/options/App.tsx`)**:
+  - Extracted the 1-second sync countdown interval into a dedicated `<SyncCountdown />` leaf component and memoized `assignmentsList` with `useMemo`, preventing the entire 5,000+ line Options page from re-rendering every second.
+- **Debounced Remote Settings Broadcast (`apps/extension/src/shared/storage.ts`)**:
+  - Added a 600ms debounce (`scheduleSettingsSyncBroadcast`) to `SYNC_SETTINGS` background messages triggered by `setSettings` and `setTrackedCourseIds`, coalescing rapid UI edits (such as typing a course nickname or dragging a color picker) into a single Moodle Calendar API write.
+- **Concurrent Google Tasks API Batching (`packages/moodle-client/src/googleTasksSync.ts`)**:
+  - Upgraded Google Tasks synchronization and deletion loops from sequential `await fetch` calls to bounded concurrency (`CONCURRENCY_LIMIT = 5`), accelerating multi-task syncs by ~5×.
+- **Minimal Extension Permissions (`apps/extension/src/manifest.json`)**:
+  - Removed the unused `"webRequest"` permission from `manifest.json` to reduce extension privilege surface and speed up store review.
+- **Coffee Theme Complete Redesign (`apps/extension/src/index.css`)**:
+  - Completely rebuilt the coffee theme palette eliminating reddish, orange, and burgundy hues. Features pure dark espresso bean background (`#14100d`), rich roasted coffee cards (`rgba(29, 23, 19, 0.94)`), silky golden crema accents (`#c4996c`, `#d8b18a`), sage matcha highlights (`#8da882`), and warm froth typography (`#fbf6f0`).
+- **Enlarged Brand Logo & Full-Bleed Extension Bar Icons (`apps/extension/public/icon-*.png`, `apps/extension/src/assets/logo.png`, `App.css`, `Popup.tsx`)**:
+  - Tightly cropped the master noodle bowl artwork to eliminate excessive horizontal transparency padding (which previously caused the graphic to render at only ~40% coverage).
+  - Regenerated all extension toolbar icons (`icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png`) with area-averaging anti-aliased resampling, boosting toolbar icon visual height coverage from 43% (6×7px) to 95–100% (12×16px / 22×30px) so the Noodle bowl is crisp, bold, and easily recognizable on the browser extension bar.
+  - Sized the options sidebar logo to 108px (expanded) and 54px (collapsed), enlarged popup brand logo to 34px, unauthenticated popup logo to 84px, and optimized login onboarding logo dimensions.
+- **Enhanced Next Task Spotlight Card (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Upgraded the Next Task hero panel with dynamic course-colored accent borders and surfaces (`rgba(courseColor, 0.08)`), section/topic academic metadata strip, course subject files (`קבצי הנושא`), submitted files preview, direct 1-click action buttons (Mark Done / Incomplete, Go to Course, Hide / Unhide), and squircle file chips.
+- **Upcoming To-Do Queue Subject Files & Full Actions Suite (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Expanded upcoming queue items to resolve and display course subject files (`קבצי הנושא`) matching the task's course and topic section, submitted files, and the full action toolbar ("עבור לקורס", "סמן כבוצע / כלא הושלם", "הסתר / בטל הסתרה", and "הגש במודל ↗").
+  - Increased `.queue-item-expanded.open` max-height to 800px to ensure multi-file task drawers never truncate content.
+- **Squircle Buttons & Arrow-Only Download Action (`apps/extension/src/options/App.css`, `App.tsx`)**:
+  - Replaced all file chips and action buttons with 8px squircle geometry. Simplified download action buttons across the entire app to strictly display the SVG arrow icon (`<DownloadIcon size={12} />`) with tooltip accessibility (`title` and `aria-label`).
+- **Button Sizing & Hierarchy Polish (`apps/extension/src/options/App.css`, `App.tsx`)**:
+  - Enforced `.btn-xs` sizing rules with specific selectors (`.secondary-btn.btn-xs`, `.primary-btn.btn-xs`) ensuring "Mark Done", "Unhide", and secondary actions remain compact and never overridden.
 - **Assignment Action Button & Pill Hierarchy (`apps/extension/src/options/App.css`, `App.tsx`)**:
   - Converted the subject/topic pill (`.subject-pill`) into unframed metadata text to prevent button-like confusion.
   - Sized action buttons down to compact `.btn-xs` (`font-size: 0.75rem; padding: 0.25rem 0.55rem;`).
@@ -67,7 +159,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Pruned archive queries to 1 year back (`currentYear - 1`), stopping redundant scanning of 2-year-old subpaths.
   - Eliminated redundant multi-phase scraper fetching when courses are already discovered.
 
-### Fixed
+- **Google Tasks Hidden & Completed Tasks Deletion (`packages/moodle-client/src/googleTasksSync.ts`, `apps/extension/src/background/serviceWorker.ts`, `App.tsx`, `apps/mobile/src/services/googleTasks.ts`, `TC-GT-05`, `TC-GT-06`)**:
+  - Ensured hidden tasks (`hiddenAssignments`, `isHidden: true`) are never synced to Google Tasks, and automatically issued `DELETE` requests for any matching tasks already existing in Google Tasks.
+  - Implemented automatic Google Tasks deletion for any task marked as done (submitted in Moodle, manually completed in Noodle via `completedAssignments`, or completed inside Google Tasks with `status: 'completed'`), keeping the student's task list focused on actionable work.
+  - Retained uncompleted override support (`uncompletedAssignments`) so tasks submitted in Moodle that the student marked as "To Do" remain active with `status: 'needsAction'`.
+  - Added immediate silent background Google Tasks sync when toggling completed or hidden status in the Options page if Google Tasks integration is enabled.
+  - Exported `GoogleTasksSyncOptions` from `@tautracker/moodle-client` accepting `hiddenAssignmentIds`, `completedAssignmentIds`, and `uncompletedAssignmentIds`.
+- **Cross-Browser Build Directory Isolation (`apps/extension/vite.config.ts`, `apps/extension/package.json`, `scripts/test-build-parity.mjs`)**:
+  - Separated build output directories: Chrome builds strictly into `apps/extension/dist/` with Manifest V3 `background.service_worker`, while Firefox builds compile to `apps/extension/dist-firefox/` with `background.scripts` and `browser_specific_settings.gecko`.
+  - Prevented Firefox builds or automated parity test runs (`test:parity`) from overwriting Chrome's `dist/manifest.json` with unsupported Firefox syntax, permanently resolving Chrome's failure to register the service worker (`Could not establish connection. Receiving end does not exist`).
+  - Updated extension package script `"build"` to explicitly include `--mode chrome`.
+- **Service Worker Wake-up & "Receiving end does not exist" Connection Failures (`apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/shared/messaging.ts`, `apps/extension/vite.config.ts`)**:
+  - Registered `onMessage` event listener synchronously at the very top of `serviceWorker.ts` before alarms or any async initialization, ensuring Chrome's C++ Manifest V3 static analyzer detects the message receiver on cold-boot spin-up.
+  - Implemented standard `sendResponse` callback support with synchronous `return true;` in `serviceWorker.ts` to keep the native message channel open until asynchronous promises resolve in Chromium.
+  - Added native `chrome.runtime.sendMessage` direct execution path in `messaging.ts` with structured error returns (`{ success: false, error: ... }`) instead of `null` on retry exhaustion, allowing UI callers like `handleManualSync` to present actionable toast messages.
+  - Protected `setupAlarm` with `try/catch` and removed unhandled top-level `setupAlarm()` invocation during service worker module evaluation, binding alarm initialization exclusively to `runtime.onInstalled` and `runtime.onStartup`.
+  - Added `emptyOutDir: true` to Vite build configuration to purge stale files (`background.js`, obsolete assets) from `apps/extension/dist` on every compilation.
+- **Zoom Meetings Failing to Appear on Courses (`packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/options/App.tsx`)**:
+  - Fixed Zoom meetings not being extracted from courses using standard Moodle URL activities (`modname === 'url'`), direct Zoom modules (`modname === 'zoom'`), or Hebrew activity names ("קישור לזום", "שיעור זום", "מפגש מקוון").
+  - Fixed Zoom LTI modules disappearing when web scraping was disabled or failed by introducing an automatic fallback to the Moodle LTI activity launch URL (`/mod/lti/view.php?id={cmid}`).
+  - Fixed `isMeetingVisible` and `isMarked` in `App.tsx` where an empty `interestedMeetings: []` default array was erroneously treated as filtering out all meetings, hiding active and visible Zoom meetings from the dashboard.
+- **Course Detail View Grid & Overflow Containment (`apps/extension/src/options/App.css`)**:
+  - Resolved an issue where assignments and sidebar cards slid horizontally out of frame on the course detail page. Added `minmax(0, 1.8fr) minmax(0, 1fr)` column bounds, `overflow-wrap: anywhere`, and responsive single-column collapse at 960px.
+- **Tracked Courses Task Alignment & Hidden Task Leakage (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Corrected task alignment in "My Tracked Courses" from centered to start-aligned (`align-items: stretch; text-align: start;`). Excluded hidden assignments from the next 5 assignments list.
+- **Hidden Zoom Link Filtering in "Active Now" Strip (`apps/extension/src/options/App.tsx`)**:
+  - Filtered active meetings against user visibility preferences (`isMeetingVisible`) so hidden or uninterested Zoom meetings never appear in the top Active Now banner.
+- **Deterministic Raw Sync Ordering & Stable Undated Assignments (`packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/options/App.tsx`)**:
+  - Preserved raw Moodle discovery sequence using `rawOrderMap` in `SyncEngine` across asynchronous batches, and added stable tie-breakers (`a.id - b.id`) across all UI sort functions so undated assignments do not shuffle positions upon sync.
+- **Redundant Course Navigation CTA Removal (`apps/extension/src/options/App.tsx`)**:
+  - Removed redundant "Go to Course" primary button from expanded task items inside My Tracked Courses, and updated the Assignments tab "Go to Course" button to a compact secondary button.
 - **Upcoming To-Do Queue & Hero Spotlight for Undated Tasks (`apps/extension/src/options/App.tsx`)**:
   - Resolved an issue where assignments without explicit deadlines were excluded from the upcoming to-do queue and hero task computation, falsely displaying "All completed! 🎉". Tasks are now partitioned (future -> undated -> overdue) to ensure all pending tasks remain visible.
 - **Hero Card In-Place Expansion (`apps/extension/src/options/App.tsx`)**:
@@ -86,8 +207,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Corrected `diffDays === 1` formatting from bare `'יום'` or awkward `'1 ימים'` to clear and grammatically natural `'יום 1'`.
 - **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
   - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
-- **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:
-  - Fixed `sendMessageToBackground` silently returning `null` when the MV3 service worker was terminated. The first `sendMessage` call wakes the SW but loses the message; added a 500ms delay + single retry so the message is delivered once the SW is back up.
+- **Moodle Mobile Service Token Disambiguation (`packages/moodle-client/src/strategies/scraperStrategy.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/mobile/src/services/auth.ts`)**:
+  - Fixed token scraping from `/user/managetoken.php` inadvertently selecting `Moodle Mobile additional features service` instead of the primary `Moodle mobile web service`. The additional features token lacked permissions for `core_calendar_*` and `core_webservice_get_site_info`, triggering `accessexception` errors. Regex matching now strictly prioritizes `Moodle mobile web service` / `moodle_mobile_app`.
+- **Calendar Settings Sync Resiliency (`packages/moodle-client/src/strategies/restStrategy.ts`)**:
+  - Added HTML entity decoding (`&quot;`, `&amp;`, `&#39;`, `&lt;`, `&gt;`) and safe JSON parsing in `loadNoodleSettings()` to protect against Moodle formatting and filter wrappers in calendar event descriptions.
+- **Silent Sync Failure & SW Wakeup Port Closure (`apps/extension/src/shared/messaging.ts`, `apps/extension/vite.config.ts`)**:
+  - Upgraded `sendMessageToBackground` from a fragile single 500ms delay to progressive backoff across 4 retry stages (`[200, 500, 1000, 1500]ms`, totaling ~3.2s) to prevent `Could not establish connection. Receiving end does not exist` when Chrome wakes dormant MV3 service workers on cold starts.
+  - Added explicit handling and warnings for `Extension context invalidated` to clarify when the extension was reloaded in `chrome://extensions` while an options/popup tab remained open.
+  - Cleaned up `browser_specific_settings` in Vite config for Chrome builds, and unified SSO login in `App.tsx` through `loginTauSsoOnBackground`.
 - **Automatic Re-Login Fails When Moodle Session Cookies Are Still Valid (`apps/extension/src/background/serviceWorker.ts`)**:
   - Fixed background re-login passing `skipInvalidate: true`, which left stale Moodle session cookies in place. Those cookies made `/login/index.php` redirect to the dashboard instead of the SSO login page, causing `Did not redirect to TAU SSO` errors.
   - Added a dashboard fallback path in `loginTauSso`: when the browser is already authenticated with Moodle (valid cookies), the function now extracts the sesskey and resets the wstoken directly from the dashboard instead of throwing.
@@ -121,6 +248,25 @@ estoreMoodleSettingsForOnboarding across the extension background service worker
 - **Automated Chrome DevTools Inspection & E2E Feedback Loop (`pnpm test:devtools` / `apps/extension/e2e/sync-devtools.spec.ts`)**: Built an automated browser testing feedback loop for agents and developers using Playwright with real unpacked Chrome extension loading (`TC-EXT-DEVTOOLS-01`, `TC-EXT-DEVTOOLS-02`). Hooks into Chrome DevTools console and network streams across both the Options Page UI and the Background Service Worker. Allows agents to trigger synchronization, inspect diagnostic logs, test failure recovery (unauthenticated/expired tokens), verify successful synchronization, assert UI DOM updates, and confirm local storage persistence without manual human intervention.
 
 ### Fixed
+- **Zoom Link Date & Time Extraction for "No Fixed Time" and Active Recurring Meetings (`packages/moodle-client/src/zoomScraper.ts`, `TC-ZM-06`)**:
+  - Fixed Zoom LTI Pro recurring meetings with "No Fixed Time" (`type === 3`), instant meetings (`type === 1`), and PMI rooms (`type === 4`) displaying arbitrary creation timestamps (e.g., `14:23:47` from months ago) by introducing `normalizeZoomStartTime()` which strips non-scheduled creation timestamps and past timestamps not aligned to 5-minute `:00` boundaries.
+  - Deduplicated `previous` LTI meetings against `upComing` rooms in `scrapeZoomMeetingsWithToken`.
+  - Fixed `collapseRecurringMeetings()` treating currently live sessions (`startTime < now <= startTime + 2h`) as past meetings and replacing them with next week's occurrence; active sessions within the 2-hour window are now retained as the active representative.
+- **Toolbar Popup Assignment Filtering & Chronological Sorting (`apps/extension/src/popup/Popup.tsx`, `TC-EXT-01`)**:
+  - Fixed the extension popup displaying hidden assignments, ignoring manual completion overrides (`completedAssignments` / `uncompletedAssignments`), and showing unsorted tasks. Popup tasks now strictly match Dashboard filtering and sort by nearest upcoming deadline $\rightarrow$ undated $\rightarrow$ overdue.
+- **Dashboard `pendingTasks` Sort Comparator Dead-Code Typo (`apps/extension/src/options/App.tsx`)**:
+  - Fixed a duplicate `if (aHasNoDl && !bHasNoDl)` condition in `DashboardTab`'s `pendingTasks` comparator that prevented deterministic tie-breaking (`a.id - b.id`) when both tasks lacked deadlines.
+- **Settings Desktop Notifications Toggle State Sync (`apps/extension/src/options/App.tsx`)**:
+  - Wired `onToggleNotifications` in `SettingsTab` so toggling Desktop Notifications immediately updates React `settings` state instead of requiring a page reload.
+- **`SYNC_PARTIAL` Progressive Rendering (`apps/extension/src/options/App.tsx`)**:
+  - Updated the `SYNC_PARTIAL` message listener to merge `msg.partial` into `syncResult` state in real time during synchronization.
+- **Deadline Notification Window & Hidden/Completed Filtering (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-03`)**:
+  - Fixed `checkAndNotify` sending notifications for hidden or manually completed assignments.
+  - Widened the 24-hour deadline alert window from `(23, 24]` hours to `(1, 24]` hours so hourly background alarm drift or browser sleep cannot miss the 24-hour reminder, and batched notification flag reads/writes into a single `storage.local` call.
+- **File Download URLs with `web_session_` Fallback Token (`apps/extension/src/options/App.tsx`)**:
+  - Added `buildFileDownloadUrl(rawUrl, token)` to avoid appending `?token=web_session_...` to Moodle file URLs when operating in cookie-authenticated web session mode.
+- **Dynamic Manifest Version in About Tab (`apps/extension/src/options/App.tsx`)**:
+  - Replaced hardcoded `v4.1` badge in `AboutTab` with `v{browser.runtime.getManifest().version}`.
 - **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
   - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
 - **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:

@@ -155,12 +155,15 @@ export interface RawCourseModule {
   modname: string;
   url?: string;
   instance?: number;
+  description?: string;
+  intro?: string;
   contents?: RawCourseFileContent[];
 }
 
 export interface RawCourseSection {
   id: number;
   name: string;
+  summary?: string;
   modules: RawCourseModule[];
 }
 

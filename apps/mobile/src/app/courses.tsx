@@ -236,6 +236,39 @@ export default function CoursesScreen({
       db.runSync('UPDATE tracked_courses SET is_active = ? WHERE id = ?', [newVal, id]);
       markSettingUpdatedAndSync(['trackedCourseIds']);
       loadCourses();
+
+      if (newVal === 1) {
+        const course = courses.find((c) => c.id === id);
+        if (course && course.name && course.name.includes('מעבדה')) {
+          Alert.alert(
+            t('lab_detected_title'),
+            t('lab_detected_desc'),
+            [
+              { text: t('lab_detected_keep_btn'), style: 'cancel' },
+              {
+                text: t('lab_detected_hide_btn'),
+                onPress: () => {
+                  try {
+                    const assignRows = db.getAllSync<{ moodle_assign_id: number }>(
+                      'SELECT moodle_assign_id FROM assignments WHERE course_moodle_id = ?',
+                      [course.moodle_id]
+                    );
+                    if (assignRows.length > 0) {
+                      const hiddenRaw = getPreference('hidden_assignments');
+                      const currentHidden = new Set<number>(hiddenRaw ? JSON.parse(hiddenRaw) : []);
+                      assignRows.forEach((r) => currentHidden.add(r.moodle_assign_id));
+                      setPreference('hidden_assignments', JSON.stringify(Array.from(currentHidden)));
+                      markSettingUpdatedAndSync(['hiddenAssignments']);
+                    }
+                  } catch (err) {
+                    console.error('Error hiding lab assignments:', err);
+                  }
+                },
+              },
+            ]
+          );
+        }
+      }
     } catch (e) {
       console.error(e);
     }

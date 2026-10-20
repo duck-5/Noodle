@@ -81,13 +81,23 @@ interface GoogleTask {
   hidden?: boolean;
 }
 
+export interface GoogleTasksSyncOptions {
+  hiddenAssignmentIds?: number[] | Set<number>;
+  completedAssignmentIds?: number[] | Set<number>;
+  uncompletedAssignmentIds?: number[] | Set<number>;
+  syncWithoutDeadline?: boolean;
+}
+
 /**
  * Syncs assignments to the specified Google Tasks list.
+ * - Hidden tasks must not be synced to Google Tasks.
+ * - If a task is set as hidden or marked as done, it is deleted from Google Tasks.
  */
 export async function syncAssignmentsToGoogleTasks(
   accessToken: string,
   taskListId: string,
-  assignments: Assignment[]
+  assignments: Assignment[],
+  options?: GoogleTasksSyncOptions
 ): Promise<{ syncedCount: number; errors: string[] }> {
   const errors: string[] = [];
   let syncedCount = 0;
@@ -129,45 +139,135 @@ export async function syncAssignmentsToGoogleTasks(
     return match ? parseInt(match[1], 10) : null;
   };
 
-  // 2. Iterate through assignments and sync
-  for (const assign of assignments) {
+  const hiddenIds = new Set<number>(
+    Array.isArray(options?.hiddenAssignmentIds)
+      ? options.hiddenAssignmentIds
+      : options?.hiddenAssignmentIds instanceof Set
+      ? Array.from(options.hiddenAssignmentIds)
+      : []
+  );
+
+  const completedIds = new Set<number>(
+    Array.isArray(options?.completedAssignmentIds)
+      ? options.completedAssignmentIds
+      : options?.completedAssignmentIds instanceof Set
+      ? Array.from(options.completedAssignmentIds)
+      : []
+  );
+
+  const uncompletedIds = new Set<number>(
+    Array.isArray(options?.uncompletedAssignmentIds)
+      ? options.uncompletedAssignmentIds
+      : options?.uncompletedAssignmentIds instanceof Set
+      ? Array.from(options.uncompletedAssignmentIds)
+      : []
+  );
+
+  // Helper to check if an assignment is considered completed / marked as done
+  const isAssignmentDone = (assign: Assignment): boolean => {
+    if (uncompletedIds.has(assign.id)) return false;
+    if (completedIds.has(assign.id) || assign.isCompleted === true) return true;
+    return assign.status === 'Submitted';
+  };
+
+  // Helper to check if an assignment is hidden
+  const isAssignmentHidden = (assign: Assignment): boolean => {
+    return hiddenIds.has(assign.id) || assign.isHidden === true;
+  };
+
+  const deletedTaskIds = new Set<string>();
+  const CONCURRENCY_LIMIT = 5;
+
+  async function runWithConcurrency<T>(items: T[], worker: (item: T) => Promise<void>): Promise<void> {
+    for (let i = 0; i < items.length; i += CONCURRENCY_LIMIT) {
+      const chunk = items.slice(i, i + CONCURRENCY_LIMIT);
+      await Promise.all(chunk.map((item) => worker(item)));
+    }
+  }
+
+  // 2. Process assignments with bounded concurrency
+  await runWithConcurrency(assignments, async (assign) => {
     try {
       const taskTitle = `[${assign.courseName}] ${assign.name}`;
-      const targetStatus = assign.status === 'Submitted' ? 'completed' : 'needsAction';
-      
+      const isHidden = isAssignmentHidden(assign);
+      const isDone = isAssignmentDone(assign);
+      const isExcludedNoDeadline = !options?.syncWithoutDeadline && !assign.deadline;
+
+      // Find all existing tasks that match this assignment (by assignId or title)
+      const matchedTasks = existingTasks.filter(
+        (t) =>
+          !deletedTaskIds.has(t.id) &&
+          (getMoodleAssignIdFromNotes(t.notes) === assign.id || t.title.trim() === taskTitle.trim())
+      );
+
+      // RULE: Hidden tasks, completed tasks, or tasks without deadline (when syncWithoutDeadline is off) must not be synced.
+      // If such a task exists in Google Tasks, delete it!
+      if (isHidden || isDone || isExcludedNoDeadline) {
+        for (const task of matchedTasks) {
+          if (deletedTaskIds.has(task.id)) continue;
+          deletedTaskIds.add(task.id);
+          try {
+            const deleteResponse = await fetch(
+              `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${task.id}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              }
+            );
+            if (!deleteResponse.ok && deleteResponse.status !== 404) {
+              deletedTaskIds.delete(task.id);
+              throw new Error(`Failed to delete task: ${deleteResponse.statusText}`);
+            }
+          } catch (delErr: any) {
+            errors.push(`Failed to delete hidden/completed/no-deadline task "${task.title}": ${delErr.message}`);
+          }
+        }
+        // Do not create or update hidden, completed, or no-deadline tasks
+        return;
+      }
+
+      // Active assignment (not hidden, not done):
       const notes = `Course: ${assign.courseName}\nLink: ${assign.link}\nSource: Moodle (Noodle)\nNoodle:assignId:${assign.id}`;
 
-      // Format deadline to Zulu ISO string for Google Tasks due field
-      // Google Tasks expects UTC timestamp date. The time portion is discarded.
       let dueIso: string | undefined = undefined;
       if (assign.deadline) {
         dueIso = new Date(assign.deadline).toISOString();
       }
 
-      // Find match
-      let matchedTask = existingTasks.find(
-        (t) => getMoodleAssignIdFromNotes(t.notes) === assign.id
-      );
-
-      // Fallback: match by exact title (migration path/compatibility)
-      if (!matchedTask) {
-        matchedTask = existingTasks.find(
-          (t) => t.title.trim() === taskTitle.trim()
-        );
-      }
+      const matchedTask = matchedTasks[0];
 
       if (matchedTask) {
-        // Update existing task if needed
-        const patchBody: Partial<GoogleTask> = {};
-
-        // If manually completed in Google Tasks, don't revert to needsAction
-        if (matchedTask.status === 'completed' && targetStatus === 'needsAction') {
-          // Keep completed
-        } else if (matchedTask.status !== targetStatus) {
-          patchBody.status = targetStatus;
+        // If task was marked completed in Google Tasks, delete it as done!
+        if (matchedTask.status === 'completed') {
+          deletedTaskIds.add(matchedTask.id);
+          try {
+            const deleteResponse = await fetch(
+              `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${matchedTask.id}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              }
+            );
+            if (!deleteResponse.ok && deleteResponse.status !== 404) {
+              deletedTaskIds.delete(matchedTask.id);
+              throw new Error(`Failed to delete task: ${deleteResponse.statusText}`);
+            }
+          } catch (delErr: any) {
+            errors.push(`Failed to delete completed task "${matchedTask.title}": ${delErr.message}`);
+          }
+          return;
         }
 
-        // Compare due dates (just YYYY-MM-DD to avoid time zone/formatting mismatches)
+        // Update active task if needed
+        const patchBody: Partial<GoogleTask> = {};
+        if (matchedTask.status !== 'needsAction') {
+          patchBody.status = 'needsAction';
+        }
+
         if (dueIso) {
           const matchedDue = matchedTask.due ? matchedTask.due.substring(0, 10) : '';
           const targetDue = dueIso.substring(0, 10);
@@ -176,12 +276,18 @@ export async function syncAssignmentsToGoogleTasks(
           }
         }
 
-        // Always update notes to contain the stable ID and information if missing or mismatched
-        if (!matchedTask.notes || !matchedTask.notes.includes(`tautracker:assignId:${assign.id}`)) {
+        if (matchedTask.title.trim() !== taskTitle.trim()) {
+          patchBody.title = taskTitle;
+        }
+
+        if (
+          !matchedTask.notes ||
+          (!matchedTask.notes.includes(`Noodle:assignId:${assign.id}`) &&
+            !matchedTask.notes.includes(`tautracker:assignId:${assign.id}`))
+        ) {
           patchBody.notes = notes;
         }
 
-        // If there's anything to update
         if (Object.keys(patchBody).length > 0) {
           const updateResponse = await fetch(
             `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${matchedTask.id}`,
@@ -200,11 +306,11 @@ export async function syncAssignmentsToGoogleTasks(
           }
         }
       } else {
-        // Create new task
+        // Create new active task
         const body: Record<string, any> = {
           title: taskTitle,
           notes: notes,
-          status: targetStatus,
+          status: 'needsAction',
         };
 
         if (dueIso) {
@@ -232,33 +338,46 @@ export async function syncAssignmentsToGoogleTasks(
     } catch (error: any) {
       errors.push(`Assignment "${assign.name}": ${error.message}`);
     }
-  }
+  });
 
-  // 3. Delete orphaned tasks
-  const currentAssignIds = new Set(assignments.map(a => a.id));
-  for (const task of existingTasks) {
+  // 3. Delete orphaned tasks or completed tasks in Google Tasks
+  const activeAssignIds = new Set(
+    assignments
+      .filter((a) => !isAssignmentHidden(a) && !isAssignmentDone(a) && (options?.syncWithoutDeadline || !!a.deadline))
+      .map((a) => a.id)
+  );
+
+  const tasksToDelete = existingTasks.filter((task) => {
+    if (deletedTaskIds.has(task.id)) return false;
     const taskId = getMoodleAssignIdFromNotes(task.notes);
-    // If it has a tautracker ID but it's not in our active assignments list, it was untracked/deleted
-    // We only delete tasks that are NOT completed or hidden, to preserve historical completed tasks.
-    if (taskId !== null && !currentAssignIds.has(taskId) && !task.hidden && task.status !== 'completed') {
-      try {
-        const deleteResponse = await fetch(
-          `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${task.id}`,
-          {
-            method: 'DELETE',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-        if (!deleteResponse.ok) {
-          throw new Error(`Failed to delete orphaned task: ${deleteResponse.statusText}`);
+    if (taskId === null) return false;
+    const isStillActive = activeAssignIds.has(taskId);
+    const isCompletedInGoogle = task.status === 'completed';
+    const isHiddenInGoogle = task.hidden === true;
+    return !isStillActive || isCompletedInGoogle || isHiddenInGoogle;
+  });
+
+  await runWithConcurrency(tasksToDelete, async (task) => {
+    if (deletedTaskIds.has(task.id)) return;
+    deletedTaskIds.add(task.id);
+    try {
+      const deleteResponse = await fetch(
+        `https://tasks.googleapis.com/tasks/v1/lists/${taskListId}/tasks/${task.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
         }
-      } catch (error: any) {
-        errors.push(`Failed to delete orphaned task "${task.title}": ${error.message}`);
+      );
+      if (!deleteResponse.ok && deleteResponse.status !== 404) {
+        deletedTaskIds.delete(task.id);
+        throw new Error(`Failed to delete orphaned/completed task: ${deleteResponse.statusText}`);
       }
+    } catch (error: any) {
+      errors.push(`Failed to delete task "${task.title}": ${error.message}`);
     }
-  }
+  });
 
   return { syncedCount, errors };
 }

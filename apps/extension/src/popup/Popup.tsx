@@ -1,16 +1,17 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult } from '@tautracker/moodle-client';
-import { getStoredToken, getCachedSyncResult, getSettings } from '../shared/storage.js';
-import { syncNowOnBackground } from '../shared/messaging.js';
+import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings } from '../shared/storage.js';
+import { syncNowOnBackground, syncGoogleTasksOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
+import logoImg from '../assets/logo.png';
 import './Popup.css';
 
 export default function Popup() {
   const [token, setToken] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [settings, setSettings] = useState<any>(null);
+  const [settings, setSettingsState] = useState<any>(null);
 
   async function loadData() {
     try {
@@ -19,7 +20,7 @@ export default function Popup() {
       const cached = await getCachedSyncResult();
       setSyncResult(cached);
       const s = await getSettings();
-      setSettings(s);
+      setSettingsState(s);
     } catch (e) {
       console.error('Error loading popup data:', e);
     } finally {
@@ -57,6 +58,19 @@ export default function Popup() {
     }
   };
 
+  const handleMarkDone = async (e: React.MouseEvent, assignId: number) => {
+    e.stopPropagation();
+    if (!settings) return;
+    const completed = Array.from(new Set([...(settings.completedAssignments || []), assignId]));
+    const uncompleted = (settings.uncompletedAssignments || []).filter((id: number) => id !== assignId);
+    const updated = { ...settings, completedAssignments: completed, uncompletedAssignments: uncompleted };
+    setSettingsState(updated);
+    await saveSettings({ completedAssignments: completed, uncompletedAssignments: uncompleted });
+    if (settings.googleTasksEnabled) {
+      syncGoogleTasksOnBackground(false).catch(() => {});
+    }
+  };
+
   if (loading && !syncResult) {
     return (
       <div className="popup-loading">
@@ -70,6 +84,7 @@ export default function Popup() {
   if (!token) {
     return (
       <div className="popup-container unauth" dir={isHe ? 'rtl' : 'ltr'}>
+        <img src={logoImg} alt="Noodle Logo" style={{ width: '84px', height: '84px', objectFit: 'contain', marginBottom: '0.75rem' }} />
         <h3>Noodle</h3>
         <p className="subtitle" style={{ margin: '0.5rem 0 1.5rem', textAlign: 'center' }}>
           {isHe ? 'סנכרן מטלות מודל ישירות ל-Google Tasks' : 'Track Moodle assignments directly on Google Tasks'}
@@ -81,12 +96,58 @@ export default function Popup() {
     );
   }
 
-  const pendingAssigns = syncResult?.assignments.filter((a) => a.status !== 'Submitted') || [];
+  const hiddenSet = new Set<number>(settings?.hiddenAssignments || []);
+  const completedSet = new Set<number>(settings?.completedAssignments || []);
+  const uncompletedSet = new Set<number>(settings?.uncompletedAssignments || []);
+
+  const isDone = (a: any) => {
+    if (uncompletedSet.has(a.id)) return false;
+    if (completedSet.has(a.id) || a.isCompleted === true) return true;
+    return a.status === 'Submitted';
+  };
+
+  const now = Date.now();
+  const pendingAssigns = (syncResult?.assignments || [])
+    .filter((a: any) => !hiddenSet.has(a.id) && !a.isHidden && !isDone(a))
+    .sort((a: any, b: any) => {
+      const aHasNoDl = !a.deadline;
+      const bHasNoDl = !b.deadline;
+      const aTime = a.deadline ? new Date(a.deadline).getTime() : 0;
+      const bTime = b.deadline ? new Date(b.deadline).getTime() : 0;
+      const aIsPast = !aHasNoDl && aTime < now;
+      const bIsPast = !bHasNoDl && bTime < now;
+
+      // 1. Active upcoming deadlines first (nearest first)
+      if (!aHasNoDl && !aIsPast && !bHasNoDl && !bIsPast) return aTime - bTime;
+      if (!aHasNoDl && !aIsPast) return -1;
+      if (!bHasNoDl && !bIsPast) return 1;
+
+      // 2. Tasks with no deadline next
+      if (aHasNoDl && bHasNoDl) return a.id - b.id;
+      if (aHasNoDl) return -1;
+      if (bHasNoDl) return 1;
+
+      // 3. Past-due tasks last (most recently overdue first)
+      return bTime - aTime;
+    });
+
+  // Check for currently active Zoom sessions (within 15 min before start up to 2 hours after start)
+  const interestedList = settings?.interestedMeetings || [];
+  const activeMeetings = (syncResult?.meetings || []).filter((m: any) => {
+    if (!m.startTime) return false;
+    const key = m.meetingNumber || m.meetingUrl;
+    if (interestedList.includes(`hidden_${key}`)) return false;
+    const startMs = new Date(m.startTime).getTime();
+    if (isNaN(startMs)) return false;
+    const diffMinutes = (now - startMs) / (1000 * 60);
+    return diffMinutes >= -15 && diffMinutes <= 120;
+  });
 
   return (
     <div className="popup-container" dir={isHe ? 'rtl' : 'ltr'}>
       <header className="popup-header">
-        <div className="popup-brand" onClick={handleOpenDashboard}>
+        <div className="popup-brand" onClick={handleOpenDashboard} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+          <img src={logoImg} alt="Noodle Logo" style={{ width: '34px', height: '34px', objectFit: 'contain' }} />
           <span>Noodle</span>
         </div>
         <button className="sync-icon-btn" onClick={handleSync} disabled={loading} title={isHe ? 'סנכרן עכשיו' : 'Sync now'}>
@@ -95,8 +156,34 @@ export default function Popup() {
       </header>
 
       <main className="popup-main-content">
+        {activeMeetings.length > 0 && (
+          <div className="popup-active-zoom-banner">
+            {activeMeetings.slice(0, 2).map((m: any, idx: number) => {
+              const courseTitle = settings?.coursesCustomNames?.[m.courseId] || m.courseName;
+              return (
+                <div key={`${m.meetingUrl}_${idx}`} className="popup-active-zoom-row">
+                  <div className="popup-active-zoom-info">
+                    <span className="popup-live-dot-badge">● {isHe ? 'פעיל כעת' : 'Live Now'}</span>
+                    <span className="popup-active-zoom-title" title={`${courseTitle} - ${m.title}`}>
+                      {courseTitle}: {m.title}
+                    </span>
+                  </div>
+                  <a
+                    href={m.meetingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="popup-join-zoom-btn"
+                  >
+                    📹 {isHe ? 'הצטרף' : 'Join'}
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="popup-section-title">
-          <span>{isHe ? 'מטלות קרובות' : 'Upcoming Assignments'}</span>
+          <span>{isHe ? 'מטלות לביצוע' : 'To-Do Assignments'}</span>
           <span className="count-badge">{pendingAssigns.length}</span>
         </div>
 
@@ -104,7 +191,7 @@ export default function Popup() {
           {pendingAssigns.length === 0 ? (
             <div className="popup-empty">{isHe ? 'אין מטלות לביצוע! 🎉' : 'No pending assignments! 🎉'}</div>
           ) : (
-            pendingAssigns.slice(0, 5).map((a) => {
+            pendingAssigns.slice(0, 5).map((a: any) => {
               const color = settings?.coursesColorMap?.[a.courseId] || '#6366f1';
               const name = settings?.coursesCustomNames?.[a.courseId] || a.courseName;
 
@@ -119,7 +206,15 @@ export default function Popup() {
               return (
                 <div
                   key={a.id}
-                  className="popup-assign-card"
+                  className="popup-assign-card clickable"
+                  onClick={() => {
+                    if (a.link) {
+                      window.open(a.link, '_blank', 'noopener,noreferrer');
+                    } else {
+                      handleOpenDashboard();
+                    }
+                  }}
+                  title={isHe ? 'לחץ לפתיחת המטלה במודל' : 'Click to open assignment in Moodle'}
                   style={{
                     borderLeft: isHe ? 'none' : `3.5px solid ${color}`,
                     borderRight: isHe ? `3.5px solid ${color}` : 'none',
@@ -131,7 +226,17 @@ export default function Popup() {
                     </span>
                     <span className="popup-assign-name">{a.name}</span>
                   </div>
-                  <span className="popup-due-tag">{dueText}</span>
+                  <div className="popup-assign-actions">
+                    <span className="popup-due-tag">{dueText}</span>
+                    <button
+                      type="button"
+                      className="popup-done-btn"
+                      onClick={(e) => handleMarkDone(e, a.id)}
+                      title={isHe ? 'סמן כבוצע' : 'Mark as Done'}
+                    >
+                      ✓
+                    </button>
+                  </div>
                 </div>
               );
             })

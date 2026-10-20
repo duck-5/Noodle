@@ -115,6 +115,7 @@ graph LR
 | **TC-CRS-05** | Course Color Swatch & Hex Picker | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses |
 | **TC-CRS-06** | Course Search & Real-Time Filtering | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses |
 | **TC-CRS-07** | Direct Moodle Course Link Launch | All (Mobile + Chrome + Firefox) | Browser Agent | Courses |
+| **TC-CRS-08** | Laboratory Course Assignment Hiding Prompt | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses |
 | **TC-ASN-01** | Aggregated Chronological Assignment Feed | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-02** | Proximity Urgency Badges & Colors | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-03** | Submission Status & Grade Pill | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
@@ -126,12 +127,16 @@ graph LR
 | **TC-ASN-09** | Course-Specific Filter Banner & Deep Navigation | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
 | **TC-ASN-10** | "Next Up" Urgent Deadline Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-11** | Pull-to-Refresh Gesture | Mobile Only | Browser Agent | Dashboard |
+| **TC-ASN-12** | Assignments Split-Pane Calendar View & Deep Item Selection | Extension (Chrome & Firefox) | Automated & Browser Agent | Assignments |
 | **TC-DASH-REHAUL-01** | Tracked Course Card Row Expansion (Zoom & 5 Assignments) | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-02** | Upcoming To-Do Queue Item Filtering & Drawer Expansion | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-03** | Manage Courses Modal Dialog & Semester Partitioning | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-04** | Dark Noodle "Coffee" Theme Visual Verification | Extension (Chrome & Firefox) | Automated & Browser Agent | Theming |
 | **TC-DASH-REHAUL-05** | Settings Mock Course Sandbox Generation & Multi-State Data | Extension (Chrome & Firefox) | Automated & Browser Agent | Settings / Sandbox |
 | **TC-DASH-REHAUL-06** | Zoom Meeting Unhide & Direct Action Controls | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-DASH-REHAUL-07** | Squircle File Buttons & Arrow-Only Download Action | Extension (Chrome & Firefox) | Automated & Browser Agent | UI Components |
+| **TC-DASH-REHAUL-08** | Deterministic Sync Order & Undated Task Stability | All (Mobile + Chrome + Firefox) | Automated | Sync Engine |
+| **TC-DASH-REHAUL-09** | Course Page Grid Containment & No Frame Overflow | Extension (Chrome & Firefox) | Automated & Browser Agent | Course Detail |
 | **TC-DET-01** | Horizontal Topic / Section Pill Bar | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-02** | Expand / Collapse All Sections | All (Mobile + Chrome + Firefox) | Browser Agent | Course Detail |
 | **TC-DET-03** | Course Statistics Summary Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Detail |
@@ -141,6 +146,8 @@ graph LR
 | **TC-ZM-02** | Active Meeting Detection (`● פעיל כעת`) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
 | **TC-ZM-03** | Zoom Meeting Interest / Favorite Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
 | **TC-ZM-04** | One-Tap Join Zoom Meeting | All (Mobile + Chrome + Firefox) | Browser Agent | Zoom Meetings |
+| **TC-ZM-05** | Multi-Modal Zoom Link Extraction & Deduplication | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
+| **TC-ZM-06** | Recurring Zoom Session Collapsing, Uncluttered Panel & Show-Hidden Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
 | **TC-FILE-01** | Aggregated Course Files Tree | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-02** | File Search by Keyword & Extension | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-03** | File-Type Badges & Size Formatting | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
@@ -155,9 +162,10 @@ graph LR
 | **TC-GT-02** | Automatic "Noodle" Task List Provisioning | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-03** | Assignment Mapping to Task Format | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-04** | Idempotent Tag Injection (`Noodle:assignId`) | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
-| **TC-GT-05** | Completion Sync to Google Tasks | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
-| **TC-GT-06** | Preserve User Google Tasks Overrides | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
+| **TC-GT-05** | Completed Task Deletion from Google Tasks | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
+| **TC-GT-06** | Hidden Task Exclusion & Google Tasks Deletion | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-07** | Manual Google Tasks Sync Trigger | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
+| **TC-GT-08** | Assignments Without Deadline Sync Setting & Deletion Logic | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
@@ -170,6 +178,7 @@ graph LR
 | **TC-UI-02** | Slate Dark vs Warm Cream Noodle Theme | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
 | **TC-UI-03** | Reactive Theme/Language Update (No Reload) | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
 | **TC-UI-04** | Custom Urgency Days Thresholds | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Localization & Theme |
+| **TC-UI-05** | Account Section Links & Elaborated About Page Experience | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
 | **TC-BG-01** | Recurring Background Sync Alarm / Task | All (Mobile + Chrome + Firefox) | Automated | Background Sync |
 | **TC-BG-02** | New Assignment Discovery Notification | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
 | **TC-BG-03** | 24-Hour and 1-Hour Deadline Alerts | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
@@ -183,6 +192,7 @@ graph LR
 | **TC-EXT-BRW-03** | Gecko Protocol Interception Parity | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-04** | Firefox Total Cookie Protection Logout | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-05** | MV3 Ephemeral Service Worker Lifecycle | Extension (Chromium Specific)| Automated | Cross-Browser |
+| **TC-EXT-BRW-06** | MV3 Dormant Service Worker Message Wake-Up & Channel Preservation | Extension (Chromium Specific) | Automated | Cross-Browser |
 | **TC-EXT-DEVTOOLS-01** | Chrome DevTools Service Worker & Options Log Stream | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-EXT-DEVTOOLS-02** | Full Sync Pipeline DevTools Network & UI Validation | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-EXT-PROMO-01** | High-Resolution Webstore Promotional Asset Suite Generation | Extension (Chrome & Webstore) | Automated | Extension Branding & Assets |
@@ -207,6 +217,7 @@ graph LR
 | **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-18** | Scraper Strategy Gated by enableScraping Configuration | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+
 
 ---
 
@@ -401,6 +412,19 @@ graph LR
   1. Click the external link icon ↗ on any course card in Chrome or Firefox.
   2. Verify browser tab opens to the correct course URL.
 
+#### TC-CRS-08: Laboratory Course Assignment Hiding Prompt
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that when a student selects or tracks a course whose title contains `"מעבדה"` (laboratory, e.g. "מעבדה בפיסיקה א", "מעבדה במערכות ספרתיות"), the UI detects the keyword and prompts the user with an option to automatically hide all assignments for that course. This prevents dashboard clutter from extensive catalogs of optional or unassigned lab experiments while allowing students to manually unhide specific assignments later.
+* **Automated Test Flow**:
+  1. Trigger course tracking toggle on a course containing `"מעבדה"` in its name.
+  2. Confirm detection logic identifies the lab course.
+  3. Assert confirming the prompt adds all assignment IDs belonging to that course into `hiddenAssignments`.
+* **Browser Agent Prompt / Action**:
+  1. In Onboarding or Manage Courses modal, toggle on a course containing "מעבדה".
+  2. Verify confirmation modal appears asking whether to hide all assignments for the laboratory course.
+  3. Confirm the modal and verify that the course's assignments are populated in `hiddenAssignments` and hidden from the active dashboard feed.
+
 ---
 
 ### Category 3: Unified Assignments Dashboard
@@ -528,12 +552,12 @@ graph LR
 #### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Drawer Expansion
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer displaying attachments with download links, subject pill, and course navigation.
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer (`.queue-item-expanded`) displaying attachments, course subject files (`קבצי הנושא`), submitted files, and the full action suite (Go to Course, Mark Done, Hide, and Submit in Moodle).
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
 * **Browser Agent Prompt / Action**:
   1. Verify queue list does not contain completed or hidden assignments.
   2. Click a queue item card.
-  3. Verify `.queue-item-expanded` expands smoothly with attachment pills and "Go to Course" button.
+  3. Verify `.queue-item-expanded` expands smoothly with attachment pills, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
 
 #### TC-DASH-REHAUL-03: Manage Courses Modal Dialog & Semester Partitioning
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -549,12 +573,12 @@ graph LR
 #### TC-DASH-REHAUL-04: Dark Noodle "Coffee" Theme Visual Verification
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that selecting the `coffee` theme activates the warm dark roast palette (`#1e1612` background), lighter mocha glass cards (`rgba(44, 34, 27, 0.94)`), caramel crema accents (`#e28743`), and high-contrast milk froth typography (`#fff8f0`) with high legibility across all views.
+* **Description**: Verifies that selecting the `coffee` theme activates the refined dark roast palette (`#14100d` dark espresso background, no reddish/burgundy hues), dark roast cards (`rgba(29, 23, 19, 0.94)`), silky golden crema accents (`#c4996c`), sage matcha accents (`#8da882`), and velvety froth typography (`#fbf6f0`) with high legibility across all views.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-04"`
 * **Browser Agent Prompt / Action**:
   1. Toggle theme to "Coffee" in Settings.
   2. Verify document body receives `.theme-coffee`.
-  3. Verify cards and panels are visually lighter than the background with sharp, readable text.
+  3. Verify cards and panels have dark roast background with golden crema border highlights and sharp, readable text.
 
 #### TC-DASH-REHAUL-05: Settings Mock Course Sandbox Generation & Multi-State Data
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -575,6 +599,42 @@ graph LR
   1. Expand a course row with Zoom meetings.
   2. Click the eye toggle icon to hide a meeting; verify the icon switches to slashed eye (`EyeOffIcon`).
   3. Click the eye icon again; verify the meeting returns to visible state (`EyeIcon`).
+
+#### TC-DASH-REHAUL-07: Squircle File Buttons, Vertical File Column Layout & Arrow-Only Download Action
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that all file lists (attachments, subject files, and submitted files) render in a vertical column layout (`.files-column-group`, `.files-column-list`, `.file-column-item`) and that file chips (`.submitted-file-chip`) and file action buttons (`.file-action-btn`) use squircle borders (`border-radius: 8px`). Verifies that the download action button (`.file-download-btn`) displays exclusively the SVG download arrow icon without extraneous text, equipped with accessible `title` and `aria-label` tooltips.
+* **Browser Agent Prompt / Action**:
+  1. Inspect any assignment card drawer or Course Detail files list.
+  2. Verify `.files-column-list` stacks file chips vertically in a single column (`flex-direction: column`).
+  3. Verify `.file-action-btn` elements have rounded squircle corners (`border-radius: 8px`).
+  4. Verify `.file-download-btn` displays only the arrow icon with `title="הורדת קובץ"`.
+
+#### TC-ASN-12: Assignments Split-Pane Calendar View & Deep Item Selection
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that clicking the "📅 תצוגת לוח שנה" / "📅 Calendar View" toggle button in the Assignments tab shrinks the assignments feed into a split-pane workspace (`.assignments-workspace.calendar-open`) and renders a sticky monthly calendar grid. Clicking an assignment pill inside a calendar day cell ensures its status filter is enabled, expands the assignment card in the feed, and scrolls it into view.
+* **Browser Agent Prompt / Action**:
+  1. Navigate to the Assignments Tab (`assignments`).
+  2. Click `#toggle-assignments-calendar-btn`.
+  3. Verify `.assignments-workspace` receives `.calendar-open` and `.assignments-calendar-pane` is visible alongside the feed.
+  4. Click an assignment pill (`.calendar-assign-pill`) on the calendar.
+  5. Verify the corresponding `#assign-card-{id}` in the feed expands (`expandedAssignId === id`) and scrolls into view.
+
+#### TC-DASH-REHAUL-08: Deterministic Sync Order & Undated Task Stability
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that assignments returned by `SyncEngine` preserve the exact discovery order from Moodle REST/Scraper APIs regardless of asynchronous network completion timings, and that UI sort algorithms use stable tie-breakers (`a.id - b.id`) preventing undated assignments from jumping positions upon sync.
+* **Automated Playwright Command**: `pnpm --filter @tautracker/moodle-client test -t "syncEngine"`
+
+#### TC-DASH-REHAUL-09: Course Page Grid Containment & No Frame Overflow
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the Course Detail View (`.course-detail-view`) and its detail grid (`.detail-grid`) contain all assignment cards, long file titles, and action buttons within the viewport without horizontal sliding or page overflow.
+* **Browser Agent Prompt / Action**:
+  1. Open Course Detail View for any course with long assignments or multiple attachments.
+  2. Verify no horizontal scrollbar appears on `.course-detail-view`.
+  3. Resize viewport below 960px; verify grid transitions smoothly into single-column layout.
 
 ---
 
@@ -667,6 +727,35 @@ graph LR
 * **Browser Agent Prompt / Action**:
   1. Click "הצטרף לזום".
   2. Verify browser attempts to launch `zoommtg://` protocol or opens `tau-ac-il.zoom.us` join URL.
+
+#### TC-ZM-05: Multi-Modal Zoom Link Extraction & Deduplication
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Validates extraction of Zoom meeting links across multiple Moodle activity modalities: URL modules with direct Zoom links, URL modules with Hebrew keywords ("קישור לזום", "מפגש מקוון", "שיעור זום"), LTI modules with automatic Moodle view fallback when scraping is disabled or fails, embedded HTML links in label modules (`modname === 'label'`), and section summaries. Verifies that duplicate meeting entries within the same course are deterministically deduplicated.
+* **Automated Test Flow**:
+  1. Mock `core_course_get_contents` with a course containing: URL module (`zoom.us`), URL module with Hebrew keyword ("מפגש מקוון"), LTI module (`modname === 'lti'`), Label module with `<a href="...zoom.us...">`, and section summary with embedded link.
+  2. Execute `runSync` with `enableScraping: false`.
+  3. Assert all 4 distinct Zoom meeting sources are detected, normalized (`https://tau-ac-il.zoom.us/j/...`), and populated with meetingNumber and password.
+  4. Assert duplicate Zoom links across sections are collapsed into a single meeting record.
+
+#### TC-ZM-06: Recurring Zoom Session Collapsing, Uncluttered Panel & Show-Hidden Toggle
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Validates that recurring weekly sessions of the same room/meetingNumber are collapsed into a single entry representing the nearest upcoming meeting (or the latest past meeting if none upcoming). Validates that the Dashboard and Course Detail Zoom panels render only visible meetings by default, preventing clutter when courses have 10+ recitation/lecture groups. Provides a toggle button ("הצג פגישות מוסתרות" / "Show hidden meetings") to expand hidden sessions with unhide actions, alongside bulk "הצג הכל" / "הסתר הכל" buttons per course.
+* **Automated Test Flow**:
+  1. Call `collapseRecurringMeetings(meetings, referenceDate)` with 3 weekly instances of Lecture 01 (one past, two upcoming).
+  2. Verify it collapses to the single nearest upcoming slot (`2026-10-16`).
+  3. Verify past-only recurring sessions collapse to the latest past session (`2026-10-12`).
+  4. Verify meetings without dates are preserved.
+  5. Verify `parseAppConf` parses `window.__appConf__` JSON and regex configurations.
+* **Browser Agent Prompt / Action**:
+  1. In the Dashboard (`pnpm --filter extension run dev`), expand a course with multiple Zoom meetings.
+  2. Verify that only visible meetings are rendered in the primary list without opacity clutter.
+  3. Click "הסתר הכל" ("Hide all"); verify all meetings for that course are hidden and empty state "כל קישורי הזום מוסתרים עבור קורס זה" is displayed.
+  4. Click "הצג פגישות מוסתרות"; verify hidden meetings expand in a dashed container.
+  5. Click the eye icon on one meeting; verify it moves immediately to the visible list.
+  6. Verify meetings in other courses remain unaffected.
+
 
 ---
 
@@ -807,24 +896,25 @@ graph LR
   2. Sync assignment with ID 999.
   3. Assert `PATCH` was called for existing task ID, and `POST` was NOT called.
 
-#### TC-GT-05: Completion Sync to Google Tasks
+#### TC-GT-05: Completed Task Deletion from Google Tasks
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated`
-* **Description**: When an assignment status changes to `Submitted` in Moodle, the sync engine updates the task status in Google Tasks to `completed`.
+* **Description**: When an assignment is submitted in Moodle or manually marked as done (`completedAssignments`), the sync engine ensures it is deleted from Google Tasks (`DELETE /tasks/{id}`) and never synced as an active task. Also verifies that tasks marked completed inside Google Tasks are deleted on sync.
 * **Automated Test Flow**:
-  1. Mock Moodle assignment submitted.
-  2. Run `syncAssignmentsToGoogleTasks()`.
-  3. Assert outgoing Google Tasks payload contains `{ status: 'completed' }`.
+  1. Mock Moodle assignment submitted, or in `completedAssignmentIds`.
+  2. Mock existing Google task with `status: 'needsAction'`.
+  3. Run `syncAssignmentsToGoogleTasks()`.
+  4. Assert outgoing request calls `DELETE` for the existing task ID and no `POST` or `PATCH` is performed.
 
-#### TC-GT-06: Preserve User Google Tasks Overrides
+#### TC-GT-06: Hidden Task Exclusion & Google Tasks Deletion
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated`
-* **Description**: If a user manually marks a task as `completed` inside the Google Tasks app, Noodle never reverts it back to `needsAction`, respecting the student's personal checkoff.
+* **Description**: Verifies that assignments set as hidden (`hiddenAssignments`) are never synced to Google Tasks. If an existing task in Google Tasks belongs to a hidden assignment, it is immediately deleted (`DELETE /tasks/{id}`).
 * **Automated Test Flow**:
-  1. Mock existing Google task with `status: 'completed'`.
-  2. Mock Moodle assignment still open (`status: 'New'`).
-  3. Run sync.
-  4. Assert task status is NOT updated back to `needsAction`.
+  1. Mock active assignment added to `hiddenAssignmentIds`.
+  2. Mock existing Google task matching the assignment.
+  3. Run `syncAssignmentsToGoogleTasks()`.
+  4. Assert `DELETE` is called for the existing task, and no new task is created for hidden assignments.
 
 #### TC-GT-07: Manual Google Tasks Sync Trigger
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
@@ -834,6 +924,23 @@ graph LR
   1. In Settings, expand Google Tasks section.
   2. Click "Sync Now".
   3. Verify status message updates with success count.
+
+#### TC-GT-08: Assignments Without Deadline Sync Setting & Deletion Logic
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies the `syncWithoutDeadline` setting (default: `false` / off) in `GoogleTasksSyncOptions`.
+  * **When `syncWithoutDeadline === false` (default)**: Assignments without an explicit deadline (`duedate === 0` or missing) are excluded from Google Tasks creation and updates. Furthermore, if a task matching an undated assignment already exists in Google Tasks, the sync engine cleans it up and deletes it (`DELETE /tasks/{id}`).
+  * **When `syncWithoutDeadline === true`**: Assignments without deadlines are synced with the `due` date property omitted.
+* **Automated Test Flow**:
+  1. Provide mock assignments: Assignment A (due in 2 days), Assignment B (no deadline, `duedate: 0`).
+  2. Run `syncAssignmentsToGoogleTasks()` with `syncWithoutDeadline: false`. Assert Task A is created, Task B is omitted.
+  3. Mock an existing task for Assignment B in Google Tasks. Run sync with `syncWithoutDeadline: false`. Assert `DELETE` is called for Task B's ID.
+  4. Run `syncAssignmentsToGoogleTasks()` with `syncWithoutDeadline: true`. Assert Task B is created without `due`.
+* **Browser Agent Prompt / Action**:
+  1. Open Settings -> Google Tasks.
+  2. Verify the toggle "סנכרון מטלות ללא תאריך יעד ל-Google Tasks" / "Sync assignments without deadline to Google Tasks" defaults to OFF with descriptive explanation text.
+  3. Enable the switch and trigger "Sync Now". Verify undated assignments populate Google Tasks.
+  4. Disable the switch and trigger "Sync Now". Verify undated assignments are pruned from Google Tasks.
 
 ---
 
@@ -943,6 +1050,21 @@ graph LR
   1. Update settings: `assignmentGreenDaysThreshold = 14`.
   2. Assignment due in 10 days classified as Yellow instead of Green.
 
+#### TC-UI-05: Account Section Links & Elaborated About Page Experience
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Browser Agent`
+* **Description**: Verifies that both the Account card (in Settings) and the About Tab present comprehensive developer information, external links, and interactive guidance:
+  * **Account Section (Settings)**: Displays developer credits for **Yuval Mantin** and **Michael Kushnir**, official GitHub repository link (`https://github.com/duck-5/Noodle`), issue reporting link (`https://github.com/duck-5/Noodle/issues`), support email `noodle.d3v@gmail.com`, and Chrome Web Store review link (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`).
+  * **Elaborated About Tab**: Features brand hero banner, actionable quick-link cards, tour relaunch button, and 3 collapsible accordions (`<details className="about-accordion">`) detailing:
+    1. Core Features & Cockpit Overview
+    2. Pro Tips & Shortcuts (keyboard shortcuts `[←] [→] [Esc]`, 3-way theme toggle, search filters)
+    3. Privacy & Architecture (100% client-side, zero analytics, direct REST/AJAX)
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Settings and locate the Account card. Verify all links (GitHub, Issues, Email, Chrome Web Store) and credits for Yuval Mantin & Michael Kushnir are rendered and clickable.
+  2. Navigate to the About tab.
+  3. Verify the 5 action link cards render.
+  4. Click each of the 3 accordion sections to verify they expand and collapse smoothly with localized content.
+
 ---
 
 ### Category 12: Background Synchronization & Notifications Engine
@@ -1002,24 +1124,44 @@ graph LR
   2. Verify CSS grid transition and width reduction.
   3. Reload tab; assert collapsed state persists.
 
-#### TC-EXT-03: First-Time Interactive Onboarding Tour
+#### TC-EXT-03: First-Time Interactive Onboarding Tour (v4 Cockpit Redesign)
 * **Platform Target**: `Extension (Chrome & Firefox)`
-* **Modality**: `Browser Agent`
-* **Description**: For a fresh installation without `hasSeenTour`, renders an interactive step-by-step tooltip walkthrough guiding the user across Dashboard, Courses, and Settings in both Chrome and Firefox.
+* **Modality**: `Browser Agent` & `Automated`
+* **Description**: For a fresh installation without `hasSeenTour` (or when relaunched from the About tab), renders the v4 glassmorphic 10-step interactive walkthrough in both Chrome and Firefox:
+  1. **Step 0 (Cockpit Overview)**: Centered modal introducing Noodle's decentralized local-first architecture, complete privacy, and student cockpit.
+  2. **Step 1 (Real-Time Sync Button)**: Highlights `.header-sync-btn` on Dashboard, explaining instant direct Moodle fetching and background synchronization to Google Tasks without intermediate servers.
+  3. **Step 2 (Next Task Spotlight)**: Docks to bottom viewport; highlights `.hero-spotlight-card` with live countdown, 1-click submission link, prompt attachments, and relevant course topic files.
+  4. **Step 3 (Task Actions: Done & Hidden)**: Highlights `.hero-actions-row` & `.queue-card`, demonstrating 1-click completion (`✓`) and hiding tasks (`👁`), with dynamic removal from the active to-do queue.
+  5. **Step 4 (Manage Courses Modal)**: Automatically opens the "Manage Courses" modal (`isManageModalOpen: true`), highlighting `.modal-content` with top viewport alignment to prevent obscuring by the tour card. Explains setting custom course nicknames, assigning theme colors, tracking checkboxes, and semester grouping.
+  6. **Step 5 (Live Zoom & Link Filtering)**: Closes modal and automatically expands the first tracked course row (`expandedCourseId`), highlighting `.course-row-card`. Explains using the eye icon (`👁`) to filter out recitations the student does not attend, the "Active Now" banner with 1-click join, and viewing hidden sessions.
+  7. **Step 6 (Assignments Hub & Feed)**: Automatically switches to the `assignments` tab, highlighting `.filter-bar`. Explains global search, 4 status filters (To Do, Past, Completed, Hidden), and expandable materials drawers.
+  8. **Step 7 (Grades & GPA Tracker)**: Automatically switches to the `grades` tab, highlighting `.stat-card`. Explains cumulative GPA tracking, course grade components, and automatic Moodle grade synchronization.
+  9. **Step 8 (Settings & Google Tasks Sync)**: Automatically switches to the `settings` tab, highlighting `.google-tasks-section`. Explains 2-way sync with Google Tasks and Calendar, theme selection (Dark, Noodle, Coffee), and urgency notification thresholds.
+  10. **Step 9 (Ready to Roll & About)**: Automatically switches to the `about` tab, highlighting `.tab-about`. Explains how to relaunch the tour anytime, view developer credits, keyboard shortcuts, and version info. Exiting smoothly returns the user to the Dashboard (`setActiveTab('dashboard')`).
+* **Navigation & Interaction Controls**:
+  - 10-segment segmented progress bar with click-to-step navigation.
+  - Keyboard navigation (`ArrowRight` / `ArrowLeft` adapted to RTL/LTR, `Escape` to close).
+  - Multi-theme styling verified across Slate Dark, Warm Noodle, and Dark Espresso Coffee themes.
 * **Browser Agent Prompt / Action**:
-  1. Clear `hasSeenTour` in storage.
-  2. Open options page.
-  3. Verify Step 1 tooltip appears with "Next" and "Skip" controls.
+  1. Clear `hasSeenTour` in local storage or click "Start Tour" in the About tab.
+  2. Verify Step 0 renders centered with blurred backdrop, icon badge, and feature chips.
+  3. Advance using `ArrowLeft` (in RTL Hebrew) or click "Next".
+  4. Assert Step 1 highlights `.header-sync-btn`.
+  5. Assert Step 4 automatically opens the Manage Courses modal and highlights the modal content with top padding.
+  6. Assert Step 5 closes the modal and automatically expands the course row drawer showing Zoom meetings.
+  7. Assert Steps 6, 7, 8, and 9 automatically switch tabs (`assignments`, `grades`, `settings`, `about`) and highlight respective sections.
+  8. Test exiting via `Escape` key or clicking "Finish" on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
 
 #### TC-EXT-BRW-01: Manifest Build Transformation Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated`
-* **Description**: Tests that running `pnpm --filter extension run build:chrome` generates a valid Manifest V3 containing `"background": { "service_worker": ... }`, while `pnpm --filter extension run build:firefox` generates a valid Manifest V3 containing `"background": { "scripts": ... }` and `"browser_specific_settings": { "gecko": { "id": "noodle@tau", ... } }`.
+* **Description**: Tests that running `pnpm --filter extension run build:chrome` generates a valid Manifest V3 containing `"background": { "service_worker": ... }` in `dist/`, while `pnpm --filter extension run build:firefox` generates a valid Manifest V3 containing `"background": { "scripts": ... }` and `"browser_specific_settings": { "gecko": { "id": "noodle@tau", ... } }` in `dist-firefox/`. Ensures strict build output isolation between browsers.
 * **Automated Test Flow**:
   1. Execute `pnpm --filter extension run build:chrome`.
   2. Parse output `dist/manifest.json`; assert `background.service_worker` exists and `background.scripts` is undefined.
   3. Execute `pnpm --filter extension run build:firefox`.
-  4. Parse output `dist/manifest.json`; assert `background.scripts` is an array and `browser_specific_settings.gecko.id` equals `"noodle@tau"`.
+  4. Parse output `dist-firefox/manifest.json`; assert `background.scripts` is an array and `browser_specific_settings.gecko.id` equals `"noodle@tau"`.
+  5. Assert that `dist/manifest.json` remains completely unmodified and preserved with `background.service_worker`.
 
 #### TC-EXT-BRW-02: OAuth Redirect URI Resolution Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -1061,6 +1203,21 @@ graph LR
 * **Automated Test Flow**:
   1. Simulate service worker process termination (clear in-memory module scope).
   2. Fire `periodicSync` alarm.
+
+#### TC-EXT-BRW-06: MV3 Dormant Service Worker Message Wake-Up & Channel Preservation
+* **Platform Target**: `Extension (Chromium Specific)`
+* **Modality**: `Automated`
+* **Description**: Verifies that when the MV3 Service Worker is stopped/terminated in Chromium, sending a message (`chrome.runtime.sendMessage({ type: 'SYNC_NOW' })`) from an Options or Popup page:
+  1. Triggers Chrome's native event router to restart the Service Worker.
+  2. Binds immediately to top-level synchronous `chrome.runtime.onMessage` listeners.
+  3. Returns `true` synchronously to preserve the one-time messaging port for asynchronous `sendResponse`.
+  4. Returns structured results or errors rather than throwing `Could not establish connection. Receiving end does not exist`.
+* **Automated Test Flow**:
+  1. Launch Chromium with extension, load Options page.
+  2. Close/stop the Service Worker target via Chrome DevTools Protocol (`Target.closeTarget`).
+  3. Dispatch `SYNC_NOW` from the Options page.
+  4. Assert the Service Worker restarts cleanly, processes the message, and returns the response without connection errors.
+
 #### TC-EXT-DEVTOOLS-01: Chrome DevTools Service Worker & Options Log Stream
 * **Platform Target**: `Extension (Chromium Specific)`
 * **Modality**: `Automated & Browser Agent`
@@ -1278,11 +1435,17 @@ graph LR
 * **Platform Target**: `Extension (Chrome & Firefox Store Assets)`
 * **Modality**: `Automated & Visual Verification`
 * **Test Runner**: `node apps/extension/scripts/generate-promo-assets.mjs`
-* **Description**: Generates pixel-perfect, Retina (2× DPI) promotional graphics tailored for Chrome Web Store and project showcases:
-  - 5 Web Store Carousel slides (1280×800): Hero Overview, Deadlines & Grades, Zoom Lecture Hub, Organized Course Files, and Productivity / Midnight Dark Mode.
-  - 1 Marquee Banner (1400×560) with 3D tilted dashboard mockup and mascot speech bubble.
-  - 1 Small Promo Tile (440×280) with circular framed mascot avatar and value bullets.
+* **Description**: Generates pixel-perfect, Retina (2× DPI) promotional graphics tailored for the Chrome Web Store and project showcases, aligned with the v4 Cockpit redesign:
+  - 5 Web Store Carousel slides (1280×800):
+    - **Slide 1 (`promo-1-hero-overview.png`)**: Hero Action Strip cockpit dashboard with Hero Spotlight card for next due assignment, Upcoming To-Do queue, and Live Zoom meeting banner.
+    - **Slide 2 (`promo-2-deadlines-grades.png`)**: Dedicated full-page Assignments Hub showcasing instant search, 4 filter chips ("לביצוע", "עברו", "הושלמו", "מוסתרים"), and expandable drawer with attached prompt files and weekly topic files.
+    - **Slide 3 (`promo-3-zoom-hub.png`)**: Course materials and live lecture hub showcasing active Zoom detection with direct join button, weekly topic pills, and file downloads with exact file size badges.
+    - **Slide 4 (`promo-4-course-files.png`)**: Personalized Course Management modal showcasing custom nicknames, semester tracking toggles, and color tags.
+    - **Slide 5 (`promo-5-productivity-themes.png`)**: The new dark espresso Coffee Theme (`theme-coffee`) paired with the crisp high-DPI English Toolbar Popup.
+  - 1 Marquee Banner (1400×560) with 3D tilted v4 Cockpit dashboard mockup and mascot speech bubble.
+  - 1 Small Promo Tile (440×280) with perfectly centered circular framed mascot avatar and value bullets.
   - High-resolution, zero-whitespace Toolbar Popup container captures in both English (`toolbar-popup.png`) and Hebrew (`toolbar-popup-he.png`), verifying grammatically sound due countdowns ("1 day" / "4 days" vs "יום" / "4 ימים") and proper LTR/RTL text alignment.
+  - Zero mentions of TAU or Tel Aviv University across all graphics, in strict adherence to third-party companion branding guidelines.
 
 #### TC-EXT-LIVE-01: Real Credentials Live E2E Authentication & Scraping Toggle Verification
 * **Platform Target**: `Extension (Chromium Specific)`
@@ -1296,6 +1459,8 @@ graph LR
   - Toggles Web Scraping to ON via UI switch, verifying instant React state update and `chrome.storage.sync` persistence (`scrapingEnabled: true`).
   - Executes synchronization with Scraping ON, testing fallback scraper activation.
   - Toggles Scraping back to default OFF state and captures visual validation screenshots (`live-settings-scraping-off.png`, `live-settings-scraping-on.png`, `live-dashboard-after-sync.png`).
+
+
 
 
 

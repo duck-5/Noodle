@@ -336,7 +336,10 @@ export async function loginTauSso(
     const manageRes = await mfetchFollow(jar, manageUrl);
     const manageHtml = await manageRes.response.text();
     
-    const tokenMatch = manageHtml.match(/(?:Moodle mobile web service|moodle_mobile_app|Mobile)[^]*?action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i);
+    const trs = manageHtml.split(/<tr/i);
+    const targetTr = trs.find(t => /moodle\s+mobile\s+web\s+service/i.test(t) || /moodle_mobile_app/i.test(t))
+                  || trs.find(t => /mobile/i.test(t));
+    const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
     if (tokenMatch) {
       const tokenId = tokenMatch[1];
       

@@ -38,6 +38,7 @@ Presented immediately after successful authentication or when manually triggered
         - **Course Code**: Academic reference code (e.g., `0368-1118`).
         - **Course Full Name**: Official title from Moodle.
         - **Press/Click Behavior**: Toggles selection state. Selected cards change background border color to the primary theme color.
+        - **Laboratory Course Prompt**: Selecting a course containing `"מעבדה"` in its name detects the laboratory keyword and presents a confirmation prompt offering to automatically hide all of its assignments to prevent clutter from extensive catalogs of optional or unassigned lab experiments (while allowing manual unhiding later).
 *   **Footer Action Bar**:
     *   **Start Tracking Button**: Prominent primary button displaying: "Start Tracking (X Courses)" where X is the count of selected courses. Disabled if X = 0.
     *   **Import Configuration Button**: Secondary button/file picker icon to restore profile configurations from a JSON backup.
@@ -47,7 +48,8 @@ Presented immediately after successful authentication or when manually triggered
 ## 2. Navigation Layout & Shell
 
 ### A. Navigation Sidebar (Desktop Options Page)
-*   **Header**: Scaled Noodle Logo (`72px` expanded, transitions to `44px` when collapsed) and "Noodle" application title (`1.45rem` bold font).
+*   **Header**: Scaled Noodle Logo (`108px` expanded, transitions to `54px` when collapsed) and "Noodle" application title (`1.45rem` bold font).
+*   **Extension Bar Action Icon**: High-contrast, full-bleed icons (`16px`, `32px`, `48px`, `128px`) generated with 95–100% canvas height coverage so the noodle bowl is prominent, sharp, and bold on browser toolbars.
 *   **Navigation Menu Items**:
     - **Dashboard** (`dashboard`): Central overview cockpit (Hero Action Strip, Multi-Active Zoom, Semester Progress, My Tracked Courses).
     - **Assignments** (`assignments`): Dedicated full-page assignments feed with search, status filters, course filter banner, and expandable cards.
@@ -72,20 +74,28 @@ Presented immediately after successful authentication or when manually triggered
 ### A. Hero Action Strip
 The top of the dashboard features a split horizontal action strip designed for rapid orientation and zero-anxiety productivity:
 1. **Hero Spotlight Card ("המטלה הקרובה" / Next Task)**:
-   - High-contrast card spotlighting the single nearest pending deadline.
-   - Non-stressful header badge with countdown timer and course tag.
-   - Clicking the card expands/collapses inline details without navigating away from the dashboard.
-   - Attachment preview chips with direct green `Open ↗` and SVG `Download ↓` links.
-   - Expandable inline details drawer showing subject topic and assignment actions.
-   - Primary "Go to Course" and "Submit ↗" quick actions.
+   - High-contrast card spotlighting the single nearest pending deadline, dynamically tinted with the course accent color (`rgba(courseColor, 0.08)` surface & glow border).
+   - Category badge with course name and color indicator dot.
+   - Section / Topic metadata strip providing immediate academic context.
+   - Course Subject Files (`קבצי הנושא`): Dynamically resolves and displays course files matching the assignment's topic section, equipped with squircle green "פתח ↗" link (`#10b981`) and squircle arrow-only SVG Download button (`<DownloadIcon size={12} />`).
+   - Action toolbar with direct 1-click controls:
+     - "סמן כבוצע" / "סמן כלא הושלם" (`CheckIcon`)
+     - "הגש במודל ↗" primary action
+     - "עבור לקורס" (`BookOpenIcon`)
+     - "הסתר" / "בטל הסתרה" (`EyeIcon` / `EyeOffIcon`)
+   - Attachment and submission chips with squircle "פתח ↗" link (`#10b981`) and squircle arrow-only SVG Download button (`<DownloadIcon size={12} />`).
 2. **Upcoming To-Do Queue ("תור משימות קרובות")**:
    - Secondary vertical card listing imminent tasks.
    - **Exclusion & Sorting Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
-   - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue so students never miss un-dated coursework.
-   - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer containing topic pill and attachment downloads.
+   - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue with stable deterministic ordering.
+   - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer (`.queue-item-expanded`) containing:
+     - Assignment prompt attachments with squircle open and arrow-only download buttons.
+     - Course Subject Files (`קבצי הנושא`) matching the task's course and topic section with squircle open and arrow-only download buttons.
+     - Submitted files chips when coursework was previously submitted.
+     - Action toolbar: "עבור לקורס" (`go_to_course`), "סמן כבוצע / כלא הושלם" (`mark_done`), "הסתר / בטל הסתרה" (`hide_assignment`), and "הגש במודל ↗" (`submit_assignment`).
 
 ### B. Live Session & Progress Bar
-* **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, supporting multiple simultaneous meetings.
+* **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, strictly filtering out hidden or uninterested meetings.
 * **Semester Progress**: Visual progress bar tracking overall completion percentage across all assignments in tracked courses (`X/Y (Z%)`).
 
 ### C. My Tracked Courses ("הקורסים שלי")
@@ -98,7 +108,7 @@ The top of the dashboard features a split horizontal action strip designed for r
    - Direct "Assignments" filter and "Go to Course" buttons.
    - **Smooth Row Expansion**: Clicking anywhere on the course row smoothly expands an inline drawer revealing:
      - **Zoom Links with Re-visibility**: All meetings configured for this course, displaying `<EyeIcon />` for visible and `<EyeOffIcon />` for hidden so hidden meetings can be unhidden at any time.
-     - **Next 5 Assignments**: Up to 5 upcoming assignments rendered as full, interactive assignment cards that can be expanded in place to view materials and actions.
+     - **Next 5 Assignments**: Up to 5 upcoming unhidden assignments, start-aligned (not centered) with clean column structure, squircle open links, and squircle arrow-only download buttons. Hidden assignments are excluded. Compact `.btn-xs` action buttons allow marking done or unhiding.
 
 ---
 
@@ -108,16 +118,22 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 * **Filter Bar**:
   - **Full Text Search**: Immediate debounced filter by assignment or course name.
   - **Filter Checkboxes**: Real-time filters for Pending ("לביצוע"), Past ("עברו"), Completed ("הושלמו"), and Hidden ("מוסתרים").
+  - **Calendar View Toggle Button (`📅 תצוגת לוח שנה` / `📅 Calendar View`)**: Toggles an interactive split-pane monthly calendar alongside the assignments list.
+* **Split-Pane Calendar View (`.assignments-workspace.calendar-open`)**:
+  - Shrinking the width of the assignments feed (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`), a sticky monthly calendar pane appears on the side.
+  - Displays month navigation (`◀`, `היום` / `Today`, `▶`) and color-coded assignment pills on their due dates.
+  - Clicking any assignment pill in the calendar automatically enables its status filter if currently unchecked, expands that assignment card in the feed, and smoothly scrolls it into view.
 * **Course Filter Banner**:
   - Appears when navigating from a course row's "מטלות" button: `מסנן לפי קורס: [Course Name]`.
   - Includes an inline "הצג את כל הקורסים ✕" button to easily clear the filter and return to the complete assignments feed.
 * **Compact / Minimized Cards**:
   - Collapsed by default to maximize visible density.
   - Shows course dot, course display name, task title, manual completion tag ("סומן כהושלם") or submission tag ("הוגש"), proximity deadline badge, direct Moodle submission link, and expansion chevron.
-* **Smooth Accordion Drawer**:
-  - **Subject Files ("קבצי הנושא")**: Section files matching the assignment's course ID and topic section, displayed with green "פתח ↗" link and SVG "הורדה ↓" button.
-  - **Attachments**: Assignment prompt/instruction files with green "פתח ↗" and SVG "הורדה ↓" buttons.
-  - **Submitted Files**: Files uploaded by the student with checkmark indicator and green "פתח ↗" / SVG "הורדה ↓" buttons.
+* **Smooth Accordion Drawer & Vertical File Columns**:
+  - All file lists across the application (Hero Spotlight, Upcoming To-Do Queue, Tracked Course Rows, Assignments Feed, and Course Detail View) are ordered in a clean vertical column (`.files-column-group` / `.files-column-list` / `.file-column-item`).
+  - **Subject Files ("קבצי הנושא")**: Section files matching the assignment's course ID and topic section, stacked vertically in a column with green "פתח ↗" link and SVG "הורדה ↓" button.
+  - **Attachments**: Assignment prompt/instruction files stacked vertically in a column with green "פתח ↗" and SVG "הורדה ↓" buttons.
+  - **Submitted Files**: Files uploaded by the student stacked vertically in a column with checkmark indicator and green "פתח ↗" / SVG "הורדה ↓" buttons.
   - **Subject / Topic Text**: Unframed metadata text (`נושא: ...`) avoiding button-like framing.
   - **Action Toolbar**: Compact `.btn-xs` buttons ("עבור לקורס", "סמן כבוצע / לביצוע", "הסתר / בטל הסתרה", and secondary styled "פתח במודל ↗").
 
@@ -138,6 +154,9 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 *   **Personalization Editor**:
     - **Nickname Field**: Real-time editable text input. Saving changes re-labels the course everywhere.
     - **Color Palette Picker**: A grid of selectable colored circles (min. 8 options). Selecting a circle updates the course's primary accent color.
+*   **Layout Containment & Responsiveness**:
+    - `.detail-grid` utilizes `grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr)` ensuring sidebars and content never slide out of frame or cause horizontal viewport scrolling.
+    - Responsive single-column breakpoint at `960px` with `overflow-wrap: anywhere` for long titles and file names.
 *   **Course-Level Assignment Actions**:
     - **Hide All Assignments Button**: "הסתר את כל המטלות" / "בטל הסתרת הכל" button to bulk-hide or unhide all assignments in this course.
 *   **Course Resources Tabs**:
@@ -146,7 +165,7 @@ A dedicated full-page assignment feed providing comprehensive management of all 
         - Active live meeting highlights.
         - "הצג את כל המפגשים" toggle button to show and unhide hidden Zoom meetings.
         - Zoom link button, meeting ID & passcode text fields with quick copy buttons.
-    3.  **Files**: Folder structure organizing PDF/PPT course documents, with each file item equipped with a green "פתח ↗" direct open button and an SVG "הורדה ↓" download button with the `download` attribute.
+    3.  **Files**: Folder structure organizing PDF/PPT course documents, with each file item equipped with a green squircle "פתח ↗" direct open button (`border-radius: 8px`) and a squircle arrow-only SVG "הורדה" button (`<DownloadIcon size={12} />`) with the HTML `download` attribute.
 
 ---
 
@@ -182,6 +201,11 @@ A dedicated full-page assignment feed providing comprehensive management of all 
     - OAuth Log In button (visible if unauthorized).
     - Status labels: Task List ID name, and "Last Synced" timestamp.
     - **Sync Now Button**: Triggers manual sync on demand. Displays spinner during sync.
+    - **Sync Assignments Without Deadline Toggle** (`syncWithoutDeadline`):
+        - Switch to toggle syncing assignments lacking explicit due dates to Google Tasks.
+        - Default state: **OFF** (`syncWithoutDeadline: false`).
+        - Description: "Sync assignments without deadline to Google Tasks (Default: Off. When off, undated tasks will be pruned from Google Tasks)." / "סנכרון מטלות ללא תאריך יעד ל-Google Tasks (ברירת מחדל: כבוי. במצב כבוי, מטלות ללא מועד יוסרו מ-Google Tasks)."
+    - **Hidden & Completed Task Deletion**: Tasks set as hidden or marked as done are automatically deleted from Google Tasks and never synced as active tasks. Toggling hidden or completed status triggers an immediate silent background sync if Google Tasks integration is enabled.
 
 ### D. Notification Configurations
 *   **Push Alerts**: Toggle switch to enable/disable deadline reminders.
@@ -190,10 +214,17 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 ### E. Backup & Session Management
 *   **Export Configuration**: Button to download a backup file (`noodle_config.json`).
 *   **Import Configuration**: Button to upload and parse a backup file.
-*   **Account Card**: Displays User ID, Full Name, and Moodle connection state.
+*   **Account & Development Card**:
+    - Displays User ID, Full Name, and Moodle connection state.
+    - **Developer Credits**: Yuval Mantin & Michael Kushnir.
+    - **Direct Links**:
+        - GitHub Repository (`https://github.com/duck-5/Noodle`)
+        - GitHub Issues & Bug Reports (`https://github.com/duck-5/Noodle/issues`)
+        - Support & Suggestions Email (`noodle.d3v@gmail.com`)
+        - Chrome Web Store Review (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`)
 *   **Disconnect Button**: Destructive button labeled "Disconnect from Moodle" that wipes all tokens, logs, local databases, and cookie records.
 
-### E. Web Scraping Configuration (Fallback)
+### F. Web Scraping Configuration (Fallback)
 *   **Moodle Web Scraping (Fallback)** (`#scraping-enabled-toggle`):
     - Switch toggle to enable or disable HTML web scraping fallback.
     - Default state: **OFF** (`scrapingEnabled: false`).
@@ -205,8 +236,30 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 
 ## 7. About Tab
 
-*   **Credits Section**: Project details, developer credentials, and links to source code repositories.
-*   **Version Label**: Current version (e.g., `Version Beta-0.4`).
+*   **Brand Hero**: Responsive logo mark, Noodle branding badge, and version label (e.g., `Version 4.0.0 (v4 Cockpit)`).
+*   **Developer Credits**: Special recognition for developers Yuval Mantin and Michael Kushnir.
+*   **Actionable Quick-Link Grid**: High-contrast, interactive link cards:
+    - **GitHub Repository**: Direct link to source code (`https://github.com/duck-5/Noodle`).
+    - **Issues & Suggestions**: Direct link to issue tracker (`https://github.com/duck-5/Noodle/issues`).
+    - **Support Email**: Mailto shortcut to `noodle.d3v@gmail.com` with prefilled subject.
+    - **Chrome Web Store Review**: Direct link to write a review on the store (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`).
+    - **Relaunch Tour Button**: Re-triggers the 7-step interactive onboarding walkthrough.
+*   **Expandable Information Accordions** (`<details className="about-accordion">`):
+    1. **Core Features & Cockpit (`✨ פיצ'רים עיקריים וניהול אקדמי` / `Core Features`)**:
+       - Next Task Spotlight with live countdown and topic materials.
+       - Full-page Assignments Feed with instant search and 4 filter chips ("לביצוע", "עברו", "הושלמו", "מוסתרים").
+       - Multi-modal Zoom discovery and live active meeting indicators (`● פעיל כעת`).
+       - Two-way Google Tasks synchronization.
+       - Laboratory course detection and bulk assignment hiding.
+    2. **Pro Tips & Shortcuts (`💡 טיפים לשימוש וקיצורי דרך` / `Pro Tips & Shortcuts`)**:
+       - Quick theme cycling (`☕ / 🍜 / 🌙`) in top header.
+       - Course-specific assignment filtering from Dashboard course rows.
+       - Keyboard navigation during onboarding walkthrough (`[←] [→] [Esc]`).
+       - One-click "Hide All" assignments toggle in Course Detail.
+    3. **Privacy & Security Architecture (`🛡️ פרטיות ואבטחה` / `Privacy & Architecture`)**:
+       - 100% decentralized, client-only architecture.
+       - Zero third-party telemetry, tracking, or proxy servers.
+       - Direct client-to-TAU HTTPS requests with encrypted-at-rest token caching.
 
 ---
 
@@ -231,10 +284,11 @@ Meetings are grouped and sorted dynamically based on their status and schedule:
 
 ### B. Interest & Custom Visibility Configuration
 Users can filter out Zoom links they are not interested in (e.g., hiding other recitation groups they do not attend):
-1. **Interest Toggle**: Each Zoom card features a toggle button (eye icon `👁` / `👁‍🗨`). Toggling it adds/removes the meeting's ID from the user's `interestedMeetings` storage list.
-2. **Show All Filter**:
-   - **Show All = OFF (Default)**: Uninterested Zoom links are hidden from the dashboard entirely.
-   - **Show All = ON**: All Zoom links are shown, but uninterested links are rendered in a faded/transparent state with a slashed eye icon.
+1. **Recurring Session Collapsing**: Weekly recurring sessions sharing the same meeting number or room URL are collapsed by default into a single entry representing the nearest upcoming meeting (or the latest past meeting if all sessions concluded).
+2. **Uncluttered Visible-Only List**: Only user-selected (visible) meetings are rendered in the course card's main meeting list. Hidden meetings are completely removed from the primary list rather than taking up vertical space.
+3. **Collapsible "Show Hidden" Toggle**: If a course contains hidden meetings, a toggle button (`👁️‍🗨️ הצג פגישות מוסתרות (X)` / `Show hidden meetings (X)`) appears below the visible list. Clicking expands a muted, dashed container showing the hidden meetings with eye-off buttons to unhide them.
+4. **Course-Level Bulk Actions**: Header action buttons ("הצג הכל" / "Show all" and "הסתר הכל" / "Hide all") allow students to configure 10+ group instances in two clicks without affecting other courses.
+5. **Empty State Notice**: If all meetings in a course are hidden, a friendly message ("כל קישורי הזום מוסתרים עבור קורס זה") is displayed alongside the "Show hidden meetings" button.
 
 ---
 
@@ -251,10 +305,61 @@ The extension and companion platforms support three distinct, high-contrast visu
    - Background: `#faf6ee` / Card panels: `rgba(255, 255, 255, 0.75)`.
    - Accent borders: `rgba(215, 204, 184, 0.6)` / Primary: `#b85d19`.
 3. **Dark Noodle "Coffee" (`coffee`)**:
-   - High-contrast, warm dark mocha palette where cards and panels are visually lighter than the deep roast background.
-   - Background: `#1e1612` (dark roast espresso).
-   - Card panels: `rgba(44, 34, 27, 0.94)` (warm roasted mocha glassmorphism).
-   - Card borders: `rgba(226, 135, 67, 0.22)` (caramel amber stroke).
-   - Primary: `#e28743` (caramel crema) / Secondary: `#a6c48a` (soft sage).
-   - Text Primary: `#fff8f0` (milk froth cream, 100% sharp contrast).
-   - Text Secondary: `#d6c7b2` (subtle warm tan).
+   - Refined, high-contrast dark roast palette free of reddish/burgundy hues, built with rich espresso tones, golden crema accents, and crisp velvety froth text.
+   - Background: `#14100d` (pure dark espresso bean).
+   - Card panels: `rgba(29, 23, 19, 0.94)` (dark roast glassmorphism).
+   - Card borders: `rgba(196, 153, 108, 0.22)` (silky golden crema stroke).
+   - Primary: `#c4996c` (golden crema) / Hover: `#d8b18a`.
+   - Secondary: `#8da882` (matcha herbal accent).
+   - Text Primary: `#fbf6f0` (froth cream, 100% sharp contrast).
+   - Text Secondary: `#d1c3b7` (steamed milk foam).
+
+---
+
+## 10. Interactive Landing & Onboarding Tour (v4 Cockpit)
+
+The extension includes a 10-step interactive walkthrough designed in the v4 frosted glassmorphic aesthetic to orient first-time users and showcase Noodle's core features. It triggers automatically upon first successful setup (when `hasSeenTour` is falsy) and can be relaunched anytime from the **About** tab.
+
+### A. Walkthrough Progression & Steps
+1. **Step 0 — Cockpit Overview (`tour_welcome`)**:
+   - *Target View*: Centered modal dialog on Dashboard.
+   - *Contents*: Noodle bowl icon avatar badge, category pill `מבט כולל • Cockpit Overview`, decentralized local-first architecture highlights.
+2. **Step 1 — Real-Time Sync Button (`tour_sync_btn`)**:
+   - *Target View*: Highlights `.header-sync-btn` on Dashboard.
+   - *Contents*: Real-time manual sync trigger, direct Moodle fetching without external proxy, automatic synchronization to Google Tasks.
+3. **Step 2 — Next Task Spotlight (`tour_next_task`)**:
+   - *Target View*: Docks to bottom center; highlights `.hero-spotlight-card`.
+   - *Contents*: Immediate urgency spotlight, live countdown timer, 1-click submission link, prompt attachments, and course topic materials.
+4. **Step 3 — Task Controls: Done & Hidden (`tour_tasks_actions`)**:
+   - *Target View*: Highlights `.hero-actions-row` and `.queue-card`.
+   - *Contents*: Single-click completion (`✓`) and hiding tasks (`👁`). Dynamic auto-removal from active to-do queue.
+5. **Step 4 — Manage Courses Modal (`tour_courses_custom`)**:
+   - *Target View*: Automatically opens `ManageCoursesModal` (`isManageModalOpen: true`), highlights `.modal-content` aligned to top viewport (`maxHeight: 62vh`).
+   - *Contents*: Setting short course nicknames, assigning theme colors, tracking checkboxes, and semester grouping.
+6. **Step 5 — Live Zoom Sessions & Visibility (`tour_zoom_visibility`)**:
+   - *Target View*: Closes modal and automatically expands the first tracked course row (`expandedCourseId`), highlighting `.course-row-card`.
+   - *Contents*: Recitation filtering via the eye icon (`👁`), "Active Now" banner with 1-click join, and viewing hidden sessions.
+7. **Step 6 — Assignments Hub & Feed (`tour_tab_assignments`)**:
+   - *Target View*: Automatically switches to the `assignments` tab; highlights `.filter-bar`.
+   - *Contents*: Real-time search by task or course, 4 status filters (To Do, Past, Completed, Hidden), and expandable subject materials drawers.
+8. **Step 7 — Grades & GPA Tracker (`tour_tab_grades`)**:
+   - *Target View*: Automatically switches to the `grades` tab; highlights `.stat-card`.
+   - *Contents*: Cumulative estimated GPA, grade component distributions (exams, exercises, quizzes), and auto-calculated averages.
+9. **Step 8 — Settings & Google Tasks Sync (`tour_google_tasks`)**:
+   - *Target View*: Automatically switches to the `settings` tab; highlights `.google-tasks-section`.
+   - *Contents*: 2-way sync engine connecting Moodle assignment deadlines directly to Google Tasks and Google Calendar, theme options, and alert thresholds.
+10. **Step 9 — Ready to Roll & About Tab (`tour_finish`)**:
+   - *Target View*: Automatically switches to the `about` tab; highlights `.tab-about`.
+   - *Contents*: Restarting the tour anytime, keyboard navigation shortcuts, developer credits, and version information. Exiting cleanly returns user to the Dashboard (`setActiveTab('dashboard')`).
+
+### B. UI/UX Design System
+- **Viewport Docking**:
+  - *Steps 0 & 9*: Centered modal with `rgba(10, 12, 20, 0.72)` blurred backdrop overlay.
+  - *Steps 1–8 (Highlight Mode)*: Transparent backdrop (`pointer-events: none`); card docks at the bottom viewport center (`max-width: 560px`), leaving the target highlighted UI elements completely visible and interactive.
+- **Segmented Progress Stepper**: 10 segmented pill bars at the top of the card indicating progress. Users can click any step segment to jump directly to that step.
+- **Glowing Element Pulse**: Target elements receive `.tour-highlight` with `outline: 2px solid var(--primary)` and smooth ambient glow (`box-shadow: 0 0 28px rgba(var(--primary-rgb), 0.5)`).
+- **Keyboard Navigation**:
+  - `ArrowRight` / `ArrowLeft` adapted to RTL (Hebrew) and LTR (English) locales.
+  - `Escape` key immediately closes the tour and sets `hasSeenTour: true`.
+  - On-screen monospace keyboard badge row (`[←] [→] [Esc]`) informs users of keyboard shortcuts.
+- **Multi-Theme Parity**: Complete visual integration across `dark`, `theme-noodle`, and `theme-coffee` palettes.

@@ -386,7 +386,20 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
     allEvents.sort((a: any, b: any) => b.id - a.id);
     const syncEvent = allEvents[0];
-    const cleanJson = syncEvent.description.replace(/(<([^>]+)>)/gi, '').trim();
-    return JSON.parse(cleanJson);
+    let cleanJson = syncEvent.description.replace(/(<([^>]+)>)/gi, '').trim();
+    if (cleanJson.includes('&quot;') || cleanJson.includes('&amp;') || cleanJson.includes('&#39;')) {
+      cleanJson = cleanJson
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+    }
+    try {
+      return JSON.parse(cleanJson);
+    } catch (parseErr) {
+      console.warn('[RestMoodleStrategy] Malformed JSON in NOODLE_SYNC_DATA calendar event:', parseErr);
+      return null;
+    }
   }
 }
