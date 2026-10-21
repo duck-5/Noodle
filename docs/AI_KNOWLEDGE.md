@@ -73,6 +73,10 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
     *   *Rule:* **Hidden tasks must NEVER be synced to Google Tasks.** If an assignment is in `hiddenAssignments` (or `isHidden: true`), skip creation and issue a `DELETE` request for any existing task matching it in Google Tasks.
     *   *Rule:* **If a task is marked as done or completed, delete it from Google Tasks.** When an assignment is submitted in Moodle, marked done in Noodle (`completedAssignments`), or completed in Google Tasks (`status: 'completed'`), delete it via `DELETE` to keep the Google Tasks list clean and actionable.
     *   *Rule:* **Assignments without deadline are excluded by default (`syncWithoutDeadline: false`).** When `syncWithoutDeadline` is falsy / `false`, undated assignments (`duedate === 0` or missing) are never created in Google Tasks, and any existing Google Task for an undated assignment is pruned via `DELETE`. When `syncWithoutDeadline` is explicitly enabled, undated assignments are synced without `due`.
+
+### F. React 19 Hook Ordering & Lifecycle Invariants
+* In the extension Options Single Page Application (`apps/extension/src/options/App.tsx`), multiple screens/views exist (loading screen, SSO connect onboarding step 1, course selection onboarding step 2, and the full multi-tab dashboard step 3).
+* **Rule**: All React hooks (`useState`, `useEffect`, `useMemo`, `useCallback`) MUST execute at the very top level of `App()` before ANY conditional `if (...) return (...)` view returns. Never call hooks downstream inside specific view branches, as transitions between onboarding steps and the dashboard will trigger Minified React error #310 (`Rendered more hooks than during the previous render`).
     *   *Rule:* If an assignment was submitted in Moodle but the student explicitly set it to "To Do" (`uncompletedAssignments`), retain or sync it with `status: 'needsAction'`.
 
 ### F. Cookie-less Token Interception

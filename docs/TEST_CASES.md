@@ -187,6 +187,7 @@ graph LR
 | **TC-EXT-01** | Toolbar Popup Quick-Access View | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-02** | Collapsible Sidebar (240px to 72px) | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-03** | First-Time Interactive Onboarding Tour | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
+| **TC-EXT-04** | Options Dashboard React Hook Invariant Parity | Extension (Chrome & Firefox) | Automated | Extension Specials |
 | **TC-EXT-BRW-01** | Manifest Build Transformation Parity | Extension (Chrome & Firefox) | Automated | Cross-Browser |
 | **TC-EXT-BRW-02** | OAuth Redirect URI Resolution Parity | Extension (Chrome & Firefox) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-03** | Gecko Protocol Interception Parity | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
@@ -1151,6 +1152,13 @@ graph LR
   6. Assert Step 5 closes the modal and automatically expands the course row drawer showing Zoom meetings.
   7. Assert Steps 6, 7, 8, and 9 automatically switch tabs (`assignments`, `grades`, `settings`, `about`) and highlight respective sections.
   8. Test exiting via `Escape` key or clicking "Finish" on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
+
+
+#### TC-EXT-04: Options Dashboard React Hook Invariant Parity
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that all React hooks (`useState`, `useEffect`, `useMemo`) in `apps/extension/src/options/App.tsx` execute unconditionally at top level across all onboarding states (loading, onboarding step 1 credentials, step 2 course selection, and step 3 dashboard view). Prevents runtime React error #310 ("Rendered more hooks than during the previous render") during state transitions.
+* **Automated Runner**: `pnpm --filter extension run lint` (ESLint `react-hooks/rules-of-hooks`), `pnpm --filter extension run build`, and `pnpm test:devtools`.
 
 #### TC-EXT-BRW-01: Manifest Build Transformation Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`

@@ -407,6 +407,31 @@ export default function App() {
     }
   }, [token, trackedCourseIds, settings]);
 
+  const assignmentsList = useMemo(() => {
+    const rawAssignments = syncResult?.assignments || [];
+    const completedSet = new Set(settings?.completedAssignments || []);
+    const uncompletedSet = new Set(settings?.uncompletedAssignments || []);
+    return rawAssignments.map((a) => {
+      const isMoodleSubmitted = a.status === 'Submitted';
+      const isManuallyCompleted = completedSet.has(a.id);
+      const isManuallyToDo = uncompletedSet.has(a.id);
+
+      let isCompleted = isMoodleSubmitted;
+      if (isMoodleSubmitted && isManuallyToDo) {
+        isCompleted = false;
+      } else if (!isMoodleSubmitted && isManuallyCompleted) {
+        isCompleted = true;
+      }
+
+      return {
+        ...a,
+        isMoodleSubmitted,
+        isCompleted,
+        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
+      };
+    });
+  }, [syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+
   async function loadData() {
     setLoading(true);
     try {
@@ -1414,34 +1439,6 @@ export default function App() {
   }
 
   // Main Dashboard View (OnboardingStep === 3)
-  const rawAssignments = syncResult?.assignments || [];
-  const completedIds = settings?.completedAssignments || [];
-  const uncompletedIds = settings?.uncompletedAssignments || [];
-
-  const assignmentsList = useMemo(() => {
-    const completedSet = new Set(completedIds);
-    const uncompletedSet = new Set(uncompletedIds);
-    return rawAssignments.map((a) => {
-      const isMoodleSubmitted = a.status === 'Submitted';
-      const isManuallyCompleted = completedSet.has(a.id);
-      const isManuallyToDo = uncompletedSet.has(a.id);
-
-      let isCompleted = isMoodleSubmitted;
-      if (isMoodleSubmitted && isManuallyToDo) {
-        isCompleted = false;
-      } else if (!isMoodleSubmitted && isManuallyCompleted) {
-        isCompleted = true;
-      }
-
-      return {
-        ...a,
-        isMoodleSubmitted,
-        isCompleted,
-        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
-      };
-    });
-  }, [rawAssignments, completedIds, uncompletedIds]);
-
   const filesList = syncResult?.files || [];
   const meetingsList = syncResult?.meetings || [];
 
