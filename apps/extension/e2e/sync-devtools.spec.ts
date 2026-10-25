@@ -229,6 +229,35 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                       nosubmissions: 0,
                     },
                     {
+                      id: 885,
+                      cmid: 774,
+                      course: 9999,
+                      name: 'מטלה 2 - אלגוריתמי חיפוש ומיון מתקדמים',
+                      duedate: nowSec + 3 * 86400, // Due in 3 days
+                      cutoffdate: nowSec + 4 * 86400,
+                      allowsubmissionsfromdate: nowSec - 86400,
+                      intro: '<p>יש לממש אלגוריתמי QuickSort ו-MergeSort ולבצע השוואת ביצועים על סדרות אקראיות.</p>',
+                      introattachments: [
+                        { filename: 'sorting_benchmarks.py', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9999/mod_assign/intro/sorting_benchmarks.py' },
+                        { filename: 'assignment2_spec.pdf', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9999/mod_assign/intro/assignment2_spec.pdf' },
+                      ],
+                      nosubmissions: 0,
+                    },
+                    {
+                      id: 883,
+                      cmid: 773,
+                      course: 9999,
+                      name: 'מטלה 3 - תכנות דינמי ובעיית התרמיל',
+                      duedate: nowSec + 8 * 86400, // Due in 8 days
+                      cutoffdate: nowSec + 10 * 86400,
+                      allowsubmissionsfromdate: nowSec,
+                      intro: '<p>פתרון בעיית התרמיל (0/1 Knapsack) ו-Longest Common Subsequence באמצעות Memoization ו-DP טבלאי.</p>',
+                      introattachments: [
+                        { filename: 'knapsack_problem.pdf', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9999/mod_assign/intro/knapsack_problem.pdf' },
+                      ],
+                      nosubmissions: 0,
+                    },
+                    {
                       id: 887,
                       cmid: 776,
                       course: 9999,
@@ -261,6 +290,36 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                       introattachments: [
                         { filename: 'avl_tree_skeleton.cpp', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/avl_tree_skeleton.cpp' },
                         { filename: 'instructions_hw2.pdf', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/instructions_hw2.pdf' },
+                      ],
+                      nosubmissions: 0,
+                    },
+                    {
+                      id: 884,
+                      cmid: 787,
+                      course: 9998,
+                      name: 'תרגיל בית 3 - ערימות בינאריות ותורי עדיפויות',
+                      duedate: nowSec + 6 * 86400, // Due in 6 days
+                      cutoffdate: nowSec + 7 * 86400,
+                      allowsubmissionsfromdate: nowSec - 86400,
+                      intro: '<p>מימוש Min-Heap בינארי, פעולות Sift-Up ו-Sift-Down ומבנה נתונים Priority Queue.</p>',
+                      introattachments: [
+                        { filename: 'priority_queue_impl.h', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/priority_queue_impl.h' },
+                        { filename: 'hw3_guidelines.pdf', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/hw3_guidelines.pdf' },
+                      ],
+                      nosubmissions: 0,
+                    },
+                    {
+                      id: 882,
+                      cmid: 788,
+                      course: 9998,
+                      name: 'תרגיל בית 4 - גרפים ואלגוריתמי מסלול קצר ביותר',
+                      duedate: nowSec + 12 * 86400, // Due in 12 days
+                      cutoffdate: nowSec + 14 * 86400,
+                      allowsubmissionsfromdate: nowSec,
+                      intro: '<p>ייצוג גרף מכוון באמצעות רשימות סמיכות ומימוש אלגוריתמי Dijkstra ו-BFS למציאת מסלולים קצרים ביותר.</p>',
+                      introattachments: [
+                        { filename: 'graph_algorithms.pdf', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/graph_algorithms.pdf' },
+                        { filename: 'graph_tester.py', fileurl: 'https://moodle.tau.ac.il/pluginfile.php/9998/mod_assign/intro/graph_tester.py' },
                       ],
                       nosubmissions: 0,
                     },
@@ -369,6 +428,12 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                   name: 'שבוע 2: סיבוכיות זמן ומקום וחיפוש בינארי',
                   modules: [
                     {
+                      id: 774,
+                      name: 'מטלה 2 - אלגוריתמי חיפוש ומיון מתקדמים',
+                      modname: 'assign',
+                      instance: 885,
+                    },
+                    {
                       id: 505,
                       name: 'סיכומי הרצאה 02 - סימוני Asymptotic ו-Big O',
                       modname: 'resource',
@@ -395,6 +460,33 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                           filesize: 912000,
                           mimetype: 'application/pdf',
                           timemodified: 1729250000,
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  id: 6,
+                  name: 'שבוע 4: תכנות דינמי ובעיות אופטימיזציה',
+                  modules: [
+                    {
+                      id: 773,
+                      name: 'מטלה 3 - תכנות דינמי ובעיית התרמיל',
+                      modname: 'assign',
+                      instance: 883,
+                    },
+                    {
+                      id: 507,
+                      name: 'מצגת 05 - מבוא לתכנות דינמי ו-Memoization',
+                      modname: 'resource',
+                      contents: [
+                        {
+                          type: 'file',
+                          filename: 'מצגת 05 - מבוא לתכנות דינמי ו-Memoization.pdf',
+                          fileurl: 'https://moodle.tau.ac.il/mod/resource/view.php?id=507',
+                          filesize: 3120000,
+                          mimetype: 'application/pdf',
+                          timemodified: 1729350000,
                         },
                       ],
                     },
@@ -527,6 +619,60 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                           filesize: 48200,
                           mimetype: 'text/x-c++src',
                           timemodified: 1729450000,
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  id: 15,
+                  name: 'תרגיל 3: ערימות בינאריות ותורי עדיפויות',
+                  modules: [
+                    {
+                      id: 787,
+                      name: 'תרגיל בית 3 - ערימות בינאריות ותורי עדיפויות',
+                      modname: 'assign',
+                      instance: 884,
+                    },
+                    {
+                      id: 606,
+                      name: 'מצגת 06 - ערימות בינאריות ו-Heapsort',
+                      modname: 'resource',
+                      contents: [
+                        {
+                          type: 'file',
+                          filename: 'מצגת 06 - ערימות בינאריות ו-Heapsort.pdf',
+                          fileurl: 'https://moodle.tau.ac.il/mod/resource/view.php?id=606',
+                          filesize: 2840000,
+                          mimetype: 'application/pdf',
+                          timemodified: 1729500000,
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  id: 16,
+                  name: 'תרגיל 4: גרפים ואלגוריתמי מסלול קצר',
+                  modules: [
+                    {
+                      id: 788,
+                      name: 'תרגיל בית 4 - גרפים ואלגוריתמי מסלול קצר ביותר',
+                      modname: 'assign',
+                      instance: 882,
+                    },
+                    {
+                      id: 607,
+                      name: 'מצגת 08 - גרפים, BFS ו-Dijkstra',
+                      modname: 'resource',
+                      contents: [
+                        {
+                          type: 'file',
+                          filename: 'מצגת 08 - גרפים, BFS ו-Dijkstra.pdf',
+                          fileurl: 'https://moodle.tau.ac.il/mod/resource/view.php?id=607',
+                          filesize: 4150000,
+                          mimetype: 'application/pdf',
+                          timemodified: 1729600000,
                         },
                       ],
                     },
@@ -813,7 +959,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
         settings: {
           theme: 'noodle',
           language: 'he',
-          coursesColorMap: { 9999: '#10b981', 9998: '#6366f1' },
+          coursesColorMap: { 9999: '#e07a5f', 9998: '#a0613e' },
           coursesCustomNames: { 9999: 'מבוא למדעי המחשב', 9998: 'מבני נתונים' },
           hiddenAssignments: [],
           completedAssignments: [],

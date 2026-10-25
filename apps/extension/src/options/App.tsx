@@ -1327,7 +1327,7 @@ export default function App() {
   }
 
   const getCourseColor = (courseId: number) => {
-    return settings?.coursesColorMap[courseId] || '#6366f1';
+    return settings?.coursesColorMap[courseId] || '#e07a5f';
   };
 
   const getCourseDisplayName = (courseId: number, defaultName: string) => {

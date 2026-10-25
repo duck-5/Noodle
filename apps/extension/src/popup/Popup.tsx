@@ -198,7 +198,7 @@ export default function Popup() {
             <div className="popup-empty">{isHe ? 'אין מטלות לביצוע! 🎉' : 'No pending assignments! 🎉'}</div>
           ) : (
             pendingAssigns.slice(0, 5).map((a: any) => {
-              const color = settings?.coursesColorMap?.[a.courseId] || '#6366f1';
+              const color = settings?.coursesColorMap?.[a.courseId] || '#e07a5f';
               const name = settings?.coursesCustomNames?.[a.courseId] || a.courseName;
 
               const { deadlineText: dueText } = getDueTextAndClass(

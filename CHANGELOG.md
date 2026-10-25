@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Warm Pastel Course Color Palette & Fallback (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `e2e/sync-devtools.spec.ts`, `generate-promo-assets.mjs`)**:
+  - Replaced harsh green (`#10b981`) and indigo purple (`#6366f1`) course color presets with attractive, happier pastels: warm coral/terracotta pastel orange (`#e07a5f`) for Course 9999 (CS101) and warm caramel/mocha pastel brown (`#a0613e`) for Course 9998 (DS201).
+  - Updated the default course color fallback in `App.tsx` and `Popup.tsx` from `#6366f1` to `#e07a5f`.
+  - Harmonized ambient background radial gradients in promotional slide graphics from indigo to soft pastel terracotta (`rgba(224, 122, 95, 0.12)`).
+- **Expanded Realistic Mock Assignments for Demos & Screenshots (`apps/extension/e2e/sync-devtools.spec.ts`)**:
+  - Expanded mock assignments data from 4 to 8 realistic, multi-state assignments across both courses with varied due dates (24h urgent spotlight, 3-day, 4-day, 6-day, 8-day, 12-day upcoming deadlines, and completed/graded items).
+  - Linked corresponding modules and resources in `core_course_get_contents` for all new assignments, enriching the Upcoming Tasks Queue, dedicated Assignments Feed, Course Detail Views, and Toolbar Popup.
+- **Refreshed 2× Retina Promotional Store Graphics (`apps/extension/promo/`, `scripts/generate-promo-assets.mjs`)**:
+  - Re-rendered all 7 promotional assets at 2× Retina resolution reflecting recent UI updates, expandable hero card, inline file previews, "Open in Moodle" navigation button, warm pastel course tags, and rich upcoming tasks queue.
 - **Direct "Open in Moodle ↗" Course Button in Course Detail View (`apps/extension/src/options/App.tsx`)**:
   - Added a direct `"פתח במודל ↗"` / `"Open in Moodle ↗"` button (`data-moodle-link="true"`) in the header of `CourseDetailView` to open the course's Moodle page directly from the course screen.
 - **"Signing in to Moodle..." Status Indicator on Moodle Links (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `i18n.ts`)**:

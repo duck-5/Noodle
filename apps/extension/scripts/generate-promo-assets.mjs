@@ -62,7 +62,7 @@ const sharedCss = `
     flex-direction: column;
     padding: 40px 52px 36px;
     background: radial-gradient(circle at 85% 15%, rgba(245, 158, 11, 0.16) 0%, transparent 45%),
-                radial-gradient(circle at 10% 90%, rgba(99, 102, 241, 0.13) 0%, transparent 40%),
+                radial-gradient(circle at 10% 90%, rgba(224, 122, 95, 0.12) 0%, transparent 40%),
                 radial-gradient(circle at 50% 50%, #ffffff 0%, #faf5ed 100%);
   }
 
@@ -615,16 +615,16 @@ const slides = [
 
           <!-- Callout 1 -->
           <div class="badge-callout" style="bottom: 45px; left: 40px;">
-            <div class="badge-icon-box" style="background: #eef2ff; color: #4338ca;">🎨</div>
+            <div class="badge-icon-box" style="background: #fff7ed; color: #ea580c;">🎨</div>
             <div>
-              <div class="badge-text-title">Vibrant Color Coding</div>
-              <div class="badge-text-sub">Identify courses across all views with custom palettes</div>
+              <div class="badge-text-title">Pastel Color Coding</div>
+              <div class="badge-text-sub">Identify courses across all views with warm custom palettes</div>
             </div>
           </div>
 
           <!-- Callout 2 -->
           <div class="badge-callout" style="top: 140px; right: 40px;">
-            <div class="badge-icon-box" style="background: #fdf4ff; color: #a855f7;">✏️</div>
+            <div class="badge-icon-box" style="background: #fdf8f6; color: #a0613e;">✏️</div>
             <div>
               <div class="badge-text-title">Human-Readable Names</div>
               <div class="badge-text-sub">Replace cryptic course IDs with memorable names</div>
@@ -798,7 +798,7 @@ const marqueeBanner = {
           grid-template-columns: 1.15fr 1fr;
           padding: 50px 70px;
           background: radial-gradient(circle at 15% 20%, rgba(245, 158, 11, 0.18) 0%, transparent 50%),
-                      radial-gradient(circle at 85% 85%, rgba(99, 102, 241, 0.16) 0%, transparent 45%),
+                      radial-gradient(circle at 85% 85%, rgba(224, 122, 95, 0.14) 0%, transparent 45%),
                       #fdfaf5;
           align-items: center;
           position: relative;
@@ -900,7 +900,7 @@ const smallTile = {
           justify-content: space-between;
           padding: 24px 28px;
           background: radial-gradient(circle at 90% 15%, rgba(245, 158, 11, 0.22) 0%, transparent 50%),
-                      radial-gradient(circle at 10% 90%, rgba(99, 102, 241, 0.16) 0%, transparent 45%),
+                      radial-gradient(circle at 10% 90%, rgba(224, 122, 95, 0.14) 0%, transparent 45%),
                       #fdfaf5;
           position: relative;
           overflow: hidden;
@@ -929,7 +929,7 @@ const smallTile = {
             <span style="color: #2563eb; font-weight: 800;">✓</span> 1-Click Live Zoom Lectures
           </div>
           <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #8b5cf6;">
-            <span style="color: #8b5cf6; font-weight: 800;">✓</span> 100% Private & Client-Only
+            <span style="color: #a0613e; font-weight: 800;">✓</span> 100% Private & Client-Only
           </div>
         </div>
 
