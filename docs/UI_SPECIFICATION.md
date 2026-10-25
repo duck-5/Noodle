@@ -201,9 +201,17 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 ### C. Synchronization Integrations
 *   **Google Tasks Sync**:
     - Toggle switch to enable/disable.
-    - OAuth Log In button (visible if unauthorized).
+    - **Connection Status Indicator**:
+        - Green pill badge (`● Connected to Google Tasks` / `מחובר ל-Google Tasks ●`) when authenticated with a valid token.
+        - Red warning pill badge (`⚠️ Not connected — Authentication required` / `לא מחובר — נדרש אימות ⚠️`) when Google Tasks is enabled but unauthenticated or token refresh failed.
+    - **Unauthenticated Alert Banner**:
+        - When `googleTasksEnabled === true` and unauthenticated or authentication failed, displays a prominent alert card on both the Dashboard and the Settings tab with title "Google Tasks sync is enabled but not connected" / "סנכרון Google Tasks מופעל אך החשבון אינו מחובר", explanatory text, and a 1-click "Connect Now ↗" / "התחבר עכשיו ↗" button.
+    - **OAuth & Silent Re-Authentication**:
+        - Preserves Google tokens across Moodle logout / SSO session resets.
+        - Performs non-interactive silent token refresh in the background using cached account email (`login_hint`).
+        - If silent refresh fails in the background, records error in `browser.storage.local` (`googleTasksAuthError`) and delivers a browser desktop notification instead of failing silently.
     - Status labels: Task List ID name, and "Last Synced" timestamp.
-    - **Sync Now Button**: Triggers manual sync on demand. Displays spinner during sync.
+    - **Sync Now / Connect Button**: Triggers interactive authentication or manual sync. Displays spinner during sync. Dynamic label displays `Sync Google Tasks Now` when connected, or `Authenticate & Sync Google Tasks` when unauthenticated.
     - **Sync Assignments Without Deadline Toggle** (`syncWithoutDeadline`):
         - Switch to toggle syncing assignments lacking explicit due dates to Google Tasks.
         - Default state: **OFF** (`syncWithoutDeadline: false`).

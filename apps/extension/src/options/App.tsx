@@ -434,6 +434,8 @@ export default function App() {
   // Settings tab states
   const [googleSyncStatus, setGoogleSyncStatus] = useState<string | null>(null);
   const [googleSyncLoading, setGoogleSyncLoading] = useState<boolean>(false);
+  const [hasGoogleTasksToken, setHasGoogleTasksToken] = useState<boolean>(false);
+  const [googleTasksAuthError, setGoogleTasksAuthError] = useState<string | null>(null);
 
 
   // Backup and custom disconnect states
@@ -490,10 +492,19 @@ export default function App() {
     loadData();
 
     const handleStorageChange = (changes: { [key: string]: any }, areaName: string) => {
-      if (areaName === 'local' && changes.wstoken && changes.wstoken.newValue) {
-        // If the token is identical to our current state or we are in active course selection, avoid re-running onboarding
-        if (changes.wstoken.newValue !== token && onboardingStep !== 2) {
-          loadData();
+      if (areaName === 'local') {
+        if (changes.wstoken && changes.wstoken.newValue) {
+          // If the token is identical to our current state or we are in active course selection, avoid re-running onboarding
+          if (changes.wstoken.newValue !== token && onboardingStep !== 2) {
+            loadData();
+          }
+        }
+        if (changes.googleAccessToken || changes.googleTokenExpiry) {
+          const hasToken = !!(changes.googleAccessToken?.newValue && (!changes.googleTokenExpiry?.newValue || changes.googleTokenExpiry.newValue > Date.now()));
+          setHasGoogleTasksToken(hasToken);
+        }
+        if ('googleTasksAuthError' in changes) {
+          setGoogleTasksAuthError(changes.googleTasksAuthError?.newValue || null);
         }
       }
     };
@@ -571,6 +582,18 @@ export default function App() {
       }
 
       const tourSeenRes = await browser.storage.local.get('hasSeenTour');
+      const googleAuthRes = (await browser.storage.local.get([
+        'googleAccessToken',
+        'googleTokenExpiry',
+        'googleTasksAuthError',
+      ])) as {
+        googleAccessToken?: string;
+        googleTokenExpiry?: number;
+        googleTasksAuthError?: string | null;
+      };
+      const isGoogleAuth = !!(googleAuthRes.googleAccessToken && (!googleAuthRes.googleTokenExpiry || googleAuthRes.googleTokenExpiry > Date.now()));
+      setHasGoogleTasksToken(isGoogleAuth);
+      setGoogleTasksAuthError(googleAuthRes.googleTasksAuthError || null);
 
       setToken(storedToken);
       setTrackedCourseIdsState(ids);
@@ -839,6 +862,10 @@ export default function App() {
       const res = await syncNowOnBackground();
       if (res?.success && res.result) {
         setSyncResult(res.result);
+        if (settings?.googleTasksEnabled && (res.result as any).googleSyncError) {
+          showToast(t('google_tasks_auth_warning_title'), 'error');
+          setGoogleTasksAuthError((res.result as any).googleSyncError);
+        }
       } else if (res && !res.success) {
         showToast(`Sync failed: ${res.error}`, 'error');
       }
@@ -1023,11 +1050,20 @@ export default function App() {
       const res = await syncGoogleTasksOnBackground(true); // Interactive login allowed
       if (res.success) {
         setGoogleSyncStatus(res.status || 'Tasks synchronized successfully.');
+        setGoogleTasksAuthError(null);
+        setHasGoogleTasksToken(true);
+        showToast(t('google_tasks_status_connected'), 'success');
       } else {
-        setGoogleSyncStatus(`Google Sync failed: ${res.error}`);
+        const errMsg = res.error || 'Authentication failed';
+        setGoogleSyncStatus(`Google Sync failed: ${errMsg}`);
+        setGoogleTasksAuthError(errMsg);
+        showToast(`Google Sync failed: ${errMsg}`, 'error');
       }
     } catch (e: any) {
-      setGoogleSyncStatus(`Google Sync failed: ${e.message}`);
+      const errMsg = e?.message || String(e);
+      setGoogleSyncStatus(`Google Sync failed: ${errMsg}`);
+      setGoogleTasksAuthError(errMsg);
+      showToast(`Google Sync failed: ${errMsg}`, 'error');
     } finally {
       setGoogleSyncLoading(false);
       setTimeout(() => setGoogleSyncStatus(null), 8000);
@@ -1754,6 +1790,10 @@ export default function App() {
               onToggleCompleted={handleToggleCompleted}
               onToggleHidden={handleToggleHidden}
               onLabDetected={(id, name) => setLabModalCourse({ id, name })}
+              hasGoogleTasksToken={hasGoogleTasksToken}
+              googleTasksAuthError={googleTasksAuthError}
+              onSyncGoogle={handleSyncGoogleTasks}
+              googleSyncLoading={googleSyncLoading}
             />
           ) : activeTab === 'assignments' ? (
             <AssignmentsTab
@@ -1795,6 +1835,8 @@ export default function App() {
               onSyncGoogle={handleSyncGoogleTasks}
               googleSyncLoading={googleSyncLoading}
               googleSyncStatus={googleSyncStatus}
+              hasGoogleTasksToken={hasGoogleTasksToken}
+              googleTasksAuthError={googleTasksAuthError}
               syncResult={syncResult}
               onDisconnectClick={handleDisconnectClick}
               onToggleSyncWithoutDeadline={async (enabled: boolean) => {
@@ -2241,6 +2283,10 @@ function DashboardTab({
   onToggleCompleted,
   onToggleHidden,
   onLabDetected,
+  hasGoogleTasksToken,
+  googleTasksAuthError,
+  onSyncGoogle,
+  googleSyncLoading,
 }: {
   assignments: EnhancedAssignment[];
   meetings: ZoomMeeting[];
@@ -2262,6 +2308,10 @@ function DashboardTab({
   onToggleCompleted?: (assignmentId: number) => void;
   onToggleHidden?: (assignmentId: number) => void;
   onLabDetected?: (id: number, name: string) => void;
+  hasGoogleTasksToken?: boolean;
+  googleTasksAuthError?: string | null;
+  onSyncGoogle?: () => void;
+  googleSyncLoading?: boolean;
 } & TabProps) {
   const [isHeroExpanded, setIsHeroExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
@@ -2339,6 +2389,45 @@ function DashboardTab({
 
   return (
     <div className="tab-dashboard">
+      {settings?.googleTasksEnabled && (!hasGoogleTasksToken || googleTasksAuthError) && (
+        <div
+          className="google-tasks-auth-banner glass-panel"
+          style={{
+            marginBottom: '1rem',
+            padding: '0.85rem 1.25rem',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            background: 'rgba(239, 68, 68, 0.1)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--accent-red, #ef4444)' }}>
+                {t('google_tasks_auth_warning_title')}
+              </div>
+              <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
+                {t('google_tasks_auth_warning_desc')}
+              </div>
+            </div>
+          </div>
+          {onSyncGoogle && (
+            <button
+              className="primary-btn btn-sm"
+              onClick={onSyncGoogle}
+              disabled={googleSyncLoading}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {googleSyncLoading ? t('syncing') : t('connect_now')}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 1. Hero Action Strip: Hero Spotlight + Upcoming To-Do Queue */}
       <div className="hero-action-strip">
         {/* Left: Hero Spotlight Card */}
@@ -4267,6 +4356,8 @@ function SettingsTab({
   onImportConfig,
   googleSyncLoading,
   googleSyncStatus,
+  hasGoogleTasksToken,
+  googleTasksAuthError,
   syncResult,
   onDisconnectClick,
   onToggleSyncWithoutDeadline,
@@ -4288,6 +4379,8 @@ function SettingsTab({
   onImportConfig: (file: File) => void;
   googleSyncLoading: boolean;
   googleSyncStatus: string | null;
+  hasGoogleTasksToken?: boolean;
+  googleTasksAuthError?: string | null;
   syncResult?: SyncResult | null;
   onDisconnectClick?: () => void;
   onToggleSyncWithoutDeadline?: (enabled: boolean) => void;
@@ -4349,7 +4442,24 @@ function SettingsTab({
 
       {/* Google Tasks Section */}
       <div className={`settings-section google-tasks-section ${tourStep === 8 ? 'tour-highlight' : ''}`}>
-        <h4>{t('google_tasks_sync_title')}</h4>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>{t('google_tasks_sync_title')}</h4>
+          {settings.googleTasksEnabled && (
+            <span
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.2rem 0.6rem',
+                borderRadius: 'var(--radius-full, 9999px)',
+                fontWeight: 600,
+                background: hasGoogleTasksToken && !googleTasksAuthError ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                color: hasGoogleTasksToken && !googleTasksAuthError ? 'var(--accent-green, #22c55e)' : 'var(--accent-red, #ef4444)',
+                border: `1px solid ${hasGoogleTasksToken && !googleTasksAuthError ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              }}
+            >
+              {hasGoogleTasksToken && !googleTasksAuthError ? t('google_tasks_status_connected') : t('google_tasks_status_not_connected')}
+            </span>
+          )}
+        </div>
         <div className="toggle-row">
           <div>
             <span className="toggle-label">{t('google_tasks_sync_title')}</span>
@@ -4367,6 +4477,33 @@ function SettingsTab({
 
         {settings.googleTasksEnabled && (
           <div className="google-subsettings" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+            {(!hasGoogleTasksToken || googleTasksAuthError) && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '0.75rem 1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--accent-red, #ef4444)' }}>
+                    {t('google_tasks_auth_warning_title')}
+                  </div>
+                  <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
+                    {t('google_tasks_auth_warning_desc')}
+                  </div>
+                </div>
+                <button className="primary-btn btn-sm" onClick={onSyncGoogle} disabled={googleSyncLoading}>
+                  {googleSyncLoading ? t('syncing') : t('connect_now')}
+                </button>
+              </div>
+            )}
+
             <div>
               <label htmlFor="tasks-list-name" style={{ display: 'block', marginBottom: '0.3rem' }}>{t('google_tasks_list_name_label')}</label>
               <input
@@ -4397,7 +4534,11 @@ function SettingsTab({
 
             <div className="tasks-action-row">
               <button className="primary-btn btn-sm" onClick={onSyncGoogle} disabled={googleSyncLoading}>
-                {googleSyncLoading ? t('syncing') : `🔗 ${t('auth_sync_google')}`}
+                {googleSyncLoading
+                  ? t('syncing')
+                  : hasGoogleTasksToken && !googleTasksAuthError
+                  ? `🔄 ${t('sync_tasks_now')}`
+                  : `🔗 ${t('auth_sync_google')}`}
               </button>
             </div>
 

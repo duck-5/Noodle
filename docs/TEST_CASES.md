@@ -166,6 +166,7 @@ graph LR
 | **TC-GT-06** | Hidden Task Exclusion & Google Tasks Deletion | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-07** | Manual Google Tasks Sync Trigger | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-08** | Assignments Without Deadline Sync Setting & Deletion Logic | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
+| **TC-GT-09** | Persistent Auth, Silent Refresh & Unauthenticated Sync Alert | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
@@ -942,6 +943,20 @@ graph LR
   2. Verify the toggle "סנכרון מטלות ללא תאריך יעד ל-Google Tasks" / "Sync assignments without deadline to Google Tasks" defaults to OFF with descriptive explanation text.
   3. Enable the switch and trigger "Sync Now". Verify undated assignments populate Google Tasks.
   4. Disable the switch and trigger "Sync Now". Verify undated assignments are pruned from Google Tasks.
+
+#### TC-GT-09: Persistent Auth, Silent Refresh & Unauthenticated Sync Alert
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies Google Tasks authentication persists across sessions, executes silent background token refresh without repeated user prompts, and warns the user when Google Tasks sync is enabled but unauthenticated.
+* **Automated Test Flow**:
+  1. Simulate Moodle logout; assert `googleAccessToken` and `googleTokenExpiry` are preserved in storage.
+  2. Run background sync with expired token; verify silent refresh executes with `login_hint`.
+  3. Simulate background sync authentication failure; assert `googleTasksAuthError` is written to storage and desktop notification is created.
+* **Browser Agent Prompt / Action**:
+  1. In Settings, enable Google Tasks sync without logging in.
+  2. Verify red status badge "⚠️ Not connected — Authentication required" is visible.
+  3. Navigate to Dashboard; verify warning banner "Google Tasks sync is enabled but not connected" is displayed with a "Connect Now ↗" button.
+  4. Click "Connect Now ↗", authenticate, and verify status changes to "● Connected to Google Tasks" and the warning banner dismisses.
 
 ---
 
