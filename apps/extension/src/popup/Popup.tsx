@@ -1,8 +1,8 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import type { SyncResult } from '@tautracker/moodle-client';
-import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings } from '../shared/storage.js';
-import { syncNowOnBackground, syncGoogleTasksOnBackground } from '../shared/messaging.js';
+import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
+import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
 import logoImg from '../assets/logo.png';
 import './Popup.css';
@@ -12,6 +12,7 @@ export default function Popup() {
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [settings, setSettingsState] = useState<any>(null);
+  const [signingInMoodle, setSigningInMoodle] = useState<boolean>(false);
 
   async function loadData() {
     try {
@@ -156,6 +157,11 @@ export default function Popup() {
       </header>
 
       <main className="popup-main-content">
+        {signingInMoodle && (
+          <div style={{ padding: '0.45rem 0.7rem', marginBottom: '0.6rem', borderRadius: '6px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center' }}>
+            ⏳ {isHe ? 'מתחבר למודל...' : 'Signing in to Moodle...'}
+          </div>
+        )}
         {activeMeetings.length > 0 && (
           <div className="popup-active-zoom-banner">
             {activeMeetings.slice(0, 2).map((m: any, idx: number) => {
@@ -207,9 +213,22 @@ export default function Popup() {
                 <div
                   key={a.id}
                   className="popup-assign-card clickable"
-                  onClick={() => {
+                  onClick={async () => {
                     if (a.link) {
-                      window.open(a.link, '_blank', 'noopener,noreferrer');
+                      setSigningInMoodle(true);
+                      try {
+                        const allCookies = await browser.cookies.getAll({ domain: 'moodle.tau.ac.il' }).catch(() => []);
+                        const hasSession = allCookies.some((c) => c.name.startsWith('MoodleSession'));
+                        if (!hasSession) {
+                          const creds = await getMoodleCredentials();
+                          if (creds && creds.username && creds.password) {
+                            await loginTauSsoOnBackground(creds.username, creds.idNumber || '', creds.password, true).catch(() => {});
+                          }
+                        }
+                        await browser.tabs.create({ url: a.link });
+                      } finally {
+                        setSigningInMoodle(false);
+                      }
                     } else {
                       handleOpenDashboard();
                     }

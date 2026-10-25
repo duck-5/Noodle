@@ -43,10 +43,123 @@ interface GroupedCourses {
 
 export function buildFileDownloadUrl(rawUrl: string, token: string | null): string {
   if (!rawUrl) return '';
+  let url = rawUrl;
   if (token && !token.startsWith('web_session_')) {
-    return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}token=${token}`;
+    url = `${url}${url.includes('?') ? '&' : '?'}token=${token}`;
   }
-  return rawUrl;
+  return url;
+}
+
+export function buildFileOpenUrl(rawUrl: string, token: string | null): string {
+  if (!rawUrl) return '';
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.searchParams.delete('forcedownload');
+    if (token && !token.startsWith('web_session_')) {
+      parsed.searchParams.set('token', token);
+    }
+    return parsed.toString();
+  } catch {
+    let url = rawUrl.replace(/([?&])forcedownload=1(&|$)/g, (_m, p1, p2) => (p2 === '&' ? p1 : ''));
+    if (token && !token.startsWith('web_session_')) {
+      url = `${url}${url.includes('?') ? '&' : '?'}token=${token}`;
+    }
+    return url;
+  }
+}
+
+function getInlineMimeType(fileName: string): string | null {
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  switch (ext) {
+    case 'pdf':
+      return 'application/pdf';
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'txt':
+    case 'log':
+    case 'py':
+    case 'c':
+    case 'cpp':
+    case 'h':
+    case 'hpp':
+    case 'java':
+    case 'js':
+    case 'ts':
+    case 'tsx':
+    case 'jsx':
+    case 'cs':
+    case 'go':
+    case 'rs':
+    case 'rb':
+    case 'php':
+    case 'sh':
+    case 'sql':
+    case 'md':
+    case 'csv':
+    case 'yml':
+    case 'yaml':
+    case 'ini':
+    case 'cfg':
+    case 'tex':
+    case 'r':
+    case 'm':
+      return 'text/plain;charset=utf-8';
+    case 'json':
+      return 'application/json;charset=utf-8';
+    case 'html':
+    case 'htm':
+      return 'text/html;charset=utf-8';
+    case 'xml':
+      return 'text/xml;charset=utf-8';
+    default:
+      return null;
+  }
+}
+
+export async function handleOpenFileInNewTab(
+  e: React.MouseEvent<HTMLAnchorElement>,
+  rawUrl: string,
+  token: string | null,
+  fileName: string
+): Promise<void> {
+  e.preventDefault();
+  e.stopPropagation();
+  const openUrl = buildFileOpenUrl(rawUrl, token);
+  if (!openUrl) return;
+
+  const inlineMime = getInlineMimeType(fileName);
+  const isSubmissionFile = openUrl.includes('assignsubmission_file') || openUrl.includes('submission_files');
+
+  // If Moodle forces attachment download (especially on submitted files) and the browser can render the file inline,
+  // fetch the bytes and open a blob URL with the explicit inline MIME type in a new tab.
+  if (inlineMime && (isSubmissionFile || rawUrl.includes('forcedownload=1'))) {
+    try {
+      const res = await fetch(openUrl, { credentials: 'include' });
+      const contentType = res.headers.get('content-type') || '';
+      // Only use the blob if we didn't get redirected to an HTML login page (unless the file itself is HTML)
+      if (res.ok && (!contentType.includes('text/html') || inlineMime.startsWith('text/html'))) {
+        const arrayBuffer = await res.arrayBuffer();
+        const blob = new Blob([arrayBuffer], { type: inlineMime });
+        const blobUrl = URL.createObjectURL(blob);
+        await browser.tabs.create({ url: blobUrl });
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
+        return;
+      }
+    } catch (err) {
+      console.warn('Inline blob preview failed, falling back to direct tab open:', err);
+    }
+  }
+
+  await browser.tabs.create({ url: openUrl });
 }
 
 function SyncCountdown({
@@ -229,6 +342,8 @@ export default function App() {
     await browser.storage.local.set({ sidebarCollapsed: val });
   };
 
+  const [signingInToMoodle, setSigningInToMoodle] = useState<boolean>(false);
+
   useEffect(() => {
     const handleGlobalClick = async (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -237,23 +352,26 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
 
-        const cookie = await browser.cookies.get({ url: 'https://moodle.tau.ac.il', name: 'MoodleSession' });
-        if (cookie) {
-          browser.tabs.create({ url: link.href });
-          return;
-        }
-
-        const creds = await getMoodleCredentials();
-        if (creds && creds.username && creds.password) {
-          try {
-            await loginTauSsoOnBackground(creds.username, creds.idNumber || '', creds.password, true);
-            browser.tabs.create({ url: link.href });
-          } catch (err) {
-            console.error('SSO auto-login failed', err);
-            browser.tabs.create({ url: link.href });
+        setSigningInToMoodle(true);
+        try {
+          const allCookies = await browser.cookies.getAll({ domain: 'moodle.tau.ac.il' }).catch(() => []);
+          const hasSession = allCookies.some((c) => c.name.startsWith('MoodleSession'));
+          if (hasSession) {
+            await browser.tabs.create({ url: link.href });
+            return;
           }
-        } else {
-          browser.tabs.create({ url: link.href });
+
+          const creds = await getMoodleCredentials();
+          if (creds && creds.username && creds.password) {
+            try {
+              await loginTauSsoOnBackground(creds.username, creds.idNumber || '', creds.password, true);
+            } catch (err) {
+              console.error('SSO auto-login failed', err);
+            }
+          }
+          await browser.tabs.create({ url: link.href });
+        } finally {
+          setSigningInToMoodle(false);
         }
       }
     };
@@ -551,6 +669,10 @@ export default function App() {
               const ids = idsArray.map(Number);
               setTrackedCourseIdsState(ids);
               await setTrackedCourseIds(ids, true);
+            } else if (key === 'googleTasksEnabled' || key === 'googleClientId') {
+              // Keep local Google Tasks toggle if already enabled locally
+              if (key === 'googleTasksEnabled' && updatedSettings.googleTasksEnabled) continue;
+              (updatedSettings as any)[key] = trackedVal.value;
             } else {
               (updatedSettings as any)[key] = trackedVal.value;
             }
@@ -837,7 +959,10 @@ export default function App() {
     if (!settings) return;
     const updated = { ...settings, googleTasksEnabled: enabled };
     setSettingsState(updated);
-    await setSettings(updated);
+    await setSettings({ googleTasksEnabled: enabled });
+    if (enabled) {
+      handleSyncGoogleTasks();
+    }
   }
 
   async function handleUpdateGoogleListName(name: string) {
@@ -1313,7 +1438,18 @@ export default function App() {
             </form>
           </div>
         </div>
-        {toast && (
+        {signingInToMoodle && (
+        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span>{t('signing_in_to_moodle')}</span>
+          </span>
+        </div>
+      )}
+
+      {toast && (
           <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
             <span className="toast-message">{toast.message}</span>
             <button className="toast-close" onClick={() => setToast(null)}>×</button>
@@ -1428,7 +1564,18 @@ export default function App() {
             </>
           )}
         </div>
-        {toast && (
+        {signingInToMoodle && (
+        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span>{t('signing_in_to_moodle')}</span>
+          </span>
+        </div>
+      )}
+
+      {toast && (
           <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
             <span className="toast-message">{toast.message}</span>
             <button className="toast-close" onClick={() => setToast(null)}>×</button>
@@ -1788,6 +1935,17 @@ export default function App() {
         />
       )}
 
+      {signingInToMoodle && (
+        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span>{t('signing_in_to_moodle')}</span>
+          </span>
+        </div>
+      )}
+
       {toast && (
         <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
           <span className="toast-message">{toast.message}</span>
@@ -2105,6 +2263,7 @@ function DashboardTab({
   onToggleHidden?: (assignmentId: number) => void;
   onLabDetected?: (id: number, name: string) => void;
 } & TabProps) {
+  const [isHeroExpanded, setIsHeroExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
   const [expandedCourseAssignId, setExpandedCourseAssignId] = useState<number | null>(null);
@@ -2188,7 +2347,11 @@ function DashboardTab({
             className={`hero-spotlight-card next-assignment-banner glass-panel ${tourStep === 2 ? 'tour-highlight' : ''}`}
             style={{
               borderInlineStartColor: getCourseColor(nextAssignment.courseId),
-              cursor: 'default'
+              cursor: 'pointer'
+            }}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('a, button, input')) return;
+              setIsHeroExpanded((prev) => !prev);
             }}
           >
             <div>
@@ -2197,11 +2360,14 @@ function DashboardTab({
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   {t('next_assignment')}
                 </span>
-                {nextAssignment.deadline && (
-                  <span className={`badge ${getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).badgeClass}`}>
-                    {getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).deadlineText}
-                  </span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {nextAssignment.deadline && (
+                    <span className={`badge ${getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).badgeClass}`}>
+                      {getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).deadlineText}
+                    </span>
+                  )}
+                  <ChevronDownIcon size={15} expanded={isHeroExpanded} />
+                </div>
               </div>
 
               <h3 className="hero-task-title">{nextAssignment.name}</h3>
@@ -2219,6 +2385,7 @@ function DashboardTab({
                 )}
               </div>
 
+              <div className={`queue-item-expanded ${isHeroExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
               {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
                 <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
                   <span className="files-column-label">
@@ -2227,11 +2394,12 @@ function DashboardTab({
                   <div className="files-column-list">
                     {nextAssignment.attachments.map((att, attIdx) => {
                       const downloadUrl = buildFileDownloadUrl(att.url, token);
+                      const openUrl = buildFileOpenUrl(att.url, token);
                       return (
                         <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
                           <span style={{ fontSize: '0.8rem' }}>📄 {att.name}</span>
                           <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                            <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => ev.stopPropagation()}>
+                            <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                               {t('open_file')}
                             </a>
                             <a
@@ -2263,17 +2431,18 @@ function DashboardTab({
                   <div className="files-column-list">
                     {nextSubjectFiles.map((sf, sfIdx) => {
                       const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                      const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                       return (
                         <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
                           <span style={{ fontSize: '0.8rem' }}>📂 {sf.fileName}</span>
                           <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
                             <a
-                              href={downloadUrl}
+                              href={openUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="file-action-btn"
                               style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                              onClick={(ev) => ev.stopPropagation()}
+                              onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
                             >
                               {t('open_file')}
                             </a>
@@ -2306,18 +2475,19 @@ function DashboardTab({
                   <div className="files-column-list">
                     {nextAssignment.submittedFiles.map((att, attIdx) => {
                       const downloadUrl = buildFileDownloadUrl(att.url, token);
+                      const openUrl = buildFileOpenUrl(att.url, token);
                       return (
                         <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
                           <CheckIcon size={12} />
                           <span style={{ fontSize: '0.8rem' }}>{att.name}</span>
                           <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
                             <a
-                              href={downloadUrl}
+                              href={openUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="file-action-btn"
                               style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                              onClick={(ev) => ev.stopPropagation()}
+                              onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
                             >
                               {t('open_file')}
                             </a>
@@ -2340,6 +2510,7 @@ function DashboardTab({
                   </div>
                 </div>
               )}
+              </div>
             </div>
 
             <div>
@@ -2480,16 +2651,18 @@ function DashboardTab({
                           <div className="files-column-list">
                             {task.attachments.map((att, attIdx) => {
                               const downloadUrl = buildFileDownloadUrl(att.url, token);
+                              const openUrl = buildFileOpenUrl(att.url, token);
                               return (
                                 <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
                                     <a
-                                      href={downloadUrl}
+                                      href={openUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="file-action-btn"
                                       style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
+                                      onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
                                     >
                                       {t('open_file')}
                                     </a>
@@ -2521,16 +2694,18 @@ function DashboardTab({
                           <div className="files-column-list">
                             {taskSubjectFiles.map((sf, sfIdx) => {
                               const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                              const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                               return (
                                 <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
                                     <a
-                                      href={downloadUrl}
+                                      href={openUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="file-action-btn"
                                       style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
+                                      onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
                                     >
                                       {t('open_file')}
                                     </a>
@@ -2562,17 +2737,19 @@ function DashboardTab({
                           <div className="files-column-list">
                             {task.submittedFiles.map((att, attIdx) => {
                               const downloadUrl = buildFileDownloadUrl(att.url, token);
+                              const openUrl = buildFileOpenUrl(att.url, token);
                               return (
                                 <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                   <CheckIcon size={11} />
                                   <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
                                     <a
-                                      href={downloadUrl}
+                                      href={openUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="file-action-btn"
                                       style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                                      onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
                                     >
                                       {t('open_file')}
                                     </a>
@@ -3144,11 +3321,12 @@ function DashboardTab({
                                       <div className="files-column-list">
                                         {a.attachments.map((att, attIdx) => {
                                           const downloadUrl = buildFileDownloadUrl(att.url, token);
+                                          const openUrl = buildFileOpenUrl(att.url, token);
                                           return (
                                             <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                               <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
                                               <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                                                   {t('open_file')}
                                                 </a>
                                                 <a
@@ -3179,11 +3357,12 @@ function DashboardTab({
                                       <div className="files-column-list">
                                         {assignSubjectFiles.map((sf, sfIdx) => {
                                           const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                                          const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                                           return (
                                             <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                               <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
                                               <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
                                                   {t('open_file')}
                                                 </a>
                                                 <a
@@ -3214,12 +3393,13 @@ function DashboardTab({
                                       <div className="files-column-list">
                                         {a.submittedFiles.map((sub, sIdx) => {
                                           const downloadUrl = buildFileDownloadUrl(sub.url, token);
+                                          const openUrl = buildFileOpenUrl(sub.url, token);
                                           return (
                                             <div key={sIdx} className="submitted-file-chip file-column-item">
                                               <CheckIcon size={11} />
                                               <span style={{ fontSize: '0.75rem' }}>{sub.name}</span>
                                               <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sub.url, token, sub.name)}>
                                                   {t('open_file')}
                                                 </a>
                                                 <a
@@ -3749,11 +3929,12 @@ function AssignmentsTab({
                         <div className="files-column-list">
                           {a.attachments.map((att, attIdx) => {
                             const downloadUrl = buildFileDownloadUrl(att.url, token);
+                            const openUrl = buildFileOpenUrl(att.url, token);
                             return (
                               <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                 <span className="file-name">📄 {att.name}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                                     {t('open_file')}
                                   </a>
                                   <a
@@ -3784,11 +3965,12 @@ function AssignmentsTab({
                         <div className="files-column-list">
                           {subjectFiles.map((sf, sfIdx) => {
                             const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                            const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                             return (
                               <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                 <span className="file-name">📂 {sf.fileName}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
                                     {t('open_file')}
                                   </a>
                                   <a
@@ -3819,6 +4001,7 @@ function AssignmentsTab({
                         <div className="files-column-list">
                           {a.submittedFiles.map((sub, sIdx) => {
                             const downloadUrl = buildFileDownloadUrl(sub.url, token);
+                            const openUrl = buildFileOpenUrl(sub.url, token);
                             return (
                               <div key={`sub-${sIdx}`} className="submitted-file-chip file-column-item">
                                 <span className="file-check-badge">
@@ -3826,7 +4009,7 @@ function AssignmentsTab({
                                 </span>
                                 <span className="file-name">{sub.name}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sub.url, token, sub.name)}>
                                     {t('open_file')}
                                   </a>
                                   <a
@@ -4562,9 +4745,21 @@ function CourseDetailView({
   return (
     <div className="course-detail-view glass-panel" style={{ borderTop: `6px solid ${courseColor}` }}>
       <div className="detail-header">
-        <button className="back-btn" onClick={onBack}>
-          {t('back_to_courses')}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="back-btn" onClick={onBack}>
+            {t('back_to_courses')}
+          </button>
+          <a
+            href={getCourseMoodleUrl(courseId, courseAssignments[0]?.link || courseFiles[0]?.fileUrl)}
+            target="_blank"
+            rel="noreferrer"
+            className="secondary-btn btn-sm"
+            data-moodle-link="true"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none' }}
+          >
+            <span>{t('open_in_moodle')}</span>
+          </a>
+        </div>
         <div className="detail-title-section">
           <h3 style={{ color: courseColor }}>{courseDisplayName}</h3>
           <span className="course-id-badge">{rawCourseName}</span>
@@ -5010,10 +5205,11 @@ function CourseDetailView({
                                       <div className="files-column-list">
                                         {a.attachments.map((att, attIdx) => {
                                           const downloadUrl = buildFileDownloadUrl(att.url, token);
+                                          const openUrl = buildFileOpenUrl(att.url, token);
                                           return (
                                             <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                               <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                              <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                              <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                                                 {t('open_file')}
                                               </a>
                                               <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
@@ -5035,17 +5231,19 @@ function CourseDetailView({
                           <div className="section-files-list">
                             {content.files.map((f, fIdx) => {
                               const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                              const openUrl = buildFileOpenUrl(f.fileUrl, token);
                               return (
                                 <div key={fIdx} className="section-file-item">
                                   <span className="item-name">📄 {f.fileName}</span>
                                   <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                     {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
                                     <a
-                                      href={downloadUrl}
+                                      href={openUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="file-action-btn"
                                       style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
+                                      onClick={(ev) => handleOpenFileInNewTab(ev, f.fileUrl, token, f.fileName)}
                                     >
                                       {t('open_file')}
                                     </a>
@@ -5200,10 +5398,11 @@ function CourseDetailView({
                           <div className="files-column-list">
                             {a.attachments.map((att, attIdx) => {
                               const downloadUrl = buildFileDownloadUrl(att.url, token);
+                              const openUrl = buildFileOpenUrl(att.url, token);
                               return (
                                 <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                                     {t('open_file')}
                                   </a>
                                   <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
@@ -5225,10 +5424,11 @@ function CourseDetailView({
                           <div className="files-column-list">
                             {assignSubjectFiles.map((sf, sfIdx) => {
                               const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                              const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                               return (
                                 <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
                                     {t('open_file')}
                                   </a>
                                   <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
@@ -5249,11 +5449,12 @@ function CourseDetailView({
                           <div className="files-column-list">
                             {a.submittedFiles.map((att, attIdx) => {
                               const downloadUrl = buildFileDownloadUrl(att.url, token);
+                              const openUrl = buildFileOpenUrl(att.url, token);
                               return (
                                 <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item">
                                   <CheckIcon size={11} />
                                   <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <a href={downloadUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
                                     {t('open_file')}
                                   </a>
                                   <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>

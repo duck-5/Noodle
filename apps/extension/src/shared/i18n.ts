@@ -214,6 +214,7 @@ export const translations = {
     prev_month: "חודש קודם",
     next_month: "חודש הבא",
     calendar_click_hint: "לחץ על מטלה בלוח השנה לפתיחה ומיקוד ברשימה",
+    signing_in_to_moodle: "מתחבר למודל...",
   },
   en: {
     dashboard: "Dashboard",
@@ -430,5 +431,6 @@ export const translations = {
     prev_month: "Previous Month",
     next_month: "Next Month",
     calendar_click_hint: "Click an assignment in the calendar to expand and focus it in the feed",
+    signing_in_to_moodle: "Signing in to Moodle...",
   }
 };

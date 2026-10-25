@@ -415,6 +415,11 @@ async function performSettingsSync() {
 
   for (const [key, tracked] of Object.entries(merged)) {
     if (!tracked) continue;
+    // Preserve local Google Tasks integration toggle/config so cross-device Moodle sync
+    // or failed calendar writes never unexpectedly turn off Google Tasks locally.
+    if (key === 'googleTasksEnabled' || key === 'googleClientId') {
+      continue;
+    }
     newTimestamps[key] = tracked.updatedAt;
 
     if (key === 'trackedCourseIds') {
@@ -578,26 +583,25 @@ async function performBackgroundSync(): Promise<SyncResult> {
   }
 }
 
-async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean): Promise<string> {
-  const cached = (await browser.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
-    googleAccessToken?: string;
-    googleTokenExpiry?: number;
-  };
-  if (cached.googleAccessToken && cached.googleTokenExpiry && cached.googleTokenExpiry > Date.now() + 60000) {
-    return cached.googleAccessToken;
-  }
-
-  if (!interactive) {
-    throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
+async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean, forceRefresh = false): Promise<string> {
+  if (!forceRefresh) {
+    const cached = (await browser.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
+      googleAccessToken?: string;
+      googleTokenExpiry?: number;
+    };
+    if (cached.googleAccessToken && cached.googleTokenExpiry && cached.googleTokenExpiry > Date.now() + 60000) {
+      return cached.googleAccessToken;
+    }
   }
 
   const redirectUrl = typeof browser.identity.getRedirectURL === 'function'
     ? browser.identity.getRedirectURL()
     : `https://${browser.runtime.id}.chromiumapp.org/`;
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
+  const promptParam = interactive ? '' : '&prompt=none';
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}${promptParam}`;
 
   return new Promise((resolve, reject) => {
-    browser.identity.launchWebAuthFlow({ url: authUrl, interactive: true })
+    browser.identity.launchWebAuthFlow({ url: authUrl, interactive })
       .then((responseUrl) => {
         if (!responseUrl) {
           return reject(new Error('OAuth flow canceled or returned empty response.'));
@@ -652,9 +656,24 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   accessToken = await getLaunchWebAuthFlowToken(clientId, interactive);
 
   const syncErrors: string[] = [];
-  const listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
-    syncErrors.push(err);
-  });
+  let listId: string;
+  try {
+    listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
+      syncErrors.push(err);
+    });
+  } catch (err: any) {
+    // If cached token was revoked or expired early (401), refresh token and retry once
+    if (String(err?.message || err).includes('401')) {
+      await browser.storage.local.remove(['googleAccessToken', 'googleTokenExpiry']);
+      accessToken = await getLaunchWebAuthFlowToken(clientId, interactive, true);
+      syncErrors.length = 0;
+      listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (e: string) => {
+        syncErrors.push(e);
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const rawAssignments = cachedResult.assignments || [];
   const mappedAssignments = rawAssignments.map((a: any) => {

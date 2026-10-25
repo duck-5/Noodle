@@ -77,6 +77,7 @@ The top of the dashboard features a split horizontal action strip designed for r
    - High-contrast card spotlighting the single nearest pending deadline, dynamically tinted with the course accent color (`rgba(courseColor, 0.08)` surface & glow border).
    - Category badge with course name and color indicator dot.
    - Section / Topic metadata strip providing immediate academic context.
+   - **Expandable Files Drawer (`isHeroExpanded`)**: Clicking the Hero Spotlight card expands/collapses its files drawer (`.queue-item-expanded`), keeping course subject files (`קבצי הנושא`), assignment attachments, and submitted files hidden by default until expanded.
    - Course Subject Files (`קבצי הנושא`): Dynamically resolves and displays course files matching the assignment's topic section, equipped with squircle green "פתח ↗" link (`#10b981`) and squircle arrow-only SVG Download button (`<DownloadIcon size={12} />`).
    - Action toolbar with direct 1-click controls:
      - "סמן כבוצע" / "סמן כלא הושלם" (`CheckIcon`)
@@ -151,6 +152,8 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 *   **Manage Courses Button**: FAB or bottom button that re-opens the Step 2 selection menu.
 
 ### B. Course Detail View
+*   **Header & Direct Moodle Link**:
+    - Includes a direct **"פתח במודל ↗" / "Open in Moodle ↗"** (`data-moodle-link="true"`) button in `.detail-header` to open the course's Moodle page directly (displaying a `"מתחבר למודל..."` / `"Signing in to Moodle..."` status indicator while SSO session verification runs).
 *   **Personalization Editor**:
     - **Nickname Field**: Real-time editable text input. Saving changes re-labels the course everywhere.
     - **Color Palette Picker**: A grid of selectable colored circles (min. 8 options). Selecting a circle updates the course's primary accent color.
