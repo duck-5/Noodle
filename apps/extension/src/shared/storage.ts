@@ -151,3 +151,29 @@ export async function setSettings(settings: Partial<ExtensionSettings>, skipSync
     }
   }
 }
+
+export function getGoogleOAuthRedirectUrl(): string {
+  let redirectUrl = '';
+  try {
+    if (typeof browser.identity?.getRedirectURL === 'function') {
+      redirectUrl = browser.identity.getRedirectURL();
+    }
+  } catch {
+    // Ignore context without identity API
+  }
+
+  if (!redirectUrl) {
+    redirectUrl = `https://${browser.runtime.id}.chromiumapp.org/`;
+  }
+
+  // Firefox Loopback RFC 8252 support for Google OAuth:
+  // Google rejects *.extensions.allizom.org due to required domain verification.
+  // Firefox 86+ intercepts http://127.0.0.1/mozoauth2/<subdomain> locally,
+  // which Google Cloud Console allows without domain ownership proof.
+  if (redirectUrl.includes('.extensions.allizom.org')) {
+    const subdomain = redirectUrl.replace('https://', '').split('.')[0];
+    redirectUrl = `http://127.0.0.1/mozoauth2/${subdomain}`;
+  }
+
+  return redirectUrl;
+}

@@ -240,4 +240,36 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // Take screenshot of coffee theme
     await optionsPage.screenshot({ path: 'screenshots/dashboard-coffee-theme.png' });
   });
+
+  test('TC-DASH-REHAUL-08: Toggling to cards view switches to responsive card grid and horizontal 2-section layout', async ({ optionsPage }) => {
+    // 1. Check segmented view mode buttons exist
+    const viewModeGroup = optionsPage.locator('.view-mode-toggle-group');
+    await expect(viewModeGroup).toBeVisible();
+
+    // 2. Click "Cards" button
+    const cardsBtn = viewModeGroup.locator('.view-mode-btn').filter({ hasText: /כרטיסים|Cards/ });
+    await expect(cardsBtn).toBeVisible();
+    await cardsBtn.click();
+    await expect(cardsBtn).toHaveClass(/active/);
+
+    // 3. Courses container should receive .courses-cards-grid
+    const coursesContainer = optionsPage.locator('.courses-rows-container');
+    await expect(coursesContainer).toHaveClass(/courses-cards-grid/);
+
+    // 4. Course card should have the 2-section layout
+    const firstCard = coursesContainer.locator('.course-grid-card').first();
+    await expect(firstCard).toBeVisible();
+    await expect(firstCard.locator('.course-card-left-section')).toBeVisible();
+    await expect(firstCard.locator('.course-card-right-section')).toBeVisible();
+
+    // 5. Card expansion in cards view should work
+    await firstCard.click();
+    const expandedPanel = firstCard.locator('.course-expanded-panel');
+    await expect(expandedPanel).toBeVisible();
+
+    // 6. Switch back to list view
+    const listBtn = viewModeGroup.locator('.view-mode-btn').filter({ hasText: /רשימה|List/ });
+    await listBtn.click();
+    await expect(coursesContainer).not.toHaveClass(/courses-cards-grid/);
+  });
 });

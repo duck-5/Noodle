@@ -101,15 +101,16 @@ The top of the dashboard features a split horizontal action strip designed for r
 
 ### C. My Tracked Courses ("הקורסים שלי")
 * **Deterministic Course Order**: Manual reordering arrows are removed for a predictable, clean list.
+* **View Options Toggle**: Segmented switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") allows toggling between a vertical rows list and a responsive card grid (`.courses-cards-grid`), persisted in local storage.
 * **Manage Courses Modal Trigger**: "⚙️ ניהול קורסים" button opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
-* **Interactive Course Rows**:
-   - Course color indicator dot, customized nickname, and course code.
-   - Mini progress bar reflecting per-course completion.
-   - Next task indicator for that course with deadline badge.
-   - Direct "Assignments" filter and "Go to Course" buttons.
-   - **Smooth Row Expansion**: Clicking anywhere on the course row smoothly expands an inline drawer revealing:
-     - **Zoom Links with Re-visibility**: All meetings configured for this course, displaying `<EyeIcon />` for visible and `<EyeOffIcon />` for hidden so hidden meetings can be unhidden at any time.
-     - **Next 5 Assignments**: Up to 5 upcoming unhidden assignments, start-aligned (not centered) with clean column structure, squircle open links, and squircle arrow-only download buttons. Hidden assignments are excluded. Compact `.btn-xs` action buttons allow marking done or unhiding.
+* **Dual View Modes (List & Cards)**:
+   - **List Mode**: Single horizontal flex row with course info, progress bar, next task, and actions toolbar.
+   - **Cards Mode**: Responsive grid (`repeat(auto-fill, minmax(360px, 1fr))`) where each card is partitioned into two horizontal sections:
+     - **Left Section**: Stacked column featuring course title/code with color dot, per-course progress bar, and next upcoming assignment details.
+     - **Right Section**: Vertically stacked action buttons ("Assignments", "Go to Course") and centered rotating expansion chevron (`▼`).
+* **Interactive Smooth Expansion**: Clicking anywhere on the row/card (or on the rotating chevron) smoothly opens the inline drawer (`.course-expanded-panel`) in both view modes, revealing:
+   - **Zoom Links with Re-visibility**: All meetings configured for this course, displaying `<EyeIcon />` for visible and `<EyeOffIcon />` for hidden so hidden meetings can be unhidden at any time.
+   - **Next 5 Assignments**: Up to 5 upcoming unhidden assignments, start-aligned (not centered) with clean column structure, squircle open links, and squircle arrow-only download buttons. Hidden assignments are excluded. Compact `.btn-xs` action buttons allow marking done or unhiding.
 
 ---
 
@@ -217,6 +218,12 @@ A dedicated full-page assignment feed providing comprehensive management of all 
         - Default state: **OFF** (`syncWithoutDeadline: false`).
         - Description: "Sync assignments without deadline to Google Tasks (Default: Off. When off, undated tasks will be pruned from Google Tasks)." / "סנכרון מטלות ללא תאריך יעד ל-Google Tasks (ברירת מחדל: כבוי. במצב כבוי, מטלות ללא מועד יוסרו מ-Google Tasks)."
     - **Hidden & Completed Task Deletion**: Tasks set as hidden or marked as done are automatically deleted from Google Tasks and never synced as active tasks. Toggling hidden or completed status triggers an immediate silent background sync if Google Tasks integration is enabled.
+    - **Advanced Google OAuth Settings (Collapsible)**:
+        - Collapsible section toggled via `⚙️ הגדרות מתקדמות ל-Google Tasks` / `⚙️ Advanced Google OAuth Settings` with a rotating chevron.
+        - **Authorized Redirect URI Display**: Shows the active runtime redirect URI (`http://127.0.0.1/mozoauth2/<subdomain>` in Firefox per RFC 8252, or `https://<id>.chromiumapp.org/` in Chrome) in a read-only monospace input with a 1-click **Copy** (`📋 העתק` / `Copy`) button.
+        - **Help Guidance**: Clear instructional text explaining how to resolve `redirect_uri_mismatch (Error 400)` by registering the redirect URI in Google Cloud Console.
+        - **Custom Client ID Input**: Optional input allowing self-hosters or custom GCP project owners to override the default Google OAuth 2.0 Client ID (`googleClientId`).
+        - **Manual Access Token Fallback**: Secure password input field allowing direct paste of a Google OAuth access token with a **Save & Sync** button for environments where browser OAuth dialogs cannot be opened.
 
 ### D. Notification Configurations
 *   **Push Alerts**: Toggle switch to enable/disable deadline reminders.

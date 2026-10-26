@@ -246,4 +246,9 @@ To ensure the student's Google Tasks list operates as a clean, actionable to-do 
 * **Orphaned Task Purging with Personal Task Isolation**:
   - Noodle scans for tasks tagged with `Noodle:assignId:{id}`. Any tagged task whose assignment is no longer tracked or active is deleted.
     - Personal tasks created manually by the user in the same list (lacking Noodle metadata) are strictly untouched.
+* **Cross-Browser OAuth 2.0 Redirection & RFC 8252 Loopback Architecture**:
+  - **Chromium**: Uses `https://<chrome_extension_id>.chromiumapp.org/` registered under a Chrome App OAuth Client ID.
+  - **Firefox**: `browser.identity.getRedirectURL()` generates `https://<subdomain>.extensions.allizom.org/`. Google Cloud Console enforces top-level domain verification for HTTPS web origins, making it impossible to register Mozilla's `allizom.org` domain.
+  - To comply with OAuth 2.0 for Native Apps ([RFC 8252 Section 7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3)), Firefox 86+ natively intercepts the loopback address `http://127.0.0.1/mozoauth2/<subdomain>`.
+  - The shared helper `getGoogleOAuthRedirectUrl()` inspects the environment and automatically transforms any `.extensions.allizom.org` redirect URL into `http://127.0.0.1/mozoauth2/<subdomain>`, which Google Cloud Console allows on OAuth 2.0 Web Client credentials without domain verification.
 

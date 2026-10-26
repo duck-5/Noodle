@@ -8,6 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Cards View Mode Option for "My Tracked Courses" (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`)**:
+  - Added a segmented view mode switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") in the "My Tracked Courses" section header on the Dashboard.
+  - Implemented a responsive card grid layout (`.courses-cards-grid`) where each course card is partitioned into two horizontal sections:
+    - Left section: Course title and code, per-course assignments progress bar, and next upcoming assignment details.
+    - Right section: Action buttons ("Assignments" / "Go to Course") and centered expansion chevron.
+  - Retained full drawer expansion (`.course-expanded-panel`) in cards mode, smoothly revealing course Zoom sessions and up to 5 upcoming assignments.
+- **Advanced Google OAuth Settings in Extension Options (`apps/extension/src/options/App.tsx`, `i18n.ts`)**:
+  - Added a collapsible "⚙️ הגדרות מתקדמות ל-Google Tasks" / "⚙️ Advanced Google OAuth Settings" panel within the Google Tasks section.
+  - Displays the active runtime authorized redirect URI with a 1-click "📋 העתק" / "Copy" button and troubleshooting instructions for Google Cloud Console.
+  - Added support for configuring a custom Google OAuth 2.0 Client ID (`googleClientId`).
+  - Added a manual access token input field with a 1-click "שמור וסנכרן" / "Save & Sync" button as an alternative direct fallback.
+### Fixed
+- **Firefox Google Tasks OAuth Error 400 `redirect_uri_mismatch` (`apps/extension/src/shared/storage.ts`, `apps/extension/src/background/serviceWorker.ts`, `TC-GT-01`)**:
+  - Resolved `redirect_uri_mismatch` in Firefox caused by Google rejecting Mozilla's un-verifiable `*.extensions.allizom.org` domain.
+  - Implemented RFC 8252 Section 7.3 loopback address resolution in `getGoogleOAuthRedirectUrl()`, converting Firefox extension redirect URLs to `http://127.0.0.1/mozoauth2/<subdomain>` natively intercepted by Firefox 86+.
+  - Updated background service worker auth flow to dispatch the loopback redirect URI to Google OAuth endpoints.
+### Changed
+- **Replaced Ghost Button with Rotating Chevron Span in Tracked Course Cards (`apps/extension/src/options/App.tsx`)**:
+  - Replaced the `.btn-ghost` button at the end of each course item under "My Tracked Courses" with a sleek inline-block rotating chevron `<span>▼</span>` matching the styling and transition behavior of the Upcoming To-Do queue.
 - **Warm Pastel Course Color Palette & Fallback (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `e2e/sync-devtools.spec.ts`, `generate-promo-assets.mjs`)**:
   - Replaced harsh green (`#10b981`) and indigo purple (`#6366f1`) course color presets with attractive, happier pastels: warm coral/terracotta pastel orange (`#e07a5f`) for Course 9999 (CS101) and warm caramel/mocha pastel brown (`#a0613e`) for Course 9998 (DS201).
   - Updated the default course color fallback in `App.tsx` and `Popup.tsx` from `#6366f1` to `#e07a5f`.
@@ -311,6 +330,10 @@ estoreMoodleSettingsForOnboarding across the extension background service worker
 - **Direct Course-Page Assignment Scraping (`packages/moodle-client`)**: Rewrote `ScraperMoodleStrategy.getAssignments()` to extract assignments directly from individual course pages (`/course/view.php?id=X`) across all discovered academic years. Decoupled assignment discovery from the Moodle Calendar (which filtered out past deadlines), guaranteeing all historical and current course assignments are captured (Fixes #26, resolves D4).
 
 ### Fixed
+- **Options App Duplicate Variable Declarations (`apps/extension/src/options/App.tsx`)**:
+  - Deduplicated `assignmentsList`, `filesList`, and `meetingsList` declarations in the Options page component resulting from a merge conflict resolution, ensuring all derived states are declared once at the top level of `App()` before conditional returns.
+- **Shared Client Build Artifacts Out of Sync (`packages/moodle-client`)**:
+  - Rebuilt `@tautracker/moodle-client` via `pnpm run build:moodle-client` to refresh type declarations (`dist/index.d.ts`), resolving missing exported members (`isValidIsraeliId`, `collapseRecurringMeetings`) and `MoodleClient` constructor parameter count warnings.
 - **Suppressed Notifications for Assignments with No Deadline (`apps/extension/src/background/serviceWorker.ts`, `TC-BG-02`)**:
   - Filtered assignments in `checkAndNotify` so that only assignments with an active, non-null deadline and unsubmitted status produce notifications. Assignments with no deadline or already submitted no longer trigger new assignment discovery notifications.
 - **Silent Sync Failure When Service Worker Is Asleep (`apps/extension/src/shared/messaging.ts`)**:

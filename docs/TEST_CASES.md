@@ -612,6 +612,18 @@ graph LR
   3. Verify `.file-action-btn` elements have rounded squircle corners (`border-radius: 8px`).
   4. Verify `.file-download-btn` displays only the arrow icon with `title="הורדת קובץ"`.
 
+#### TC-DASH-REHAUL-08: Tracked Courses Cards Grid View & Two-Section Horizontal Card Layout
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the "My Tracked Courses" section supports toggling between List and Cards views via the segmented header buttons (`.view-mode-toggle-group`). In Cards mode, courses render in a responsive CSS grid (`.courses-cards-grid`) where each card is divided into two horizontal sections: a left column (course title/code, per-course progress bar, and next upcoming assignment details) and a right column (action buttons and rotating chevron). Clicking the card or rotating chevron smoothly expands the course drawer (`.course-expanded-panel`).
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-08"`
+* **Browser Agent Prompt / Action**:
+  1. In the Dashboard "My Tracked Courses" header, click the "Cards" button (`.view-mode-btn`).
+  2. Verify `.courses-rows-container` receives `.courses-cards-grid`.
+  3. Verify each course card displays the 2-section horizontal layout (`.course-card-left-section` and `.course-card-right-section`).
+  4. Click a course card; verify it smoothly expands downward displaying Zoom links and assignments while rotating the chevron `▼` by 180 degrees.
+  5. Click the "List" button; verify layout switches back to top-down row list.
+
 #### TC-ASN-12: Assignments Split-Pane Calendar View & Deep Item Selection
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
@@ -859,14 +871,19 @@ graph LR
 
 ### Category 8: Google Tasks Two-Way Sync Integration
 
-#### TC-GT-01: Google OAuth 2.0 Authorization Flow
+#### TC-GT-01: Google OAuth 2.0 Authorization Flow & Cross-Browser Redirect Resolution
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Connects to Google OAuth 2.0 endpoint with `https://www.googleapis.com/auth/tasks` scope, returning an access token and expiry timestamp across Chrome, Firefox, and Mobile.
+* **Description**: Connects to Google OAuth 2.0 endpoint with `https://www.googleapis.com/auth/tasks` scope, returning an access token and expiry timestamp across Chrome, Firefox, and Mobile. In Firefox, automatically resolves redirect URI via RFC 8252 loopback `http://127.0.0.1/mozoauth2/<subdomain>` to avoid `redirect_uri_mismatch (Error 400)` and provides custom Client ID override and manual token fallback options.
 * **Automated Test Flow**:
   1. Mock OAuth token response `{ access_token: 'G_TOKEN', expires_in: 3600 }`.
-  2. Call OAuth helper.
-  3. Assert token and expiry are saved in storage/SecureStore.
+  2. Verify `getGoogleOAuthRedirectUrl()` returns `http://127.0.0.1/mozoauth2/<subdomain>` in Firefox environment instead of un-verifiable `*.extensions.allizom.org`.
+  3. Call OAuth helper and assert token and expiry are saved in storage/SecureStore.
+  4. Test manual token input fallback saving directly to storage.
+* **Browser Agent Test Flow**:
+  1. In Settings, open Google Tasks Advanced Settings accordion.
+  2. Verify authorized redirect URI matches extension ID / Mozilla loopback address and copy button succeeds.
+  3. Enter custom Client ID or manual access token and assert successful synchronization.
 
 #### TC-GT-02: Automatic "Noodle" Task List Provisioning
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`

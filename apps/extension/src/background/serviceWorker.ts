@@ -12,6 +12,7 @@ import {
   setSettings,
   getCachedSyncResult,
   getMoodleCredentials,
+  getGoogleOAuthRedirectUrl,
 } from '../shared/storage.js';
 
 
@@ -622,9 +623,7 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean,
     }
   }
 
-  const redirectUrl = typeof browser.identity.getRedirectURL === 'function'
-    ? browser.identity.getRedirectURL()
-    : `https://${browser.runtime.id}.chromiumapp.org/`;
+  const redirectUrl = getGoogleOAuthRedirectUrl();
 
   const userEmail = cached.googleUserEmail;
   const hintParam = userEmail ? `&login_hint=${encodeURIComponent(userEmail)}` : '';

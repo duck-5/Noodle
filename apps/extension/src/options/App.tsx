@@ -15,6 +15,7 @@ import {
   getMoodleCredentials,
   setMoodleCredentials,
   DEFAULT_SETTINGS,
+  getGoogleOAuthRedirectUrl,
 } from '../shared/storage.js';
 import type { ExtensionSettings } from '../shared/storage.js';
 import {
@@ -560,6 +561,9 @@ export default function App() {
       };
     });
   }, [syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+
+  const filesList = syncResult?.files || [];
+  const meetingsList = syncResult?.meetings || [];
 
   async function loadData() {
     setLoading(true);
@@ -1375,38 +1379,6 @@ export default function App() {
     return translations[currentLang]?.[key] || translations['en']?.[key] || key;
   };
 
-  // Main Dashboard View
-  const rawAssignments = syncResult?.assignments || [];
-  const completedIds = settings?.completedAssignments || [];
-  const uncompletedIds = settings?.uncompletedAssignments || [];
-
-  const assignmentsList = useMemo(() => {
-    const completedSet = new Set(completedIds);
-    const uncompletedSet = new Set(uncompletedIds);
-    return rawAssignments.map((a) => {
-      const isMoodleSubmitted = a.status === 'Submitted';
-      const isManuallyCompleted = completedSet.has(a.id);
-      const isManuallyToDo = uncompletedSet.has(a.id);
-
-      let isCompleted = isMoodleSubmitted;
-      if (isMoodleSubmitted && isManuallyToDo) {
-        isCompleted = false;
-      } else if (!isMoodleSubmitted && isManuallyCompleted) {
-        isCompleted = true;
-      }
-
-      return {
-        ...a,
-        isMoodleSubmitted,
-        isCompleted,
-        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
-      };
-    });
-  }, [rawAssignments, completedIds, uncompletedIds]);
-
-  const filesList = syncResult?.files || [];
-  const meetingsList = syncResult?.meetings || [];
-
   if (loading && onboardingStep === 1) {
     return (
       <div className="center-container" dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
@@ -1507,17 +1479,17 @@ export default function App() {
           </div>
         </div>
         {signingInToMoodle && (
-        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
-          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
-            <span>{t('signing_in_to_moodle')}</span>
-          </span>
-        </div>
-      )}
+          <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+            <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <span>{t('signing_in_to_moodle')}</span>
+            </span>
+          </div>
+        )}
 
-      {toast && (
+        {toast && (
           <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
             <span className="toast-message">{toast.message}</span>
             <button className="toast-close" onClick={() => setToast(null)}>×</button>
@@ -1633,17 +1605,17 @@ export default function App() {
           )}
         </div>
         {signingInToMoodle && (
-        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
-          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
-            <span>{t('signing_in_to_moodle')}</span>
-          </span>
-        </div>
-      )}
+          <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+            <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <span>{t('signing_in_to_moodle')}</span>
+            </span>
+          </div>
+        )}
 
-      {toast && (
+        {toast && (
           <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
             <span className="toast-message">{toast.message}</span>
             <button className="toast-close" onClick={() => setToast(null)}>×</button>
@@ -1653,13 +1625,6 @@ export default function App() {
     );
   }
 
-<<<<<<< HEAD
-=======
-  // Main Dashboard View (OnboardingStep === 3)
-  const filesList = syncResult?.files || [];
-  const meetingsList = syncResult?.meetings || [];
-
->>>>>>> 8e4270cec09907307e211a0632a5b78ee903bc88
   return (
     <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
       {/* Sidebar Navigation */}
@@ -1882,6 +1847,12 @@ export default function App() {
                 if (updated.googleTasksEnabled) {
                   syncGoogleTasksOnBackground(false).catch(() => { });
                 }
+              }}
+              onUpdateGoogleClientId={async (id: string) => {
+                if (!settings) return;
+                const updated = { ...settings, googleClientId: id || null };
+                setSettingsState(updated);
+                await setSettings(updated);
               }}
               t={t}
               lang={currentLang}
@@ -2353,6 +2324,23 @@ function DashboardTab({
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
   const [expandedCourseAssignId, setExpandedCourseAssignId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
+  const [coursesViewMode, setCoursesViewMode] = useState<'list' | 'cards'>(() => {
+    try {
+      const saved = localStorage.getItem('noodle_courses_view_mode');
+      return saved === 'cards' ? 'cards' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+
+  const handleSetCoursesViewMode = (mode: 'list' | 'cards') => {
+    setCoursesViewMode(mode);
+    try {
+      localStorage.setItem('noodle_courses_view_mode', mode);
+    } catch {
+      // Ignore
+    }
+  };
 
   useEffect(() => {
     if (tourStep === 4) {
@@ -2510,130 +2498,130 @@ function DashboardTab({
               </div>
 
               <div className={`queue-item-expanded ${isHeroExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
-              {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
-                <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                  <span className="files-column-label">
-                    {t('attachments')}:
-                  </span>
-                  <div className="files-column-list">
-                    {nextAssignment.attachments.map((att, attIdx) => {
-                      const downloadUrl = buildFileDownloadUrl(att.url, token);
-                      const openUrl = buildFileOpenUrl(att.url, token);
-                      return (
-                        <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                          <span style={{ fontSize: '0.8rem' }}>📄 {att.name}</span>
-                          <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                            <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                              {t('open_file')}
-                            </a>
-                            <a
-                              href={downloadUrl}
-                              download={att.name}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="file-action-btn file-download-btn"
-                              title={t('download_file')}
-                              aria-label={t('download_file')}
-                              onClick={(ev) => ev.stopPropagation()}
-                            >
-                              <DownloadIcon size={13} />
-                            </a>
+                {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
+                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
+                    <span className="files-column-label">
+                      {t('attachments')}:
+                    </span>
+                    <div className="files-column-list">
+                      {nextAssignment.attachments.map((att, attIdx) => {
+                        const downloadUrl = buildFileDownloadUrl(att.url, token);
+                        const openUrl = buildFileOpenUrl(att.url, token);
+                        return (
+                          <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
+                            <span style={{ fontSize: '0.8rem' }}>📄 {att.name}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
+                              <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
+                                {t('open_file')}
+                              </a>
+                              <a
+                                href={downloadUrl}
+                                download={att.name}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="file-action-btn file-download-btn"
+                                title={t('download_file')}
+                                aria-label={t('download_file')}
+                                onClick={(ev) => ev.stopPropagation()}
+                              >
+                                <DownloadIcon size={13} />
+                              </a>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Subject Files */}
-              {nextSubjectFiles.length > 0 && (
-                <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                  <span className="files-column-label">
-                    {t('subject_files')}:
-                  </span>
-                  <div className="files-column-list">
-                    {nextSubjectFiles.map((sf, sfIdx) => {
-                      const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                      const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                      return (
-                        <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                          <span style={{ fontSize: '0.8rem' }}>📂 {sf.fileName}</span>
-                          <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                            <a
-                              href={openUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="file-action-btn"
-                              style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                              onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
-                            >
-                              {t('open_file')}
-                            </a>
-                            <a
-                              href={downloadUrl}
-                              download={sf.fileName}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="file-action-btn file-download-btn"
-                              title={t('download_file')}
-                              aria-label={t('download_file')}
-                              onClick={(ev) => ev.stopPropagation()}
-                            >
-                              <DownloadIcon size={12} />
-                            </a>
+                {/* Subject Files */}
+                {nextSubjectFiles.length > 0 && (
+                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
+                    <span className="files-column-label">
+                      {t('subject_files')}:
+                    </span>
+                    <div className="files-column-list">
+                      {nextSubjectFiles.map((sf, sfIdx) => {
+                        const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                        const openUrl = buildFileOpenUrl(sf.fileUrl, token);
+                        return (
+                          <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
+                            <span style={{ fontSize: '0.8rem' }}>📂 {sf.fileName}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
+                              <a
+                                href={openUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="file-action-btn"
+                                style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
+                                onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
+                              >
+                                {t('open_file')}
+                              </a>
+                              <a
+                                href={downloadUrl}
+                                download={sf.fileName}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="file-action-btn file-download-btn"
+                                title={t('download_file')}
+                                aria-label={t('download_file')}
+                                onClick={(ev) => ev.stopPropagation()}
+                              >
+                                <DownloadIcon size={12} />
+                              </a>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Submitted Files */}
-              {nextAssignment.submittedFiles && nextAssignment.submittedFiles.length > 0 && (
-                <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                  <span className="files-column-label">
-                    {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                  </span>
-                  <div className="files-column-list">
-                    {nextAssignment.submittedFiles.map((att, attIdx) => {
-                      const downloadUrl = buildFileDownloadUrl(att.url, token);
-                      const openUrl = buildFileOpenUrl(att.url, token);
-                      return (
-                        <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                          <CheckIcon size={12} />
-                          <span style={{ fontSize: '0.8rem' }}>{att.name}</span>
-                          <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                            <a
-                              href={openUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="file-action-btn"
-                              style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                              onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
-                            >
-                              {t('open_file')}
-                            </a>
-                            <a
-                              href={downloadUrl}
-                              download={att.name}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="file-action-btn file-download-btn"
-                              title={t('download_file')}
-                              aria-label={t('download_file')}
-                              onClick={(ev) => ev.stopPropagation()}
-                            >
-                              <DownloadIcon size={12} />
-                            </a>
+                {/* Submitted Files */}
+                {nextAssignment.submittedFiles && nextAssignment.submittedFiles.length > 0 && (
+                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
+                    <span className="files-column-label">
+                      {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                    </span>
+                    <div className="files-column-list">
+                      {nextAssignment.submittedFiles.map((att, attIdx) => {
+                        const downloadUrl = buildFileDownloadUrl(att.url, token);
+                        const openUrl = buildFileOpenUrl(att.url, token);
+                        return (
+                          <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
+                            <CheckIcon size={12} />
+                            <span style={{ fontSize: '0.8rem' }}>{att.name}</span>
+                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
+                              <a
+                                href={openUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="file-action-btn"
+                                style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                                onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
+                              >
+                                {t('open_file')}
+                              </a>
+                              <a
+                                href={downloadUrl}
+                                download={att.name}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="file-action-btn file-download-btn"
+                                title={t('download_file')}
+                                aria-label={t('download_file')}
+                                onClick={(ev) => ev.stopPropagation()}
+                              >
+                                <DownloadIcon size={12} />
+                              </a>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
               </div>
             </div>
 
@@ -3003,15 +2991,52 @@ function DashboardTab({
       <div className="dashboard-section glass-panel" style={{ marginBottom: '2rem' }}>
         <div className={`courses-list-header ${tourStep === 4 ? 'tour-highlight' : ''}`}>
           <h3 style={{ margin: 0 }}>{t('my_courses')}</h3>
-          <button
-            className={`secondary-btn btn-sm manage-courses-trigger-btn ${tourStep === 4 ? 'pulse-btn' : ''}`}
-            onClick={() => setIsManageModalOpen(true)}
-          >
-            ⚙️ {t('manage_courses')}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <div className="view-mode-toggle-group" role="group" aria-label={lang === 'he' ? 'אופן תצוגה' : 'View mode'}>
+              <button
+                type="button"
+                className={`view-mode-btn ${coursesViewMode === 'list' ? 'active' : ''}`}
+                onClick={() => handleSetCoursesViewMode('list')}
+                title={t('view_mode_list')}
+                aria-label={t('view_mode_list')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                <span>{t('view_mode_list')}</span>
+              </button>
+              <button
+                type="button"
+                className={`view-mode-btn ${coursesViewMode === 'cards' ? 'active' : ''}`}
+                onClick={() => handleSetCoursesViewMode('cards')}
+                title={t('view_mode_cards')}
+                aria-label={t('view_mode_cards')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span>{t('view_mode_cards')}</span>
+              </button>
+            </div>
+
+            <button
+              className={`secondary-btn btn-sm manage-courses-trigger-btn ${tourStep === 4 ? 'pulse-btn' : ''}`}
+              onClick={() => setIsManageModalOpen(true)}
+            >
+              ⚙️ {t('manage_courses')}
+            </button>
+          </div>
         </div>
 
-        <div className={`courses-rows-container ${tourStep === 5 && activeMeetings.length === 0 ? 'tour-highlight' : ''}`}>
+        <div className={`courses-rows-container ${coursesViewMode === 'cards' ? 'courses-cards-grid' : ''} ${tourStep === 5 && activeMeetings.length === 0 ? 'tour-highlight' : ''}`}>
           {trackedCourseIds.length === 0 ? (
             <div className="empty-state">{t('empty_state_pending')}</div>
           ) : (
@@ -3075,72 +3100,151 @@ function DashboardTab({
               return (
                 <div
                   key={cid}
-                  className={`course-row-card glass-panel ${tourStep === 5 && expandedCourseId === cid ? 'tour-highlight' : ''}`}
+                  className={`course-row-card glass-panel ${coursesViewMode === 'cards' ? 'course-grid-card' : ''} ${tourStep === 5 && expandedCourseId === cid ? 'tour-highlight' : ''}`}
                   style={{ borderInlineStartColor: color }}
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a, button, input')) return;
                     setExpandedCourseId(isExpanded ? null : cid);
                   }}
                 >
-                  <div className="course-row-main">
-                    {/* Course Title & Code */}
-                    <div className="course-row-info">
-                      <span className="course-color-dot" style={{ backgroundColor: color }} />
-                      <div>
-                        <h4 className="course-row-title" style={{ color }}>{courseDisplayName}</h4>
-                        <span className="course-row-code">{rawCourseName}</span>
+                  {coursesViewMode === 'cards' ? (
+                    <div className="course-card-main">
+                      {/* Left section: Title, Progress bar, Next task */}
+                      <div className="course-card-left-section">
+                        {/* Course Title & Code */}
+                        <div className="course-row-info">
+                          <span className="course-color-dot" style={{ backgroundColor: color }} />
+                          <div style={{ minWidth: 0 }}>
+                            <h4 className="course-row-title" style={{ color }} title={courseDisplayName}>
+                              {courseDisplayName}
+                            </h4>
+                            <span className="course-row-code" title={rawCourseName}>
+                              {rawCourseName}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Course Progress Bar */}
+                        <div className="course-row-progress-box">
+                          <div className="course-prog-meta">
+                            <span>{t('view_assignments')}</span>
+                            <span>{done}/{total} ({percent}%)</span>
+                          </div>
+                          <div className="course-prog-bar-bg">
+                            <div className="course-prog-bar-fill" style={{ width: `${percent}%`, backgroundColor: color }} />
+                          </div>
+                        </div>
+
+                        {/* Next Assignment */}
+                        <div className="course-row-next-assign">
+                          <div className="label">{t('next_assignment')}</div>
+                          <div className="name" title={nextTaskName}>{nextTaskName}</div>
+                          {nextTaskDue && <div className="due">{nextTaskDue}</div>}
+                        </div>
+                      </div>
+
+                      {/* Right section: Buttons & Chevron */}
+                      <div className="course-card-right-section">
+                        <button
+                          className="secondary-btn btn-sm"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onViewCourseAssignments(cid);
+                          }}
+                        >
+                          <span>{t('view_assignments')}</span>
+                        </button>
+
+                        <button
+                          className="primary-btn btn-sm"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onGoToCourse(cid);
+                          }}
+                        >
+                          <span>{t('go_to_course')}</span>
+                        </button>
+
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'auto', paddingTop: '0.25rem' }}>
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              color: 'var(--text-muted)',
+                              transform: isExpanded ? 'rotate(180deg)' : 'none',
+                              transition: 'transform 0.2s',
+                              display: 'inline-block'
+                            }}
+                          >
+                            ▼
+                          </span>
+                        </div>
                       </div>
                     </div>
-
-                    {/* Course Progress Bar */}
-                    <div className="course-row-progress-box">
-                      <div className="course-prog-meta">
-                        <span>{t('view_assignments')}</span>
-                        <span>{done}/{total} ({percent}%)</span>
+                  ) : (
+                    <div className="course-row-main">
+                      {/* Course Title & Code */}
+                      <div className="course-row-info">
+                        <span className="course-color-dot" style={{ backgroundColor: color }} />
+                        <div>
+                          <h4 className="course-row-title" style={{ color }}>{courseDisplayName}</h4>
+                          <span className="course-row-code">{rawCourseName}</span>
+                        </div>
                       </div>
-                      <div className="course-prog-bar-bg">
-                        <div className="course-prog-bar-fill" style={{ width: `${percent}%`, backgroundColor: color }} />
+
+                      {/* Course Progress Bar */}
+                      <div className="course-row-progress-box">
+                        <div className="course-prog-meta">
+                          <span>{t('view_assignments')}</span>
+                          <span>{done}/{total} ({percent}%)</span>
+                        </div>
+                        <div className="course-prog-bar-bg">
+                          <div className="course-prog-bar-fill" style={{ width: `${percent}%`, backgroundColor: color }} />
+                        </div>
+                      </div>
+
+                      {/* Next Assignment */}
+                      <div className="course-row-next-assign">
+                        <div className="label">{t('next_assignment')}</div>
+                        <div className="name">{nextTaskName}</div>
+                        {nextTaskDue && <div className="due">{nextTaskDue}</div>}
+                      </div>
+
+                      {/* Course Actions */}
+                      <div className="course-row-actions">
+                        <button
+                          className="secondary-btn btn-sm"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onViewCourseAssignments(cid);
+                          }}
+                        >
+                          <span>{t('view_assignments')}</span>
+                        </button>
+
+                        <button
+                          className="primary-btn btn-sm"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onGoToCourse(cid);
+                          }}
+                        >
+                          <span>{t('go_to_course')}</span>
+                        </button>
+
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)',
+                            transform: isExpanded ? 'rotate(180deg)' : 'none',
+                            transition: 'transform 0.2s',
+                            display: 'inline-block'
+                          }}
+                        >
+                          ▼
+                        </span>
                       </div>
                     </div>
-
-                    {/* Next Assignment */}
-                    <div className="course-row-next-assign">
-                      <div className="label">{t('next_assignment')}</div>
-                      <div className="name">{nextTaskName}</div>
-                      {nextTaskDue && <div className="due">{nextTaskDue}</div>}
-                    </div>
-
-                    {/* Course Actions */}
-                    <div className="course-row-actions">
-                      <button
-                        className="secondary-btn btn-sm"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          onViewCourseAssignments(cid);
-                        }}
-                      >
-                        <span>{t('view_assignments')}</span>
-                      </button>
-
-                      <button
-                        className="primary-btn btn-sm"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          onGoToCourse(cid);
-                        }}
-                      >
-                        <span>{t('go_to_course')}</span>
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        style={{ padding: '0.4rem 0.5rem', color: 'var(--text-secondary)' }}
-                        title={isExpanded ? 'Collapse' : 'Expand'}
-                      >
-                        <ChevronDownIcon size={14} expanded={isExpanded} />
-                      </button>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Expandable Course Panel (Visible Zoom Links + 5 Next Assignments) */}
                   <div className={`course-expanded-panel ${isExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
@@ -4396,6 +4500,7 @@ function SettingsTab({
   syncResult,
   onDisconnectClick,
   onToggleSyncWithoutDeadline,
+  onUpdateGoogleClientId,
   t,
   lang,
   onUpdateLanguage,
@@ -4419,6 +4524,7 @@ function SettingsTab({
   syncResult?: SyncResult | null;
   onDisconnectClick?: () => void;
   onToggleSyncWithoutDeadline?: (enabled: boolean) => void;
+  onUpdateGoogleClientId?: (id: string) => void;
   onUpdateLanguage: (l: 'he' | 'en') => void;
   onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee') => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
@@ -4430,6 +4536,12 @@ function SettingsTab({
   tourStep?: number;
 }) {
   if (!settings) return null;
+
+  const [showAdvancedGoogle, setShowAdvancedGoogle] = useState<boolean>(false);
+  const [manualToken, setManualToken] = useState<string>('');
+  const [tokenSavedToast, setTokenSavedToast] = useState<boolean>(false);
+  const [copiedRedirect, setCopiedRedirect] = useState<boolean>(false);
+  const redirectUri = getGoogleOAuthRedirectUrl();
 
   return (
     <div className="tab-settings glass-panel">
@@ -4567,13 +4679,136 @@ function SettingsTab({
               </label>
             </div>
 
+            {/* Advanced Google Settings Section */}
+            <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{
+                  fontSize: '0.85rem',
+                  color: 'var(--text-muted)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.3rem 0',
+                  cursor: 'pointer',
+                  background: 'none',
+                  border: 'none',
+                }}
+                onClick={() => setShowAdvancedGoogle(!showAdvancedGoogle)}
+              >
+                <span style={{
+                  fontSize: '0.75rem',
+                  transform: showAdvancedGoogle ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.2s',
+                  display: 'inline-block'
+                }}>▼</span>
+                <span>⚙️ {t('advanced_google_settings')}</span>
+              </button>
+
+              {showAdvancedGoogle && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '1rem',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.85rem',
+                  }}
+                >
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                      {t('authorized_redirect_uri')}
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        readOnly
+                        value={redirectUri}
+                        className="settings-text-input"
+                        style={{ fontSize: '0.8rem', fontFamily: 'monospace', flex: 1, background: 'rgba(0, 0, 0, 0.2)' }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn btn-sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(redirectUri);
+                          setCopiedRedirect(true);
+                          setTimeout(() => setCopiedRedirect(false), 2000);
+                        }}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >
+                        {copiedRedirect ? `✓ ${t('copied_btn')}` : t('copy_btn')}
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', lineHeight: '1.4' }}>
+                      {t('redirect_uri_help')}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="custom-google-client-id" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                      {t('custom_client_id_label')}
+                    </label>
+                    <input
+                      type="text"
+                      id="custom-google-client-id"
+                      className="settings-text-input"
+                      placeholder="your-client-id.apps.googleusercontent.com"
+                      value={settings.googleClientId || ''}
+                      onChange={(e) => onUpdateGoogleClientId && onUpdateGoogleClientId(e.target.value)}
+                      style={{ fontSize: '0.82rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="manual-google-token" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                      {t('manual_token_label')}
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="password"
+                        id="manual-google-token"
+                        className="settings-text-input"
+                        placeholder={t('manual_token_placeholder')}
+                        value={manualToken}
+                        onChange={(e) => setManualToken(e.target.value)}
+                        style={{ fontSize: '0.82rem', flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn btn-sm"
+                        disabled={!manualToken.trim()}
+                        onClick={async () => {
+                          if (!manualToken.trim()) return;
+                          await browser.storage.local.set({
+                            googleAccessToken: manualToken.trim(),
+                            googleTokenExpiry: Date.now() + 3600 * 1000,
+                          });
+                          setTokenSavedToast(true);
+                          setTimeout(() => setTokenSavedToast(false), 2500);
+                          onSyncGoogle();
+                        }}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >
+                        {tokenSavedToast ? `✓ ${t('token_saved')}` : t('save_and_sync_btn')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="tasks-action-row">
               <button className="primary-btn btn-sm" onClick={onSyncGoogle} disabled={googleSyncLoading}>
                 {googleSyncLoading
                   ? t('syncing')
                   : hasGoogleTasksToken && !googleTasksAuthError
-                  ? `🔄 ${t('sync_tasks_now')}`
-                  : `🔗 ${t('auth_sync_google')}`}
+                    ? `🔄 ${t('sync_tasks_now')}`
+                    : `🔗 ${t('auth_sync_google')}`}
               </button>
             </div>
 
