@@ -635,7 +635,7 @@ export default function App() {
         setSettingsState(updated);
         await setSettings(updated);
         if (updated.googleTasksEnabled) {
-          syncGoogleTasksOnBackground(false).catch(() => {});
+          syncGoogleTasksOnBackground(false).catch(() => { });
         }
       }
     }
@@ -935,7 +935,7 @@ export default function App() {
     setSettingsState(updated);
     await setSettings(updated);
     if (updated.googleTasksEnabled) {
-      syncGoogleTasksOnBackground(false).catch(() => {});
+      syncGoogleTasksOnBackground(false).catch(() => { });
     }
   }
 
@@ -952,7 +952,7 @@ export default function App() {
     setSettingsState(updated);
     await setSettings(updated);
     if (updated.googleTasksEnabled) {
-      syncGoogleTasksOnBackground(false).catch(() => {});
+      syncGoogleTasksOnBackground(false).catch(() => { });
     }
   }
 
@@ -968,7 +968,7 @@ export default function App() {
     setSettingsState(updated);
     await setSettings(updated);
     if (updated.googleTasksEnabled) {
-      syncGoogleTasksOnBackground(false).catch(() => {});
+      syncGoogleTasksOnBackground(false).catch(() => { });
     }
   }
 
@@ -1188,6 +1188,38 @@ export default function App() {
   const t = (key: keyof typeof translations['en']) => {
     return translations[currentLang]?.[key] || translations['en']?.[key] || key;
   };
+
+  // Main Dashboard View
+  const rawAssignments = syncResult?.assignments || [];
+  const completedIds = settings?.completedAssignments || [];
+  const uncompletedIds = settings?.uncompletedAssignments || [];
+
+  const assignmentsList = useMemo(() => {
+    const completedSet = new Set(completedIds);
+    const uncompletedSet = new Set(uncompletedIds);
+    return rawAssignments.map((a) => {
+      const isMoodleSubmitted = a.status === 'Submitted';
+      const isManuallyCompleted = completedSet.has(a.id);
+      const isManuallyToDo = uncompletedSet.has(a.id);
+
+      let isCompleted = isMoodleSubmitted;
+      if (isMoodleSubmitted && isManuallyToDo) {
+        isCompleted = false;
+      } else if (!isMoodleSubmitted && isManuallyCompleted) {
+        isCompleted = true;
+      }
+
+      return {
+        ...a,
+        isMoodleSubmitted,
+        isCompleted,
+        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
+      };
+    });
+  }, [rawAssignments, completedIds, uncompletedIds]);
+
+  const filesList = syncResult?.files || [];
+  const meetingsList = syncResult?.meetings || [];
 
   if (loading && onboardingStep === 1) {
     return (
@@ -1413,38 +1445,6 @@ export default function App() {
     );
   }
 
-  // Main Dashboard View (OnboardingStep === 3)
-  const rawAssignments = syncResult?.assignments || [];
-  const completedIds = settings?.completedAssignments || [];
-  const uncompletedIds = settings?.uncompletedAssignments || [];
-
-  const assignmentsList = useMemo(() => {
-    const completedSet = new Set(completedIds);
-    const uncompletedSet = new Set(uncompletedIds);
-    return rawAssignments.map((a) => {
-      const isMoodleSubmitted = a.status === 'Submitted';
-      const isManuallyCompleted = completedSet.has(a.id);
-      const isManuallyToDo = uncompletedSet.has(a.id);
-
-      let isCompleted = isMoodleSubmitted;
-      if (isMoodleSubmitted && isManuallyToDo) {
-        isCompleted = false;
-      } else if (!isMoodleSubmitted && isManuallyCompleted) {
-        isCompleted = true;
-      }
-
-      return {
-        ...a,
-        isMoodleSubmitted,
-        isCompleted,
-        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
-      };
-    });
-  }, [rawAssignments, completedIds, uncompletedIds]);
-
-  const filesList = syncResult?.files || [];
-  const meetingsList = syncResult?.meetings || [];
-
   return (
     <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
       {/* Sidebar Navigation */}
@@ -1512,11 +1512,11 @@ export default function App() {
             <h2>
               {selectedCourseId !== null
                 ? getCourseDisplayName(
-                    selectedCourseId,
-                    assignmentsList.find((a) => a.courseId === selectedCourseId)?.courseName ||
-                      filesList.find((f) => f.courseId === selectedCourseId)?.courseName ||
-                      `Course ${selectedCourseId}`
-                  )
+                  selectedCourseId,
+                  assignmentsList.find((a) => a.courseId === selectedCourseId)?.courseName ||
+                  filesList.find((f) => f.courseId === selectedCourseId)?.courseName ||
+                  `Course ${selectedCourseId}`
+                )
                 : t(activeTab as any)}
             </h2>
             <p className="subtitle" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -1659,7 +1659,7 @@ export default function App() {
                 setSettingsState(updated);
                 await setSettings(updated);
                 if (updated.googleTasksEnabled) {
-                  syncGoogleTasksOnBackground(false).catch(() => {});
+                  syncGoogleTasksOnBackground(false).catch(() => { });
                 }
               }}
               t={t}
@@ -2197,7 +2197,7 @@ function DashboardTab({
             <div>
               <div className="spotlight-badge-row">
                 <span className="spotlight-label" style={{ color: getCourseColor(nextAssignment.courseId) }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                   {t('next_assignment')}
                 </span>
                 {nextAssignment.deadline && (
@@ -2403,7 +2403,7 @@ function DashboardTab({
         <div className={`queue-card glass-panel ${tourStep === 3 ? 'tour-highlight' : ''}`}>
           <div className="queue-header">
             <div className="queue-title">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
               <span>{t('upcoming_tasks')}</span>
             </div>
             <span className="queue-count">{upcomingTasks.length} {t('tasks_count')}</span>
@@ -2850,7 +2850,7 @@ function DashboardTab({
                     <div className={`course-expanded-section ${tourStep === 5 ? 'tour-highlight' : ''}`}>
                       <div className="course-expanded-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
                           <span>{t('visible_zoom_links')} ({visibleMeetings.length}/{collapsedCourseMeetings.length})</span>
                         </div>
                         {collapsedCourseMeetings.length > 0 && onSetCourseMeetingsVisibility && (
@@ -3039,7 +3039,7 @@ function DashboardTab({
                     {/* 5 Next Assignments Sub-Section */}
                     <div className="course-expanded-section">
                       <div className="course-expanded-section-title">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /><path d="M9 14l2 2 4-4" /></svg>
                         <span>{t('next_5_assignments')}</span>
                       </div>
 
