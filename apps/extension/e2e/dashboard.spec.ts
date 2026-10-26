@@ -61,7 +61,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
         settings: {
           theme: 'noodle',
           language: 'he',
-          coursesColorMap: { 1: '#10b981', 2: '#6366f1' },
+          coursesColorMap: { 1: '#e07a5f', 2: '#a0613e' },
           coursesCustomNames: {},
           hiddenAssignments: [],
           completedAssignments: [],

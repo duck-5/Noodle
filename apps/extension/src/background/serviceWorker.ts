@@ -51,8 +51,15 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
   } else if (message.type === 'SYNC_GOOGLE_TASKS') {
     promise = triggerGoogleTasksSync(message.interactive || false)
-      .then((res) => ({ success: true, status: res }))
-      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+      .then(async (res) => {
+        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now() });
+        return { success: true, status: res };
+      })
+      .catch(async (err) => {
+        const errMsg = err?.message || String(err);
+        await browser.storage.local.set({ googleTasksAuthError: errMsg });
+        return { success: false, error: errMsg };
+      });
   } else if (message.type === 'LOGOUT') {
     promise = clearUserSession()
       .then(() => ({ success: true }))
@@ -269,8 +276,8 @@ async function clearUserSession(): Promise<void> {
     'moodleCredentials',
     'cachedSyncResult',
     'enrolledCoursesCache',
-    'googleAccessToken',
-    'googleTokenExpiry',
+
+
   ];
   await browser.storage.local.remove(userLocalKeys);
 
@@ -415,6 +422,11 @@ async function performSettingsSync() {
 
   for (const [key, tracked] of Object.entries(merged)) {
     if (!tracked) continue;
+    // Preserve local Google Tasks integration toggle/config so cross-device Moodle sync
+    // or failed calendar writes never unexpectedly turn off Google Tasks locally.
+    if (key === 'googleTasksEnabled' || key === 'googleClientId') {
+      continue;
+    }
     newTimestamps[key] = tracked.updatedAt;
 
     if (key === 'trackedCourseIds') {
@@ -551,12 +563,31 @@ async function performBackgroundSync(): Promise<SyncResult> {
     }
 
     // Trigger Google Tasks sync if enabled
+    let googleSyncError: string | null = null;
     if (settings.googleTasksEnabled) {
       try {
         await triggerGoogleTasksSync(false);
-      } catch (e) {
+        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now() });
+      } catch (e: any) {
+        googleSyncError = e?.message || String(e);
         console.error('Google Tasks sync failed:', e);
+        await browser.storage.local.set({ googleTasksAuthError: googleSyncError });
+
+        // Alert user via browser notification if unauthenticated
+        try {
+          await browser.notifications.create('google_tasks_auth_alert', {
+            type: 'basic',
+            iconUrl: browser.runtime.getURL('icon-128.png'),
+            title: 'Noodle — Google Tasks',
+            message: 'סנכרון Google Tasks נכשל: נדרש אימות. לחץ לפתיחת Noodle.',
+          });
+        } catch {
+          // notification fallback
+        }
       }
+    }
+    if (result && googleSyncError) {
+      (result as any).googleSyncError = googleSyncError;
     }
   } finally {
     // Save syncing state and notify listeners
@@ -578,55 +609,88 @@ async function performBackgroundSync(): Promise<SyncResult> {
   }
 }
 
-async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean): Promise<string> {
-  const cached = (await browser.storage.local.get(['googleAccessToken', 'googleTokenExpiry'])) as {
+async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean, forceRefresh = false): Promise<string> {
+  const cached = (await browser.storage.local.get(['googleAccessToken', 'googleTokenExpiry', 'googleUserEmail'])) as {
     googleAccessToken?: string;
     googleTokenExpiry?: number;
+    googleUserEmail?: string;
   };
-  if (cached.googleAccessToken && cached.googleTokenExpiry && cached.googleTokenExpiry > Date.now() + 60000) {
-    return cached.googleAccessToken;
-  }
 
-  if (!interactive) {
-    throw new Error('Google Tasks authentication required. Please open settings and sync manually.');
+  if (!forceRefresh) {
+    if (cached.googleAccessToken && cached.googleTokenExpiry && cached.googleTokenExpiry > Date.now() + 60000) {
+      return cached.googleAccessToken;
+    }
   }
 
   const redirectUrl = typeof browser.identity.getRedirectURL === 'function'
     ? browser.identity.getRedirectURL()
     : `https://${browser.runtime.id}.chromiumapp.org/`;
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}`;
 
-  return new Promise((resolve, reject) => {
-    browser.identity.launchWebAuthFlow({ url: authUrl, interactive: true })
-      .then((responseUrl) => {
-        if (!responseUrl) {
-          return reject(new Error('OAuth flow canceled or returned empty response.'));
-        }
+  const userEmail = cached.googleUserEmail;
+  const hintParam = userEmail ? `&login_hint=${encodeURIComponent(userEmail)}` : '';
+  const baseAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}${hintParam}`;
 
-        try {
-          const urlObj = new URL(responseUrl);
-          const params = new URLSearchParams(urlObj.hash.substring(1));
-          const token = params.get('access_token');
-          const expiresIn = params.get('expires_in');
-
-          if (!token) {
-            return reject(new Error('Access token not found in Google OAuth response.'));
+  const executeAuth = (url: string, isInteractive: boolean): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      browser.identity.launchWebAuthFlow({ url, interactive: isInteractive })
+        .then((responseUrl) => {
+          if (!responseUrl) {
+            return reject(new Error('OAuth flow canceled or returned empty response.'));
           }
 
-          const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
-          browser.storage.local.set({
-            googleAccessToken: token,
-            googleTokenExpiry: expiryTime
-          }).then(() => {
-            resolve(token);
-          });
-        } catch (err: any) {
+          try {
+            const urlObj = new URL(responseUrl);
+            const hashParams = new URLSearchParams(urlObj.hash.startsWith('#') ? urlObj.hash.substring(1) : urlObj.hash);
+            const searchParams = urlObj.searchParams;
+            const token = hashParams.get('access_token') || searchParams.get('access_token');
+            const expiresIn = hashParams.get('expires_in') || searchParams.get('expires_in');
+            const error = hashParams.get('error') || searchParams.get('error');
+
+            if (error) {
+              return reject(new Error(`Google OAuth error: ${error}`));
+            }
+
+            if (!token) {
+              return reject(new Error('Access token not found in Google OAuth response.'));
+            }
+
+            const expiryTime = Date.now() + (expiresIn ? parseInt(expiresIn, 10) * 1000 : 3600 * 1000);
+            browser.storage.local.set({
+              googleAccessToken: token,
+              googleTokenExpiry: expiryTime
+            }).then(() => {
+              // Fetch user email for future silent login_hint
+              fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + encodeURIComponent(token))
+                .then((r) => r.json())
+                .then((info) => {
+                  const email = info?.email || info?.sub;
+                  if (email) {
+                    browser.storage.local.set({ googleUserEmail: email }).catch(() => {});
+                  }
+                })
+                .catch(() => {});
+              resolve(token);
+            });
+          } catch (err: any) {
+            reject(new Error(err.message || String(err)));
+          }
+        }).catch((err: any) => {
           reject(new Error(err.message || String(err)));
-        }
-      }).catch((err: any) => {
-        reject(new Error(err.message || String(err)));
-      });
-  });
+        });
+    });
+  };
+
+  // 1. Try silent refresh first (prompt=none)
+  try {
+    const silentUrl = `${baseAuthUrl}&prompt=none`;
+    return await executeAuth(silentUrl, false);
+  } catch {
+    // 2. If silent refresh fails and interactive is allowed, launch interactive popup
+    if (interactive) {
+      return await executeAuth(baseAuthUrl, true);
+    }
+    throw new Error('Google Tasks authentication required. Please connect in settings.');
+  }
 }
 
 async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
@@ -652,9 +716,24 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   accessToken = await getLaunchWebAuthFlowToken(clientId, interactive);
 
   const syncErrors: string[] = [];
-  const listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
-    syncErrors.push(err);
-  });
+  let listId: string;
+  try {
+    listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (err: string) => {
+      syncErrors.push(err);
+    });
+  } catch (err: any) {
+    // If cached token was revoked or expired early (401), refresh token and retry once
+    if (String(err?.message || err).includes('401')) {
+      await browser.storage.local.remove(['googleAccessToken', 'googleTokenExpiry']);
+      accessToken = await getLaunchWebAuthFlowToken(clientId, interactive, true);
+      syncErrors.length = 0;
+      listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (e: string) => {
+        syncErrors.push(e);
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const rawAssignments = cachedResult.assignments || [];
   const mappedAssignments = rawAssignments.map((a: any) => {

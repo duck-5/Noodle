@@ -166,6 +166,7 @@ graph LR
 | **TC-GT-06** | Hidden Task Exclusion & Google Tasks Deletion | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-07** | Manual Google Tasks Sync Trigger | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-08** | Assignments Without Deadline Sync Setting & Deletion Logic | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
+| **TC-GT-09** | Persistent Auth, Silent Refresh & Unauthenticated Sync Alert | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
@@ -187,6 +188,7 @@ graph LR
 | **TC-EXT-01** | Toolbar Popup Quick-Access View | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-02** | Collapsible Sidebar (240px to 72px) | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-03** | First-Time Interactive Onboarding Tour | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
+| **TC-EXT-04** | Options Dashboard React Hook Invariant Parity | Extension (Chrome & Firefox) | Automated | Extension Specials |
 | **TC-EXT-BRW-01** | Manifest Build Transformation Parity | Extension (Chrome & Firefox) | Automated | Cross-Browser |
 | **TC-EXT-BRW-02** | OAuth Redirect URI Resolution Parity | Extension (Chrome & Firefox) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-03** | Gecko Protocol Interception Parity | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
@@ -942,6 +944,20 @@ graph LR
   3. Enable the switch and trigger "Sync Now". Verify undated assignments populate Google Tasks.
   4. Disable the switch and trigger "Sync Now". Verify undated assignments are pruned from Google Tasks.
 
+#### TC-GT-09: Persistent Auth, Silent Refresh & Unauthenticated Sync Alert
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies Google Tasks authentication persists across sessions, executes silent background token refresh without repeated user prompts, and warns the user when Google Tasks sync is enabled but unauthenticated.
+* **Automated Test Flow**:
+  1. Simulate Moodle logout; assert `googleAccessToken` and `googleTokenExpiry` are preserved in storage.
+  2. Run background sync with expired token; verify silent refresh executes with `login_hint`.
+  3. Simulate background sync authentication failure; assert `googleTasksAuthError` is written to storage and desktop notification is created.
+* **Browser Agent Prompt / Action**:
+  1. In Settings, enable Google Tasks sync without logging in.
+  2. Verify red status badge "⚠️ Not connected — Authentication required" is visible.
+  3. Navigate to Dashboard; verify warning banner "Google Tasks sync is enabled but not connected" is displayed with a "Connect Now ↗" button.
+  4. Click "Connect Now ↗", authenticate, and verify status changes to "● Connected to Google Tasks" and the warning banner dismisses.
+
 ---
 
 ### Category 9: Cross-Device Settings Sync (Moodle Calendar Private Storage)
@@ -1151,6 +1167,13 @@ graph LR
   6. Assert Step 5 closes the modal and automatically expands the course row drawer showing Zoom meetings.
   7. Assert Steps 6, 7, 8, and 9 automatically switch tabs (`assignments`, `grades`, `settings`, `about`) and highlight respective sections.
   8. Test exiting via `Escape` key or clicking "Finish" on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
+
+
+#### TC-EXT-04: Options Dashboard React Hook Invariant Parity
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that all React hooks (`useState`, `useEffect`, `useMemo`) in `apps/extension/src/options/App.tsx` execute unconditionally at top level across all onboarding states (loading, onboarding step 1 credentials, step 2 course selection, and step 3 dashboard view). Prevents runtime React error #310 ("Rendered more hooks than during the previous render") during state transitions.
+* **Automated Runner**: `pnpm --filter extension run lint` (ESLint `react-hooks/rules-of-hooks`), `pnpm --filter extension run build`, and `pnpm test:devtools`.
 
 #### TC-EXT-BRW-01: Manifest Build Transformation Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`

@@ -120,22 +120,34 @@ export async function setCachedSyncResult(result: SyncResult): Promise<void> {
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
-  const res = (await browser.storage.sync.get('settings')) as { settings?: Partial<ExtensionSettings> };
-  return { ...DEFAULT_SETTINGS, ...res.settings };
+  const [syncRes, localRes] = await Promise.all([
+    browser.storage.sync.get('settings').catch(() => ({})) as Promise<{ settings?: Partial<ExtensionSettings> }>,
+    browser.storage.local.get('settings_local').catch(() => ({})) as Promise<{ settings_local?: Partial<ExtensionSettings> }>,
+  ]);
+  return { ...DEFAULT_SETTINGS, ...localRes.settings_local, ...syncRes.settings };
 }
 
 export async function setSettings(settings: Partial<ExtensionSettings>, skipSync = false): Promise<void> {
   const current = await getSettings();
-  await browser.storage.sync.set({ settings: { ...current, ...settings } });
+  const merged = { ...current, ...settings };
+  await browser.storage.local.set({ settings_local: merged }).catch(() => {});
+  await browser.storage.sync.set({ settings: merged });
   
   if (!skipSync) {
-    // Only update timestamps when the user explicitly changed a setting
+    // Only update timestamps for keys whose value actually changed
     const timestamps = ((await browser.storage.sync.get('settings_timestamps')).settings_timestamps || {}) as Record<string, number>;
     const now = Date.now();
-    for (const key of Object.keys(settings)) {
-      timestamps[key] = now;
+    let changed = false;
+    for (const [key, val] of Object.entries(settings)) {
+      const prevVal = (current as unknown as Record<string, unknown>)[key];
+      if (JSON.stringify(prevVal) !== JSON.stringify(val)) {
+        timestamps[key] = now;
+        changed = true;
+      }
     }
-    await browser.storage.sync.set({ settings_timestamps: timestamps });
-    scheduleSettingsSyncBroadcast();
+    if (changed) {
+      await browser.storage.sync.set({ settings_timestamps: timestamps });
+      scheduleSettingsSyncBroadcast();
+    }
   }
 }

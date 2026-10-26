@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Warm Pastel Course Color Palette & Fallback (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `e2e/sync-devtools.spec.ts`, `generate-promo-assets.mjs`)**:
+  - Replaced harsh green (`#10b981`) and indigo purple (`#6366f1`) course color presets with attractive, happier pastels: warm coral/terracotta pastel orange (`#e07a5f`) for Course 9999 (CS101) and warm caramel/mocha pastel brown (`#a0613e`) for Course 9998 (DS201).
+  - Updated the default course color fallback in `App.tsx` and `Popup.tsx` from `#6366f1` to `#e07a5f`.
+  - Harmonized ambient background radial gradients in promotional slide graphics from indigo to soft pastel terracotta (`rgba(224, 122, 95, 0.12)`).
+- **Expanded Realistic Mock Assignments for Demos & Screenshots (`apps/extension/e2e/sync-devtools.spec.ts`)**:
+  - Expanded mock assignments data from 4 to 8 realistic, multi-state assignments across both courses with varied due dates (24h urgent spotlight, 3-day, 4-day, 6-day, 8-day, 12-day upcoming deadlines, and completed/graded items).
+  - Linked corresponding modules and resources in `core_course_get_contents` for all new assignments, enriching the Upcoming Tasks Queue, dedicated Assignments Feed, Course Detail Views, and Toolbar Popup.
+- **Refreshed 2× Retina Promotional Store Graphics (`apps/extension/promo/`, `scripts/generate-promo-assets.mjs`)**:
+  - Re-rendered all 7 promotional assets at 2× Retina resolution reflecting recent UI updates, expandable hero card, inline file previews, "Open in Moodle" navigation button, warm pastel course tags, and rich upcoming tasks queue.
+- **Direct "Open in Moodle ↗" Course Button in Course Detail View (`apps/extension/src/options/App.tsx`)**:
+  - Added a direct `"פתח במודל ↗"` / `"Open in Moodle ↗"` button (`data-moodle-link="true"`) in the header of `CourseDetailView` to open the course's Moodle page directly from the course screen.
+- **"Signing in to Moodle..." Status Indicator on Moodle Links (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `i18n.ts`)**:
+  - Added an immediate `"מתחבר למודל..."` / `"Signing in to Moodle..."` status toast/banner with a spinning indicator whenever any Moodle link is clicked, keeping the user informed while SSO session verification (`loginTauSsoOnBackground`) completes before opening the new tab.
 - **Interactive Split-Pane Calendar View in Assignments Tab (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`, `TC-ASN-12`)**:
   - Added a "📅 תצוגת לוח שנה" / "📅 Calendar View" toggle button in the Assignments tab filter bar.
   - Opening the calendar shrinks the assignments feed column into a responsive split-pane workspace (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`) and displays a sticky monthly calendar grid alongside the assignments list.
@@ -116,6 +129,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Verifies the scraping toggle defaults to OFF, tests pure API sync, toggles scraping ON, verifies storage persistence, executes scraping-enabled sync, resets to clean default, and captures visual screenshots.
 
 ### Changed
+- **Expandable Hero Spotlight Card Hiding Files Until Expanded (`apps/extension/src/options/App.tsx`)**:
+  - Updated the Dashboard Hero Spotlight ("Next Task" / `"המטלה הקרובה"`) card to collapse its assignment attachments, subject files (`קבצי הנושא`), and submitted files by default (`isHeroExpanded: false`), revealing them only when the user clicks to expand the card.
 - **Subject, Assignment, and Submitted Files Ordered in a Vertical Column (`apps/extension/src/options/App.tsx`, `App.css`, `TC-DASH-REHAUL-07`)**:
   - Updated all file lists (assignment attachments, subject/topic files `קבצי הנושא`, and student submitted files) across the Dashboard Hero Spotlight, Upcoming To-Do Queue, Tracked Course Rows, Assignments Tab feed, and Course Detail View to render in a clean vertical column layout (`.files-column-group`, `.files-column-list`, `.file-column-item`) instead of wrapping horizontally.
 - **Isolated Sync Countdown Timer & Memoized Assignment Derivation (`apps/extension/src/options/App.tsx`)**:
@@ -248,6 +263,18 @@ estoreMoodleSettingsForOnboarding across the extension background service worker
 - **Automated Chrome DevTools Inspection & E2E Feedback Loop (`pnpm test:devtools` / `apps/extension/e2e/sync-devtools.spec.ts`)**: Built an automated browser testing feedback loop for agents and developers using Playwright with real unpacked Chrome extension loading (`TC-EXT-DEVTOOLS-01`, `TC-EXT-DEVTOOLS-02`). Hooks into Chrome DevTools console and network streams across both the Options Page UI and the Background Service Worker. Allows agents to trigger synchronization, inspect diagnostic logs, test failure recovery (unauthenticated/expired tokens), verify successful synchronization, assert UI DOM updates, and confirm local storage persistence without manual human intervention.
 
 ### Fixed
+- **Google Tasks Persistent Sign-In, Silent Background Refresh, and Unauthenticated Sync Alert (`apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/shared/i18n.ts`, `storage.ts`, `TC-GT-09`)**:
+  - Fixed Google Tasks repeatedly requiring re-authentication by preventing Moodle SSO teardowns (`clearUserSession`) from wiping `googleAccessToken` and `googleTokenExpiry`.
+  - Added background silent OAuth token refresh with cached `googleUserEmail` via `login_hint` and non-interactive `launchWebAuthFlow({ prompt: 'none' })`, preserving authentication across browser restarts and Moodle sessions without repeated popups.
+  - Fixed Google Tasks failing silently when unauthenticated: records `googleTasksAuthError` in `browser.storage.local` and dispatches browser notifications during background sync failures.
+  - Added visual connection status badges (`● Connected to Google Tasks` / `⚠️ Not connected — Authentication required`) and prominent warning alerts with a 1-click "Connect Now ↗" button across both Dashboard and Settings tab.
+- **Inline New-Tab Opening for Submitted & Course Files (`apps/extension/src/options/App.tsx`)**:
+  - Fixed pressing `"פתח ↗"` ("Open") on submitted files (`assignsubmission_file` / `submission_files`) downloading the file instead of opening it in a new tab due to Moodle's `Content-Disposition: attachment` response header.
+  - Added `handleOpenFileInNewTab` and `buildFileOpenUrl` (stripping `forcedownload=1`) to fetch inline-viewable files (PDFs, images, source code, and text files) with session credentials, wrap them in an inline-typed `Blob` (`application/pdf`, `image/*`, `text/plain;charset=utf-8`), and open the `Blob` URL in a new browser tab.
+- **React Hook Order Violation in Options Page (`apps/extension/src/options/App.tsx`, Minified React error #310)**:
+  - Fixed an unhandled conditional hook violation where `assignmentsList`'s `useMemo` was defined inside the step-3 dashboard block, below early return statements for loading and onboarding steps 1 and 2.
+  - Moved the `useMemo` computation to the top-level hook declaration block alongside other state and effects, and directly referenced `syncResult?.assignments`, `settings?.completedAssignments`, and `settings?.uncompletedAssignments` in its dependency array.
+  - Eliminates the runtime crash `Minified React error #310` ("Rendered more hooks than during the previous render") when transitioning from onboarding course selection to the main dashboard.
 - **Zoom Link Date & Time Extraction for "No Fixed Time" and Active Recurring Meetings (`packages/moodle-client/src/zoomScraper.ts`, `TC-ZM-06`)**:
   - Fixed Zoom LTI Pro recurring meetings with "No Fixed Time" (`type === 3`), instant meetings (`type === 1`), and PMI rooms (`type === 4`) displaying arbitrary creation timestamps (e.g., `14:23:47` from months ago) by introducing `normalizeZoomStartTime()` which strips non-scheduled creation timestamps and past timestamps not aligned to 5-minute `:00` boundaries.
   - Deduplicated `previous` LTI meetings against `upComing` rooms in `scrapeZoomMeetingsWithToken`.
