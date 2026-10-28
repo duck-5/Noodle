@@ -248,4 +248,34 @@ Communication between the UI frontends (Options Page, Popup) and the background 
 ### MV3 Service Worker Protocol
 * **Synchronous Registration**: The listener is registered unconditionally at the top level of `serviceWorker.ts` before alarms or async operations.
 * **Synchronous Channel Retention**: The handler invokes `sendResponse(result)` when its asynchronous promise resolves and returns `true` synchronously, preserving the native Chromium message port across cold-boot worker wake-ups.
+
+---
+
+## 9. Panopto Lecture & Recitation Discovery & API Protocol (`packages/moodle-client/src/panoptoScraper.ts`)
+
+When `enablePanopto: true` (`ExtensionSettings.panoptoEnabled`) is enabled, Noodle discovers and fetches course lecture and recitation recordings from TAU's Panopto server (`https://panopto.tau.ac.il`) using the browser's implicit SSO session cookies (`credentials: 'include'`).
+
+### 2-Tier Folder Discovery & Hidden-Tab SSO Pipeline
+1. **Hidden-Tab Panopto SSO Auto-Login (`ensurePanoptoAuthViaHiddenTab` in `serviceWorker.ts`)**:
+   * Checks for an active `.ASPXAUTH` cookie on `panopto.eu` via `browser.cookies.getAll({ domain: 'panopto.eu' })`.
+   * If missing or if `fetchPanoptoFolderSessions` returns 0 recordings due to an expired server session (`forceRefresh = true`), opens a hidden background tab (`active: false`) to `https://tau.cloud.panopto.eu/Panopto/Pages/Auth/Login.aspx`, injects `injectedPanoptoLoginStep` via `scripting.executeScript` to click `#PageContentPlaceholder_loginControl_externalLoginButton`, fills `#Ecom_User_ID`, `#Ecom_User_Pid`, and `#Ecom_Password` on `nidp.tau.ac.il` using stored `MoodleCredentials`, waits for redirect back to `/Panopto/Pages/**` with a valid `.ASPXAUTH` cookie, and closes the hidden tab.
+2. **Tier 1 — Manual Override (`coursesPanoptoMap`)**:
+   * Users can configure a Panopto Folder URL or Folder UUID per course in the Manage Courses modal or inline in `CourseDetailView` (`settings.coursesPanoptoMap[courseId]`).
+   * `extractPanoptoFolderId(input)` extracts the folder UUID directly, or if a `Viewer.aspx?id={deliveryId}` link is provided, resolves its parent folder UUID via `DeliveryInfo.aspx`.
+3. **Tier 2 — Moodle Course Modules & Page Auto-Discovery**:
+   * Scans `core_course_get_contents` modules (`url`, `lti`, `page`, `label`), `core_block_get_course_blocks`, and section summaries for links matching `panopto.tau.ac.il` or `*.panopto.eu`.
+   * Fetches `/course/view.php?id={courseId}` and invokes `extractPanoptoFromCourseHtml(html)` to extract folder UUIDs and delivery IDs from course links.
+   * If only a session delivery ID (`Viewer.aspx?id={deliveryId}`) is found on the course page, calls `resolveFolderIdFromDelivery(deliveryId)` (`POST /Panopto/Pages/Viewer/DeliveryInfo.aspx` with `deliveryId` and `responseType=json`) to read `Delivery.SessionGroupPublicID` / `Delivery.FolderId` and fetch the entire course folder.
+
+### Session Fetching, Deduplication & Section Matching
+* **`fetchPanoptoFolderSessions(folderId, courseId, panoptoBaseUrl)`**:
+  * Primary: `POST /Panopto/Services/Data.svc/GetSessions` with `queryParameters` (`folderID`, `sortColumn: 1`, `sortAscending: false`, `maxResults: 250`).
+  * Fallback: `GET /Panopto/Pages/Sessions/List.aspx?folderID={folderId}` parsed via `parsePanoptoListHtml`.
+* **`filterAndDeduplicateRecordings(recordings)`**:
+  * Filters out invalid/garbage titles (`len < 5` or lacking alphabetical/Hebrew characters) and accidental short clips (`durationSeconds < 60`).
+  * Classifies each recording into `'lecture'`, `'recitation'`, or `'general'` (`classifyRecordingType`).
+  * Deduplicates recitation series by stripping part suffixes (`חלק 1`, `part 2`, `a-c`), grouping by base recitation title, and keeping all parts from the most recent `publishedDate`.
+* **`matchRecordingToSection(recording, courseSectionNames)`**:
+  * Associates each recording with a Moodle course section by matching lecture/recitation/week numbers or title keyword overlap, falling back to `'הקלטות פנופטו'`.
+
 * **Progressive Backoff**: Senders (`sendMessageToBackground`) utilize a 4-stage backoff (`200, 500, 1000, 1500 ms`, ~3.2s total) to wait for dormant workers to spin up, returning structured error objects on failure.

@@ -65,6 +65,16 @@ Presented immediately after successful authentication or when manually triggered
     - **Disconnect Button**: Shorthand power plug icon (`🔌`) that triggers log out.
     - (Mobile only) The disconnect logo will appear only when the sidebar is expended
 
+### B. Resizable Dashboard Container & Edge Dividers
+* **Default Width**: `1200px` centered within the main viewport for optimal reading density.
+* **Edge Drag Handles**:
+  - Subtle, symmetrical vertical dividers (`.content-resize-handle`) along the outer left and right edges.
+  - Hovering or dragging reveals an accent line (`var(--primary)`) and a floating frosted-glass pill (`.resize-handle-pill`) showing live pixel width (e.g., `⋮ 1200px`) and guidance tooltip.
+  - Symmetrical resizing calculates distance from the viewport center line (`Math.abs(e.clientX - centerX) * 2`), working seamlessly in both LTR and RTL directions.
+  - Double-clicking either handle instantly resets the container width back to `1200px`.
+  - Automatically persists the chosen width in `localStorage` (`noodle_dashboard_max_width`).
+* **Settings Control**: Companion range slider and 1-click "Reset to 1200px" button in the Settings tab under Appearance.
+
 ---
 
 ## 3. Dashboard Tab (v4 Home View)
@@ -169,7 +179,13 @@ A dedicated full-page assignment feed providing comprehensive management of all 
         - Active live meeting highlights.
         - "הצג את כל המפגשים" toggle button to show and unhide hidden Zoom meetings.
         - Zoom link button, meeting ID & passcode text fields with quick copy buttons.
-    3.  **Files**: Folder structure organizing PDF/PPT course documents, with each file item equipped with a green squircle "פתח ↗" direct open button (`border-radius: 8px`) and a squircle arrow-only SVG "הורדה" button (`<DownloadIcon size={12} />`) with the HTML `download` attribute.
+    3.  **Files & Panopto Recordings (Course Card + Course Sections)**: Folder structure organizing PDF/PPT course documents and Panopto video recordings by Moodle topic section:
+        - **Course-Level Panopto Recordings Card (`.panopto-section-card`)**: Always rendered right below the Zoom card in `CourseDetailView` when `panoptoEnabled: true`. Displays the watched progress counter (`🎬 הקלטות פנופטו (X/Y נצפו)`), a direct `"פתח את Panopto ↗"` / `"Open Panopto ↗"` button, an inline Panopto Folder URL / UUID override input with `"שמור וסנכרן"` / `"Save & Sync"`, any Panopto sync diagnostic warnings, and the full list of recordings for the course.
+        - **Course Files**: Each file item is equipped with a green squircle "פתח ↗" direct open button (`border-radius: 8px`) and a squircle arrow-only SVG "הורדה" button (`<DownloadIcon size={12} />`) with the HTML `download` attribute.
+        - **Panopto Recordings (Inside Course Sections)**: When Panopto tracking is enabled (`panoptoEnabled: true`), matched lecture and recitation recordings are also rendered inside each topic section (with unmatched recordings grouped under a `'הקלטות פנופטו'` / `'Panopto Recordings'` section). Each recording item displays:
+          - **Watched / Unwatched Toggle (`watchedRecordings`)**: Interactive checkmark button (`נצפה ✓` when watched, `סמן כנצפה` when unwatched) that dims watched recordings (`opacity: 0.68`) and persists state in `ExtensionSettings.watchedRecordings`.
+          - **Recording Title & Metadata Badges**: Color-coded type badge (`🎬 הרצאה` / `Lecture` in indigo, `📐 תרגול` / `Recitation` in green), section tag, and localized recording date (`YYYY-MM-DD`).
+          - **Direct Watch Action**: Squircle `"צפה בהקלטה ↗"` / `"Watch ↗"` link opening the Panopto viewer (`Viewer.aspx?id={deliveryId}`) in a new tab.
 
 ---
 
@@ -224,6 +240,10 @@ A dedicated full-page assignment feed providing comprehensive management of all 
         - **Help Guidance**: Clear instructional text explaining how to resolve `redirect_uri_mismatch (Error 400)` by registering the redirect URI in Google Cloud Console.
         - **Custom Client ID Input**: Optional input allowing self-hosters or custom GCP project owners to override the default Google OAuth 2.0 Client ID (`googleClientId`).
         - **Manual Access Token Fallback**: Secure password input field allowing direct paste of a Google OAuth access token with a **Save & Sync** button for environments where browser OAuth dialogs cannot be opened.
+*   **Automatic Sync Interval (`syncIntervalMinutes`)**:
+    - Select dropdown allowing the user to choose the periodic background sync duration: 1 minute, 5 minutes (default), 10 minutes, 15 minutes, 30 minutes, 60 minutes, or 120 minutes.
+    - Connected directly to the Moodle Storage API (`NOODLE_SYNC_DATA` private calendar storage) so the preference persists and propagates across all devices.
+    - Dynamically reschedules the browser background `periodicSync` alarm and updates the live countdown timer (`SyncCountdown`) in the dashboard header.
 
 ### D. Notification Configurations
 *   **Push Alerts**: Toggle switch to enable/disable deadline reminders.
@@ -242,12 +262,17 @@ A dedicated full-page assignment feed providing comprehensive management of all 
         - Chrome Web Store Review (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`)
 *   **Disconnect Button**: Destructive button labeled "Disconnect from Moodle" that wipes all tokens, logs, local databases, and cookie records.
 
-### F. Web Scraping Configuration (Fallback)
+### F. Web Scraping & Panopto Tracking Configuration
 *   **Moodle Web Scraping (Fallback)** (`#scraping-enabled-toggle`):
     - Switch toggle to enable or disable HTML web scraping fallback.
     - Default state: **OFF** (`scrapingEnabled: false`).
     - Bilingual Description: "Scrape Moodle web pages for archived assignments, Zoom links, and files unavailable via the standard API. Default: Off (may slow down sync)." / "סריקת עמודי Moodle לאיתור מטלות בארכיון, קישורי Zoom וקבצים שאינם זמינים ב-API הרגיל. ברירת מחדל: כבוי (עשוי להאט את הסנכרון)."
     - When disabled, synchronization strictly utilizes pure Moodle REST and AJAX endpoints for high-speed performance and minimal resource consumption.
+*   **Panopto Lecture & Recitation Tracking** (`#panopto-enabled-toggle`):
+    - Switch toggle to enable or disable automatic discovery and tracking of Panopto lecture and recitation recordings per course.
+    - Default state: **OFF** (`panoptoEnabled: false`).
+    - Bilingual Description: "Automatically discover and display course lecture and recitation recordings from Panopto inside each course page, with watched status tracking and manual folder override." / "איתור והצגה אוטומטית של הקלטות הרצאות ותרגולים מפנופטו בתוך עמודי הקורסים, כולל סימון הרצאות שנצפו ואפשרות להזנת קישור תיקייה ידני בניהול קורסים."
+    - When enabled, the **Manage Courses** modal (`CoursesConfigTable`) also displays a **Panopto Folder (Optional)** column allowing users to paste a custom Panopto Folder URL or Folder UUID override (`coursesPanoptoMap[courseId]`) for any course.
 
 
 ---

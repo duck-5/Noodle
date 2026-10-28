@@ -1,6 +1,6 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
-import type { SyncResult } from '@tautracker/moodle-client';
+import { decodeHTMLEntities, type SyncResult } from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
@@ -67,9 +67,21 @@ export default function Popup() {
     const updated = { ...settings, completedAssignments: completed, uncompletedAssignments: uncompleted };
     setSettingsState(updated);
     await saveSettings({ completedAssignments: completed, uncompletedAssignments: uncompleted });
+    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
     if (settings.googleTasksEnabled) {
-      syncGoogleTasksOnBackground(false).catch(() => {});
+      syncGoogleTasksOnBackground(false).catch(() => { });
     }
+  };
+
+  const handleMarkRecordingWatched = async (e: React.MouseEvent, recordingId: string) => {
+    e.stopPropagation();
+    if (!settings || !recordingId) return;
+    const watched = Array.from(new Set([...(settings.watchedRecordings || []), recordingId]));
+    const updated = { ...settings, watchedRecordings: watched };
+    setSettingsState(updated);
+    await saveSettings({ watchedRecordings: watched });
+    // The popup may close before the debounced settings broadcast fires; push to Moodle now.
+    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
   };
 
   if (loading && !syncResult) {
@@ -100,6 +112,13 @@ export default function Popup() {
   const hiddenSet = new Set<number>(settings?.hiddenAssignments || []);
   const completedSet = new Set<number>(settings?.completedAssignments || []);
   const uncompletedSet = new Set<number>(settings?.uncompletedAssignments || []);
+  const watchedSet = new Set<string>(settings?.watchedRecordings || []);
+
+  const unwatchedRecordings = settings?.panoptoEnabled
+    ? [...(syncResult?.recordings || [])]
+      .filter((r: any) => r?.id && !watchedSet.has(r.id))
+      .sort((a: any, b: any) => (b.publishedDate || '').localeCompare(a.publishedDate || ''))
+    : [];
 
   const isDone = (a: any) => {
     if (uncompletedSet.has(a.id)) return false;
@@ -222,7 +241,7 @@ export default function Popup() {
                         if (!hasSession) {
                           const creds = await getMoodleCredentials();
                           if (creds && creds.username && creds.password) {
-                            await loginTauSsoOnBackground(creds.username, creds.idNumber || '', creds.password, true).catch(() => {});
+                            await loginTauSsoOnBackground(creds.username, creds.idNumber || '', creds.password, true).catch(() => { });
                           }
                         }
                         await browser.tabs.create({ url: a.link });
@@ -243,7 +262,7 @@ export default function Popup() {
                     <span className="popup-course-tag" style={{ color }}>
                       {name}
                     </span>
-                    <span className="popup-assign-name">{a.name}</span>
+                    <span className="popup-assign-name">{decodeHTMLEntities(a.name || '')}</span>
                   </div>
                   <div className="popup-assign-actions">
                     <span className="popup-due-tag">{dueText}</span>
@@ -266,11 +285,88 @@ export default function Popup() {
             </button>
           )}
         </div>
+
+        {settings?.panoptoEnabled && (
+          <>
+            <div className="popup-section-title" style={{ marginTop: '0.35rem' }}>
+              <span>{isHe ? 'הרצאות ותרגולים' : 'Lectures & Recitations'}</span>
+              <span className="count-badge">{unwatchedRecordings.length}</span>
+            </div>
+
+            <div className="popup-list">
+              {unwatchedRecordings.length === 0 ? (
+                <div className="popup-empty" style={{ padding: '1rem 0' }}>
+                  {isHe ? 'אין הקלטות חדשות לצפייה! 🎉' : 'No unwatched recordings! 🎉'}
+                </div>
+              ) : (
+                unwatchedRecordings.slice(0, 5).map((r: any) => {
+                  const color = settings?.coursesColorMap?.[r.courseId] || '#e07a5f';
+                  const courseName = settings?.coursesCustomNames?.[r.courseId] || r.courseName;
+                  const isRecitation = r.type === 'Recitation';
+                  const typeLabel = isRecitation
+                    ? isHe
+                      ? '📐 תרגול'
+                      : '📐 Recitation'
+                    : isHe
+                      ? '🎬 הרצאה'
+                      : '🎬 Lecture';
+
+                  return (
+                    <div
+                      key={r.id}
+                      className="popup-assign-card clickable"
+                      onClick={() => {
+                        if (r.recordingUrl) {
+                          browser.tabs.create({ url: r.recordingUrl });
+                        } else {
+                          handleOpenDashboard();
+                        }
+                      }}
+                      title={isHe ? 'לחץ לצפייה בהקלטה ב-Panopto' : 'Click to watch recording in Panopto'}
+                      style={{
+                        borderLeft: isHe ? 'none' : `3.5px solid ${color}`,
+                        borderRight: isHe ? `3.5px solid ${color}` : 'none',
+                      }}
+                    >
+                      <div className="popup-assign-info">
+                        <span className="popup-course-tag" style={{ color }}>
+                          {courseName}
+                        </span>
+                        <span className="popup-assign-name">
+                          {isRecitation ? '📐 ' : '🎬 '}
+                          {decodeHTMLEntities(r.title || '')}
+                        </span>
+                      </div>
+                      <div className="popup-assign-actions">
+                        <span className="popup-due-tag">{r.publishedDate || typeLabel}</span>
+                        <button
+                          type="button"
+                          className="popup-done-btn"
+                          onClick={(e) => handleMarkRecordingWatched(e, r.id)}
+                          title={isHe ? 'סמן כנצפה' : 'Mark as Watched'}
+                        >
+                          ✓
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              {unwatchedRecordings.length > 5 && (
+                <button className="more-btn" onClick={handleOpenDashboard}>
+                  {isHe
+                    ? `ועוד ${unwatchedRecordings.length - 5} הקלטות... פתח לוח בקרה`
+                    : `And ${unwatchedRecordings.length - 5} more... Open Dashboard`}
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       <footer className="popup-footer">
         <button className="footer-link-btn" onClick={handleOpenDashboard}>
-          {isHe ? '🚀 פתח לוח בקרה מלא' : '🚀 Open Full Dashboard'}
+          {isHe ? 'פתח לוח בקרה מלא' : 'Open Full Dashboard'}
         </button>
       </footer>
     </div>

@@ -46,6 +46,10 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
     promise = performBackgroundSync()
       .then((result) => ({ success: true, result }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'GET_SYNC_STATUS') {
+    // Authoritative in-memory sync state (storage `isSyncing` can go stale if the
+    // worker/event page was reloaded or terminated mid-sync).
+    promise = Promise.resolve({ success: true, isSyncing: activeBackgroundSyncPromise !== null });
   } else if (message.type === 'SYNC_SETTINGS') {
     promise = performSettingsSync()
       .then(() => ({ success: true }))
@@ -87,17 +91,29 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   browser.runtime.onMessage.addListener(messageHandler);
 }
 
-const SYNC_INTERVAL_MINUTES = 5;
+async function getSyncIntervalMinutes(): Promise<number> {
+  try {
+    const settings = await getSettings();
+    const val = Number(settings.syncIntervalMinutes);
+    if (!isNaN(val) && val >= 1 && val <= 1440) {
+      return val;
+    }
+  } catch {
+    // fallback
+  }
+  return 5;
+}
 
 // Setup alarm checking function to register the alarm on startup without resetting it if it already exists
-async function setupAlarm() {
+async function setupAlarm(forceRecreate = false) {
   try {
+    const periodInMinutes = await getSyncIntervalMinutes();
     const alarm = await browser.alarms.get('periodicSync');
-    if (!alarm || alarm.periodInMinutes !== SYNC_INTERVAL_MINUTES) {
-      await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
-      console.log(`Created periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes`);
+    if (forceRecreate || !alarm || alarm.periodInMinutes !== periodInMinutes) {
+      await browser.alarms.create('periodicSync', { periodInMinutes });
+      console.log(`Created periodicSync alarm for ${periodInMinutes} minutes`);
     } else {
-      console.log(`periodicSync alarm already exists with ${SYNC_INTERVAL_MINUTES} minutes`);
+      console.log(`periodicSync alarm already exists with ${periodInMinutes} minutes`);
     }
   } catch (e) {
     console.warn('Non-fatal: Failed to check/create periodicSync alarm:', e);
@@ -108,8 +124,9 @@ async function setupAlarm() {
 browser.runtime.onInstalled.addListener(async () => {
   console.log('TauTracker Extension Installed');
   try {
-    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
-    console.log(`Forced creation of periodicSync alarm for ${SYNC_INTERVAL_MINUTES} minutes onInstalled`);
+    const periodInMinutes = await getSyncIntervalMinutes();
+    await browser.alarms.create('periodicSync', { periodInMinutes });
+    console.log(`Forced creation of periodicSync alarm for ${periodInMinutes} minutes onInstalled`);
   } catch (e) {
     console.warn('Non-fatal: Failed to create periodicSync alarm onInstalled:', e);
   }
@@ -121,7 +138,7 @@ browser.runtime.onStartup.addListener(() => {
   updateActionBadge().catch(() => {});
 });
 
-// Update toolbar badge whenever cachedSyncResult or settings change
+// Update toolbar badge and re-arm alarm whenever cachedSyncResult or settings change
 browser.storage.onChanged.addListener((changes, areaName) => {
   if (
     (areaName === 'local' && (changes.cachedSyncResult || changes.wstoken)) ||
@@ -129,10 +146,22 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   ) {
     updateActionBadge().catch(() => {});
   }
+  if (changes.settings) {
+    const oldVal = (changes.settings.oldValue as any)?.syncIntervalMinutes;
+    const newVal = (changes.settings.newValue as any)?.syncIntervalMinutes;
+    if (newVal !== undefined && newVal !== oldVal) {
+      setupAlarm(true).catch(() => {});
+    }
+  }
 });
 
 // Initialize badge when service worker wakes up
 updateActionBadge().catch(() => {});
+
+// A freshly loaded worker/event page cannot have a sync in flight. Clear any stale
+// `isSyncing: true` left behind by an extension reload or worker termination mid-sync,
+// otherwise the dashboard shows "Syncing..." forever with a disabled Sync button.
+browser.storage.local.set({ isSyncing: false }).catch(() => {});
 
 async function updateActionBadge() {
   try {
@@ -244,7 +273,7 @@ async function invalidateSsoSession(): Promise<void> {
   // This removes both the active session (if the fetch failed) and the "dead" session cookie
   // issued by the logout endpoint, preventing SAML poisoning on the next login.
   try {
-    const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il', 'tau.ac.il'];
+    const domains = ['nidp.tau.ac.il', 'moodle.tau.ac.il', 'tau.ac.il', 'panopto.eu'];
     for (const domain of domains) {
       const cookies = await browser.cookies.getAll({ domain });
       for (const cookie of cookies) {
@@ -433,6 +462,8 @@ async function performSettingsSync() {
     if (key === 'trackedCourseIds') {
       newTrackedCourseIds = tracked.value;
     } else {
+      // All shared keys (incl. Panopto: panoptoEnabled, coursesPanoptoMap, watchedRecordings)
+      // use per-key last-write-wins so edits/removals propagate across devices.
       newSettings[key] = tracked.value;
     }
   }
@@ -484,6 +515,20 @@ async function performBackgroundSync(): Promise<SyncResult> {
     const settings = await getSettings();
     const prevResult = await getCachedSyncResult();
     const sesskey = await getStoredSesskey();
+    const storedCreds = await getMoodleCredentials();
+    const validCreds =
+      storedCreds && storedCreds.username && storedCreds.idNumber && storedCreds.password
+        ? {
+            username: storedCreds.username,
+            idNumber: storedCreds.idNumber,
+            password: storedCreds.password,
+          }
+        : undefined;
+
+    console.log(
+      `[serviceWorker] Sync config: panoptoEnabled=${settings.panoptoEnabled ?? false}, scrapingEnabled=${settings.scrapingEnabled ?? false}, coursesPanoptoMap=`,
+      settings.coursesPanoptoMap || {}
+    );
 
     try {
       result = await runSync(
@@ -494,13 +539,19 @@ async function performBackgroundSync(): Promise<SyncResult> {
           console.log(`[Sync Progress] ${msg}`);
         },
         undefined,
-        undefined,
+        validCreds,
         undefined,
         sesskey || undefined,
         (partial) => {
           browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
         },
-        { enableScraping: settings.scrapingEnabled ?? false }
+        {
+          enableScraping: settings.scrapingEnabled ?? false,
+          enablePanopto: settings.panoptoEnabled ?? false,
+          coursesPanoptoMap: settings.coursesPanoptoMap,
+          onEnsurePanoptoAuth: (forceRefresh) =>
+            ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
+        }
       );
     } catch (err: any) {
       let retrySuccessful = false;
@@ -521,13 +572,19 @@ async function performBackgroundSync(): Promise<SyncResult> {
                 console.log(`[Sync Progress Retry] ${msg}`);
               },
               undefined,
-              undefined,
+              validCreds,
               undefined,
               newSesskey || undefined,
               (partial) => {
                 browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
               },
-              { enableScraping: settings.scrapingEnabled ?? false }
+              {
+                enableScraping: settings.scrapingEnabled ?? false,
+                enablePanopto: settings.panoptoEnabled ?? false,
+                coursesPanoptoMap: settings.coursesPanoptoMap,
+                onEnsurePanoptoAuth: (forceRefresh) =>
+                  ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
+              }
             );
             retrySuccessful = true;
           } catch (loginErr: any) {
@@ -593,11 +650,10 @@ async function performBackgroundSync(): Promise<SyncResult> {
   } finally {
     // Save syncing state and notify listeners
     await browser.storage.local.set({ isSyncing: false });
-    browser.runtime.sendMessage({ type: 'SYNC_COMPLETE' }).catch(() => { });
+    browser.runtime.sendMessage({ type: 'SYNC_COMPLETE', result }).catch(() => { });
     // Reschedule the alarm to exactly X minutes from now to align with this sync
-    // NOTE: Chrome strictly enforces a minimum of 1 minute in production. 
-    // In dev, you can test with floats (e.g., 0.1 for 6 seconds).
-    await browser.alarms.create('periodicSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+    const periodInMinutes = await getSyncIntervalMinutes();
+    await browser.alarms.create('periodicSync', { periodInMinutes });
   }
 
     return result;
@@ -1059,4 +1115,369 @@ async function loginTauSso(username: string, idNumber: string, pass: string, ski
   await setStoredToken(finalToken);
   return finalToken;
 }
+
+// --------------------------------------------------------------------------
+// Hidden-Tab Panopto SSO Auto-Login
+// --------------------------------------------------------------------------
+
+/**
+ * Self-contained DOM script injected into the hidden Panopto/SSO tab.
+ * Mirrors the Playwright login flow from `legacy/clients/panopto_client.py`:
+ * 1. Clicks `#PageContentPlaceholder_loginControl_externalLoginButton` on `tau.cloud.panopto.eu`
+ * 2. Fills `#Ecom_User_ID`, `#Ecom_User_Pid`, and `#Ecom_Password` on `nidp.tau.ac.il` and submits
+ * 3. Waits for redirect back to `/Panopto/Pages/**`
+ */
+function injectedPanoptoLoginStep(username: string, idNumber: string, password: string): string {
+  try {
+    const win = window as any;
+    const now = Date.now();
+    const host = window.location.hostname.toLowerCase();
+    const href = window.location.href;
+
+    // 1. On Panopto login page: click #PageContentPlaceholder_loginControl_externalLoginButton
+    if (host.includes('panopto.eu') || host.includes('panopto.tau.ac.il')) {
+      const extBtn = document.querySelector<HTMLElement>(
+        '#PageContentPlaceholder_loginControl_externalLoginButton, [id*="externalLoginButton"]'
+      );
+      if (extBtn) {
+        if (!win.__noodleExtLoginClickedAt || now - win.__noodleExtLoginClickedAt > 4000) {
+          win.__noodleExtLoginClickedAt = now;
+          extBtn.click();
+          return `CLICKED_EXTERNAL_LOGIN (${href})`;
+        }
+        return `WAITING_AFTER_EXTERNAL_LOGIN_CLICK (${href})`;
+      }
+
+      // If landed on Home.aspx in guest/unauthenticated mode with a Sign-In button, click it
+      const signInBtn = document.querySelector<HTMLElement>('#loginButton, a[href*="Login.aspx"]');
+      if (signInBtn && href.includes('/Home.aspx')) {
+        if (!win.__noodleSignInClickedAt || now - win.__noodleSignInClickedAt > 4000) {
+          win.__noodleSignInClickedAt = now;
+          signInBtn.click();
+          return `CLICKED_HOME_SIGN_IN (${href})`;
+        }
+      }
+
+      return `ON_PANOPTO_PAGE (${href})`;
+    }
+
+    // 2. On Moodle login page (if Panopto SSO bounces via Moodle): click SAML login button
+    if (host.includes('moodle.tau.ac.il') && href.includes('/login/')) {
+      const samlBtn = document.querySelector<HTMLElement>(
+        'a[href*="/auth/saml2/login.php"], .login-btn, a.btn-primary'
+      );
+      if (samlBtn && (!win.__noodleMoodleSamlClickedAt || now - win.__noodleMoodleSamlClickedAt > 4000)) {
+        win.__noodleMoodleSamlClickedAt = now;
+        samlBtn.click();
+        return `CLICKED_MOODLE_SAML_BTN (${href})`;
+      }
+      return `ON_MOODLE_LOGIN (${href})`;
+    }
+
+    // 3. On TAU NIDP portal (nidp.tau.ac.il): fill #Ecom_User_ID, #Ecom_User_Pid, #Ecom_Password and submit
+    const userEl = document.querySelector<HTMLInputElement>('#Ecom_User_ID, input[name="Ecom_User_ID"]');
+    const pidEl = document.querySelector<HTMLInputElement>('#Ecom_User_Pid, input[name="Ecom_User_Pid"]');
+    const passEl = document.querySelector<HTMLInputElement>('#Ecom_Password, input[name="Ecom_Password"]');
+
+    if (userEl && pidEl && passEl) {
+      if (!username || !idNumber || !password) {
+        return 'NIDP_FORM_VISIBLE_NO_CREDS';
+      }
+      if (!win.__noodleNidpSubmittedAt || now - win.__noodleNidpSubmittedAt > 6000) {
+        win.__noodleNidpSubmittedAt = now;
+
+        const setField = (el: HTMLInputElement, val: string) => {
+          el.focus();
+          const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(el, val);
+          } else {
+            el.value = val;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        setField(userEl, username);
+        setField(pidEl, idNumber);
+        setField(passEl, password);
+
+        const form = passEl.closest('form') || document.querySelector('form');
+        const submitBtn =
+          document.querySelector<HTMLElement>(
+            '#loginButton2, button[type="submit"], input[type="submit"], input[type="image"], [onclick*="submit" i], [onclick*="login" i]'
+          ) || (form ? form.querySelector<HTMLElement>('button, input[type="button"]') : null);
+
+        if (submitBtn) {
+          submitBtn.click();
+        } else {
+          const enterOpts = {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true,
+          };
+          passEl.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+          passEl.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+          passEl.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+          if (form) {
+            if (typeof (form as any).requestSubmit === 'function') {
+              (form as any).requestSubmit();
+            } else {
+              form.submit();
+            }
+          }
+        }
+
+        return `SUBMITTED_NIDP_CREDENTIALS (${href})`;
+      }
+      return `WAITING_AFTER_NIDP_SUBMIT (${href})`;
+    }
+
+    // 4. SAML auto-post relay form fallback if background tab throttling delayed onload submit
+    const samlInput = document.querySelector('input[name="SAMLResponse"], input[name="SAMLRequest"], input[name="wresult"]');
+    if (samlInput) {
+      const form = samlInput.closest('form');
+      if (form && (!win.__noodleSamlFormSubmittedAt || now - win.__noodleSamlFormSubmittedAt > 3000)) {
+        win.__noodleSamlFormSubmittedAt = now;
+        form.submit();
+        return `SUBMITTED_SAML_RELAY_FORM (${href})`;
+      }
+    }
+
+    return `IDLE (${href})`;
+  } catch (err: any) {
+    return `ERR: ${err?.message || String(err)}`;
+  }
+}
+
+async function hasPanoptoAuthCookie(): Promise<boolean> {
+  try {
+    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    const nowSec = Date.now() / 1000;
+    return cookies.some(
+      (c) =>
+        c.name.toUpperCase().includes('ASPXAUTH') &&
+        Boolean(c.value) &&
+        (!c.expirationDate || c.expirationDate > nowSec + 30)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function clearPanoptoAuthCookies(): Promise<void> {
+  try {
+    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    for (const cookie of cookies) {
+      if (cookie.name.toUpperCase().includes('ASPXAUTH')) {
+        const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
+        const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
+        await browser.cookies.remove({ url, name: cookie.name });
+      }
+    }
+  } catch (e) {
+    console.warn('[Panopto][HiddenTab] Failed to clear stale .ASPXAUTH cookie:', e);
+  }
+}
+
+async function isPanoptoServerSessionAuthenticated(): Promise<boolean> {
+  if (!(await hasPanoptoAuthCookie())) {
+    return false;
+  }
+  try {
+    const currentYear = String(new Date().getFullYear());
+    const res = await fetch('https://tau.cloud.panopto.eu/Panopto/Services/Data.svc/GetSessions', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        queryParameters: {
+          query: currentYear,
+          sortColumn: 1,
+          sortAscending: false,
+          maxResults: 5,
+          page: 0,
+          startDate: null,
+          endDate: null,
+          folderID: null,
+          bookmarked: false,
+          getFolderData: true,
+          isSharedWithMe: false,
+          includePlaylists: false,
+        },
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const d = data?.d || data;
+    const isPublicDemoFolder = (name: string) => /open2019|get started with panopto/i.test(name);
+    const results: any[] = Array.isArray(d?.Results) ? d.Results : [];
+    const subfolders: any[] = Array.isArray(d?.Subfolders) ? d.Subfolders : [];
+    const hasPrivateResult = results.some(
+      (r) => !isPublicDemoFolder(String(r?.FolderName || r?.SessionName || ''))
+    );
+    const hasPrivateSubfolder = subfolders.some(
+      (sf) => !isPublicDemoFolder(String(sf?.Name || sf?.FolderName || ''))
+    );
+    return hasPrivateResult || hasPrivateSubfolder;
+  } catch {
+    return false;
+  }
+}
+
+let activePanoptoHiddenTabPromise: Promise<boolean> | null = null;
+
+async function ensurePanoptoAuthViaHiddenTab(
+  creds?: { username: string; idNumber: string; password: string },
+  forceRefresh = false
+): Promise<boolean> {
+  if (activePanoptoHiddenTabPromise) {
+    return await activePanoptoHiddenTabPromise;
+  }
+
+  // Verify whether the current .ASPXAUTH cookie is genuinely active on Panopto's Data.svc API
+  if (await isPanoptoServerSessionAuthenticated()) {
+    if (!forceRefresh) {
+      console.log('[Panopto][HiddenTab] Active Panopto server session verified via Data.svc; skipping hidden-tab login.');
+      return true;
+    }
+    console.log(
+      '[Panopto][HiddenTab] Verified existing .ASPXAUTH session is active on Data.svc (course folder is simply empty); skipping hidden-tab login.'
+    );
+    return false;
+  }
+
+  activePanoptoHiddenTabPromise = (async () => {
+    let tabId: number | undefined;
+    try {
+      const resolvedCreds = creds || (await getMoodleCredentials()) || undefined;
+
+      // Always remove any stale/expired .ASPXAUTH cookie before opening the login tab
+      // so we don't mistake an old cookie for a newly issued one during the polling loop
+      await clearPanoptoAuthCookies();
+
+      console.log('[Panopto][HiddenTab] Opening hidden background tab for Panopto SSO login...');
+      const tab = await browser.tabs.create({
+        url: 'https://tau.cloud.panopto.eu/Panopto/Pages/Auth/Login.aspx',
+        active: false,
+      });
+      tabId = tab.id;
+      if (tabId === undefined) {
+        console.warn('[Panopto][HiddenTab] Created tab has no ID.');
+        return false;
+      }
+
+      const scriptingApi: any =
+        (typeof chrome !== 'undefined' && (chrome as any).scripting) || (browser as any).scripting;
+
+      const executeStepInTab = async (targetTabId: number): Promise<string[]> => {
+        const argList = [
+          resolvedCreds?.username || '',
+          resolvedCreds?.idNumber || '',
+          resolvedCreds?.password || '',
+        ];
+        if (scriptingApi && typeof scriptingApi.executeScript === 'function') {
+          try {
+            const res = await scriptingApi.executeScript({
+              target: { tabId: targetTabId, allFrames: true },
+              world: 'MAIN',
+              func: injectedPanoptoLoginStep,
+              args: argList,
+            });
+            return Array.isArray(res) ? res.map((r: any) => String(r?.result || '')) : [];
+          } catch {
+            const res = await scriptingApi.executeScript({
+              target: { tabId: targetTabId, allFrames: true },
+              func: injectedPanoptoLoginStep,
+              args: argList,
+            });
+            return Array.isArray(res) ? res.map((r: any) => String(r?.result || '')) : [];
+          }
+        }
+        return [];
+      };
+
+      const startTime = Date.now();
+      const timeoutMs = 25000;
+      let lastLoggedStatus = '';
+      let unauthedHomeTicks = 0;
+
+      while (Date.now() - startTime < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 650));
+
+        let currentTab: any;
+        try {
+          currentTab = await browser.tabs.get(tabId);
+        } catch {
+          console.warn('[Panopto][HiddenTab] Hidden tab was closed before authentication finished.');
+          return await isPanoptoServerSessionAuthenticated();
+        }
+
+        const currentUrl = String(currentTab?.url || '');
+        const hasAuthCookie = await hasPanoptoAuthCookie();
+
+        // Check if we landed back on Panopto Pages authenticated with a live .ASPXAUTH session
+        if (
+          currentUrl.includes('panopto.eu/Panopto/Pages/') &&
+          !currentUrl.includes('/Auth/Login.aspx')
+        ) {
+          if (hasAuthCookie && (await isPanoptoServerSessionAuthenticated())) {
+            console.log(
+              `[Panopto][HiddenTab] Authenticated Panopto session at ${currentUrl} (serverReady=true)! Closing hidden tab.`
+            );
+            return true;
+          }
+          if (currentTab?.status === 'complete') {
+            unauthedHomeTicks++;
+            if (unauthedHomeTicks >= 3) {
+              unauthedHomeTicks = 0;
+              await browser.tabs
+                .update(tabId, { url: 'https://tau.cloud.panopto.eu/Panopto/Pages/Auth/Login.aspx' })
+                .catch(() => {});
+              continue;
+            }
+          }
+        }
+
+        // Only inject once the tab has navigated to an http/https URL
+        if (currentUrl.startsWith('http')) {
+          try {
+            const stepStates = await executeStepInTab(tabId);
+            const summary = stepStates.filter(Boolean).join(' | ');
+            if (summary && summary !== lastLoggedStatus) {
+              lastLoggedStatus = summary;
+              console.log(`[Panopto][HiddenTab] Step: ${summary}`);
+            }
+          } catch {
+            // Tab may be mid-navigation between origins; retry on next tick
+          }
+        }
+      }
+
+      const finalCookieCheck = await hasPanoptoAuthCookie();
+      console.warn(
+        `[Panopto][HiddenTab] Timed out after ${timeoutMs}ms waiting for Panopto redirect (hasAuthCookie=${finalCookieCheck}).`
+      );
+      return finalCookieCheck;
+    } catch (err) {
+      console.warn('[Panopto][HiddenTab] Error during hidden-tab Panopto login:', err);
+      return false;
+    } finally {
+      if (tabId !== undefined) {
+        await browser.tabs.remove(tabId).catch(() => {});
+      }
+      activePanoptoHiddenTabPromise = null;
+    }
+  })();
+
+  return await activePanoptoHiddenTabPromise;
+}
+
 

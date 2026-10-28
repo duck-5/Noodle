@@ -86,7 +86,8 @@ Noodle/
 │   └── moodle-client/              # Shared pure TypeScript API integration layer
 │       ├── src/
 │       │   ├── moodleApi.ts        # fetch()-based Moodle Web Service functions
-│       │   ├── syncEngine.ts       # Orchestrates sync stages and file extraction
+│       │   ├── syncEngine.ts       # Orchestrates sync stages, files, Zoom, and Panopto
+│       │   ├── panoptoScraper.ts   # 3-tier Panopto folder discovery, session fetching & deduplication
 │       │   └── courseParser.ts     # Regular expressions for TAU shortnames
 │
 └── legacy/                         # Archived Python FastAPI codebase (Reference only)

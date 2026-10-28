@@ -19,6 +19,10 @@ export interface ExtensionSettings {
   uncompletedAssignments?: number[]; // Array of assignment ids marked as To Do even if submitted
   scrapingEnabled?: boolean;
   syncWithoutDeadline?: boolean;
+  panoptoEnabled?: boolean;
+  coursesPanoptoMap?: Record<number, string>;
+  watchedRecordings?: string[];
+  syncIntervalMinutes?: number;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -39,6 +43,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   uncompletedAssignments: [],
   scrapingEnabled: false,
   syncWithoutDeadline: false,
+  panoptoEnabled: false,
+  coursesPanoptoMap: {},
+  watchedRecordings: [],
+  syncIntervalMinutes: 5,
 };
 
 export async function getStoredToken(): Promise<string | null> {
@@ -131,7 +139,16 @@ export async function setSettings(settings: Partial<ExtensionSettings>, skipSync
   const current = await getSettings();
   const merged = { ...current, ...settings };
   await browser.storage.local.set({ settings_local: merged }).catch(() => {});
-  await browser.storage.sync.set({ settings: merged });
+  try {
+    await browser.storage.sync.set({ settings: merged });
+  } catch (e) {
+    // storage.sync has a small per-item quota (8 KB in Chromium). Growing lists such as
+    // watchedRecordings / completedAssignments can exceed it. If the write fails, drop the
+    // stale sync copy so it can't shadow the fresh local copy in getSettings(); cross-device
+    // sync still happens through the Moodle NOODLE_SYNC_DATA store.
+    console.warn('[storage] storage.sync settings write failed (quota?); using local copy only.', e);
+    await browser.storage.sync.remove('settings').catch(() => {});
+  }
   
   if (!skipSync) {
     // Only update timestamps for keys whose value actually changed

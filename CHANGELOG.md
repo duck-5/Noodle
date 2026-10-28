@@ -8,6 +8,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Configurable Automatic Sync Interval with Moodle Storage API Sync (`apps/extension/src/background/serviceWorker.ts`, `options/App.tsx`, `shared/storage.ts`, `i18n.ts`, `TC-SYNC-05`)**:
+  - Added a configurable **Automatic Sync Interval** setting (`syncIntervalMinutes`, presets: 1m, 5m default, 10m, 15m, 30m, 60m, 120m) in Extension Settings.
+  - Connected the sync interval with the Moodle Storage API (`NOODLE_SYNC_DATA` calendar event) via `SettingsSyncManager`, automatically round-tripping across devices.
+  - Dynamically reschedules the background `periodicSync` alarm on change and updates the live countdown timer (`SyncCountdown`) in the dashboard header.
+- **Hero Action Strip Balanced Proportions & Flex Centering Fix (`apps/extension/src/options/App.css`, `App.tsx`)**:
+  - Rebalanced the 3-panel Hero Action Strip (`minmax(0, 1.05fr) minmax(0, 1.35fr) minmax(0, 0.72fr)`) so that the Upcoming Assignments Queue receives generous priority space (~43%) while the Catch-Up Recordings pane is kept lean and compact (~23%).
+  - Added `min-width: 0`, truncation with ellipsis, and compact padding on `.catchup-item` so long titles or dates never blow up the column width.
+  - Fixed flexbox centering on `.main-viewport` that previously clipped the left edge of the Hero Spotlight card into negative coordinates on narrow or default 1200px widths.
+- **Interactive Drag-to-Resize Dashboard Width with Edge Dividers & Persistence (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`)**:
+  - Restored the default dashboard maximum width to its original `1200px` for comfortable readability.
+  - Added subtle, symmetrical vertical drag handles (`.content-resize-handle`) along the outer left and right edges of the centered container:
+    - Faint / invisible during normal reading; smoothly reveals a highlighted accent divider line and a floating pill showing live width (`⋮ 1200px`) on hover or while dragging.
+    - Symmetrical, direction-agnostic resizing based on viewport center distance (`distFromCenter * 2`), working seamlessly across both LTR and RTL layouts.
+    - Double-clicking either handle resets the container width back to `1200px` instantly.
+    - Automatically persists user-chosen width in `localStorage` (`noodle_dashboard_max_width`) across sessions.
+  - Added a companion **Dashboard Width** slider and reset button in **Settings** (`SettingsTab`) under the Appearance section for direct numerical adjustments.
+- **Tracked Courses Breakdown Stats, Gaps & Catch-Up Queue (#13, `apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`, `TC-PAN-05`)**:
+  - Added breakdown completion and gap badges for tracked courses in both Cards and List view modes:
+    - **Assignments**: `(done/total) [gap gaps]` with `.gap-pending` / `.gap-clear` badges.
+    - **Lectures** (when Panopto is enabled): `(done/total) [gap gaps]`.
+    - **Recitations** (when Panopto is enabled): `(done/total) [gap gaps]`.
+    - **Overall Progress**: Combined progress bar tracking total semester tasks (`doneItems/totalItems (overallPercent%)`).
+  - Added a **Lectures & Recitations to Catch Up** panel (`.catchup-queue-card`) inside `.hero-action-strip` (revealed when Panopto is enabled), presenting unwatched recordings for tracked courses ordered chronologically from oldest to newest (up to 5 items) with lecture/recitation badges, direct watch links (`Watch ↗` / `צפה בהקלטה ↗`), and 1-click mark-as-watched (`✓`).
+  - Compacted the **Next Task** hero spotlight card padding and typography so that it balances cleanly alongside the Upcoming To-Do and Catch-Up queues.
+  - Enabled full ultrawide screen responsiveness by removing the fixed `max-width: 1200px` limit on `.main-content`, allowing the container and courses grid to stretch naturally with comfortable side padding on wide and ultrawide displays.
+- **Panopto Lecture & Recitation Tracking (#13, `packages/moodle-client/src/panoptoScraper.ts`, `syncEngine.ts`, `apps/extension`, `TC-PAN-01`–`TC-PAN-05`)**:
+  - Added optional Panopto Lecture & Recitation Tracking feature toggle (`#panopto-enabled-toggle`, `panoptoEnabled`, default `false`) in Extension Settings.
+  - Implemented 3-tier Panopto folder discovery in `@tautracker/moodle-client`:
+    1. **Manual Override (`coursesPanoptoMap`)**: Per-course Panopto Folder URL or Folder UUID configuration field in the Manage Courses modal (`CoursesConfigTable` when Panopto is enabled) and inline in `CourseDetailView`.
+    2. **Moodle Course, LTI, Course Blocks WS, AJAX & HTML Auto-Discovery**: Scans Moodle course modules, Panopto LTI launch tools (`mod_lti_get_tool_launch_data` via `resolvePanoptoViaLti`), Moodle course blocks (`core_block_get_course_blocks` via `discoverPanoptoFromMoodleBlocks`), `/blocks/panopto/ajax/load_panopto_block.php` (`discoverPanoptoFromMoodleAjaxBlock`), section summaries, and `/course/view.php?id={courseId}` for `Sessions/List.aspx#folderID=...` or `Viewer.aspx?id=...` links, automatically resolving delivery IDs to folder UUIDs via `DeliveryInfo.aspx` (`Delivery.SessionGroupPublicID` / `Delivery.FolderId`).
+    3. **Panopto `Data.svc/GetSessions` Course Search (`discoverCourseFolderFromBrowse`)**: Queries `POST /Panopto/Services/Data.svc/GetSessions` (`getFolderData: true`) with normalized course code variants (`03212105`, `0321-2105`, etc.) after Panopto SSO authentication completes, without calling restricted `/Api/v1/` endpoints.
+  - Added automated **Hidden-Tab Panopto SSO Login (`ensurePanoptoAuthViaHiddenTab`)** in `apps/extension/src/background/serviceWorker.ts`: verifies server-side session liveness upfront via `isPanoptoServerSessionAuthenticated()` (`Data.svc/GetSessions`) before parallel course processing starts, clears stale `.ASPXAUTH` cookies when expired, opens a hidden background tab (`active: false`), injects `injectedPanoptoLoginStep` via `scripting.executeScript` to click `#PageContentPlaceholder_loginControl_externalLoginButton` and submit TAU SSO credentials (`#Ecom_User_ID`, `#Ecom_User_Pid`, `#Ecom_Password`), waits until the new `.ASPXAUTH` session is verified on `Data.svc`, and closes the hidden tab.
+  - Ported and enhanced garbage-title filtering (`len >= 5`, alphabetical/Hebrew character check, and `< 60s` accidental clip filtering), lecture/recitation/general classification (`classifyRecordingType`), and recitation series deduplication (`filterAndDeduplicateRecordings`, grouping multi-part recitations by stripping part suffixes like `חלק 1` / `part 2` / `a-c` and keeping all parts from the latest `publishedDate`).
+  - Grouped course recordings in `CourseDetailView` under dedicated, localized **Lectures (`הרצאות`)** and **Recitations (`תרגולים`)** sections whose header links (`Panopto ↗` / `פנופטו ↗`) open the course's exact Panopto folder page (`folderUrl`) directly instead of Moodle.
+  - Added an always-visible collapsible **Panopto Lectures & Recitations card (`.panopto-section-card`)** at the top of `CourseDetailView` when `panoptoEnabled` is true (with watched counter, inline Folder URL/UUID override + `"Save & Sync"`, direct `"Open Panopto ↗"` link to the course's Panopto folder, and diagnostic banners), with type badges (`הרצאה` / `תרגול`), date badges, 1-click **Watched / Unwatched** manual tracking toggle (`watchedRecordings`), and direct `צפה בהקלטה ↗` / `Watch ↗` launch links.
+  - Added a **Lectures & Recitations (`הרצאות ותרגולים`)** section below **To-Do Assignments** in the Extension Toolbar Popup (`apps/extension/src/popup/Popup.tsx`) when `panoptoEnabled` is enabled, displaying unwatched recordings with course color tags, 1-click Panopto video launch, and 1-click mark-as-watched (`✓`) buttons.
+  - Added `"https://*.panopto.eu/*"` and `"*://*.panopto.tau.ac.il/*"` to extension `host_permissions` and included `'panopto.eu'` in SSO logout cookie cleanup (`invalidateSsoSession`).
+  - Added unit test suite (`packages/moodle-client/__tests__/panopto.test.ts`) covering `TC-PAN-01` through `TC-PAN-04`.
 - **Cards View Mode Option for "My Tracked Courses" (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`)**:
   - Added a segmented view mode switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") in the "My Tracked Courses" section header on the Dashboard.
   - Implemented a responsive card grid layout (`.courses-cards-grid`) where each course card is partitioned into two horizontal sections:
@@ -20,6 +58,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added support for configuring a custom Google OAuth 2.0 Client ID (`googleClientId`).
   - Added a manual access token input field with a 1-click "שמור וסנכרן" / "Save & Sync" button as an alternative direct fallback.
 ### Fixed
+- **Dashboard Width Slider Jumping on Drag (`apps/extension/src/options/App.tsx`)**:
+  - Fixed an issue where dragging the range slider in Settings caused the centered container to resize continuously via `onChange`, shifting the container's center and sliding the input thumb away from the cursor mid-drag.
+  - Decoupled slider interaction using local component state (`localWidth`), allowing smooth live preview of the target pixel value while committing the change to `dashboardMaxWidth` and storage only upon pointer release (`onPointerUp`, `onMouseUp`, `onTouchEnd`) or keyboard navigation (`onKeyUp`).
+- **Hero Action Strip Next Task Panel Crushed / Clipped (`apps/extension/src/options/App.css`)**:
+  - Fixed an inverted grid column proportion in `.hero-action-strip.with-catchup` where the Next Task hero spotlight card was constrained to `0.72fr` instead of the recordings queue.
+  - Adjusted proportions to `minmax(320px, 1.15fr) minmax(0, 1.25fr) minmax(0, 0.8fr)`, ensuring the Next Task card has ample breathing room (~36%) while the Catch-Up Recordings queue is kept compact (~25%).
+- **Dashboard stuck on "Syncing..." after opening (`apps/extension/src/background/serviceWorker.ts`, `options/App.tsx`, `TC-SYNC-04`)**:
+  - The persisted `isSyncing` flag stayed `true` when the extension was reloaded or the worker was terminated mid-sync, leaving the header on "Syncing..." with a disabled Sync button.
+  - The worker now resets `isSyncing: false` on load, exposes a `GET_SYNC_STATUS` message backed by the in-memory sync promise, and the dashboard uses it on mount and follows `isSyncing` storage changes.
+- **Panopto tracking cross-device sync (`serviceWorker.ts`, `shared/storage.ts`, `popup/Popup.tsx`, `TC-PAN-06`)**:
+  - `coursesPanoptoMap` now uses per-key last-write-wins like every other synced key (it previously merged local over remote, so edits/removals made on another device never applied). `watchedRecordings` and `panoptoEnabled` sync through the Moodle `NOODLE_SYNC_DATA` store.
+  - Popup "mark watched" / "mark done" push settings to Moodle right away (`SYNC_SETTINGS`) instead of relying on a debounce that is lost when the popup closes.
+  - `setSettings` tolerates `storage.sync` quota errors (growing `watchedRecordings`) by removing the stale sync copy so it cannot shadow the fresh local settings.
 - **Firefox Google Tasks OAuth Error 400 `redirect_uri_mismatch` (`apps/extension/src/shared/storage.ts`, `apps/extension/src/background/serviceWorker.ts`, `TC-GT-01`)**:
   - Resolved `redirect_uri_mismatch` in Firefox caused by Google rejecting Mozilla's un-verifiable `*.extensions.allizom.org` domain.
   - Implemented RFC 8252 Section 7.3 loopback address resolution in `getGoogleOAuthRedirectUrl()`, converting Firefox extension redirect URLs to `http://127.0.0.1/mozoauth2/<subdomain>` natively intercepted by Firefox 86+.
@@ -282,7 +333,7 @@ estoreMoodleSettingsForOnboarding across the extension background service worker
 - **Automated Chrome DevTools Inspection & E2E Feedback Loop (`pnpm test:devtools` / `apps/extension/e2e/sync-devtools.spec.ts`)**: Built an automated browser testing feedback loop for agents and developers using Playwright with real unpacked Chrome extension loading (`TC-EXT-DEVTOOLS-01`, `TC-EXT-DEVTOOLS-02`). Hooks into Chrome DevTools console and network streams across both the Options Page UI and the Background Service Worker. Allows agents to trigger synchronization, inspect diagnostic logs, test failure recovery (unauthenticated/expired tokens), verify successful synchronization, assert UI DOM updates, and confirm local storage persistence without manual human intervention.
 
 ### Fixed
-- **Google Tasks Persistent Sign-In, Silent Background Refresh, and Unauthenticated Sync Alert (`apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/shared/i18n.ts`, `storage.ts`, `TC-GT-09`)**:
+- **Persistent Google Tasks Authentication & Loopback Token Refresh (`apps/extension/src/background/serviceWorker.ts`, `TC-GT-03`)**:
   - Fixed Google Tasks repeatedly requiring re-authentication by preventing Moodle SSO teardowns (`clearUserSession`) from wiping `googleAccessToken` and `googleTokenExpiry`.
   - Added background silent OAuth token refresh with cached `googleUserEmail` via `login_hint` and non-interactive `launchWebAuthFlow({ prompt: 'none' })`, preserving authentication across browser restarts and Moodle sessions without repeated popups.
   - Fixed Google Tasks failing silently when unauthenticated: records `googleTasksAuthError` in `browser.storage.local` and dispatches browser notifications during background sync failures.
@@ -330,7 +381,7 @@ estoreMoodleSettingsForOnboarding across the extension background service worker
 - **Direct Course-Page Assignment Scraping (`packages/moodle-client`)**: Rewrote `ScraperMoodleStrategy.getAssignments()` to extract assignments directly from individual course pages (`/course/view.php?id=X`) across all discovered academic years. Decoupled assignment discovery from the Moodle Calendar (which filtered out past deadlines), guaranteeing all historical and current course assignments are captured (Fixes #26, resolves D4).
 
 ### Fixed
-- **Options App Duplicate Variable Declarations (`apps/extension/src/options/App.tsx`)**:
+- **Duplicate Assignments and Meetings List State in Options Page (`apps/extension/src/options/App.tsx`)**:
   - Deduplicated `assignmentsList`, `filesList`, and `meetingsList` declarations in the Options page component resulting from a merge conflict resolution, ensuring all derived states are declared once at the top level of `App()` before conditional returns.
 - **Shared Client Build Artifacts Out of Sync (`packages/moodle-client`)**:
   - Rebuilt `@tautracker/moodle-client` via `pnpm run build:moodle-client` to refresh type declarations (`dist/index.d.ts`), resolving missing exported members (`isValidIsraeliId`, `collapseRecurringMeetings`) and `MoodleClient` constructor parameter count warnings.

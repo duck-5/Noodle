@@ -46,14 +46,14 @@ interface GroupedCourses {
 
 function groupAndSortCourses(courses: any[], lang: string): GroupedCourses[] {
   const groups: Record<string, any[]> = {};
-  
+
   courses.forEach(c => {
     const idNum = c.idnumber || c.shortname || '';
     const meta = parseTauCourseMetadata(idNum);
     const year = meta?.year || '';
     const semester = meta?.semester || 'Other';
     const semesterKey = `${year}-${semester}`;
-    
+
     if (!groups[semesterKey]) {
       groups[semesterKey] = [];
     }
@@ -144,7 +144,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     if (!token) return;
-    
+
     // Register background sync (every 5 minutes minimumInterval)
     registerBackgroundSyncTask().catch((err) => {
       console.error('Failed to register background sync task:', err);
@@ -201,7 +201,7 @@ export default function DashboardScreen() {
       if (storedToken) {
         // Always try to sync settings on boot to get remote updates
         const hasTracked = await performSettingsSync(storedToken);
-        
+
         if (hasTracked || trackedCourses.length > 0) {
           refreshPreferences();
           setOnboardingStep(3);
@@ -512,7 +512,7 @@ export default function DashboardScreen() {
       if (interestedStr) {
         try {
           interestedList = JSON.parse(interestedStr);
-        } catch (e) {}
+        } catch (e) { }
       }
       setInterestedMeetings(interestedList);
     } catch (e) {
@@ -718,14 +718,14 @@ export default function DashboardScreen() {
               {t('start_tracking_btn')} ({selectedCourseIds.length})
             </Text>
           </Pressable>
-          <Pressable 
-            style={[styles.primaryBtn, { backgroundColor: theme.backgroundElement, borderWidth: 1, borderColor: theme.border, flex: 1 }]} 
+          <Pressable
+            style={[styles.primaryBtn, { backgroundColor: theme.backgroundElement, borderWidth: 1, borderColor: theme.border, flex: 1 }]}
             onPress={async () => {
               try {
                 const res = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
                 if (res.canceled || !res.assets || res.assets.length === 0) return;
                 const fileUri = res.assets[0].uri;
-                
+
                 let content = '';
                 if (fileUri.startsWith('content://') || fileUri.startsWith('file://')) {
                   const tempPath = FileSystemLegacy.cacheDirectory + 'temp_import_config.json';
@@ -746,9 +746,9 @@ export default function DashboardScreen() {
                 const matchedIds = availableCourses
                   .filter(c => importedMoodleIds.has(c.moodle_id))
                   .map(c => c.id);
-                  
+
                 setSelectedCourseIds(matchedIds);
-                
+
                 const db = getDb();
                 if (data.courseColors) {
                   Object.entries(data.courseColors).forEach(([cidStr, color]) => {
@@ -760,7 +760,7 @@ export default function DashboardScreen() {
                     db.runSync('UPDATE tracked_courses SET name = ? WHERE moodle_id = ?', [nickname as any, parseInt(cidStr)]);
                   });
                 }
-                
+
                 Alert.alert(isRtl ? 'הצלחה' : 'Success', isRtl ? 'התצורה נטענה בהצלחה.' : 'Configuration loaded successfully.');
               } catch (e: any) {
                 Alert.alert(t('import_failed') || 'Import Failed', e.message || 'An error occurred during import.');
@@ -793,13 +793,13 @@ export default function DashboardScreen() {
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
       const diffMins = Math.floor(diffMs / (1000 * 60));
-      
+
       if (diffDays > 7) {
         timeColor = theme.secondary;
       } else if (diffDays > 3) {
         timeColor = theme.warning;
       }
-      
+
       const diffDaysInt = Math.floor(diffDays);
       if (diffDaysInt >= 1) {
         nextAssignDeadlineText = diffDaysInt === 1 ? t('due_in_day') : t('due_in_days', { days: diffDaysInt });
@@ -815,10 +815,10 @@ export default function DashboardScreen() {
 
     const filteredAssignments = assignments.filter((a) => {
       const cName = a.custom_course_name || a.course_name;
-      const isSearchMatch = 
+      const isSearchMatch =
         a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         cName.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       if (!isSearchMatch) return false;
 
       const isHidden = a.isHidden;
@@ -827,7 +827,7 @@ export default function DashboardScreen() {
 
       if (isHidden && filterHidden) return true;
       if (!isHidden && isCompleted && filterCompleted) return true;
-      
+
       if (!isHidden && !isCompleted) {
         if (hasDeadlinePassed && filterPast) return true;
         if (!hasDeadlinePassed && filterPending) return true;
@@ -981,7 +981,7 @@ export default function DashboardScreen() {
                       <View style={[styles.cardMetaRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                         <View style={[styles.urgencyBadge, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
                           <Text style={[styles.urgencyBadgeText, { color: theme.primary }]}>
-                            {isRtl ? '🚀 הקרובה ביותר' : '🚀 Next Up'}
+                            {isRtl ? 'הקרובה ביותר' : 'Next Up'}
                           </Text>
                         </View>
                         {nextCourseName ? (
@@ -1063,37 +1063,37 @@ export default function DashboardScreen() {
                               );
                             })}
                           </View>
-                          </View>
-                        )}
+                        </View>
+                      )}
 
-                        {submittedFiles.length > 0 && (
-                          <View style={styles.attachmentsContainer}>
-                            <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
-                              {isRtl ? 'קבצים שהוגשו' : 'Submitted Files'}
-                            </Text>
-                            <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
-                              {submittedFiles.map((att: any, idx: number) => {
-                                const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
-                                const fileUrl = att.url || att.fileUrl || att.fileurl;
-                                const mimeType = att.mimeType || att.mimetype;
-                                return (
-                                  <Pressable
-                                    key={sub-}
-                                    style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
-                                    onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
-                                  >
-                                    <Text style={{ fontSize: 13, color: 'white' }}>{fileUrl ? '📥' : '🔗'}</Text>
-                                    <Text style={[styles.attachmentText, { color: 'white' }]} numberOfLines={1}>
-                                      {displayFileName}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
+                      {submittedFiles.length > 0 && (
+                        <View style={styles.attachmentsContainer}>
+                          <Text style={[styles.drawerSectionLabel, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+                            {isRtl ? 'קבצים שהוגשו' : 'Submitted Files'}
+                          </Text>
+                          <View style={[styles.attachmentsWrap, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                            {submittedFiles.map((att: any, idx: number) => {
+                              const displayFileName = att.name || att.fileName || att.filename || (isRtl ? 'קובץ מצורף' : 'Attachment');
+                              const fileUrl = att.url || att.fileUrl || att.fileurl;
+                              const mimeType = att.mimeType || att.mimetype;
+                              return (
+                                <Pressable
+                                  key={sub -}
+                                  style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
+                                  onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
+                                >
+                                  <Text style={{ fontSize: 13, color: 'white' }}>{fileUrl ? '📥' : '🔗'}</Text>
+                                  <Text style={[styles.attachmentText, { color: 'white' }]} numberOfLines={1}>
+                                    {displayFileName}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
                           </View>
-                        )}
+                        </View>
+                      )}
 
-                        <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                      <View style={[styles.cardActionBar, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                         {(!isNextDone && !nextAssignment.rawMoodleSubmitted && nextAssignment.link) ? (
                           <Pressable
                             style={[styles.actionPrimaryBtn, { backgroundColor: theme.primary, flex: 1 }]}
@@ -1200,7 +1200,7 @@ export default function DashboardScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          
+
           <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16, justifyContent: 'center' }}>
             <Pressable
               onPress={() => setFilterPending(!filterPending)}
@@ -1258,7 +1258,7 @@ export default function DashboardScreen() {
               const hoursLeft = a.deadline ? (new Date(a.deadline).getTime() - Date.now()) / (1000 * 60 * 60) : null;
               let deadlineText = t('no_deadline');
               let deadlineColor: string = theme.textSecondary;
-              
+
               if (hoursLeft !== null && a.deadline) {
                 if (hoursLeft < 0) {
                   deadlineText = t('overdue');
@@ -1268,7 +1268,7 @@ export default function DashboardScreen() {
                   const diffMins = Math.floor(diffMs / (1000 * 60));
                   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
                   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                  
+
                   if (diffDays >= 1) {
                     deadlineText = diffDays === 1 ? t('due_in_day') : t('due_in_days', { days: diffDays });
                   } else if (diffHours >= 1) {
@@ -1450,7 +1450,7 @@ export default function DashboardScreen() {
                                 const mimeType = att.mimeType || att.mimetype;
                                 return (
                                   <Pressable
-                                    key={sub-}
+                                    key={sub -}
                                     style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
                                     onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
                                   >
@@ -1581,12 +1581,12 @@ export default function DashboardScreen() {
               return now >= startTime && now <= endTime;
             });
             if (!activeMeeting) return null;
-            
+
             // Get course color for the active meeting
             const targetCourse = trackedCourses.find(c => c.moodle_id === activeMeeting.course_moodle_id);
             const courseColor = targetCourse?.color || theme.primary;
             const courseName = targetCourse?.name || activeMeeting.course_name || `Course ${activeMeeting.course_moodle_id}`;
-            
+
             return (
               <View style={{ marginBottom: 12, flexDirection: isRtl ? 'row-reverse' : 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                 <Text style={{ color: theme.textSecondary, fontSize: 14, fontWeight: 'bold' }}>
@@ -1604,7 +1604,7 @@ export default function DashboardScreen() {
           {(() => {
             const coursesWithMeetings = trackedCourses.map((c) => {
               const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id);
-              
+
               // Deduplicate recurring meetings by meeting_number or meeting_url
               const now = new Date();
               const groups = new Map<string, typeof meetings>();
@@ -1707,11 +1707,11 @@ export default function DashboardScreen() {
                               key={idx}
                               onPress={() => m.meeting_url && Linking.openURL(m.meeting_url)}
                             >
-                              <Text 
-                                style={{ 
-                                  color: theme.text, 
-                                  fontSize: 13, 
-                                  textDecorationLine: 'underline', 
+                              <Text
+                                style={{
+                                  color: theme.text,
+                                  fontSize: 13,
+                                  textDecorationLine: 'underline',
                                   textDecorationColor: c.color,
                                   lineHeight: 18,
                                   textAlign: isRtl ? 'right' : 'left'
@@ -1778,17 +1778,17 @@ export default function DashboardScreen() {
                           }
 
                           return (
-                            <View 
-                              key={m.id} 
-                              style={{ 
-                                flexDirection: isRtl ? 'row-reverse' : 'row', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center', 
-                                padding: 12, 
-                                backgroundColor: theme.background, 
-                                borderRadius: 8, 
-                                marginBottom: 8, 
-                                opacity 
+                            <View
+                              key={m.id}
+                              style={{
+                                flexDirection: isRtl ? 'row-reverse' : 'row',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: 12,
+                                backgroundColor: theme.background,
+                                borderRadius: 8,
+                                marginBottom: 8,
+                                opacity
                               }}
                             >
                               <View style={{ flex: 1, alignItems: isRtl ? 'flex-end' : 'flex-start' }}>
@@ -1881,9 +1881,9 @@ export default function DashboardScreen() {
     <View style={[styles.container, { backgroundColor: theme.background, flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
       {/* Collapsible Sidebar Stripe */}
       <View style={[
-        styles.sidebar, 
-        { 
-          backgroundColor: theme.backgroundElement, 
+        styles.sidebar,
+        {
+          backgroundColor: theme.backgroundElement,
           width: sidebarExpanded ? 160 : 60,
           borderRightWidth: isRtl ? 0 : 1,
           borderLeftWidth: isRtl ? 1 : 0,
@@ -1891,8 +1891,8 @@ export default function DashboardScreen() {
         }
       ]}>
         {/* Toggle Button */}
-        <Pressable 
-          style={styles.sidebarToggle} 
+        <Pressable
+          style={styles.sidebarToggle}
           onPress={() => {
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setSidebarExpanded(!sidebarExpanded);
@@ -1963,7 +1963,7 @@ export default function DashboardScreen() {
                   />
                   {sidebarExpanded && (
                     <Text style={[
-                      styles.sidebarNavLabel, 
+                      styles.sidebarNavLabel,
                       { color: isActive ? theme.primary : theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }
                     ]}>
                       {item.label}
@@ -1991,14 +1991,14 @@ export default function DashboardScreen() {
       {/* Screen Content Wrapper */}
       <View style={{ flex: 1 }}>
         {renderActiveScreen()}
-        
+
         {sidebarExpanded && (
-          <Pressable 
-            style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent', zIndex: 999 }]} 
+          <Pressable
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent', zIndex: 999 }]}
             onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setSidebarExpanded(false);
-            }} 
+            }}
           />
         )}
       </View>

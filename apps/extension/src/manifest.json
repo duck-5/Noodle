@@ -10,6 +10,8 @@
     "notifications",
     "identity",
     "cookies",
+    "tabs",
+    "scripting",
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess"
   ],
@@ -20,7 +22,9 @@
     "https://accounts.google.com/*",
     "https://tasks.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "https://applications.zoom.us/*"
+    "https://applications.zoom.us/*",
+    "https://*.panopto.eu/*",
+    "*://*.panopto.tau.ac.il/*"
   ],
   "declarative_net_request": {
     "rule_resources": [

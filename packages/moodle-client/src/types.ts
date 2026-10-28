@@ -53,10 +53,25 @@ export interface ZoomMeeting {
   password?: string;
 }
 
+export interface PanoptoRecording {
+  id: string;
+  title: string;
+  recordingUrl: string;
+  publishedDate: string; // YYYY-MM-DD or empty string
+  type: 'Lecture' | 'Recitation';
+  courseId: number;
+  courseName: string;
+  folderId?: string;
+  folderUrl?: string;
+  sectionName?: string;
+  durationSeconds?: number;
+}
+
 export interface SyncResult {
   assignments: Assignment[];
   files: CourseFile[];
   meetings: ZoomMeeting[];
+  recordings?: PanoptoRecording[];
   errors: SyncError[];
   syncedAt: string; // ISO 8601
 }

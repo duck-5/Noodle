@@ -35,6 +35,7 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 | `legacy/clients/moodle_client.py` | `get_course_contents()` | `packages/moodle-client/moodleApi.ts` | Retrieve sections list for file/zoom parsing. |
 | `legacy/clients/moodle_client.py` | `parse_course_metadata()` | `packages/moodle-client/courseParser.ts` | Parse TAU shortname string via regex patterns. |
 | `legacy/clients/google_client.py` | `sync_task()` | `packages/moodle-client/googleTasksSync.ts` | Google Tasks REST client logic. |
+| `legacy/clients/panopto_client.py` | `PanoptoClient` / `_filter_and_deduplicate` | `packages/moodle-client/panoptoScraper.ts` | 3-tier Panopto folder discovery, session fetching, recitation deduplication & section matching. |
 | `legacy/server/services/sync_service.py`| `run_sync_task()` | `packages/moodle-client/syncEngine.ts` | Orchestrates the sync sequence. |
 
 ---
@@ -137,7 +138,7 @@ When creating new features, keep the following roadmap milestones in mind:
 
 ## 5. Deferrals & Retired Concepts
 
-*   **Panopto Scraping:** Headless Playwright scraping is deferred in the client-side model (cannot run on iOS/Android or extension worker without DOM access). Do not attempt to implement Playwright automation.
+*   **Playwright Browser Automation:** Headless Playwright browser automation from the legacy Python server is retired in the client-side model (cannot run on iOS/Android or extension worker without DOM access). Instead, Panopto lecture & recitation discovery (`packages/moodle-client/src/panoptoScraper.ts`) uses pure `fetch()` calls against Panopto's JSON endpoints (`Data.svc/GetSessions`, `Data.svc/GetFolders`, `DeliveryInfo.aspx`, `/Panopto/Api/v1/folders`) with browser-implicit SSO cookies.
 *   **Central JWT & Server DB:** Completely retired. All authentication is client-to-Moodle; all databases are client-local.
 
 ---

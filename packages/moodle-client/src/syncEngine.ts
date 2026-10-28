@@ -1,7 +1,25 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
-import { SyncResult, Assignment, CourseFile, ZoomMeeting, SyncError, MoodleCredentials, Attachment } from './types.js';
+import { SyncResult, Assignment, CourseFile, ZoomMeeting, PanoptoRecording, SyncError, MoodleCredentials, Attachment } from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
-import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml } from './zoomScraper.js';
+import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml, decodeHTMLEntities } from './zoomScraper.js';
+import {
+  PANOPTO_BASE_URL,
+  isPanoptoUrl,
+  isPanoptoModuleName,
+  extractPanoptoFolderId,
+  extractPanoptoDeliveryId,
+  buildPanoptoFolderUrl,
+  buildPanoptoViewerUrl,
+  extractPanoptoFromCourseHtml,
+  classifyRecordingType,
+  filterAndDeduplicateRecordings,
+  ensurePanoptoAuthenticated,
+  resolvePanoptoViaLti,
+  discoverPanoptoFromMoodleBlocks,
+  resolveFolderIdFromDelivery,
+  fetchPanoptoFolderSessions,
+  discoverCourseFolderFromBrowse,
+} from './panoptoScraper.js';
 
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
@@ -20,6 +38,9 @@ async function batchPromises<T, R>(
 
 export interface RunSyncOptions {
   enableScraping?: boolean;
+  enablePanopto?: boolean;
+  coursesPanoptoMap?: Record<number, string>;
+  onEnsurePanoptoAuth?: (forceRefresh?: boolean) => Promise<boolean>;
 }
 
 export async function runSync(
@@ -34,17 +55,21 @@ export async function runSync(
   options?: RunSyncOptions
 ): Promise<SyncResult> {
   const enableScraping = options?.enableScraping ?? false;
+  const enablePanopto = options?.enablePanopto ?? false;
+  const coursesPanoptoMap = options?.coursesPanoptoMap || {};
   const client = new MoodleClient(token, baseUrl, { sesskey, devMode: false, enableScraping });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
   const meetings: ZoomMeeting[] = [];
+  const recordings: PanoptoRecording[] = [];
 
   let scrapedMeetingsJar: CookieJar | null = null;
   let didAttemptLogin = false;
+  let panoptoAuthPromise: Promise<boolean> | null = null;
 
   const getScrapeJar = async (): Promise<CookieJar | null> => {
-    if (!enableScraping) return null;
+    if (!enableScraping && !enablePanopto) return null;
     if (scrapedMeetingsJar) return scrapedMeetingsJar;
 
     const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
@@ -70,12 +95,37 @@ export async function runSync(
         return jar;
       } catch (err: any) {
         errors.push({
-          context: 'SSO Login for Zoom Scraping',
+          context: 'SSO Login for Zoom/Panopto Scraping',
           message: err.message,
         });
       }
     }
     return null;
+  };
+
+  let didForcePanoptoReauth = false;
+  let panoptoSessionVerified = false;
+
+  const ensurePanoptoSession = async (jar: CookieJar | null, forceRefresh = false): Promise<boolean> => {
+    if (options?.onEnsurePanoptoAuth) {
+      if (forceRefresh) {
+        if (didForcePanoptoReauth) return false;
+        didForcePanoptoReauth = true;
+        panoptoAuthPromise = options.onEnsurePanoptoAuth(true).catch(() => false);
+      } else if (!panoptoAuthPromise) {
+        panoptoAuthPromise = options.onEnsurePanoptoAuth(false).catch(() => false);
+      }
+      return panoptoAuthPromise;
+    }
+    if (!panoptoAuthPromise) {
+      panoptoAuthPromise = ensurePanoptoAuthenticated(
+        PANOPTO_BASE_URL,
+        baseUrl || 'https://moodle.tau.ac.il',
+        jar,
+        creds
+      ).catch(() => false);
+    }
+    return panoptoAuthPromise;
   };
 
   onProgress('Fetching Moodle user info...');
@@ -96,13 +146,14 @@ export async function runSync(
       assignments: [],
       files: [],
       meetings: [],
+      recordings: [],
       errors: [],
       syncedAt: new Date().toISOString(),
     };
   }
 
   onProgress('Fetching course mapping...');
-  const courseMap = new Map<number, { display_name: string; name: string; year?: string; instanceUrl?: string }>();
+  const courseMap = new Map<number, { display_name: string; name: string; courseCode?: string; year?: string; instanceUrl?: string }>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {
@@ -119,6 +170,7 @@ export async function runSync(
       courseMap.set(c.id, {
         display_name,
         name: c.fullname,
+        courseCode: c.idnumber || courseIdExtracted,
         year: c.year,
         instanceUrl: c.instanceUrl,
       });
@@ -278,7 +330,7 @@ export async function runSync(
       cmid: assign.cmid,
       courseId: assign.course,
       courseName: getCourseDisplayName(assign.course),
-      name: assign.name,
+      name: decodeHTMLEntities(assign.name || ''),
       status,
       submittedFiles,
       deadline: deadlineIso,
@@ -292,9 +344,18 @@ export async function runSync(
 
     assignments.push(processedAssign);
     if (onPartialSync) {
-      onPartialSync({ assignments: [processedAssign] });
+      onPartialSync({ assignments: [...assignments] });
     }
   };
+
+  if (enablePanopto) {
+    try {
+      const initialJar = await getScrapeJar();
+      await ensurePanoptoSession(initialJar);
+    } catch {
+      // Individual course sync will handle fallback/errors if needed
+    }
+  }
 
   await Promise.all([
     // Process known assignments from getAssignments
@@ -313,6 +374,33 @@ export async function runSync(
         : (baseUrl || 'https://moodle.tau.ac.il');
 
       const seenMeetingKeys = new Set<string>();
+      const courseSectionNames: string[] = [];
+      const discoveredPanoptoFolderIds: string[] = [];
+      const discoveredPanoptoDeliveries: { id: string; title: string; recordingUrl: string; sectionName?: string }[] = [];
+      const discoveredPanoptoLtiInstances: number[] = [];
+
+      const addDiscoveredFolderId = (fid: string | null) => {
+        if (fid && !discoveredPanoptoFolderIds.includes(fid)) {
+          discoveredPanoptoFolderIds.push(fid);
+        }
+      };
+
+      const addDiscoveredDelivery = (id: string, title: string, recordingUrl: string, sectionName?: string) => {
+        if (id && !discoveredPanoptoDeliveries.some(d => d.id === id)) {
+          discoveredPanoptoDeliveries.push({ id, title, recordingUrl, sectionName });
+        }
+      };
+
+      const scanHtmlForPanopto = (html: string, sectionName?: string, fallbackTitle?: string) => {
+        if (!enablePanopto || !html) return;
+        const extracted = extractPanoptoFromCourseHtml(html);
+        for (const fid of extracted.folderIds) {
+          addDiscoveredFolderId(fid);
+        }
+        for (const del of extracted.deliveries) {
+          addDiscoveredDelivery(del.id, del.title || fallbackTitle || '', del.recordingUrl, sectionName);
+        }
+      };
 
       const addMeeting = (m: ZoomMeeting) => {
         const key = m.startTime
@@ -321,15 +409,18 @@ export async function runSync(
         if (seenMeetingKeys.has(key)) return;
         seenMeetingKeys.add(key);
         meetings.push(m);
-        if (onPartialSync) onPartialSync({ meetings: [m] });
+        if (onPartialSync) onPartialSync({ meetings: [...meetings] });
       };
 
       try {
         const sections = await client.getCourseContents(courseId);
         for (const section of sections) {
           const sectionName = section.name || '';
+          if (sectionName && !courseSectionNames.includes(sectionName)) {
+            courseSectionNames.push(sectionName);
+          }
 
-          // 1. Scan section summary for embedded Zoom links
+          // 1. Scan section summary for embedded Zoom & Panopto links
           if (section.summary) {
             const summaryLinks = extractZoomLinksFromHtml(section.summary);
             for (const link of summaryLinks) {
@@ -344,11 +435,43 @@ export async function runSync(
                 password: parsed.password,
               });
             }
+            scanHtmlForPanopto(section.summary, sectionName);
           }
 
           for (const module of section.modules) {
             const modname = module.modname;
             const name = module.name || '';
+
+            // Scan module URL / contents / description / intro for Panopto links if enabled
+            if (enablePanopto) {
+              const candidateUrls: string[] = [];
+              if (module.url) candidateUrls.push(module.url);
+              if (module.contents) {
+                for (const c of module.contents) {
+                  if (c.fileurl) candidateUrls.push(c.fileurl);
+                }
+              }
+              for (const u of candidateUrls) {
+                if (isPanoptoUrl(u)) {
+                  const fid = extractPanoptoFolderId(u);
+                  if (fid) addDiscoveredFolderId(fid);
+                  const did = extractPanoptoDeliveryId(u);
+                  if (did) addDiscoveredDelivery(did, name, buildPanoptoViewerUrl(did), sectionName);
+                }
+              }
+              if (module.description) scanHtmlForPanopto(module.description, sectionName, name);
+              if (module.intro) scanHtmlForPanopto(module.intro, sectionName, name);
+              if (
+                modname === 'lti' &&
+                module.instance !== undefined &&
+                !isZoomOrMeetingName(name) &&
+                (isPanoptoModuleName(name) || isPanoptoUrl(module.url || ''))
+              ) {
+                if (!discoveredPanoptoLtiInstances.includes(module.instance)) {
+                  discoveredPanoptoLtiInstances.push(module.instance);
+                }
+              }
+            }
 
             if (modname === 'assign') {
               cmidToSectionMap.set(module.id, sectionName);
@@ -385,7 +508,7 @@ export async function runSync(
                     courseName,
                   };
                   files.push(newFile);
-                  if (onPartialSync) onPartialSync({ files: [newFile] });
+                  if (onPartialSync) onPartialSync({ files: [...files] });
                 }
               }
             }
@@ -530,6 +653,235 @@ export async function runSync(
           message: err.message,
         });
       }
+
+      // --- PANOPTO LECTURE & RECITATION DISCOVERY AND SYNC ---
+      if (enablePanopto) {
+        try {
+          const jar = await getScrapeJar();
+          let resolvedFolderId: string | null = null;
+          let resolutionTier = 'none';
+          const ltiRecordings: PanoptoRecording[] = [];
+
+          // Ensure Panopto SSO session is established once per sync
+          await ensurePanoptoSession(jar);
+
+          // Tier 1: Manual override in coursesPanoptoMap[courseId]
+          const rawManual =
+            coursesPanoptoMap[courseId] ??
+            (coursesPanoptoMap as Record<string, string>)[String(courseId)] ??
+            '';
+          const manualOverride = String(rawManual).trim();
+          if (manualOverride) {
+            resolvedFolderId = extractPanoptoFolderId(manualOverride);
+            if (!resolvedFolderId) {
+              const manualDeliveryId = extractPanoptoDeliveryId(manualOverride);
+              if (manualDeliveryId) {
+                resolvedFolderId = await resolveFolderIdFromDelivery(manualDeliveryId, PANOPTO_BASE_URL, jar);
+              }
+            }
+            if (resolvedFolderId) {
+              resolutionTier = 'Tier 1 (Manual Override)';
+            } else {
+              console.warn(
+                `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): Could not extract folder UUID from manual override "${manualOverride}"`
+              );
+              errors.push({
+                context: `Panopto (${courseName})`,
+                message: `Invalid Panopto folder URL or UUID: "${manualOverride}"`,
+              });
+            }
+          }
+
+          // Tier 2a: Auto-discover from Moodle course modules
+          if (!resolvedFolderId && discoveredPanoptoFolderIds.length > 0) {
+            resolvedFolderId = discoveredPanoptoFolderIds[0];
+            resolutionTier = 'Tier 2 (Moodle Course Modules)';
+          }
+
+          // Tier 3: Panopto Data.svc/GetSessions search by course code / title
+          if (!resolvedFolderId) {
+            await ensurePanoptoSession(jar);
+            resolvedFolderId = await discoverCourseFolderFromBrowse(
+              {
+                courseId,
+                courseCode: courseInfo?.courseCode,
+                displayName: courseName,
+                fullName: courseInfo?.name,
+                year: courseInfo?.year,
+              },
+              PANOPTO_BASE_URL,
+              jar
+            );
+            if (resolvedFolderId) {
+              resolutionTier = 'Tier 3 (Panopto Data.svc Search)';
+              panoptoSessionVerified = true;
+            }
+          }
+
+          // Tier 2b: Fallback to Panopto LTI launch, Moodle course blocks WS, or course HTML if Data.svc search didn't find folder
+          if (!resolvedFolderId && discoveredPanoptoLtiInstances.length > 0) {
+            for (const ltiInstanceId of discoveredPanoptoLtiInstances) {
+              const ltiResult = await resolvePanoptoViaLti(
+                token,
+                ltiInstanceId,
+                courseId,
+                courseName,
+                courseBaseUrl,
+                PANOPTO_BASE_URL,
+                jar
+              );
+              for (const fid of ltiResult.folderIds) {
+                addDiscoveredFolderId(fid);
+              }
+              ltiRecordings.push(...ltiResult.recordings);
+            }
+            if (discoveredPanoptoFolderIds.length > 0) {
+              resolvedFolderId = discoveredPanoptoFolderIds[0];
+              resolutionTier = 'Tier 2 (Moodle Course Modules / LTI)';
+            }
+          }
+
+          if (!resolvedFolderId) {
+            const wsBlockLinks = await discoverPanoptoFromMoodleBlocks(
+              token,
+              courseId,
+              courseBaseUrl,
+              PANOPTO_BASE_URL
+            );
+            for (const fid of wsBlockLinks.folderIds) {
+              addDiscoveredFolderId(fid);
+            }
+            for (const del of wsBlockLinks.deliveries) {
+              addDiscoveredDelivery(del.id, del.title, del.recordingUrl);
+            }
+            if (discoveredPanoptoFolderIds.length > 0) {
+              resolvedFolderId = discoveredPanoptoFolderIds[0];
+              resolutionTier = 'Tier 2 (Moodle core_block_get_course_blocks WS)';
+            }
+          }
+
+          if (!resolvedFolderId && discoveredPanoptoDeliveries.length > 0) {
+            for (const del of discoveredPanoptoDeliveries.slice(0, 3)) {
+              resolvedFolderId = await resolveFolderIdFromDelivery(del.id, PANOPTO_BASE_URL, jar);
+              if (resolvedFolderId) {
+                resolutionTier = 'Tier 2 (DeliveryInfo Parent Folder)';
+                break;
+              }
+            }
+          }
+
+          // If still unresolved and Panopto session has not yet been verified, force a hidden-tab re-auth check and retry Tier 3
+          if (!resolvedFolderId && options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
+            const reauthed = await ensurePanoptoSession(jar, true);
+            if (reauthed) {
+              resolvedFolderId = await discoverCourseFolderFromBrowse(
+                {
+                  courseId,
+                  courseCode: courseInfo?.courseCode,
+                  displayName: courseName,
+                  fullName: courseInfo?.name,
+                  year: courseInfo?.year,
+                },
+                PANOPTO_BASE_URL,
+                jar
+              );
+              if (resolvedFolderId) {
+                resolutionTier = 'Tier 3 (Panopto Data.svc Search after Re-Auth)';
+                panoptoSessionVerified = true;
+              }
+            }
+          }
+
+          console.log(
+            `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): resolvedFolderId=${resolvedFolderId || 'none'} via ${resolutionTier} (deliveries=${discoveredPanoptoDeliveries.length}, ltiRecs=${ltiRecordings.length})`
+          );
+
+          // Fetch recordings from the resolved Panopto folder
+          let folderRecordings: PanoptoRecording[] = [];
+          if (resolvedFolderId) {
+            await ensurePanoptoSession(jar);
+            folderRecordings = await fetchPanoptoFolderSessions(
+              resolvedFolderId,
+              courseId,
+              courseName,
+              PANOPTO_BASE_URL,
+              jar
+            );
+            if (folderRecordings.length > 0) {
+              panoptoSessionVerified = true;
+            } else if (options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
+              console.log(
+                `[SyncEngine][Panopto] 0 recordings returned for folder ${resolvedFolderId} (${courseName}); checking if Panopto session expired...`
+              );
+              const reauthed = await ensurePanoptoSession(jar, true);
+              if (reauthed) {
+                folderRecordings = await fetchPanoptoFolderSessions(
+                  resolvedFolderId,
+                  courseId,
+                  courseName,
+                  PANOPTO_BASE_URL,
+                  jar
+                );
+                if (folderRecordings.length > 0) {
+                  panoptoSessionVerified = true;
+                }
+              }
+            }
+          }
+
+          // Merge explicit section assignments from Moodle modules and fallback deliveries
+          const explicitSectionById = new Map<string, string>();
+          for (const del of discoveredPanoptoDeliveries) {
+            if (del.sectionName) {
+              explicitSectionById.set(del.id.toLowerCase(), del.sectionName);
+            }
+          }
+
+          const rawCombined: PanoptoRecording[] = [...folderRecordings, ...ltiRecordings];
+          if (rawCombined.length === 0 && discoveredPanoptoDeliveries.length > 0) {
+            for (const del of discoveredPanoptoDeliveries) {
+              rawCombined.push({
+                id: del.id,
+                title: del.title,
+                recordingUrl: del.recordingUrl,
+                publishedDate: '',
+                type: classifyRecordingType(del.title),
+                courseId,
+                courseName,
+                sectionName: del.sectionName,
+              });
+            }
+          }
+
+          const resolvedFolderUrl = resolvedFolderId
+            ? buildPanoptoFolderUrl(resolvedFolderId, PANOPTO_BASE_URL)
+            : undefined;
+
+          const finalCourseRecordings = filterAndDeduplicateRecordings(rawCombined).map(rec => ({
+            ...rec,
+            folderId: resolvedFolderId || rec.folderId,
+            folderUrl: resolvedFolderUrl || rec.folderUrl,
+            sectionName: rec.type === 'Recitation' ? 'Recitations' : 'Lectures',
+          }));
+
+          if (finalCourseRecordings.length > 0) {
+            recordings.push(...finalCourseRecordings);
+            if (onPartialSync) {
+              onPartialSync({ recordings: [...recordings] });
+            }
+          } else if (manualOverride && resolvedFolderId) {
+            errors.push({
+              context: `Panopto (${courseName})`,
+              message: `No recordings returned for folder ${resolvedFolderId}. Ensure you are signed into tau.cloud.panopto.eu in your browser or check the folder permissions.`,
+            });
+          }
+        } catch (err: any) {
+          errors.push({
+            context: `Fetching Panopto recordings for course ${courseName} (id: ${courseId})`,
+            message: err.message,
+          });
+        }
+      }
     })
   ]);
 
@@ -553,6 +905,7 @@ export async function runSync(
     assignments,
     files,
     meetings,
+    recordings,
     errors,
     syncedAt: new Date().toISOString(),
   };

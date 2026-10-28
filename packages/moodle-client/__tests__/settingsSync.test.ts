@@ -1,3 +1,4 @@
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { SettingsSyncManager, SharedSettings } from '../src/settingsSync.js';
 import { MoodleClient } from '../src/moodleApi.js';
 
@@ -7,8 +8,8 @@ describe('Category 9: Cross-Device Settings Sync (Moodle Calendar)', () => {
 
   beforeEach(() => {
     mockClient = {
-      saveNoodleSettings: jest.fn().mockResolvedValue(undefined),
-      loadNoodleSettings: jest.fn().mockResolvedValue(null),
+      saveNoodleSettings: jest.fn<any>().mockResolvedValue(undefined),
+      loadNoodleSettings: jest.fn<any>().mockResolvedValue(null),
     } as unknown as jest.Mocked<MoodleClient>;
 
     syncManager = new SettingsSyncManager(mockClient, 'device_chrome_1');

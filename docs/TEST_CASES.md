@@ -148,6 +148,12 @@ graph LR
 | **TC-ZM-04** | One-Tap Join Zoom Meeting | All (Mobile + Chrome + Firefox) | Browser Agent | Zoom Meetings |
 | **TC-ZM-05** | Multi-Modal Zoom Link Extraction & Deduplication | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
 | **TC-ZM-06** | Recurring Zoom Session Collapsing, Uncluttered Panel & Show-Hidden Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
+| **TC-PAN-01** | Panopto URL, Folder UUID & Delivery ID Extraction | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
+| **TC-PAN-02** | Course Page & Block HTML Panopto Discovery | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
+| **TC-PAN-03** | Garbage Title Filtering & Recitation Series Deduplication | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
+| **TC-PAN-04** | Recording-to-Course-Section Matching & Fallback Grouping | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
+| **TC-PAN-05** | CourseDetailView Panopto Rendering, Watched Toggle & Manual Folder Override | Extension (Chrome & Firefox) | Automated & Browser Agent | Panopto Recordings |
+| **TC-PAN-06** | Cross-Device Panopto Tracking Sync via Moodle Storage | Extension (Chrome & Firefox) | Browser Agent | Panopto Recordings |
 | **TC-FILE-01** | Aggregated Course Files Tree | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-02** | File Search by Keyword & Extension | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-03** | File-Type Badges & Size Formatting | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
@@ -170,6 +176,8 @@ graph LR
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
+| **TC-SYNC-04** | Stale "Syncing..." State Recovery | Extension (Chrome & Firefox) | Browser Agent | Cross-Device Sync |
+| **TC-SYNC-05** | Automatic Sync Interval Configuration & Moodle Storage Sync | Extension (Chrome & Firefox) | Automated & Browser Agent | Cross-Device Sync |
 | **TC-BCK-01** | Export `TauTrackerConfig-v1` JSON | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Backup & Restore |
 | **TC-BCK-02** | Import & Validate Backup JSON | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Backup & Restore |
 | **TC-BCK-03** | Native Sharing Sheet Export | Mobile Only | Browser Agent | Backup & Restore |
@@ -1499,6 +1507,70 @@ graph LR
   - Toggles Web Scraping to ON via UI switch, verifying instant React state update and `chrome.storage.sync` persistence (`scrapingEnabled: true`).
   - Executes synchronization with Scraping ON, testing fallback scraper activation.
   - Toggles Scraping back to default OFF state and captures visual validation screenshots (`live-settings-scraping-off.png`, `live-settings-scraping-on.png`, `live-dashboard-after-sync.png`).
+
+---
+
+### Category 15: Panopto Lecture & Recitation Tracking (#13)
+
+#### TC-PAN-01: Panopto URL, Folder UUID & Delivery ID Extraction
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Test Runner**: `pnpm --filter @tautracker/moodle-client test panopto.test.ts`
+* **Description**: Validates `isPanoptoUrl`, `extractPanoptoFolderId`, and `extractPanoptoDeliveryId` across standard and URL-encoded Panopto links (`Sessions/List.aspx#folderID="UUID"`, `?folderID=UUID`, `Viewer.aspx?id=UUID`, `Embed.aspx?id=UUID`, and raw UUID strings).
+
+#### TC-PAN-02: Course Page & Block HTML Panopto Discovery
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Test Runner**: `pnpm --filter @tautracker/moodle-client test panopto.test.ts`
+* **Description**: Verifies `extractPanoptoFromCourseHtml` extracts folder UUIDs and individual session delivery IDs from Moodle course HTML, including the `block_panopto` side block, section summaries, and embedded anchor links, while deduplicating repeated IDs.
+
+#### TC-PAN-03: Garbage Title Filtering & Recitation Series Deduplication
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Test Runner**: `pnpm --filter @tautracker/moodle-client test panopto.test.ts`
+* **Description**: Verifies `isValidPanoptoRecording`, `classifyRecordingType`, and `filterAndDeduplicateRecordings`:
+  1. Rejects titles shorter than 5 characters, titles containing no alphabetical/Hebrew characters (numeric/punctuation garbage), and accidental short clips (`durationSeconds < 60`).
+  2. Classifies recordings into `lecture`, `recitation`, or `general` using Hebrew (`הרצאה`, `שיעור`, `תרגול`, `תירגול`) and English (`lecture`, `recitation`, `tutorial`) keywords.
+  3. Groups recitation recordings by normalized base title (stripping multi-part suffixes such as `חלק 1`, `part 2`, `a-c`), keeping all parts belonging to the most recent `publishedDate` while discarding older semester duplicate recordings of the same recitation number.
+
+#### TC-PAN-04: Recording-to-Course-Section Matching & Fallback Grouping
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Test Runner**: `pnpm --filter @tautracker/moodle-client test panopto.test.ts`
+* **Description**: Verifies `matchRecordingToSection` matches Panopto recordings to existing Moodle course sections by lecture/recitation/week number (e.g., `הרצאה 1` -> `שבוע 1 - מבוא וסיבוכיות`) or title keyword overlap, and falls back to `'הקלטות פנופטו'` when no section matches.
+
+#### TC-PAN-05: CourseDetailView, Dashboard & Popup Panopto Rendering, Watched Toggle & Manual Folder Override
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Description**: Verifies the end-to-end UI integration of Panopto recordings in the extension:
+  1. In **Settings**, enabling `#panopto-enabled-toggle` sets `panoptoEnabled: true` and reveals the Panopto Folder column in the **Manage Courses** modal (`CoursesConfigTable`) for manual folder URL/UUID overrides (`coursesPanoptoMap`).
+  2. In **Dashboard ("My Tracked Courses")**, each course card (Cards mode) and row (List mode) displays breakdown completion and gap badges for `Assignments (x/y) [z gaps]`, `Lectures (x/y) [z gaps]`, and `Recitations (x/y) [z gaps]`, accompanied by an overall combined progress bar (`x/y (z%)`).
+  3. In **Dashboard Hero Action Strip**, when `panoptoEnabled` is true, a **Lectures & Recitations to Catch Up** panel (`.catchup-queue-card`) appears in a balanced 3-column layout alongside the Spotlight card and Upcoming To-Do queue, listing up to 5 unwatched recordings ordered from oldest to newest with 1-click mark-as-watched (`✓`) and direct watch links.
+  4. In **CourseDetailView**, recordings appear grouped inside dedicated localized **Lectures (`הרצאות`)** and **Recitations (`תרגולים`)** sections with direct `Panopto ↗` (`פנופטו ↗`) links to the course's Panopto folder page, displaying type badges (`הרצאה` / `תרגול`), date, Watched/Unwatched toggle button (`watchedRecordings`), and direct `צפה בהקלטה ↗` / `Watch ↗` link.
+  5. In **Toolbar Popup (`Popup.tsx`)**, when `panoptoEnabled` is true, an unwatched **Lectures & Recitations** section renders below **To-Do Assignments** with 1-click video launch and 1-click mark-as-watched (`✓`) buttons.
+
+#### TC-PAN-06: Cross-Device Panopto Tracking Sync via Moodle Storage
+* **Platform Target**: `Extension (Chrome & Firefox)` (Mobile preserves keys untouched)
+* **Modality**: `Browser Agent`
+* **Description**: Verifies `panoptoEnabled`, `coursesPanoptoMap`, and `watchedRecordings` (keyed by stable Panopto `DeliveryID`) round-trip through the Moodle `NOODLE_SYNC_DATA` calendar event with per-key LWW (see `TC-SYNC-02`):
+  1. On browser A, mark a recording watched (dashboard or popup) and change a course's Panopto folder override. The popup immediately sends `SYNC_SETTINGS`.
+  2. On browser B (same Moodle account), run a sync → the recording shows as **Watched** and the new folder override is applied; clearing an override on B propagates back to A (no local-wins merge).
+  3. If `storage.sync` rejects the `settings` write (8 KB per-item quota), the stale `storage.sync` copy is removed so the local copy remains authoritative.
+
+#### TC-SYNC-04: Stale "Syncing..." State Recovery
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Browser Agent`
+* **Description**: Reload the extension mid-sync (or let the worker terminate), then open the dashboard without pressing Sync. The header must show the countdown (not `Syncing...`) and the Sync button must be enabled: the worker resets `isSyncing` on load and the dashboard queries the live state via `GET_SYNC_STATUS`.
+
+#### TC-SYNC-05: Automatic Sync Interval Configuration & Moodle Storage Sync
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Description**:
+  1. In **Settings**, changing the **Automatic Sync Interval** dropdown (`syncIntervalMinutes`, e.g. 10m) saves locally and dispatches `SYNC_SETTINGS`.
+  2. The background service worker re-arms the `periodicSync` alarm with the chosen interval.
+  3. The `SyncCountdown` timer in the dashboard header reflects the new interval immediately.
+  4. The setting syncs to Moodle Calendar private storage (`NOODLE_SYNC_DATA`) and propagates across devices with Last-Write-Wins (LWW) conflict resolution.
+
 
 
 
