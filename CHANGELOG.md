@@ -11,14 +11,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Official Noodle Showcase & Companion Landing Website (`website/`)**:
   - Created a modern, student-centered landing page for Noodle built with the signature warm terracotta and coffee design language.
   - Features an interactive mockup switcher, 5-tab deep-dive feature explorer, real-time simulated deadline urgency countdown, side-by-side Before/After comparison with default TAU Moodle, zero-backend privacy architecture diagram, theme picker (Warm Light, Coffee Amber, Dark Espresso), student FAQ, and direct install links.
-
-
-## [4.0.0] - 2026-10-28
-### Fixed
-- **Chrome Web Store Production Manifest Key Stripping (`apps/extension/vite.config.ts`)**:
-  - Automatically omitted the developer `key` property during production builds (`vite build`), preventing Chrome Web Store upload errors (*"key field value in the manifest doesn't match the current item"*) while retaining the locked extension ID in development mode (`pnpm dev`).
-
-### Added
 - **Configurable Automatic Sync Interval with Moodle Storage API Sync (`apps/extension/src/background/serviceWorker.ts`, `options/App.tsx`, `shared/storage.ts`, `i18n.ts`, `TC-SYNC-05`)**:
   - Added a configurable **Automatic Sync Interval** setting (`syncIntervalMinutes`, presets: 1m, 5m default, 10m, 15m, 30m, 60m, 120m) in Extension Settings.
   - Connected the sync interval with the Moodle Storage API (`NOODLE_SYNC_DATA` calendar event) via `SettingsSyncManager`, automatically round-tripping across devices.
@@ -89,6 +81,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 - **Replaced Ghost Button with Rotating Chevron Span in Tracked Course Cards (`apps/extension/src/options/App.tsx`)**:
   - Replaced the `.btn-ghost` button at the end of each course item under "My Tracked Courses" with a sleek inline-block rotating chevron `<span>▼</span>` matching the styling and transition behavior of the Upcoming To-Do queue.
+
+## [4.0.0] - 2026-10-28
+### Fixed
+- **Chrome Web Store Production Manifest Key Stripping (`apps/extension/vite.config.ts`)**:
+  - Automatically omitted the developer `key` property during production builds (`vite build`), preventing Chrome Web Store upload errors (*"key field value in the manifest doesn't match the current item"*) while retaining the locked extension ID in development mode (`pnpm dev`).
 - **Warm Pastel Course Color Palette & Fallback (`apps/extension/src/options/App.tsx`, `Popup.tsx`, `e2e/sync-devtools.spec.ts`, `generate-promo-assets.mjs`)**:
   - Replaced harsh green (`#10b981`) and indigo purple (`#6366f1`) course color presets with attractive, happier pastels: warm coral/terracotta pastel orange (`#e07a5f`) for Course 9999 (CS101) and warm caramel/mocha pastel brown (`#a0613e`) for Course 9998 (DS201).
   - Updated the default course color fallback in `App.tsx` and `Popup.tsx` from `#6366f1` to `#e07a5f`.
