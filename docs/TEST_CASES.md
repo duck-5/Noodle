@@ -1210,6 +1210,7 @@ graph LR
   3. Execute `pnpm --filter extension run build:firefox`.
   4. Parse output `dist-firefox/manifest.json`; assert `background.scripts` is an array and `browser_specific_settings.gecko.id` equals `"noodle@tau"`.
   5. Assert that `dist/manifest.json` remains completely unmodified and preserved with `background.service_worker`.
+  6. Assert that `manifest.key` is stripped from both `dist/manifest.json` and `dist-firefox/manifest.json` for store upload compliance.
 
 #### TC-EXT-BRW-02: OAuth Redirect URI Resolution Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`

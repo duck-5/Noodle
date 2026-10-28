@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Noodle — Modern Moodle & Google Tasks Companion for TAU Students</title>
+  <meta name="description" content="A decentralized, client-only companion for Tel Aviv University's Moodle. Real-time deadlines, split calendar, instant Google Tasks 2-way sync, and live Zoom hub.">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="#" class="brand">
+        <img src="assets/logo.png" alt="Noodle Logo" class="brand-logo-img">
+        <div class="brand-text">
+          <span class="brand-title">Noodle</span>
+          <span class="brand-badge">v4.0.0</span>
+        </div>
+      </a>
+
+      <nav>
+        <ul class="nav-menu">
+          <li><a href="#features" class="nav-link">Features</a></li>
+          <li><a href="#sync" class="nav-link">Google Tasks</a></li>
+          <li><a href="#comparison" class="nav-link">Why Noodle?</a></li>
+          <li><a href="#privacy" class="nav-link">Privacy & Security</a></li>
+          <li><a href="#faq" class="nav-link">FAQ</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <!-- Live Theme Switcher -->
+        <div class="theme-picker" title="Toggle Theme">
+          <button class="theme-btn active" data-theme="light" title="Warm Light">☀️</button>
+          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">☕</button>
+          <button class="theme-btn" data-theme="dark" title="Dark Espresso">🌙</button>
+        </div>
+
+        <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
+          <span>Get Extension</span>
+          <span>↗</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO SECTION -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-pill-badge">
+        <span class="hero-pill-dot"></span>
+        <span>Built by TAU Students • 100% Client-Side • Free & Open Source</span>
+      </div>
+
+      <h1 class="hero-title">
+        Moodle, re-engineered for<br>
+        <span>Tel Aviv University.</span>
+      </h1>
+
+      <p class="hero-subtitle">
+        The unified cockpit companion that brings your deadlines, grades, course files, and Zoom links into one lightning-fast dashboard — with instant 2-way <strong>Google Tasks</strong> synchronization.
+      </p>
+
+      <div class="hero-cta-group">
+        <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z"/>
+          </svg>
+          <span>Add to Chrome — It's Free</span>
+        </a>
+
+        <a href="https://github.com/duck-5/Noodle" target="_blank" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span>Star on GitHub</span>
+        </a>
+      </div>
+
+      <div class="hero-badges-row">
+        <span>🔒 Zero Middleman Backend</span>
+        <span>⚡ Direct TAU SSO Authentication</span>
+        <span>📅 Google Tasks 2-Way Sync</span>
+        <span>🇮🇱 Hebrew RTL & English</span>
+      </div>
+
+      <!-- HERO INTERACTIVE MOCKUP SHOWCASE -->
+      <div class="hero-mockup-wrap">
+        <div class="mockup-frame">
+          <div class="mockup-header-bar">
+            <div class="mockup-dots">
+              <span class="mockup-dot red"></span>
+              <span class="mockup-dot amber"></span>
+              <span class="mockup-dot green"></span>
+            </div>
+
+            <!-- Tab Pills to switch live screenshots -->
+            <div class="mockup-tab-pills">
+              <button class="mockup-tab-btn active" data-target="mock-dash">Cockpit Dashboard</button>
+              <button class="mockup-tab-btn" data-target="mock-calendar">Split-Pane Calendar</button>
+              <button class="mockup-tab-btn" data-target="mock-coffee">Coffee Theme</button>
+              <button class="mockup-tab-btn" data-target="mock-zoom">Live Zoom Hub</button>
+            </div>
+
+            <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-terracotta);">
+              Noodle Cockpit v4
+            </div>
+          </div>
+
+          <div class="mockup-image-holder">
+            <img id="mock-dash" src="assets/promo-1-hero-overview.png" alt="Noodle Dashboard Overview" class="mockup-image active">
+            <img id="mock-calendar" src="assets/calendar-view.png" alt="Noodle Split-Pane Calendar View" class="mockup-image">
+            <img id="mock-coffee" src="assets/dashboard-coffee.png" alt="Noodle Coffee Theme" class="mockup-image">
+            <img id="mock-zoom" src="assets/promo-3-zoom-hub.png" alt="Noodle Zoom Hub and Schedule" class="mockup-image">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE REALITY CHECK / WHY NOODLE? -->
+  <section id="comparison" class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">The Reality Check</span>
+        <h2 class="section-title">Why does default Moodle feel so frustrating?</h2>
+        <p class="section-subtitle">
+          Tel Aviv University's Moodle is technically powerful, but its interface was designed over 15 years ago. Here's why students struggle with it every semester:
+        </p>
+      </div>
+
+      <div class="pain-grid">
+        <div class="pain-card">
+          <div class="pain-icon-box">⏳</div>
+          <h3 class="pain-title">The 23:59 Deadline Panic</h3>
+          <p class="pain-text">
+            Deadlines are buried 4 folders deep in separate course pages. By the time you find where Assignment 3 is submitted, you're scrambling against the countdown clock.
+          </p>
+          <div class="pain-solution">
+            <span>✓</span> <strong>Next-Up Spotlight:</strong> Real-time timer and 1-click submit right from your dashboard.
+          </div>
+        </div>
+
+        <div class="pain-card">
+          <div class="pain-icon-box">📆</div>
+          <h3 class="pain-title">The Calendar Disconnect</h3>
+          <p class="pain-text">
+            You maintain your life in Google Calendar, but Moodle is an isolated island. You waste hours manually copying due dates — or worse, you forget one.
+          </p>
+          <div class="pain-solution">
+            <span>✓</span> <strong>Native Google Tasks Sync:</strong> Zero-setup 2-way sync that lives in your calendar.
+          </div>
+        </div>
+
+        <div class="pain-card">
+          <div class="pain-icon-box">🎥</div>
+          <h3 class="pain-title">The Zoom Scramble</h3>
+          <p class="pain-text">
+            Is the lecture on Zoom today? Where is the link? You waste 10 minutes digging through syllabus text blocks and forum announcements trying to join.
+          </p>
+          <div class="pain-solution">
+            <span>✓</span> <strong>Live Now Banner:</strong> 1-click join whenever a course session is active right now.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE FEATURE EXPLORER -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">Deep Feature Suite</span>
+        <h2 class="section-title">Built for the way you actually study.</h2>
+        <p class="section-subtitle">
+          Everything you need to stay on top of your semester, packaged in a cohesive, distraction-free environment.
+        </p>
+      </div>
+
+      <div class="feature-tabs-wrap">
+        <!-- Feature Tabs Navigation -->
+        <div class="feature-nav-bar">
+          <button class="feature-nav-btn active" data-panel="panel-cockpit">
+            <span>🎯</span> Cockpit & Spotlight
+          </button>
+          <button class="feature-nav-btn" data-panel="panel-sync">
+            <span>🔄</span> Google Tasks Sync
+          </button>
+          <button class="feature-nav-btn" data-panel="panel-calendar">
+            <span>📅</span> Split-Pane Calendar
+          </button>
+          <button class="feature-nav-btn" data-panel="panel-zoom">
+            <span>🎥</span> Zoom Hub & Materials
+          </button>
+          <button class="feature-nav-btn" data-panel="panel-custom">
+            <span>🎨</span> Personalization & Themes
+          </button>
+        </div>
+
+        <!-- Panel 1: Cockpit & Spotlight -->
+        <div id="panel-cockpit" class="feature-tab-panel active">
+          <div class="feature-panel-text">
+            <h3>Your closest deadline, always in focus.</h3>
+            <p>
+              The <strong>Next-Up Spotlight</strong> prominently pins the most urgent assignment due across all your courses. See remaining time down to the second, access required PDF problem sets, and submit directly to Moodle with a single click.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Dynamic Urgency Color Coding:</strong> Red (&le;24h), Amber (&le;72h), and Coral so you instantly know what needs attention.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>1-Click Done & Hide:</strong> Check off assignments you've turned in or hide optional tasks with a single button.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Topic File Previews:</strong> Preview problem sets and lecture notes directly without waiting for blank browser tabs.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/promo-1-hero-overview.png" alt="Next Up Spotlight" class="feature-preview-img">
+          </div>
+        </div>
+
+        <!-- Panel 2: Google Tasks Sync -->
+        <div id="panel-sync" class="feature-tab-panel">
+          <div class="feature-panel-text">
+            <h3>Automated, 2-way Google Tasks synchronization.</h3>
+            <p>
+              Connect your Google account once. Noodle creates a dedicated <strong>"University"</strong> list in Google Tasks and automatically keeps your homework and exams synced with your Google Calendar.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Silent Background Refresh:</strong> Persistent authentication using Google's secure OAuth flow without annoying re-login prompts.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Undated Tasks Control:</strong> Choose whether to include assignments lacking explicit deadlines or keep your list strictly deadline-driven.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Auto-Purge & Resolution:</strong> Checking off an assignment in Noodle or Google Tasks automatically syncs the completion status.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/promo-2-deadlines-grades.png" alt="Google Tasks Synchronization" class="feature-preview-img">
+          </div>
+        </div>
+
+        <!-- Panel 3: Split Calendar -->
+        <div id="panel-calendar" class="feature-tab-panel">
+          <div class="feature-panel-text">
+            <h3>Visual monthly planning with color-coded pills.</h3>
+            <p>
+              Toggle the calendar view in your Assignments tab to get a responsive split-pane workspace. View your monthly schedule alongside your feed, with assignment pills mapped directly to their due dates.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Interactive Pill Navigation:</strong> Click any assignment pill in the monthly grid to scroll directly to its full details in the feed.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Status Tabs:</strong> Effortlessly filter between To Do, Past Due, Completed, and Hidden assignments.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Lab Course Smart Hiding:</strong> Automatic detection for laboratory courses (`מעבדה`), prompting to hide bulk experiment lists.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/calendar-view.png" alt="Split-Pane Calendar" class="feature-preview-img">
+          </div>
+        </div>
+
+        <!-- Panel 4: Zoom Hub & Materials -->
+        <div id="panel-zoom" class="feature-tab-panel">
+          <div class="feature-panel-text">
+            <h3>All lecture recordings, links, and slides in one spot.</h3>
+            <p>
+              Stop hunting across course blocks for meeting IDs and passwords. Noodle aggregates your lecture and recitation Zoom sessions into an actionable schedule.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Live Now Pulsing Alert:</strong> See an instant "Active Now" banner at the top of the popup with a 1-click Join button.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Section Accordions:</strong> Clean topic drawers that organize course documents by syllabus week.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Direct Course Shortcut:</strong> "Open in Moodle ↗" button whenever you need the raw university page.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/promo-3-zoom-hub.png" alt="Zoom Hub and Course Materials" class="feature-preview-img">
+          </div>
+        </div>
+
+        <!-- Panel 5: Customization -->
+        <div id="panel-custom" class="feature-tab-panel">
+          <div class="feature-panel-text">
+            <h3>Make Moodle look and feel like your own workspace.</h3>
+            <p>
+              Replace cryptic university catalog numbers like `0368-1111-01` with friendly names like "Linear Algebra 1", and personalize each course with custom color swatches.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>14 Curated Pastel Swatches:</strong> Terracotta Coral, Mocha Caramel, Desert Sage, Slate Blue, or custom hex codes.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>3 Aesthetic Themes:</strong> Warm Paper Light, Modern Dark Espresso, and the signature cozy Coffee Theme.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon">✓</span>
+                <div><strong>Semester Grouping:</strong> Partition your courses by Semester A, Semester B, Summer, and Yearly automatically.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/promo-5-productivity-themes.png" alt="Themes and Customization" class="feature-preview-img">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE BEFORE & AFTER -->
+  <section class="section" style="background: var(--bg-subtle);">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">The Difference</span>
+        <h2 class="section-title">Before Noodle vs. After Noodle</h2>
+        <p class="section-subtitle">A quick comparison of your daily academic workflow.</p>
+      </div>
+
+      <div class="comparison-wrap">
+        <div class="comp-card before">
+          <span class="comp-badge">Default TAU Moodle</span>
+          <h3 class="comp-title">The Cluttered Way</h3>
+          <ul class="comp-list before">
+            <li><span>✕</span> <div><strong>Nested Click Odyssey:</strong> Takes 6 to 9 clicks through accordion trees just to find an assignment prompt.</div></li>
+            <li><span>✕</span> <div><strong>Session Timeouts:</strong> Constant "Session Expired" re-login blocks right before deadlines.</div></li>
+            <li><span>✕</span> <div><strong>Manual Calendar Work:</strong> Having to manually transcribe dates and times into Google Calendar.</div></li>
+            <li><span>✕</span> <div><strong>Buried Zoom Links:</strong> Searching through emails, forums, and syllabus PDFs for meeting passcodes.</div></li>
+            <li><span>✕</span> <div><strong>Lab Course Clutter:</strong> 40 irrelevant optional lab experiments crowding your pending list.</div></li>
+          </ul>
+        </div>
+
+        <div class="comp-card after">
+          <span class="comp-badge">With Noodle v4</span>
+          <h3 class="comp-title">The Cockpit Experience</h3>
+          <ul class="comp-list after">
+            <li><span>✓</span> <div><strong>Next-Up Spotlight:</strong> Your closest deadline is front and center with live countdown & 1-click submit.</div></li>
+            <li><span>✓</span> <div><strong>Instant Offline Cache:</strong> Cached course data and silent SSO background renewal keep you fast.</div></li>
+            <li><span>✓</span> <div><strong>Direct Google Tasks 2-Way Sync:</strong> Seamless, automated deadline integration with Google Calendar.</div></li>
+            <li><span>✓</span> <div><strong>1-Click Live Zoom Banner:</strong> Pulsing alert joins lectures instantly without searching.</div></li>
+            <li><span>✓</span> <div><strong>Smart Lab Auto-Hiding:</strong> Automatically suggests hiding bulky lab catalogs in 1 click.</div></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ZERO-BACKEND PRIVACY & SECURITY -->
+  <section id="privacy" class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">Privacy By Architecture</span>
+        <h2 class="section-title">Zero intermediate servers. Zero telemetry.</h2>
+        <p class="section-subtitle">
+          Noodle operates strictly inside your browser. Your credentials, student ID, grades, and homework never touch any third-party server.
+        </p>
+      </div>
+
+      <div class="privacy-box">
+        <h3>How Network Traffic Flows in Noodle</h3>
+        
+        <div class="privacy-diagram">
+          <div class="diagram-node">
+            <div class="diagram-icon">💻</div>
+            <h4>Your Browser</h4>
+            <p>Runs Noodle Locally</p>
+          </div>
+
+          <div class="diagram-arrow">
+            <span>Direct TAU SSO</span>
+            <span class="arrow-line">⟷</span>
+            <span>Local Cookie Auth</span>
+          </div>
+
+          <div class="diagram-node">
+            <div class="diagram-icon">🏛️</div>
+            <h4>tau.ac.il</h4>
+            <p>Official University Moodle</p>
+          </div>
+
+          <div class="diagram-arrow">
+            <span>Direct OAuth</span>
+            <span class="arrow-line">⟷</span>
+            <span>Encrypted Tokens</span>
+          </div>
+
+          <div class="diagram-node">
+            <div class="diagram-icon">📅</div>
+            <h4>Google Tasks</h4>
+            <p>tasks.googleapis.com</p>
+          </div>
+
+          <div class="diagram-arrow">
+            <span style="color: #dc2626;">BLOCKED</span>
+            <span class="arrow-line" style="color: #dc2626;">✕</span>
+            <span style="color: #dc2626;">Zero Traffic</span>
+          </div>
+
+          <div class="diagram-node blocked-node">
+            <div class="diagram-icon">🚫</div>
+            <h4>Middleman Server</h4>
+            <p>Does NOT Exist</p>
+          </div>
+        </div>
+
+        <p style="max-width: 680px; margin: 0 auto; font-size: 0.95rem; color: var(--text-muted);">
+          Every line of code is open source and auditable on GitHub. Noodle communicates exclusively between your computer, Tel Aviv University's official servers, and Google Tasks API.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FREQUENTLY ASKED QUESTIONS -->
+  <section id="faq" class="section" style="background: var(--bg-subtle);">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">Got Questions?</span>
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        <p class="section-subtitle">Honest answers to common questions from TAU students.</p>
+      </div>
+
+      <div class="faq-wrap">
+        <details class="faq-item" open>
+          <summary class="faq-summary">Does Tel Aviv University officially make this?</summary>
+          <div class="faq-content">
+            No. Noodle is an independent, open-source productivity companion built by TAU students for TAU students. It interacts directly with the standard Moodle mobile web service and web endpoints that your browser already uses.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-summary">Is my TAU password or login data safe?</summary>
+          <div class="faq-content">
+            Yes, 100%. Noodle has <strong>no external servers or databases</strong>. Your login occurs directly through Tel Aviv University's official Single Sign-On portal (`nidp.tau.ac.il`). Noodle stores session cookies strictly inside Chrome/Firefox's encrypted local extension storage. We never see, track, or collect your credentials.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-summary">How does the Google Tasks synchronization work?</summary>
+          <div class="faq-content">
+            When you connect Google Tasks in settings, your browser requests an OAuth token directly from Google. Noodle creates a dedicated "University" task list in your account and syncs assignments client-side. No intermediate cloud service has access to your Google account.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-summary">Is there a mobile version available?</summary>
+          <div class="faq-content">
+            Yes! In addition to the Chrome and Firefox desktop browser extensions, the repository contains a native mobile app built with Expo and React Native for Android devices, sharing the exact same zero-backend sync engine.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-summary">Is Noodle free? Are there any hidden costs?</summary>
+          <div class="faq-content">
+            Noodle is completely free, open-source under the MIT license, and contains zero ads, subscriptions, or tracking. It is maintained out of passion to make university life easier.
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL / DOWNLOAD SECTION -->
+  <section id="download" class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">Get Started</span>
+        <h2 class="section-title">Upgrade your semester in 30 seconds.</h2>
+        <p class="section-subtitle">Pick your platform and take control of your academic schedule.</p>
+      </div>
+
+      <div class="install-grid">
+        <div class="install-card featured">
+          <span class="featured-ribbon">Recommended</span>
+          <div class="install-icon">🌐</div>
+          <h3 class="install-title">Google Chrome</h3>
+          <p class="install-desc">Works on Chrome, Brave, Edge, Opera, and all Chromium browsers with full toolbar popup support.</p>
+          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
+            <span>Install on Chrome</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <div class="install-card">
+          <div class="install-icon">🦊</div>
+          <h3 class="install-title">Mozilla Firefox</h3>
+          <p class="install-desc">Native Manifest V3 Firefox Add-on with complete cookie isolation and Gecko protocol support.</p>
+          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm">
+            <span>Firefox Add-on</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <div class="install-card">
+          <div class="install-icon">📱</div>
+          <h3 class="install-title">Android Mobile</h3>
+          <p class="install-desc">Expo React Native app with local SQLite storage and Google Tasks sync for students on the go.</p>
+          <a href="https://github.com/duck-5/Noodle" target="_blank" class="btn btn-secondary btn-sm">
+            <span>Get Mobile App</span>
+            <span>↗</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand-col">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Noodle Logo" class="brand-logo-img">
+            <span class="brand-title">Noodle</span>
+          </div>
+          <p class="footer-desc">
+            Decentralized, client-only companion for Tel Aviv University's Moodle. Built with care by students, for students.
+          </p>
+        </div>
+
+        <div class="footer-links-col">
+          <h5>Product</h5>
+          <ul class="footer-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#sync">Google Tasks</a></li>
+            <li><a href="#comparison">Moodle Comparison</a></li>
+            <li><a href="#privacy">Zero-Backend Security</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <h5>Developers & Credits</h5>
+          <ul class="footer-links">
+            <li><a href="https://github.com/duck-5/Noodle" target="_blank">GitHub Repository</a></li>
+            <li><a href="https://github.com/duck-5/Noodle/issues" target="_blank">Report an Issue</a></li>
+            <li><a href="mailto:noodle.d3v@gmail.com">Contact: noodle.d3v@gmail.com</a></li>
+            <li><span style="color: var(--text-muted); font-size: 0.92rem;">Yuval Mantin & Michael Kushnir</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>
+          &copy; 2026 Noodle Project. Open-source under the MIT License. Not affiliated with Tel Aviv University or Moodle HQ.
+        </div>
+        <div>
+          <span>Made with ❤️ in Tel Aviv</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
