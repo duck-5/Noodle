@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Official Noodle Showcase & Companion Landing Website (`website/`)**:
   - Created a modern, student-centered landing page for Noodle built with the signature warm terracotta and coffee design language.
   - Features an interactive mockup switcher, 5-tab deep-dive feature explorer, real-time simulated deadline urgency countdown, side-by-side Before/After comparison with default TAU Moodle, zero-backend privacy architecture diagram, theme picker (Warm Light, Coffee Amber, Dark Espresso), student FAQ, and direct install links.
+- **Cloudflare Tunnel & Mantin Server Gateway Support for `noodle.mantin.dev` (`ServerPages/`)**:
+  - Configured virtual host routing in `ServerPages/nginx.conf` to serve the Noodle website on `noodle.mantin.dev`.
+  - Added bind mount `/home/mantin-server/Noodle/website:/usr/share/nginx/html/noodle:ro` to `ServerPages/docker-compose.yml` for real-time zero-copy site updates.
+  - Created DNS CNAME record for `noodle.mantin.dev` routed via Cloudflare Tunnel gateway `ea794643-cdf3-4780-91be-a93ca5756d44.cfargotunnel.com`.
 - **Configurable Automatic Sync Interval with Moodle Storage API Sync (`apps/extension/src/background/serviceWorker.ts`, `options/App.tsx`, `shared/storage.ts`, `i18n.ts`, `TC-SYNC-05`)**:
   - Added a configurable **Automatic Sync Interval** setting (`syncIntervalMinutes`, presets: 1m, 5m default, 10m, 15m, 30m, 60m, 120m) in Extension Settings.
   - Connected the sync interval with the Moodle Storage API (`NOODLE_SYNC_DATA` calendar event) via `SettingsSyncManager`, automatically round-tripping across devices.

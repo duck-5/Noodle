@@ -253,3 +253,14 @@ To ensure the student's Google Tasks list operates as a clean, actionable to-do 
   - To comply with OAuth 2.0 for Native Apps ([RFC 8252 Section 7.3](https://datatracker.ietf.org/doc/html/rfc8252#section-7.3)), Firefox 86+ natively intercepts the loopback address `http://127.0.0.1/mozoauth2/<subdomain>`.
   - The shared helper `getGoogleOAuthRedirectUrl()` inspects the environment and automatically transforms any `.extensions.allizom.org` redirect URL into `http://127.0.0.1/mozoauth2/<subdomain>`, which Google Cloud Console allows on OAuth 2.0 Web Client credentials without domain verification.
 
+---
+
+## 10. Web Showcase & Gateway Hosting Architecture
+
+Noodle's public web showcase (`website/`) is hosted via the **Mantin Server Gateway** infrastructure:
+- **Routing Engine**: Nginx-based multi-site reverse router (`static-router`) deployed inside `app-gateway-net`.
+- **Public Domain**: `noodle.mantin.dev` configured as a CNAME pointing to Cloudflare Tunnel (`ea794643-cdf3-4780-91be-a93ca5756d44.cfargotunnel.com`).
+- **Cloudflare Ingress Target**: Points to `http://static-router:80` with the `Host: noodle.mantin.dev` header preserved.
+- **Mount Pipeline**: Bind mounts `/home/mantin-server/Noodle/website` into `/usr/share/nginx/html/noodle:ro` allowing real-time static asset delivery without build or duplication overhead.
+
+
