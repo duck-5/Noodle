@@ -947,7 +947,7 @@ async function main() {
   console.log('Starting High-Resolution Promo Asset Generation with Playwright...');
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    deviceScaleFactor: 2, // High-DPI / Retina sharpness
+    deviceScaleFactor: 1, // 1:1 Chrome Web Store required dimensions (1280x800, 1400x560, 440x280)
   });
   const page = await context.newPage();
 
