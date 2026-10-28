@@ -21,6 +21,7 @@ TauTracker.log
 !apps/**/assets/**
 !apps/extension/public/*.png
 !packages/**/assets/**
+!website/assets/**
 
 # ==========================================
 # Developer JSON Dumps & API Diagnostics

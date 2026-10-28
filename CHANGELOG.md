@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Added
+- **Official Noodle Showcase & Companion Landing Website (`website/`)**:
+  - Created a modern, student-centered landing page for Noodle built with the signature warm terracotta and coffee design language.
+  - Features an interactive mockup switcher, 5-tab deep-dive feature explorer, real-time simulated deadline urgency countdown, side-by-side Before/After comparison with default TAU Moodle, zero-backend privacy architecture diagram, theme picker (Warm Light, Coffee Amber, Dark Espresso), student FAQ, and direct install links.
+
 
 ## [4.0.0] - 2026-10-28
 ### Fixed
