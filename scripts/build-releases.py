@@ -6,8 +6,11 @@ from pathlib import Path
 
 def create_zip_from_dir(source_dir, output_zip):
     with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(source_dir):
+        for root, dirs, files in os.walk(source_dir):
+            dirs[:] = [d for d in dirs if d != '_metadata']
             for file in files:
+                if file.endswith('.pem'):
+                    continue
                 file_path = os.path.join(root, file)
                 # Enforce forward slashes for cross-platform compatibility (especially AMO)
                 arcname = os.path.relpath(file_path, source_dir).replace('\\', '/')
@@ -17,6 +20,7 @@ def main():
     root_dir = Path(__file__).parent.parent.resolve()
     extension_dir = root_dir / 'apps' / 'extension'
     dist_dir = extension_dir / 'dist'
+    firefox_dist_dir = extension_dir / 'dist-firefox'
     releases_dir = root_dir / 'releases'
 
     print("--- Cleaning up previous builds ---")
@@ -40,7 +44,7 @@ def main():
     print("\n--- Building Firefox Extension ---")
     subprocess.run(["pnpm", "run", "build:firefox"], cwd=extension_dir, check=True, shell=True)
     firefox_zip = releases_dir / 'noodle-firefox.zip'
-    create_zip_from_dir(dist_dir, firefox_zip)
+    create_zip_from_dir(firefox_dist_dir, firefox_zip)
     print(f"[SUCCESS] Firefox build packaged: {firefox_zip}")
 
     print("\n--- Packaging Source Code for AMO ---")

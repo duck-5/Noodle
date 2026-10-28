@@ -29,7 +29,10 @@ try {
   if (chromeManifest.background.scripts) {
     throw new Error('Chrome manifest should not have background.scripts');
   }
-  console.log('   ✓ Chrome MV3 service worker properly configured in dist/');
+  if (chromeManifest.key) {
+    throw new Error('Chrome production manifest should not contain developer key');
+  }
+  console.log('   ✓ Chrome MV3 service worker properly configured in dist/ (developer key stripped)');
 
   // 2. Test Firefox Build
   console.log('2. Testing Firefox Extension Build (TC-EXT-BRW-01)...');
@@ -48,7 +51,10 @@ try {
   if (firefoxManifest.browser_specific_settings?.gecko?.id !== 'noodle@tau') {
     throw new Error(`Expected gecko.id 'noodle@tau', got ${firefoxManifest.browser_specific_settings?.gecko?.id}`);
   }
-  console.log('   ✓ Firefox MV3 background.scripts and gecko.id properly configured');
+  if (firefoxManifest.key) {
+    throw new Error('Firefox manifest should not contain developer key');
+  }
+  console.log('   ✓ Firefox MV3 background.scripts and gecko.id properly configured (developer key stripped)');
 
   // 3. Test OAuth Redirect Resolution Parity (TC-EXT-BRW-02)
   console.log('3. Testing OAuth Redirect URL Parity (TC-EXT-BRW-02)...');

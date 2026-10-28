@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+
+## [4.0.0] - 2026-10-28
+### Fixed
+- **Chrome Web Store Production Manifest Key Stripping (`apps/extension/vite.config.ts`)**:
+  - Automatically omitted the developer `key` property during production builds (`vite build`), preventing Chrome Web Store upload errors (*"key field value in the manifest doesn't match the current item"*) while retaining the locked extension ID in development mode (`pnpm dev`).
+
 ### Added
 - **Cards View Mode Option for "My Tracked Courses" (`apps/extension/src/options/App.tsx`, `App.css`, `i18n.ts`)**:
   - Added a segmented view mode switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") in the "My Tracked Courses" section header on the Dashboard.

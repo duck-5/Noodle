@@ -4,7 +4,7 @@ import webExtension from 'vite-plugin-web-extension';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const targetBrowser = process.env.TARGET_BROWSER || (mode === 'firefox' ? 'firefox' : 'chrome');
 
   return {
@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
           const manifest = JSON.parse(manifestStr);
           
           if (targetBrowser === 'firefox') {
+            delete manifest.key;
             manifest.browser_specific_settings = {
               gecko: {
                 id: 'noodle@tau',
@@ -31,6 +32,10 @@ export default defineConfig(({ mode }) => {
             }
           } else {
             delete manifest.browser_specific_settings;
+            // Omit key in production builds so Chrome Web Store signs with the published item key
+            if (command === 'build') {
+              delete manifest.key;
+            }
           }
           return manifest;
         },
