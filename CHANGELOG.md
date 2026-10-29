@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Official Website Links & Minimalist About Page Overhaul (`apps/extension/src/options/App.tsx`, `App.css`, `manifest.json`, `shared/i18n.ts`)**:
+  - Replaced cluttering emoji icons across the About tab and link cards with sleek, monochromatic inline SVG outline icons.
+  - Added a featured card linking directly to the official landing site (`https://noodle.mantin.dev/`) in both the About tab and the collapsible sidebar footer.
+  - Registered `"homepage_url": "https://noodle.mantin.dev/"` in `manifest.json`.
+  - Cleaned up accordion list items with clean typography and bold headings instead of emoji bullets.
+- **Panopto Tracking Beta Feature Designation (`apps/extension/src/options/App.tsx`, `App.css`, `shared/i18n.ts`, `shared/storage.ts`)**:
+  - Marked Panopto integration prominently as a **Beta** feature across the extension:
+    - Added dedicated `.badge-beta` pills (`בטא` / `BETA`) to the Panopto toggle in Settings, Course Details Panopto header card, and the Manage Courses configuration table.
+    - Updated settings descriptions and i18n strings to clarify that Panopto tracking is an experimental beta feature.
+    - Re-confirmed that Panopto tracking defaults strictly to **OFF** (`panoptoEnabled: false` in `DEFAULT_SETTINGS`).
 - **Official Noodle Showcase & Companion Landing Website (`website/`)**:
   - Created a modern, student-centered landing page for Noodle built with the signature warm terracotta and coffee design language.
   - Features an interactive mockup switcher, 5-tab deep-dive feature explorer, real-time simulated deadline urgency countdown, side-by-side Before/After comparison with default TAU Moodle, zero-backend privacy architecture diagram, theme picker (Warm Light, Coffee Amber, Dark Espresso), student FAQ, and direct install links.

@@ -72,5 +72,6 @@
       "email"
     ]
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "homepage_url": "https://noodle.mantin.dev/"
 }

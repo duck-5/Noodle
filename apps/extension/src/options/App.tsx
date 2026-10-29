@@ -1869,6 +1869,16 @@ export default function App() {
         </nav>
 
         <div className="sidebar-footer">
+          <a
+            href="https://noodle.mantin.dev/"
+            target="_blank"
+            rel="noreferrer"
+            className="sidebar-website-link"
+            title="noodle.mantin.dev"
+          >
+            <span>noodle.mantin.dev</span>
+            <span>↗</span>
+          </a>
           <button className="text-btn danger-text" onClick={handleDisconnectClick}>
             {t('disconnect_account')}
           </button>
@@ -2484,7 +2494,7 @@ function CoursesConfigTable({
                 <div>{t('track')}</div>
                 <div>{t('course_code_name')}</div>
                 <div>{t('display_nickname')}</div>
-                {panoptoEnabled && <div>{t('panopto_folder_column')}</div>}
+                {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                 <div>{t('theme_color_label')}</div>
               </div>
               {[...group.courses]
@@ -5440,10 +5450,20 @@ function SettingsTab({
       <hr className="settings-divider" />
 
       <div className="settings-section">
-        <h4>{t('panopto_enabled_title')}</h4>
+        <h4>
+          {t('panopto_enabled_title')}
+          <span className="badge-beta" style={{ marginInlineStart: '0.5rem' }}>
+            {lang === 'he' ? 'בטא' : 'BETA'}
+          </span>
+        </h4>
         <div className="toggle-row">
           <div>
-            <span className="toggle-label">{t('panopto_enabled_title')}</span>
+            <span className="toggle-label">
+              {t('panopto_enabled_title')}
+              <span className="badge-beta" style={{ marginInlineStart: '0.4rem' }}>
+                {lang === 'he' ? 'בטא' : 'BETA'}
+              </span>
+            </span>
             <p className="subtitle">{t('panopto_enabled_desc')}</p>
           </div>
           <label className="switch">
@@ -6150,8 +6170,9 @@ function CourseDetailView({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold' }}>
-                      🎬 {t('panopto_card_title')} ({watchedCount}/{courseRecordings.length} {t('panopto_watched_summary')})
+                    <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span>🎬 {t('panopto_card_title')} ({watchedCount}/{courseRecordings.length} {t('panopto_watched_summary')})</span>
+                      <span className="badge-beta">{lang === 'he' ? 'בטא' : 'BETA'}</span>
                     </h4>
                     <a
                       href={panoptoExternalUrl}
@@ -6835,15 +6856,27 @@ function CourseDetailView({
 }
 
 // 7. ABOUT TAB
-function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string; lang: 'he' | 'en'; tourStep?: number; onStartTour: () => void }) {
+function AboutTab({
+  t,
+  lang,
+  tourStep,
+  onStartTour,
+  logoImg: customLogo,
+}: {
+  t: (key: any) => string;
+  lang: 'he' | 'en';
+  tourStep?: number;
+  onStartTour: () => void;
+  logoImg?: string;
+}) {
   const isHe = lang === 'he';
-  const manifestVersion = browser.runtime.getManifest()?.version || '5.1.1';
+  const manifestVersion = browser.runtime.getManifest()?.version || '4.0.0';
 
   return (
     <div className={`tab-about glass-panel ${tourStep === 9 ? 'tour-highlight' : ''}`} style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       {/* Brand Hero Header */}
       <div className="about-hero">
-        <img src={logoImg} alt="Noodle Logo" className="about-hero-logo" />
+        <img src={customLogo || logoImg} alt="Noodle Logo" className="about-hero-logo" />
         <div>
           <h2 style={{ fontSize: '2rem', margin: '0 0 0.35rem 0', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <span>Noodle</span>
@@ -6861,20 +6894,19 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
 
       {/* Description & Credits Card */}
       <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem 1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-        <p style={{ lineHeight: '1.8', fontSize: '1.1rem', margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>
+        <p style={{ lineHeight: '1.8', fontSize: '1.05rem', margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>
           {isHe ? (
             <>
-              <strong>Noodle 🍜</strong> הוא כלי עזר חכם בקוד פתוח המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל, לסנן קישורי זום בזמן אמת, ולהוריד קבצים והנחיות במהירות ובפרטיות מוחלטת ללא שרתים חיצוניים.
+              <strong>Noodle</strong> הוא כלי עזר חכם בקוד פתוח המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל, לסנן קישורי זום בזמן אמת, לעקוב אחר הקלטות פנופטו (בטא), ולהוריד קבצים והנחיות במהירות ובפרטיות מוחלטת ללא שרתים חיצוניים.
             </>
           ) : (
             <>
-              <strong>Noodle 🍜</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, provides fast offline-ready access to files, and protects your privacy without any external backend servers.
+              <strong>Noodle</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, tracks Panopto recordings (beta), provides fast offline-ready access to files, and protects your privacy without any external backend servers.
             </>
           )}
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', fontSize: '1rem', color: 'var(--text-secondary)' }}>
-          <span>❤️</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>
           <span>
             <strong>{t('developed_by')}</strong> {t('credits_authors')}
           </span>
@@ -6883,12 +6915,27 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
         {/* Action / Review / Repo Buttons */}
         <div className="about-actions-grid">
           <a
+            href="https://noodle.mantin.dev/"
+            target="_blank"
+            rel="noreferrer"
+            className="about-link-card featured"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+            <span>{t('website_link')}</span>
+          </a>
+          <a
             href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope"
             target="_blank"
             rel="noreferrer"
             className="about-link-card"
           >
-            <span>⭐</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
             <span>{t('review_extension_label')}</span>
           </a>
           <a
@@ -6897,7 +6944,9 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
             rel="noreferrer"
             className="about-link-card"
           >
-            <span>🐙</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+            </svg>
             <span>{t('github_repo_link')}</span>
           </a>
           <a
@@ -6906,14 +6955,21 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
             rel="noreferrer"
             className="about-link-card"
           >
-            <span>🐛</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
             <span>{t('github_issues_link')}</span>
           </a>
           <a
             href="mailto:noodle.d3v@gmail.com"
             className="about-link-card"
           >
-            <span>✉️</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
             <span>noodle.d3v@gmail.com</span>
           </a>
           <div
@@ -6921,11 +6977,12 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
             onClick={onStartTour}
             style={{ cursor: 'pointer' }}
           >
-            <span>🚀</span>
-            <span>{isHe ? 'הפעל סיור מודרך' : 'Launch Onboarding Tour'}</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <span>{isHe ? 'סיור מודרך' : 'Interactive Tour'}</span>
           </div>
         </div>
-
       </div>
 
       {/* Expandable Sections */}
@@ -6938,21 +6995,23 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
           <div className="about-accordion-content">
             {isHe ? (
               <ul>
-                <li><strong>🔄 סנכרון דו-כיווני ל-Google Tasks ולוח שנה:</strong> דדליינים מהמודל מסונכרנים אוטומטית לרשימת המשימות שלך. משימות שסימנת כבוצעות או שמחקת מסונכרנות באופן שקוף.</li>
-                <li><strong>🧪 זיהוי חכם לקורסי מעבדה:</strong> זיהוי אוטומטי של המילה "מעבדה" בשם הקורס והצעה להסתרת כל המטלות כברירת מחדל, כדי שלא תוצף בעשרות ניסויים שאינך נדרש להגיש.</li>
-                <li><strong>🎯 Spotlight וספירה לאחור חיה:</strong> כרטיס המטלה הבאה מציג ספירה לאחור מדויקת עם צבעי התראה מותאמים אישית (ירוק/צהוב/אדום) וקישורי הגשה וקבצים ישירים.</li>
-                <li><strong>📹 Zoom Hub לשיעורים ותרגולים:</strong> זיהוי הרצאות ותרגולים שמתקיימים כעת והצטרפות בלחיצה אחת, עם אפשרות להסתיר קבוצות תרגול לא רלוונטיות.</li>
-                <li><strong>📁 גישה ישירה לקבצים ולהגשות:</strong> צפייה והורדה של קבצי הנחיות, קבצי נושא וקבצים שהגשת בעבר ישירות מתוך התוסף ללא מעבר בין דפי המודל.</li>
-                <li><strong>🎨 ערכות נושא מותאמות:</strong> בחירה בין ערכת נושא כהה (Dark), נודלס חמים (Noodle 🍜), או קפה אספרסו עשיר (Coffee ☕).</li>
+                <li><strong>סנכרון דו-כיווני ל-Google Tasks ולוח שנה:</strong> דדליינים מהמודל מסונכרנים אוטומטית לרשימת המשימות שלך. משימות שסימנת כבוצעות או שמחקת מסונכרנות באופן שקוף.</li>
+                <li><strong>זיהוי חכם לקורסי מעבדה:</strong> זיהוי אוטומטי של המילה "מעבדה" בשם הקורס והצעה להסתרת כל המטלות כברירת מחדל, כדי שלא תוצף בעשרות ניסויים שאינך נדרש להגיש.</li>
+                <li><strong>Spotlight וספירה לאחור חיה:</strong> כרטיס המטלה הבאה מציג ספירה לאחור מדויקת עם צבעי התראה מותאמים אישית (ירוק/צהוב/אדום) וקישורי הגשה וקבצים ישירים.</li>
+                <li><strong>Zoom Hub לשיעורים ותרגולים:</strong> זיהוי הרצאות ותרגולים שמתקיימים כעת והצטרפות בלחיצה אחת, עם אפשרות להסתיר קבוצות תרגול לא רלוונטיות.</li>
+                <li><strong>מעקב הקלטות Panopto (בטא):</strong> סנכרון אוטומטי של הרצאות ותרגולים מוקלטים מתוך תיקיות פנופטו ישירות לנושאי הקורס.</li>
+                <li><strong>גישה ישירה לקבצים ולהגשות:</strong> צפייה והורדה של קבצי הנחיות, קבצי נושא וקבצים שהגשת בעבר ישירות מתוך התוסף ללא מעבר בין דפי המודל.</li>
+                <li><strong>ערכות נושא מותאמות:</strong> בחירה בין ערכת נושא כהה (Dark), נודלס חמים (Noodle), או קפה אספרסו עשיר (Coffee).</li>
               </ul>
             ) : (
               <ul>
-                <li><strong>🔄 2-Way Google Tasks & Calendar Sync:</strong> Automatically synchronize deadlines to Google Tasks with instant updates when assignments are marked done or submitted.</li>
-                <li><strong>🧪 Lab Course Experiment Detection:</strong> Detects lab courses ("מעבדה") and offers to hide all assignments by default so you aren't overwhelmed with experiments you don't take.</li>
-                <li><strong>🎯 Next Task Spotlight & Live Countdown:</strong> Real-time countdown for upcoming submissions with customizable color thresholds (green/yellow/red) and 1-click submission links.</li>
-                <li><strong>📹 Zoom Hub:</strong> Highlights active lectures and recitations happening right now, with easy per-meeting visibility toggles to hide recitations you don't attend.</li>
-                <li><strong>📁 Fast File Browser & Attachments:</strong> View and download subject materials, prompt PDFs, and your past submitted files without navigating endless Moodle pages.</li>
-                <li><strong>🎨 Custom Themes:</strong> Switch anytime between Dark, Noodle (warm beige/orange 🍜), and Coffee (deep espresso ☕).</li>
+                <li><strong>2-Way Google Tasks & Calendar Sync:</strong> Automatically synchronize deadlines to Google Tasks with instant updates when assignments are marked done or submitted.</li>
+                <li><strong>Lab Course Experiment Detection:</strong> Detects lab courses ("מעבדה") and offers to hide all assignments by default so you aren't overwhelmed with experiments you don't take.</li>
+                <li><strong>Next Task Spotlight & Live Countdown:</strong> Real-time countdown for upcoming submissions with customizable color thresholds (green/yellow/red) and 1-click submission links.</li>
+                <li><strong>Zoom Hub:</strong> Highlights active lectures and recitations happening right now, with easy per-meeting visibility toggles to hide recitations you don't attend.</li>
+                <li><strong>Panopto Recordings Tracking (Beta):</strong> Automatic sync of lecture and recitation recordings from Panopto folders directly grouped within course views.</li>
+                <li><strong>Fast File Browser & Attachments:</strong> View and download subject materials, prompt PDFs, and your past submitted files without navigating endless Moodle pages.</li>
+                <li><strong>Custom Themes:</strong> Switch anytime between Dark, Noodle (warm terracotta), and Coffee (deep espresso).</li>
               </ul>
             )}
           </div>
@@ -6966,19 +7025,19 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
           <div className="about-accordion-content">
             {isHe ? (
               <ul>
-                <li><strong>🧪 איך להשתמש במעבדות ביעילות?</strong> לאחר הוספת קורס מעבדה והסתרת כל המטלות, עבור ללשונית "מטלות", סמן את תיבת הסינון "מוסתרים", ולחץ על סמל העין (👁) רק ליד הניסויים שהוקצו לך. כך תראה בלוח הבקרה רק את הניסויים שבאמת עליך לבצע!</li>
-                <li><strong>📅 סנכרון מטלות ללא תאריך יעד:</strong> סטודנטים רבים רוצים לראות גם פרויקטים פתוחים או תרגילי רשות ברשימת המשימות שלהם. ניתן להפעיל זאת בקלות בהגדרות Google Tasks.</li>
-                <li><strong>🎨 כינויי קורסים וצבעים:</strong> לחץ על "ניהול קורסים" בלוח הבקרה והענק לכל קורס שם קצר ומוכר וצבע ייחודי שיסונכרן בכל הממשק.</li>
-                <li><strong>💾 גיבוי ושחזור קונפיגורציה:</strong> עובר למחשב אחר או משתמש גם בפיירפוקס? ייצא קובץ גיבוי בלשונית ההגדרות וייבא אותו בשניות בכל דפדפן.</li>
-                <li><strong>⌨️ קיצורי דרך בסיור המודרך:</strong> השתמש במקשי החצים ימינה ושמאלה כדי לנווט בין שלבי הסיור, ולחץ על Esc כדי לצאת בכל עת.</li>
+                <li><strong>איך להשתמש במעבדות ביעילות?</strong> לאחר הוספת קורס מעבדה והסתרת כל המטלות, עבור ללשונית "מטלות", סמן את תיבת הסינון "מוסתרים", ולחץ על סמל העין רק ליד הניסויים שהוקצו לך. כך תראה בלוח הבקרה רק את הניסויים שבאמת עליך לבצע!</li>
+                <li><strong>סנכרון מטלות ללא תאריך יעד:</strong> סטודנטים רבים רוצים לראות גם פרויקטים פתוחים או תרגילי רשות ברשימת המשימות שלהם. ניתן להפעיל זאת בקלות בהגדרות Google Tasks.</li>
+                <li><strong>כינויי קורסים וצבעים:</strong> לחץ על "ניהול קורסים" בלוח הבקרה והענק לכל קורס שם קצר ומוכר וצבע ייחודי שיסונכרן בכל הממשק.</li>
+                <li><strong>גיבוי ושחזור קונפיגורציה:</strong> עובר למחשב אחר או משתמש גם בפיירפוקס? ייצא קובץ גיבוי בלשונית ההגדרות וייבא אותו בשניות בכל דפדפן.</li>
+                <li><strong>קיצורי דרך בסיור המודרך:</strong> השתמש במקשי החצים ימינה ושמאלה כדי לנווט בין שלבי הסיור, ולחץ על Esc כדי לצאת בכל עת.</li>
               </ul>
             ) : (
               <ul>
-                <li><strong>🧪 How to efficiently handle lab courses:</strong> When adding a lab course, choose to hide all assignments. Then head over to the Assignments tab, check the "Hidden" filter, and click the eye icon (👁) only on the experiments you actually need to submit!</li>
-                <li><strong>📅 Syncing tasks without a deadline:</strong> If you want ongoing projects and optional exercises to appear in your Google Tasks, enable "Sync assignments without deadline" under Settings.</li>
-                <li><strong>🎨 Custom Course Nicknames & Colors:</strong> Tap "Manage Courses" on your dashboard to assign short nicknames and distinct colors for instant recognition across all tabs.</li>
-                <li><strong>💾 Cross-device Backup & Restore:</strong> Switching laptops or using both Chrome and Firefox? Export your JSON config in Settings and import it anywhere in seconds.</li>
-                <li><strong>⌨️ Keyboard Navigation:</strong> During the interactive tour, use arrow keys to navigate forward/back and hit Escape to exit at any time.</li>
+                <li><strong>How to efficiently handle lab courses:</strong> When adding a lab course, choose to hide all assignments. Then head over to the Assignments tab, check the "Hidden" filter, and click the eye icon only on the experiments you actually need to submit!</li>
+                <li><strong>Syncing tasks without a deadline:</strong> If you want ongoing projects and optional exercises to appear in your Google Tasks, enable "Sync assignments without deadline" under Settings.</li>
+                <li><strong>Custom Course Nicknames & Colors:</strong> Tap "Manage Courses" on your dashboard to assign short nicknames and distinct colors for instant recognition across all tabs.</li>
+                <li><strong>Cross-device Backup & Restore:</strong> Switching laptops or using both Chrome and Firefox? Export your JSON config in Settings and import it anywhere in seconds.</li>
+                <li><strong>Keyboard Navigation:</strong> During the interactive tour, use arrow keys to navigate forward/back and hit Escape to exit at any time.</li>
               </ul>
             )}
           </div>
@@ -6992,17 +7051,17 @@ function AboutTab({ t, lang, tourStep, onStartTour }: { t: (key: any) => string;
           <div className="about-accordion-content">
             {isHe ? (
               <ul>
-                <li><strong>🔒 100% Client-Only & Decentralized:</strong> Noodle פועל אך ורק בתוך הדפדפן שלך. אין לנו שרת מרכזי, שרת פרוקסי או בסיס נתונים בענן.</li>
-                <li><strong>🚫 ללא מעקב או טלמטריה:</strong> אפס מעקב (Analytics), אפס קוקיות מעקב ואפס שיתוף נתונים עם צדדים שלישיים.</li>
-                <li><strong>🛡️ אחסון מקומי מאובטח:</strong> פרטי החיבור ואסימון הגישה למודל נשמרים מוצפנים באחסון המקומי של הדפדפן שלך בלבד (browser.storage.local).</li>
-                <li><strong>🌐 קוד פתוח ושקוף:</strong> הקוד זמין במלואו לבדיקה ותרומה ב-GitHub, ונכתב מתוך אהבה ומחויבות לקהילת הסטודנטים ב-TAU.</li>
+                <li><strong>100% Client-Only & Decentralized:</strong> Noodle פועל אך ורק בתוך הדפדפן שלך. אין לנו שרת מרכזי, שרת פרוקסי או בסיס נתונים בענן.</li>
+                <li><strong>ללא מעקב או טלמטריה:</strong> אפס מעקב (Analytics), אפס קוקיות מעקב ואפס שיתוף נתונים עם צדדים שלישיים.</li>
+                <li><strong>אחסון מקומי מאובטח:</strong> פרטי החיבור ואסימון הגישה למודל נשמרים באחסון המקומי של הדפדפן שלך בלבד (browser.storage.local).</li>
+                <li><strong>קוד פתוח ושקוף:</strong> הקוד זמין במלואו לבדיקה ותרומה ב-GitHub, ונכתב מתוך אהבה ומחויבות לקהילת הסטודנטים ב-TAU.</li>
               </ul>
             ) : (
               <ul>
-                <li><strong>🔒 100% Client-Only & Decentralized:</strong> Noodle executes entirely within your browser. There is no middleman server, proxy, or backend database.</li>
-                <li><strong>🚫 Zero Analytics or Telemetry:</strong> No tracking scripts, no behavioral telemetry, and no third-party data collection whatsoever.</li>
-                <li><strong>🛡️ Secure Local Storage:</strong> All credentials and Moodle access tokens are stored strictly within your browser's private local storage (browser.storage.local).</li>
-                <li><strong>🌐 Open Source Transparency:</strong> The complete codebase is open on GitHub for auditing, contributions, and community improvements.</li>
+                <li><strong>100% Client-Only & Decentralized:</strong> Noodle executes entirely within your browser. There is no middleman server, proxy, or backend database.</li>
+                <li><strong>Zero Analytics or Telemetry:</strong> No tracking scripts, no behavioral telemetry, and no third-party data collection whatsoever.</li>
+                <li><strong>Secure Local Storage:</strong> All credentials and Moodle access tokens are stored strictly within your browser's private local storage (browser.storage.local).</li>
+                <li><strong>Open Source Transparency:</strong> The complete codebase is open on GitHub for auditing, contributions, and community improvements.</li>
               </ul>
             )}
           </div>
