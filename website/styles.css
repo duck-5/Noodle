@@ -234,6 +234,12 @@ body::after {
   gap: 0.85rem;
 }
 
+.nav-install-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Theme Switcher Button Group */
 .theme-picker {
   display: flex;
@@ -869,113 +875,62 @@ body::after {
   fill: none;
 }
 
-/* ZERO-BACKEND PRIVACY DIAGRAM */
-.privacy-box {
+/* PRIVACY & SECURITY CARDS */
+.privacy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.privacy-card {
   background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 3rem;
-  box-shadow: var(--shadow-md);
-  text-align: center;
-}
-
-.privacy-diagram {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2rem;
-  margin: 2.8rem 0;
-  flex-wrap: wrap;
-}
-
-.diagram-node {
-  background: var(--bg-subtle);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  padding: 1.5rem 1.8rem;
-  min-width: 200px;
-  text-align: center;
-  transition: transform var(--transition-fast);
+  padding: 2.2rem 1.8rem;
+  transition: all var(--transition-smooth);
+  display: flex;
+  flex-direction: column;
 }
 
-.diagram-node:hover {
-  transform: translateY(-3px);
-  border-color: var(--accent-terracotta);
+.privacy-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
 }
 
-.diagram-icon {
+.privacy-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 0.6rem;
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
+  margin-bottom: 1.2rem;
   color: var(--accent-terracotta);
 }
 
-.diagram-icon svg {
-  width: 26px;
-  height: 26px;
+.privacy-card-icon svg {
+  width: 22px;
+  height: 22px;
   stroke: var(--accent-terracotta);
-  stroke-width: 1.8;
+  stroke-width: 2;
   fill: none;
 }
 
-.blocked-node .diagram-icon {
-  background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
-}
-
-.blocked-node .diagram-icon svg {
-  stroke: #dc2626;
-}
-
-.diagram-node h4 {
-  font-size: 1.05rem;
+.privacy-card h4 {
+  font-size: 1.15rem;
   font-weight: 700;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.6rem;
+  color: var(--text-main);
 }
 
-.diagram-node p {
-  font-size: 0.8rem;
+.privacy-card p {
+  font-size: 0.92rem;
   color: var(--text-muted);
-}
-
-.diagram-arrow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.3rem;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--accent-terracotta);
-  font-weight: 600;
-}
-
-.diagram-arrow .arrow-line {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.diagram-arrow .arrow-blocked svg {
-  width: 16px;
-  height: 16px;
-  stroke: #dc2626;
-  stroke-width: 2.5;
-  fill: none;
-  vertical-align: middle;
-}
-
-.blocked-node {
-  border: 2px dashed rgba(220, 38, 38, 0.4);
-  background: rgba(220, 38, 38, 0.04);
-  opacity: 0.75;
-}
-
-.blocked-node h4 {
-  color: #dc2626;
+  line-height: 1.55;
+  margin: 0;
 }
 
 /* FAQ ACCORDION */
@@ -1038,9 +993,10 @@ body::after {
 /* INSTALL / DOWNLOAD GRID */
 .install-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 780px;
+  margin: 2rem auto 0;
   gap: 1.5rem;
-  margin-top: 2rem;
 }
 
 .install-card {
@@ -1213,6 +1169,9 @@ body::after {
   .pain-grid {
     grid-template-columns: 1fr;
   }
+  .privacy-grid {
+    grid-template-columns: 1fr;
+  }
   .feature-tab-panel {
     grid-template-columns: 1fr;
     gap: 2rem;
@@ -1242,11 +1201,11 @@ body::after {
   .feature-tabs-wrap {
     padding: 1.5rem;
   }
-  .privacy-diagram {
+  .hero-cta-group {
     flex-direction: column;
-    gap: 1rem;
+    width: 100%;
   }
-  .diagram-arrow .arrow-line {
-    transform: rotate(90deg);
+  .hero-cta-group .btn {
+    width: 100%;
   }
 }
