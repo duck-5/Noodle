@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Noodle",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsnawLB3kOVdOSx+yxMtp1SbGuKfqLfY+0kapcJtK3SN6mXyAjIpgcIK7JTRoaCx8QNbdI7/TkedXJx75DyavoygJQJy8+X9wbPIz2oNIo+OuXT5lX8A9XQ1GvxUcXz6ICth84AgUuNitQUjk7YsJjrSoN+8Pmsdh0QuAbwXKYmL/FNSoHFSJR2o8QbzSHtVuGupB0+kaKph88kp82uNG8n4adLj5RIHOH43rAb4tNDrMm4OUxOT7UsPSojuFk/cpIWjGNZ6A07WPTsArqzJQxwW7xQGv6SYeBQMFJ68uwQxyQ/vi1XUivlCjdPRAQhXMfgwXijZzoxTM4UnOXVgzewIDAQAB",
-  "version": "4.0.0",
+  "version": "4.0.2",
   "description": "Direct client-side sync of Moodle assignments and grades to Google Tasks",
   "permissions": [
     "storage",

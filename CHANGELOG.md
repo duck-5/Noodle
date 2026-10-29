@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+
+## [4.0.2] - 2026-10-29
 ### Added
 - **Official Website Links & Minimalist About Page Overhaul (`apps/extension/src/options/App.tsx`, `App.css`, `manifest.json`, `shared/i18n.ts`)**:
   - Replaced cluttering emoji icons across the About tab and link cards with sleek, monochromatic inline SVG outline icons.

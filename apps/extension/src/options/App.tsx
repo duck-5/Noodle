@@ -6870,7 +6870,7 @@ function AboutTab({
   logoImg?: string;
 }) {
   const isHe = lang === 'he';
-  const manifestVersion = browser.runtime.getManifest()?.version || '4.0.0';
+  const manifestVersion = browser.runtime.getManifest()?.version || '4.0.2';
 
   return (
     <div className={`tab-about glass-panel ${tourStep === 9 ? 'tour-highlight' : ''}`} style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
