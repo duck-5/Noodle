@@ -29,10 +29,10 @@ try {
   if (chromeManifest.background.scripts) {
     throw new Error('Chrome manifest should not have background.scripts');
   }
-  if (chromeManifest.key) {
-    throw new Error('Chrome production manifest should not contain developer key');
+  if (!chromeManifest.key) {
+    throw new Error('Chrome unpacked dist manifest should contain developer key for static OAuth redirect URI');
   }
-  console.log('   ✓ Chrome MV3 service worker properly configured in dist/ (developer key stripped)');
+  console.log('   ✓ Chrome MV3 service worker properly configured in dist/ (static developer key preserved)');
 
   // 2. Test Firefox Build
   console.log('2. Testing Firefox Extension Build (TC-EXT-BRW-01)...');

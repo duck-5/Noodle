@@ -57,7 +57,7 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
   } else if (message.type === 'SYNC_GOOGLE_TASKS') {
     promise = triggerGoogleTasksSync(message.interactive || false)
       .then(async (res) => {
-        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now() });
+        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now(), lastGoogleAuthAlertTime: 0 });
         return { success: true, status: res };
       })
       .catch(async (err) => {
@@ -625,20 +625,27 @@ async function performBackgroundSync(): Promise<SyncResult> {
     if (settings.googleTasksEnabled) {
       try {
         await triggerGoogleTasksSync(false);
-        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now() });
+        await browser.storage.local.set({ googleTasksAuthError: null, googleTasksLastSync: Date.now(), lastGoogleAuthAlertTime: 0 });
       } catch (e: any) {
         googleSyncError = e?.message || String(e);
         console.error('Google Tasks sync failed:', e);
         await browser.storage.local.set({ googleTasksAuthError: googleSyncError });
 
-        // Alert user via browser notification if unauthenticated
+        // Alert user via browser notification if unauthenticated (throttled to at most once per 24 hours)
         try {
-          await browser.notifications.create('google_tasks_auth_alert', {
-            type: 'basic',
-            iconUrl: browser.runtime.getURL('icon-128.png'),
-            title: 'Noodle — Google Tasks',
-            message: 'סנכרון Google Tasks נכשל: נדרש אימות. לחץ לפתיחת Noodle.',
-          });
+          const { lastGoogleAuthAlertTime } = (await browser.storage.local.get('lastGoogleAuthAlertTime')) as {
+            lastGoogleAuthAlertTime?: number;
+          };
+          const now = Date.now();
+          if (!lastGoogleAuthAlertTime || now - lastGoogleAuthAlertTime > 24 * 60 * 60 * 1000) {
+            await browser.notifications.create('google_tasks_auth_alert', {
+              type: 'basic',
+              iconUrl: browser.runtime.getURL('icon-128.png'),
+              title: 'Noodle — Google Tasks',
+              message: 'סנכרון Google Tasks נכשל: נדרש אימות. לחץ לפתיחת Noodle.',
+            });
+            await browser.storage.local.set({ lastGoogleAuthAlertTime: now });
+          }
         } catch {
           // notification fallback
         }
@@ -683,7 +690,7 @@ async function getLaunchWebAuthFlowToken(clientId: string, interactive: boolean,
 
   const userEmail = cached.googleUserEmail;
   const hintParam = userEmail ? `&login_hint=${encodeURIComponent(userEmail)}` : '';
-  const baseAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks')}${hintParam}`;
+  const baseAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUrl)}&scope=${encodeURIComponent('https://www.googleapis.com/auth/tasks email')}${hintParam}`;
 
   const executeAuth = (url: string, isInteractive: boolean): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -779,12 +786,25 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
   } catch (err: any) {
     // If cached token was revoked or expired early (401), refresh token and retry once
     if (String(err?.message || err).includes('401')) {
-      await browser.storage.local.remove(['googleAccessToken', 'googleTokenExpiry']);
-      accessToken = await getLaunchWebAuthFlowToken(clientId, interactive, true);
-      syncErrors.length = 0;
-      listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (e: string) => {
-        syncErrors.push(e);
-      });
+      if (interactive) {
+        await browser.storage.local.remove(['googleAccessToken', 'googleTokenExpiry']);
+        accessToken = await getLaunchWebAuthFlowToken(clientId, true, true);
+        syncErrors.length = 0;
+        listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (e: string) => {
+          syncErrors.push(e);
+        });
+      } else {
+        try {
+          accessToken = await getLaunchWebAuthFlowToken(clientId, false, true);
+          syncErrors.length = 0;
+          listId = await getOrCreateTaskList(accessToken, settings.googleTasksListName, (e: string) => {
+            syncErrors.push(e);
+          });
+        } catch {
+          await browser.storage.local.remove(['googleAccessToken', 'googleTokenExpiry']);
+          throw err;
+        }
+      }
     } else {
       throw err;
     }

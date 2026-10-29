@@ -2,9 +2,10 @@ import os
 import shutil
 import zipfile
 import subprocess
+import json
 from pathlib import Path
 
-def create_zip_from_dir(source_dir, output_zip):
+def create_zip_from_dir(source_dir, output_zip, strip_manifest_key=False):
     with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, dirs, files in os.walk(source_dir):
             dirs[:] = [d for d in dirs if d != '_metadata']
@@ -14,7 +15,13 @@ def create_zip_from_dir(source_dir, output_zip):
                 file_path = os.path.join(root, file)
                 # Enforce forward slashes for cross-platform compatibility (especially AMO)
                 arcname = os.path.relpath(file_path, source_dir).replace('\\', '/')
-                zipf.write(file_path, arcname)
+                if strip_manifest_key and arcname == 'manifest.json':
+                    with open(file_path, 'r', encoding='utf-8') as mf:
+                        manifest_data = json.load(mf)
+                    manifest_data.pop('key', None)
+                    zipf.writestr(arcname, json.dumps(manifest_data, indent=2))
+                else:
+                    zipf.write(file_path, arcname)
 
 def main():
     root_dir = Path(__file__).parent.parent.resolve()
@@ -38,7 +45,7 @@ def main():
     print("\n--- Building Chrome Extension ---")
     subprocess.run(["pnpm", "run", "build:chrome"], cwd=extension_dir, check=True, shell=True)
     chrome_zip = releases_dir / 'noodle-chrome.zip'
-    create_zip_from_dir(dist_dir, chrome_zip)
+    create_zip_from_dir(dist_dir, chrome_zip, strip_manifest_key=True)
     print(f"[SUCCESS] Chrome build packaged: {chrome_zip}")
 
     print("\n--- Building Firefox Extension ---")

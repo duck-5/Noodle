@@ -61,6 +61,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added support for configuring a custom Google OAuth 2.0 Client ID (`googleClientId`).
   - Added a manual access token input field with a 1-click "שמור וסנכרן" / "Save & Sync" button as an alternative direct fallback.
 ### Fixed
+- **Google Tasks Developer ID Preservation & OAuth Redirect Parity (`apps/extension/vite.config.ts`, `scripts/build-releases.py`, `scripts/test-build-parity.mjs`, `TC-EXT-BRW-01`, `TC-EXT-BRW-02`)**:
+  - Retained `manifest.key` in `apps/extension/dist/manifest.json` for local unpacked development, guaranteeing the extension keeps the static developer extension ID (`gaiognmkgghdihdeokgmpcdndmencdbj`) and preventing `Error 400: redirect_uri_mismatch`.
+  - Automated stripping of `key` specifically in `scripts/build-releases.py` when packaging `releases/noodle-chrome.zip` for Chrome Web Store uploads, where Google signs packages with the permanent production store ID (`nelflkccefbdpnaphjabcgkpakhdoope`).
+- **Google Tasks Background Re-Authentication & Notification Flood Mitigation (`apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/manifest.json`, `TC-GT-09`)**:
+  - Added `"email"` OAuth scope in `manifest.json` and `serviceWorker.ts` so `tokeninfo` reliably extracts account email, enabling silent non-interactive token renewal (`login_hint` + `prompt=none`) across browser sessions without user popups.
+  - Added a 24-hour notification rate-limiter for `google_tasks_auth_alert`, preventing background periodic sync from bombarding the user with repeated notifications every few minutes if an authentication issue occurs.
+  - Improved 401 recovery in `triggerGoogleTasksSync`: background sync attempts silent token refresh before removing tokens from local storage, avoiding accidental auth state eviction.
 - **Dashboard Width Slider Jumping on Drag (`apps/extension/src/options/App.tsx`)**:
   - Fixed an issue where dragging the range slider in Settings caused the centered container to resize continuously via `onChange`, shifting the container's center and sliding the input thumb away from the cursor mid-drag.
   - Decoupled slider interaction using local component state (`localWidth`), allowing smooth live preview of the target pixel value while committing the change to `dashboardMaxWidth` and storage only upon pointer release (`onPointerUp`, `onMouseUp`, `onTouchEnd`) or keyboard navigation (`onKeyUp`).

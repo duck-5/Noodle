@@ -44,7 +44,9 @@
       "id": "noodle@tau",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -66,7 +68,8 @@
   "oauth2": {
     "client_id": "510394355212-0e3ums7pu5raagej4gg14nrkt9o06m78.apps.googleusercontent.com",
     "scopes": [
-      "https://www.googleapis.com/auth/tasks"
+      "https://www.googleapis.com/auth/tasks",
+      "email"
     ]
   },
   "options_page": "options.html"
