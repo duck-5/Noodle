@@ -97,15 +97,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isDone) {
         demoTaskCard.style.opacity = '0.6';
         demoTaskCard.style.textDecoration = 'line-through';
-        demoCheckBtn.textContent = '↩ Undo';
-        demoStatusBadge.textContent = '✓ Completed (Synced to Google Tasks)';
+        demoCheckBtn.innerHTML = '<svg class="mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg> Undo';
+        demoStatusBadge.innerHTML = '<svg class="mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Completed (Synced to Google Tasks)';
         demoStatusBadge.style.background = '#2a9d8f';
         demoStatusBadge.style.color = '#ffffff';
       } else {
         demoTaskCard.style.opacity = '1';
         demoTaskCard.style.textDecoration = 'none';
-        demoCheckBtn.textContent = '✓ Mark Done';
-        demoStatusBadge.textContent = '⏳ Due in 18h';
+        demoCheckBtn.innerHTML = '<svg class="mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Mark Done';
+        demoStatusBadge.innerHTML = '<svg class="mini-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Due in 18h';
         demoStatusBadge.style.background = '#ef4444';
         demoStatusBadge.style.color = '#ffffff';
       }

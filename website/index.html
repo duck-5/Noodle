@@ -34,15 +34,27 @@
       <div class="nav-actions">
         <!-- Live Theme Switcher -->
         <div class="theme-picker" title="Toggle Theme">
-          <button class="theme-btn active" data-theme="light" title="Warm Light">☀️</button>
-          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">☕</button>
-          <button class="theme-btn" data-theme="dark" title="Dark Espresso">🌙</button>
+          <button class="theme-btn active" data-theme="light" title="Warm Light">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="dark" title="Dark Espresso">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          </button>
         </div>
 
-        <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
-          <span>Get Extension</span>
-          <span>↗</span>
-        </a>
+        <div class="nav-install-btns">
+          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
+            <span>Chrome</span>
+            <span>↗</span>
+          </a>
+          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm">
+            <span>Firefox</span>
+            <span>↗</span>
+          </a>
+        </div>
       </div>
     </div>
   </header>
@@ -52,24 +64,27 @@
     <div class="container">
       <div class="hero-pill-badge">
         <span class="hero-pill-dot"></span>
-        <span>Built by TAU Students • 100% Client-Side • Free & Open Source</span>
+        <span>Open-source browser extension for Tel Aviv University</span>
       </div>
 
       <h1 class="hero-title">
-        Moodle, re-engineered for<br>
+        A better Moodle experience for<br>
         <span>Tel Aviv University.</span>
       </h1>
 
       <p class="hero-subtitle">
-        The unified cockpit companion that brings your deadlines, grades, course files, and Zoom links into one lightning-fast dashboard — with instant 2-way <strong>Google Tasks</strong> synchronization.
+        All your deadlines, Zoom meetings, Panopto recordings, and course files in one fast, focused dashboard — with automatic 2-way <strong>Google Tasks</strong> synchronization.
       </p>
 
       <div class="hero-cta-group">
         <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z"/>
-          </svg>
-          <span>Add to Chrome — It's Free</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" x2="12" y1="8" y2="8"/><line x1="3.95" x2="8.54" y1="6.06" y2="14"/><line x1="10.88" x2="15.46" y1="21.94" y2="14"/></svg>
+          <span>Add to Chrome</span>
+        </a>
+
+        <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a8 8 0 0 0-8 8c0 4.418 3.582 8 8 8 2.5 0 4.5-1 5.5-2.5-.5-.5-1-1-1-1.5a3 3 0 0 1 3-3c.5 0 1 .5 1.5 1 0-5.5-4-10-9-10z"/></svg>
+          <span>Add to Firefox</span>
         </a>
 
         <a href="https://github.com/duck-5/Noodle" target="_blank" class="btn btn-secondary">
@@ -81,10 +96,22 @@
       </div>
 
       <div class="hero-badges-row">
-        <span>🔒 Zero Middleman Backend</span>
-        <span>⚡ Direct TAU SSO Authentication</span>
-        <span>📅 Google Tasks 2-Way Sync</span>
-        <span>🇮🇱 Hebrew RTL & English</span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Direct TAU SSO
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Client-Side Only
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+          Google Tasks 2-Way Sync
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Hebrew & English
+        </span>
       </div>
 
       <!-- HERO INTERACTIVE MOCKUP SHOWCASE -->
@@ -99,14 +126,14 @@
 
             <!-- Tab Pills to switch live screenshots -->
             <div class="mockup-tab-pills">
-              <button class="mockup-tab-btn active" data-target="mock-dash">Cockpit Dashboard</button>
-              <button class="mockup-tab-btn" data-target="mock-calendar">Split-Pane Calendar</button>
+              <button class="mockup-tab-btn active" data-target="mock-dash">Dashboard</button>
+              <button class="mockup-tab-btn" data-target="mock-calendar">Calendar</button>
               <button class="mockup-tab-btn" data-target="mock-coffee">Coffee Theme</button>
-              <button class="mockup-tab-btn" data-target="mock-zoom">Live Zoom Hub</button>
+              <button class="mockup-tab-btn" data-target="mock-zoom">Zoom & Panopto</button>
             </div>
 
-            <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-terracotta);">
-              Noodle Cockpit v4
+            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">
+              chrome & firefox
             </div>
           </div>
 
@@ -121,62 +148,71 @@
     </div>
   </section>
 
-  <!-- THE REALITY CHECK / WHY NOODLE? -->
+  <!-- WHY NOODLE SECTION -->
   <section id="comparison" class="section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">The Reality Check</span>
-        <h2 class="section-title">Why does default Moodle feel so frustrating?</h2>
+        <span class="section-tag">Why We Built Noodle</span>
+        <h2 class="section-title">Moodle wasn't built for fast daily workflows.</h2>
         <p class="section-subtitle">
-          Tel Aviv University's Moodle is technically powerful, but its interface was designed over 15 years ago. Here's why students struggle with it every semester:
+          Tel Aviv University's Moodle has all your courses, but finding homework or Zoom links takes too many clicks through nested folders and subpages.
         </p>
       </div>
 
       <div class="pain-grid">
         <div class="pain-card">
-          <div class="pain-icon-box">⏳</div>
-          <h3 class="pain-title">The 23:59 Deadline Panic</h3>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+          </div>
+          <h3 class="pain-title">Buried Deadlines</h3>
           <p class="pain-text">
-            Deadlines are buried 4 folders deep in separate course pages. By the time you find where Assignment 3 is submitted, you're scrambling against the countdown clock.
+            Deadlines are spread across different course pages and accordions. Keeping track of what's due this week takes unnecessary mental effort.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Next-Up Spotlight:</strong> Real-time timer and 1-click submit right from your dashboard.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Upcoming Spotlight:</strong> Every active assignment gathered in a single sorted queue with live countdowns.</span>
           </div>
         </div>
 
         <div class="pain-card">
-          <div class="pain-icon-box">📆</div>
-          <h3 class="pain-title">The Calendar Disconnect</h3>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          </div>
+          <h3 class="pain-title">Disconnected Calendar</h3>
           <p class="pain-text">
-            You maintain your life in Google Calendar, but Moodle is an isolated island. You waste hours manually copying due dates — or worse, you forget one.
+            Moodle doesn't sync with your personal calendar. Manually copying due dates into Google Calendar takes time and easily gets outdated.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Native Google Tasks Sync:</strong> Zero-setup 2-way sync that lives in your calendar.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Google Tasks 2-Way Sync:</strong> Assignments sync automatically to Google Tasks and appear directly on your Google Calendar.</span>
           </div>
         </div>
 
         <div class="pain-card">
-          <div class="pain-icon-box">🎥</div>
-          <h3 class="pain-title">The Zoom Scramble</h3>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+          </div>
+          <h3 class="pain-title">Scattered Meetings & Recordings</h3>
           <p class="pain-text">
-            Is the lecture on Zoom today? Where is the link? You waste 10 minutes digging through syllabus text blocks and forum announcements trying to join.
+            Zoom links and Panopto lecture recordings are often buried across forums, announcements, and syllabus documents.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Live Now Banner:</strong> 1-click join whenever a course session is active right now.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Course Meeting Hub:</strong> Live Zoom alerts and organized lecture recordings right inside each course view.</span>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- INTERACTIVE FEATURE EXPLORER -->
+  <!-- FEATURE EXPLORER -->
   <section id="features" class="section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">Deep Feature Suite</span>
-        <h2 class="section-title">Built for the way you actually study.</h2>
+        <span class="section-tag">Features</span>
+        <h2 class="section-title">Everything you need in one place.</h2>
         <p class="section-subtitle">
-          Everything you need to stay on top of your semester, packaged in a cohesive, distraction-free environment.
+          Practical tools designed to cut down clicks and keep you organized throughout the semester.
         </p>
       </div>
 
@@ -184,19 +220,24 @@
         <!-- Feature Tabs Navigation -->
         <div class="feature-nav-bar">
           <button class="feature-nav-btn active" data-panel="panel-cockpit">
-            <span>🎯</span> Cockpit & Spotlight
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <span>Deadlines & Spotlight</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-sync">
-            <span>🔄</span> Google Tasks Sync
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+            <span>Google Tasks Sync</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-calendar">
-            <span>📅</span> Split-Pane Calendar
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+            <span>Calendar View</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-zoom">
-            <span>🎥</span> Zoom Hub & Materials
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+            <span>Zoom & Panopto</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-custom">
-            <span>🎨</span> Personalization & Themes
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+            <span>Themes & Settings</span>
           </button>
         </div>
 
@@ -209,15 +250,15 @@
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Dynamic Urgency Color Coding:</strong> Red (&le;24h), Amber (&le;72h), and Coral so you instantly know what needs attention.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>1-Click Done & Hide:</strong> Check off assignments you've turned in or hide optional tasks with a single button.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Topic File Previews:</strong> Preview problem sets and lecture notes directly without waiting for blank browser tabs.</div>
               </li>
             </ul>
@@ -236,15 +277,15 @@
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Silent Background Refresh:</strong> Persistent authentication using Google's secure OAuth flow without annoying re-login prompts.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Undated Tasks Control:</strong> Choose whether to include assignments lacking explicit deadlines or keep your list strictly deadline-driven.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Auto-Purge & Resolution:</strong> Checking off an assignment in Noodle or Google Tasks automatically syncs the completion status.</div>
               </li>
             </ul>
@@ -263,15 +304,15 @@
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Interactive Pill Navigation:</strong> Click any assignment pill in the monthly grid to scroll directly to its full details in the feed.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Status Tabs:</strong> Effortlessly filter between To Do, Past Due, Completed, and Hidden assignments.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Lab Course Smart Hiding:</strong> Automatic detection for laboratory courses (`מעבדה`), prompting to hide bulk experiment lists.</div>
               </li>
             </ul>
@@ -290,15 +331,15 @@
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Live Now Pulsing Alert:</strong> See an instant "Active Now" banner at the top of the popup with a 1-click Join button.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Section Accordions:</strong> Clean topic drawers that organize course documents by syllabus week.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Direct Course Shortcut:</strong> "Open in Moodle ↗" button whenever you need the raw university page.</div>
               </li>
             </ul>
@@ -317,15 +358,15 @@
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>14 Curated Pastel Swatches:</strong> Terracotta Coral, Mocha Caramel, Desert Sage, Slate Blue, or custom hex codes.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>3 Aesthetic Themes:</strong> Warm Paper Light, Modern Dark Espresso, and the signature cozy Coffee Theme.</div>
               </li>
               <li class="feature-check-item">
-                <span class="feature-check-icon">✓</span>
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
                 <div><strong>Semester Grouping:</strong> Partition your courses by Semester A, Semester B, Summer, and Yearly automatically.</div>
               </li>
             </ul>
@@ -338,104 +379,78 @@
     </div>
   </section>
 
-  <!-- INTERACTIVE BEFORE & AFTER -->
+  <!-- BEFORE & AFTER COMPARISON -->
   <section class="section" style="background: var(--bg-subtle);">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">The Difference</span>
-        <h2 class="section-title">Before Noodle vs. After Noodle</h2>
-        <p class="section-subtitle">A quick comparison of your daily academic workflow.</p>
+        <span class="section-tag">Comparison</span>
+        <h2 class="section-title">Default Moodle vs. Noodle</h2>
+        <p class="section-subtitle">How everyday tasks feel with the extension installed.</p>
       </div>
 
       <div class="comparison-wrap">
         <div class="comp-card before">
           <span class="comp-badge">Default TAU Moodle</span>
-          <h3 class="comp-title">The Cluttered Way</h3>
+          <h3 class="comp-title">Standard Navigation</h3>
           <ul class="comp-list before">
-            <li><span>✕</span> <div><strong>Nested Click Odyssey:</strong> Takes 6 to 9 clicks through accordion trees just to find an assignment prompt.</div></li>
-            <li><span>✕</span> <div><strong>Session Timeouts:</strong> Constant "Session Expired" re-login blocks right before deadlines.</div></li>
-            <li><span>✕</span> <div><strong>Manual Calendar Work:</strong> Having to manually transcribe dates and times into Google Calendar.</div></li>
-            <li><span>✕</span> <div><strong>Buried Zoom Links:</strong> Searching through emails, forums, and syllabus PDFs for meeting passcodes.</div></li>
-            <li><span>✕</span> <div><strong>Lab Course Clutter:</strong> 40 irrelevant optional lab experiments crowding your pending list.</div></li>
+            <li><span class="comp-icon cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span> <div><strong>Nested Navigation:</strong> Multiple clicks through course pages and accordions just to find an assignment prompt.</div></li>
+            <li><span class="comp-icon cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span> <div><strong>Session Timeouts:</strong> Unexpected session expirations while reviewing material or submitting homework.</div></li>
+            <li><span class="comp-icon cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span> <div><strong>Manual Calendar Work:</strong> Having to manually copy due dates and times into Google Calendar.</div></li>
+            <li><span class="comp-icon cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span> <div><strong>Scattered Meeting Links:</strong> Searching through forum announcements and emails for Zoom links and passcodes.</div></li>
+            <li><span class="comp-icon cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span> <div><strong>Cluttered Queues:</strong> Unfiltered lists with dozens of optional lab experiments crowding your homework feed.</div></li>
           </ul>
         </div>
 
         <div class="comp-card after">
-          <span class="comp-badge">With Noodle v4</span>
-          <h3 class="comp-title">The Cockpit Experience</h3>
+          <span class="comp-badge">With Noodle</span>
+          <h3 class="comp-title">Streamlined Workspace</h3>
           <ul class="comp-list after">
-            <li><span>✓</span> <div><strong>Next-Up Spotlight:</strong> Your closest deadline is front and center with live countdown & 1-click submit.</div></li>
-            <li><span>✓</span> <div><strong>Instant Offline Cache:</strong> Cached course data and silent SSO background renewal keep you fast.</div></li>
-            <li><span>✓</span> <div><strong>Direct Google Tasks 2-Way Sync:</strong> Seamless, automated deadline integration with Google Calendar.</div></li>
-            <li><span>✓</span> <div><strong>1-Click Live Zoom Banner:</strong> Pulsing alert joins lectures instantly without searching.</div></li>
-            <li><span>✓</span> <div><strong>Smart Lab Auto-Hiding:</strong> Automatically suggests hiding bulky lab catalogs in 1 click.</div></li>
+            <li><span class="comp-icon check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> <div><strong>Deadline Spotlight:</strong> Nearest deadline pinned at the top with live timer and direct 1-click submission link.</div></li>
+            <li><span class="comp-icon check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> <div><strong>Instant Local Cache:</strong> Course pages, files, and assignments load immediately without waiting for page refreshes.</div></li>
+            <li><span class="comp-icon check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> <div><strong>Google Tasks 2-Way Sync:</strong> Automatic synchronization with Google Tasks so deadlines show up on your Google Calendar.</div></li>
+            <li><span class="comp-icon check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> <div><strong>Live Meeting Alert:</strong> Pulsing banner that lets you join live Zoom lectures or recitations with one click.</div></li>
+            <li><span class="comp-icon check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> <div><strong>Clean Custom Views:</strong> 1-click hiding for completed assignments or optional lab catalogs.</div></li>
           </ul>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ZERO-BACKEND PRIVACY & SECURITY -->
+  <!-- PRIVACY & SECURITY -->
   <section id="privacy" class="section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">Privacy By Architecture</span>
-        <h2 class="section-title">Zero intermediate servers. Zero telemetry.</h2>
+        <span class="section-tag">Privacy</span>
+        <h2 class="section-title">Client-only architecture. No middleman servers.</h2>
         <p class="section-subtitle">
           Noodle operates strictly inside your browser. Your credentials, student ID, grades, and homework never touch any third-party server.
         </p>
       </div>
 
-      <div class="privacy-box">
-        <h3>How Network Traffic Flows in Noodle</h3>
-        
-        <div class="privacy-diagram">
-          <div class="diagram-node">
-            <div class="diagram-icon">💻</div>
-            <h4>Your Browser</h4>
-            <p>Runs Noodle Locally</p>
+      <div class="privacy-grid">
+        <div class="privacy-card">
+          <div class="privacy-card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </div>
-
-          <div class="diagram-arrow">
-            <span>Direct TAU SSO</span>
-            <span class="arrow-line">⟷</span>
-            <span>Local Cookie Auth</span>
-          </div>
-
-          <div class="diagram-node">
-            <div class="diagram-icon">🏛️</div>
-            <h4>tau.ac.il</h4>
-            <p>Official University Moodle</p>
-          </div>
-
-          <div class="diagram-arrow">
-            <span>Direct OAuth</span>
-            <span class="arrow-line">⟷</span>
-            <span>Encrypted Tokens</span>
-          </div>
-
-          <div class="diagram-node">
-            <div class="diagram-icon">📅</div>
-            <h4>Google Tasks</h4>
-            <p>tasks.googleapis.com</p>
-          </div>
-
-          <div class="diagram-arrow">
-            <span style="color: #dc2626;">BLOCKED</span>
-            <span class="arrow-line" style="color: #dc2626;">✕</span>
-            <span style="color: #dc2626;">Zero Traffic</span>
-          </div>
-
-          <div class="diagram-node blocked-node">
-            <div class="diagram-icon">🚫</div>
-            <h4>Middleman Server</h4>
-            <p>Does NOT Exist</p>
-          </div>
+          <h4>Direct TAU SSO</h4>
+          <p>Login happens directly on Tel Aviv University's official Single Sign-On portal (`nidp.tau.ac.il`). Noodle never sees or stores your password.</p>
         </div>
 
-        <p style="max-width: 680px; margin: 0 auto; font-size: 0.95rem; color: var(--text-muted);">
-          Every line of code is open source and auditable on GitHub. Noodle communicates exclusively between your computer, Tel Aviv University's official servers, and Google Tasks API.
-        </p>
+        <div class="privacy-card">
+          <div class="privacy-card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          </div>
+          <h4>Local Storage Only</h4>
+          <p>Course metadata, cached assignments, and preferences are saved exclusively in your browser's encrypted extension storage on your device.</p>
+        </div>
+
+        <div class="privacy-card">
+          <div class="privacy-card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+          </div>
+          <h4>100% Open Source</h4>
+          <p>The entire codebase is public and verifiable on GitHub. No analytics, tracking scripts, or telemetry of any kind.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -444,23 +459,23 @@
   <section id="faq" class="section" style="background: var(--bg-subtle);">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">Got Questions?</span>
+        <span class="section-tag">FAQ</span>
         <h2 class="section-title">Frequently Asked Questions</h2>
-        <p class="section-subtitle">Honest answers to common questions from TAU students.</p>
+        <p class="section-subtitle">Common questions about Noodle from Tel Aviv University students.</p>
       </div>
 
       <div class="faq-wrap">
         <details class="faq-item" open>
           <summary class="faq-summary">Does Tel Aviv University officially make this?</summary>
           <div class="faq-content">
-            No. Noodle is an independent, open-source productivity companion built by TAU students for TAU students. It interacts directly with the standard Moodle mobile web service and web endpoints that your browser already uses.
+            No. Noodle is an independent, open-source productivity companion built by TAU students for TAU students. It interacts directly with standard Moodle web services and student portal endpoints that your browser already uses.
           </div>
         </details>
 
         <details class="faq-item">
           <summary class="faq-summary">Is my TAU password or login data safe?</summary>
           <div class="faq-content">
-            Yes, 100%. Noodle has <strong>no external servers or databases</strong>. Your login occurs directly through Tel Aviv University's official Single Sign-On portal (`nidp.tau.ac.il`). Noodle stores session cookies strictly inside Chrome/Firefox's encrypted local extension storage. We never see, track, or collect your credentials.
+            Yes. Noodle has <strong>no external servers or databases</strong>. Your login occurs directly through Tel Aviv University's official Single Sign-On portal (`nidp.tau.ac.il`). Noodle stores session cookies strictly inside your browser's encrypted local extension storage. We never see, track, or collect your credentials.
           </div>
         </details>
 
@@ -472,16 +487,9 @@
         </details>
 
         <details class="faq-item">
-          <summary class="faq-summary">Is there a mobile version available?</summary>
-          <div class="faq-content">
-            Yes! In addition to the Chrome and Firefox desktop browser extensions, the repository contains a native mobile app built with Expo and React Native for Android devices, sharing the exact same zero-backend sync engine.
-          </div>
-        </details>
-
-        <details class="faq-item">
           <summary class="faq-summary">Is Noodle free? Are there any hidden costs?</summary>
           <div class="faq-content">
-            Noodle is completely free, open-source under the MIT license, and contains zero ads, subscriptions, or tracking. It is maintained out of passion to make university life easier.
+            Noodle is completely free and open-source under the MIT license, with zero ads, subscriptions, or tracking.
           </div>
         </details>
       </div>
@@ -492,39 +500,32 @@
   <section id="download" class="section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag">Get Started</span>
-        <h2 class="section-title">Upgrade your semester in 30 seconds.</h2>
-        <p class="section-subtitle">Pick your platform and take control of your academic schedule.</p>
+        <span class="section-tag">Install</span>
+        <h2 class="section-title">Install Noodle for your browser.</h2>
+        <p class="section-subtitle">Pick your preferred browser and get started in seconds.</p>
       </div>
 
       <div class="install-grid">
-        <div class="install-card featured">
-          <span class="featured-ribbon">Recommended</span>
-          <div class="install-icon">🌐</div>
+        <div class="install-card">
+          <div class="install-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" x2="12" y1="8" y2="8"/><line x1="3.95" x2="8.54" y1="6.06" y2="14"/><line x1="10.88" x2="15.46" y1="21.94" y2="14"/></svg>
+          </div>
           <h3 class="install-title">Google Chrome</h3>
-          <p class="install-desc">Works on Chrome, Brave, Edge, Opera, and all Chromium browsers with full toolbar popup support.</p>
+          <p class="install-desc">Works on Chrome, Brave, Microsoft Edge, Opera, and all Chromium browsers.</p>
           <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
-            <span>Install on Chrome</span>
+            <span>Chrome Web Store</span>
             <span>↗</span>
           </a>
         </div>
 
         <div class="install-card">
-          <div class="install-icon">🦊</div>
+          <div class="install-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a8 8 0 0 0-8 8c0 4.418 3.582 8 8 8 2.5 0 4.5-1 5.5-2.5-.5-.5-1-1-1-1.5a3 3 0 0 1 3-3c.5 0 1 .5 1.5 1 0-5.5-4-10-9-10z"/></svg>
+          </div>
           <h3 class="install-title">Mozilla Firefox</h3>
-          <p class="install-desc">Native Manifest V3 Firefox Add-on with complete cookie isolation and Gecko protocol support.</p>
+          <p class="install-desc">Native Firefox Add-on with complete cookie isolation and Gecko support.</p>
           <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm">
             <span>Firefox Add-on</span>
-            <span>↗</span>
-          </a>
-        </div>
-
-        <div class="install-card">
-          <div class="install-icon">📱</div>
-          <h3 class="install-title">Android Mobile</h3>
-          <p class="install-desc">Expo React Native app with local SQLite storage and Google Tasks sync for students on the go.</p>
-          <a href="https://github.com/duck-5/Noodle" target="_blank" class="btn btn-secondary btn-sm">
-            <span>Get Mobile App</span>
             <span>↗</span>
           </a>
         </div>
@@ -542,7 +543,7 @@
             <span class="brand-title">Noodle</span>
           </div>
           <p class="footer-desc">
-            Decentralized, client-only companion for Tel Aviv University's Moodle. Built with care by students, for students.
+            Open-source browser extension for Tel Aviv University's Moodle. Built by students, for students.
           </p>
         </div>
 
@@ -551,8 +552,10 @@
           <ul class="footer-links">
             <li><a href="#features">Features</a></li>
             <li><a href="#sync">Google Tasks</a></li>
-            <li><a href="#comparison">Moodle Comparison</a></li>
-            <li><a href="#privacy">Zero-Backend Security</a></li>
+            <li><a href="#comparison">Why Noodle?</a></li>
+            <li><a href="#privacy">Privacy & Security</a></li>
+            <li><a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank">Chrome Web Store</a></li>
+            <li><a href="https://github.com/duck-5/Noodle/releases" target="_blank">Firefox Add-on</a></li>
           </ul>
         </div>
 
@@ -572,7 +575,7 @@
           &copy; 2026 Noodle Project. Open-source under the MIT License. Not affiliated with Tel Aviv University or Moodle HQ.
         </div>
         <div>
-          <span>Made with ❤️ in Tel Aviv</span>
+          <span>Made with <svg class="footer-heart" viewBox="0 0 24 24" fill="currentColor"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> in Tel Aviv</span>
         </div>
       </div>
     </div>

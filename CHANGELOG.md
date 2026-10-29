@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Official Noodle Showcase & Companion Landing Website (`website/`)**:
   - Created a modern, student-centered landing page for Noodle built with the signature warm terracotta and coffee design language.
   - Features an interactive mockup switcher, 5-tab deep-dive feature explorer, real-time simulated deadline urgency countdown, side-by-side Before/After comparison with default TAU Moodle, zero-backend privacy architecture diagram, theme picker (Warm Light, Coffee Amber, Dark Espresso), student FAQ, and direct install links.
+  - Upgraded all visual indicators, theme selectors, navigation tabs, architecture nodes, platform cards, and comparison items from emojis to sleek, minimalistic SVG icons.
+- **Cloudflare Tunnel & Mantin Server Gateway Support for `noodle.mantin.dev` (`ServerPages/`)**:
+  - Configured virtual host routing in `ServerPages/nginx.conf` to serve the Noodle website on `noodle.mantin.dev`.
+  - Added bind mount `/home/mantin-server/Noodle/website:/usr/share/nginx/html/noodle:ro` to `ServerPages/docker-compose.yml` for real-time zero-copy site updates.
+  - Created DNS CNAME record for `noodle.mantin.dev` routed via Cloudflare Tunnel gateway `ea794643-cdf3-4780-91be-a93ca5756d44.cfargotunnel.com`.
 - **Configurable Automatic Sync Interval with Moodle Storage API Sync (`apps/extension/src/background/serviceWorker.ts`, `options/App.tsx`, `shared/storage.ts`, `i18n.ts`, `TC-SYNC-05`)**:
   - Added a configurable **Automatic Sync Interval** setting (`syncIntervalMinutes`, presets: 1m, 5m default, 10m, 15m, 30m, 60m, 120m) in Extension Settings.
   - Connected the sync interval with the Moodle Storage API (`NOODLE_SYNC_DATA` calendar event) via `SettingsSyncManager`, automatically round-tripping across devices.
@@ -96,8 +101,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Implemented RFC 8252 Section 7.3 loopback address resolution in `getGoogleOAuthRedirectUrl()`, converting Firefox extension redirect URLs to `http://127.0.0.1/mozoauth2/<subdomain>` natively intercepted by Firefox 86+.
   - Updated background service worker auth flow to dispatch the loopback redirect URI to Google OAuth endpoints.
 ### Changed
+- **Landing Website De-AI Copy Polish & Firefox Distribution Links (`website/index.html`, `website/styles.css`)**:
+  - Rewrote landing page headings, hero text, feature highlights, and comparisons to use authentic, straightforward student language with zero generative-AI buzzwords or corporate hyperbole.
+  - Added primary download/install links for Mozilla Firefox (`https://github.com/duck-5/Noodle/releases`) alongside Google Chrome across the navbar, hero CTA group, download cards, and footer.
+  - Replaced the network traffic flow diagram in the Privacy section with a clean 3-card security breakdown (Direct TAU SSO, Local Storage Only, 100% Open Source).
+  - Adjusted `.install-grid` to a clean 2-column layout (Chrome and Firefox) with responsive mobile stacking.
 - **Replaced Ghost Button with Rotating Chevron Span in Tracked Course Cards (`apps/extension/src/options/App.tsx`)**:
   - Replaced the `.btn-ghost` button at the end of each course item under "My Tracked Courses" with a sleek inline-block rotating chevron `<span>▼</span>` matching the styling and transition behavior of the Upcoming To-Do queue.
+### Removed
+- **Mobile App References on Landing Page (`website/index.html`)**:
+  - Removed all references to a mobile app from the install section, navigation, FAQ, and footer, reflecting that Noodle is currently focused exclusively as a desktop browser extension for Chromium and Firefox.
 
 ## [4.0.0] - 2026-10-28
 ### Fixed
