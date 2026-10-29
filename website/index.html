@@ -34,9 +34,15 @@
       <div class="nav-actions">
         <!-- Live Theme Switcher -->
         <div class="theme-picker" title="Toggle Theme">
-          <button class="theme-btn active" data-theme="light" title="Warm Light">☀️</button>
-          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">☕</button>
-          <button class="theme-btn" data-theme="dark" title="Dark Espresso">🌙</button>
+          <button class="theme-btn active" data-theme="light" title="Warm Light">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="dark" title="Dark Espresso">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          </button>
         </div>
 
         <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
@@ -81,10 +87,22 @@
       </div>
 
       <div class="hero-badges-row">
-        <span>🔒 Zero Middleman Backend</span>
-        <span>⚡ Direct TAU SSO Authentication</span>
-        <span>📅 Google Tasks 2-Way Sync</span>
-        <span>🇮🇱 Hebrew RTL & English</span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Zero Middleman Backend
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Direct TAU SSO Authentication
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+          Google Tasks 2-Way Sync
+        </span>
+        <span>
+          <svg class="hero-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Hebrew RTL & English
+        </span>
       </div>
 
       <!-- HERO INTERACTIVE MOCKUP SHOWCASE -->
@@ -134,35 +152,44 @@
 
       <div class="pain-grid">
         <div class="pain-card">
-          <div class="pain-icon-box">⏳</div>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+          </div>
           <h3 class="pain-title">The 23:59 Deadline Panic</h3>
           <p class="pain-text">
             Deadlines are buried 4 folders deep in separate course pages. By the time you find where Assignment 3 is submitted, you're scrambling against the countdown clock.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Next-Up Spotlight:</strong> Real-time timer and 1-click submit right from your dashboard.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Next-Up Spotlight:</strong> Real-time timer and 1-click submit right from your dashboard.</span>
           </div>
         </div>
 
         <div class="pain-card">
-          <div class="pain-icon-box">📆</div>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          </div>
           <h3 class="pain-title">The Calendar Disconnect</h3>
           <p class="pain-text">
             You maintain your life in Google Calendar, but Moodle is an isolated island. You waste hours manually copying due dates — or worse, you forget one.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Native Google Tasks Sync:</strong> Zero-setup 2-way sync that lives in your calendar.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Native Google Tasks Sync:</strong> Zero-setup 2-way sync that lives in your calendar.</span>
           </div>
         </div>
 
         <div class="pain-card">
-          <div class="pain-icon-box">🎥</div>
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+          </div>
           <h3 class="pain-title">The Zoom Scramble</h3>
           <p class="pain-text">
             Is the lecture on Zoom today? Where is the link? You waste 10 minutes digging through syllabus text blocks and forum announcements trying to join.
           </p>
           <div class="pain-solution">
-            <span>✓</span> <strong>Live Now Banner:</strong> 1-click join whenever a course session is active right now.
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Live Now Banner:</strong> 1-click join whenever a course session is active right now.</span>
           </div>
         </div>
       </div>
@@ -184,19 +211,24 @@
         <!-- Feature Tabs Navigation -->
         <div class="feature-nav-bar">
           <button class="feature-nav-btn active" data-panel="panel-cockpit">
-            <span>🎯</span> Cockpit & Spotlight
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <span>Cockpit & Spotlight</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-sync">
-            <span>🔄</span> Google Tasks Sync
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+            <span>Google Tasks Sync</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-calendar">
-            <span>📅</span> Split-Pane Calendar
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+            <span>Split-Pane Calendar</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-zoom">
-            <span>🎥</span> Zoom Hub & Materials
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+            <span>Zoom Hub & Materials</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-custom">
-            <span>🎨</span> Personalization & Themes
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+            <span>Personalization & Themes</span>
           </button>
         </div>
 
