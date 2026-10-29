@@ -96,6 +96,10 @@ body.theme-coffee {
   padding: 0;
 }
 
+svg {
+  max-width: 100%;
+}
+
 html {
   scroll-behavior: smooth;
   font-size: 16px;
@@ -902,6 +906,10 @@ body::after {
 .privacy-card-icon {
   width: 48px;
   height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  max-width: 48px;
+  max-height: 48px;
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   display: flex;
@@ -909,14 +917,21 @@ body::after {
   justify-content: center;
   margin-bottom: 1.2rem;
   color: var(--accent-terracotta);
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .privacy-card-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
   stroke: var(--accent-terracotta);
   stroke-width: 2;
   fill: none;
+  flex-shrink: 0;
 }
 
 .privacy-card h4 {

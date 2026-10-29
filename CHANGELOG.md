@@ -78,6 +78,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added support for configuring a custom Google OAuth 2.0 Client ID (`googleClientId`).
   - Added a manual access token input field with a 1-click "שמור וסנכרן" / "Save & Sync" button as an alternative direct fallback.
 ### Fixed
+- **Landing Website Privacy Icon Sizing & CSS Cache Invalidation (`website/index.html`, `website/styles.css`, `ServerPages/nginx.conf`)**:
+  - Added hardcoded inline dimensions (`width="24" height="24"`) to SVGs in the Privacy & Security section, strict dimensions on `.privacy-card-icon`, and a global `max-width: 100%` SVG reset.
+  - Fixed an issue where edge caching by Cloudflare served stale CSS without `.privacy-card-icon` rules, causing SVGs to expand to full container width.
+  - Added asset version query strings (`styles.css?v=4.0.2`, `app.js?v=4.0.2`) and configured `Cache-Control: no-cache, must-revalidate` in Nginx for real-time asset freshness.
 - **Google Tasks Developer ID Preservation & OAuth Redirect Parity (`apps/extension/vite.config.ts`, `scripts/build-releases.py`, `scripts/test-build-parity.mjs`, `TC-EXT-BRW-01`, `TC-EXT-BRW-02`)**:
   - Retained `manifest.key` in `apps/extension/dist/manifest.json` for local unpacked development, guaranteeing the extension keeps the static developer extension ID (`gaiognmkgghdihdeokgmpcdndmencdbj`) and preventing `Error 400: redirect_uri_mismatch`.
   - Automated stripping of `key` specifically in `scripts/build-releases.py` when packaging `releases/noodle-chrome.zip` for Chrome Web Store uploads, where Google signs packages with the permanent production store ID (`nelflkccefbdpnaphjabcgkpakhdoope`).
