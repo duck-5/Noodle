@@ -6,7 +6,7 @@
   <title>Noodle — Modern Moodle & Google Tasks Companion for TAU Students</title>
   <meta name="description" content="A decentralized, client-only companion for Tel Aviv University's Moodle. Real-time deadlines, split calendar, instant Google Tasks 2-way sync, and live Zoom hub.">
   <link rel="icon" type="image/png" href="assets/logo.png">
-  <link rel="stylesheet" href="styles.css?v=4.0.2">
+  <link rel="stylesheet" href="styles.css?v=4.0.3">
 </head>
 <body>
 
@@ -34,23 +34,24 @@
       <div class="nav-actions">
         <!-- Live Theme Switcher -->
         <div class="theme-picker" title="Toggle Theme">
-          <button class="theme-btn active" data-theme="light" title="Warm Light">
+          <button class="theme-btn active" data-theme="light" title="Noodle Theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
           </button>
-          <button class="theme-btn" data-theme="coffee" title="Warm Coffee">
+          <button class="theme-btn" data-theme="coffee" title="Coffee Theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="2" y2="4"/><line x1="10" x2="10" y1="2" y2="4"/><line x1="14" x2="14" y1="2" y2="4"/></svg>
-          </button>
-          <button class="theme-btn" data-theme="dark" title="Dark Espresso">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
           </button>
         </div>
 
         <div class="nav-install-btns">
-          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm">
+          <a href="#download" class="btn btn-primary btn-sm nav-install-cta">
+            <span>Install</span>
+            <span>↓</span>
+          </a>
+          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm nav-btn-desktop">
             <span>Chrome</span>
             <span>↗</span>
           </a>
-          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm">
+          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm nav-btn-desktop">
             <span>Firefox</span>
             <span>↗</span>
           </a>
@@ -132,7 +133,7 @@
               <button class="mockup-tab-btn" data-target="mock-zoom">Zoom & Panopto</button>
             </div>
 
-            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">
+            <div class="mockup-platform-tag">
               chrome & firefox
             </div>
           </div>
@@ -363,7 +364,7 @@
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-                <div><strong>3 Aesthetic Themes:</strong> Warm Paper Light, Modern Dark Espresso, and the signature cozy Coffee Theme.</div>
+                <div><strong>Curated Themes:</strong> Noodle (Warm Paper Light) and the signature cozy Coffee Theme.</div>
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
@@ -547,26 +548,28 @@
           </p>
         </div>
 
-        <div class="footer-links-col">
-          <h5>Product</h5>
-          <ul class="footer-links">
-            <li><a href="#features">Features</a></li>
-            <li><a href="#sync">Google Tasks</a></li>
-            <li><a href="#comparison">Why Noodle?</a></li>
-            <li><a href="#privacy">Privacy & Security</a></li>
-            <li><a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank">Chrome Web Store</a></li>
-            <li><a href="https://github.com/duck-5/Noodle/releases" target="_blank">Firefox Add-on</a></li>
-          </ul>
-        </div>
+        <div class="footer-links-wrap">
+          <div class="footer-links-col">
+            <h5>Product</h5>
+            <ul class="footer-links">
+              <li><a href="#features">Features</a></li>
+              <li><a href="#sync">Google Tasks</a></li>
+              <li><a href="#comparison">Why Noodle?</a></li>
+              <li><a href="#privacy">Privacy & Security</a></li>
+              <li><a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank">Chrome Web Store</a></li>
+              <li><a href="https://github.com/duck-5/Noodle/releases" target="_blank">Firefox Add-on</a></li>
+            </ul>
+          </div>
 
-        <div class="footer-links-col">
-          <h5>Developers & Credits</h5>
-          <ul class="footer-links">
-            <li><a href="https://github.com/duck-5/Noodle" target="_blank">GitHub Repository</a></li>
-            <li><a href="https://github.com/duck-5/Noodle/issues" target="_blank">Report an Issue</a></li>
-            <li><a href="mailto:noodle.d3v@gmail.com">Contact: noodle.d3v@gmail.com</a></li>
-            <li><span style="color: var(--text-muted); font-size: 0.92rem;">Yuval Mantin & Michael Kushnir</span></li>
-          </ul>
+          <div class="footer-links-col">
+            <h5>Developers & Credits</h5>
+            <ul class="footer-links">
+              <li><a href="https://github.com/duck-5/Noodle" target="_blank">GitHub Repository</a></li>
+              <li><a href="https://github.com/duck-5/Noodle/issues" target="_blank">Report an Issue</a></li>
+              <li><a href="mailto:noodle.d3v@gmail.com">Contact: noodle.d3v@gmail.com</a></li>
+              <li><span style="color: var(--text-muted); font-size: 0.92rem;">Yuval Mantin & Michael Kushnir</span></li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -581,6 +584,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=4.0.2"></script>
+  <script src="app.js?v=4.0.3"></script>
 </body>
 </html>
