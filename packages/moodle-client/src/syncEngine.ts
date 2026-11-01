@@ -1,4 +1,4 @@
-import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
+import { MoodleClient, RawGradeItem, RawMoodleAssignment, RawMoodleQuiz } from './moodleApi.js';
 import {
   SyncResult,
   Assignment,
@@ -229,11 +229,13 @@ export async function runSync(
     return rawNameFromAssign || `Course ${moodleCourseId}`;
   };
 
-  onProgress('Fetching assignments and grades...');
+  onProgress('Fetching assignments, quizzes, and grades...');
   let rawAssignments: RawMoodleAssignment[] = [];
+  let rawQuizzes: RawMoodleQuiz[] = [];
   const rawOrderMap = new Map<number, number>();
   let nextOrderIndex = 0;
   const gradesByCmid = new Map<number, RawGradeItem>();
+  const moduleCompletionMap = new Map<number, { completion?: number; completiondata?: any }>();
 
   await Promise.all([
     (async () => {
@@ -256,12 +258,23 @@ export async function runSync(
         });
       }
     })(),
+    (async () => {
+      try {
+        const quizzes = await client.getQuizzes(trackedCourseIds);
+        rawQuizzes = quizzes || [];
+      } catch (err: any) {
+        errors.push({
+          context: 'Processing quizzes',
+          message: err.message,
+        });
+      }
+    })(),
     batchPromises(trackedCourseIds, 100, async (courseId) => {
       try {
         const gradesResp = await client.getGradeItems(courseId, userId);
         for (const userGrade of gradesResp.usergrades) {
           for (const item of userGrade.gradeitems) {
-            if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
+            if (item.itemtype === 'mod' && (item.itemmodule === 'assign' || item.itemmodule === 'quiz') && item.cmid !== null) {
               gradesByCmid.set(Number(item.cmid), item);
             }
           }
@@ -371,7 +384,7 @@ export async function runSync(
       cmid: assign.cmid,
       courseId: assign.course,
       courseName: getCourseDisplayName(assign.course),
-      name: decodeHTMLEntities(assign.name || ''),
+      name: cleanMoodleString(assign.name || ''),
       status,
       submittedFiles,
       deadline: deadlineIso,
@@ -380,10 +393,97 @@ export async function runSync(
       grade,
       gradeMax,
       attachments,
-      sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid))
+      sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid)),
+      activityType: 'assign',
+      uid: `assign:${assign.id}`,
+      isCompleted: status === 'Submitted',
     };
 
     assignments.push(processedAssign);
+    if (onPartialSync) {
+      onPartialSync({ assignments: [...assignments] });
+    }
+  };
+
+  const processQuiz = async (quiz: RawMoodleQuiz, sectionName?: string) => {
+    let hasFinished = false;
+    try {
+      const attempts = await client.getQuizAttempts(quiz.id);
+      hasFinished = attempts.some((att) => att.state === 'finished');
+    } catch (err: any) {
+      errors.push({
+        context: `Fetching attempts for quiz ${quiz.name} (id: ${quiz.id})`,
+        message: err.message,
+      });
+    }
+
+    const cmid = quiz.coursemodule;
+    const completionInfo = moduleCompletionMap.get(cmid);
+    const requiresManualCompletion = completionInfo?.completion === 1;
+    const isManualCompletionDone = Boolean(completionInfo?.completiondata?.state === 1);
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
+    if (hasFinished) {
+      status = 'Submitted';
+    } else if (requiresManualCompletion && isManualCompletionDone) {
+      status = 'Submitted';
+    }
+
+    const closeTs = quiz.timeclose || 0;
+    let deadlineIso: string | null = null;
+    if (closeTs > 0) {
+      const closeDate = new Date(closeTs * 1000);
+      deadlineIso = closeDate.toISOString();
+      if (status !== 'Submitted' && closeDate < now) {
+        status = 'Not submitted';
+      }
+    }
+
+    const openTs = quiz.timeopen || 0;
+    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
+
+    const gradeInfo = gradesByCmid.get(Number(cmid));
+    let grade: number | null = null;
+    let gradeMax: number | null = null;
+    if (gradeInfo && !gradeInfo.gradeishidden) {
+      grade = gradeInfo.graderaw;
+      gradeMax = gradeInfo.grademax;
+    } else if (quiz.sumgrades !== undefined && quiz.sumgrades !== null) {
+      gradeMax = quiz.sumgrades;
+    }
+
+    const courseInfo = courseMap.get(quiz.course);
+    const quizBaseUrl = courseInfo?.instanceUrl
+      ? courseInfo.instanceUrl
+      : courseInfo?.year && courseInfo.year !== String(new Date().getFullYear())
+      ? `https://moodle.tau.ac.il/${courseInfo.year}`
+      : 'https://moodle.tau.ac.il';
+
+    const processedQuiz: Assignment = {
+      id: quiz.id,
+      cmid: quiz.coursemodule,
+      courseId: quiz.course,
+      courseName: getCourseDisplayName(quiz.course),
+      name: cleanMoodleString(quiz.name || ''),
+      status,
+      deadline: deadlineIso,
+      opened: openedIso,
+      link: `${quizBaseUrl}/mod/quiz/view.php?id=${quiz.coursemodule}`,
+      grade,
+      gradeMax,
+      sectionName: sectionName || cmidToSectionMap.get(Number(quiz.coursemodule)),
+      activityType: 'quiz',
+      uid: `quiz:${quiz.id}`,
+      timeLimitSeconds: quiz.timelimit > 0 ? quiz.timelimit : undefined,
+      attemptsAllowed: quiz.attempts > 0 ? quiz.attempts : undefined,
+      hasFinishedAttempt: hasFinished,
+      requiresManualCompletion,
+      isManualCompletionDone,
+      completionTracking: completionInfo?.completion,
+      isCompleted: status === 'Submitted',
+    };
+
+    assignments.push(processedQuiz);
     if (onPartialSync) {
       onPartialSync({ assignments: [...assignments] });
     }
@@ -402,6 +502,11 @@ export async function runSync(
     // Process known assignments from getAssignments
     batchPromises(rawAssignments, 50, async (assign) => {
       await processAssignment(assign);
+    }),
+
+    // Process quizzes
+    batchPromises(rawQuizzes, 30, async (quiz) => {
+      await processQuiz(quiz);
     }),
 
     // Process course contents to find files, zoom meetings, and missing assignments
@@ -514,8 +619,39 @@ export async function runSync(
               }
             }
 
+            if (modname === 'quiz') {
+              cmidToSectionMap.set(module.id, sectionName);
+              if (module.completion !== undefined || module.completiondata) {
+                moduleCompletionMap.set(module.id, {
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                });
+              }
+              if (!rawQuizzes.some((q) => q.coursemodule === module.id)) {
+                const synthQuiz: RawMoodleQuiz = {
+                  id: module.instance || module.id,
+                  course: courseId,
+                  coursemodule: module.id,
+                  name: name,
+                  timeopen: 0,
+                  timeclose: 0,
+                  timelimit: 0,
+                  attempts: 0,
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                };
+                rawQuizzes.push(synthQuiz);
+              }
+            }
+
             if (modname === 'assign') {
               cmidToSectionMap.set(module.id, sectionName);
+              if (module.completion !== undefined || module.completiondata) {
+                moduleCompletionMap.set(module.id, {
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                });
+              }
               const exists = rawAssignments.some(a => a.cmid === module.id);
               if (!exists) {
                 const newAssign: RawMoodleAssignment = {

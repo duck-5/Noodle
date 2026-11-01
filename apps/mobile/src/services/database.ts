@@ -136,6 +136,68 @@ function initDb(db: SQLite.SQLiteDatabase) {
   }
 
   try {
+    const migratedRow = db.getFirstSync<{ value: string }>("SELECT value FROM preferences WHERE key = 'migrated_assignments_v2'");
+    if (!migratedRow) {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS assignments_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          uid TEXT UNIQUE NOT NULL,
+          moodle_assign_id INTEGER NOT NULL,
+          activity_type TEXT DEFAULT 'assign',
+          cmid INTEGER,
+          course_moodle_id INTEGER NOT NULL,
+          course_name TEXT,
+          name TEXT NOT NULL,
+          status TEXT DEFAULT 'Assigned',
+          deadline TEXT,
+          opened TEXT,
+          link TEXT,
+          grade REAL,
+          grade_max REAL,
+          last_synced TEXT,
+          attachments TEXT,
+          submitted_files TEXT,
+          time_limit_seconds INTEGER,
+          requires_manual_completion INTEGER DEFAULT 0,
+          is_manual_completion_done INTEGER DEFAULT 0
+        );
+      `);
+      try {
+        db.execSync(`
+          INSERT OR IGNORE INTO assignments_v2 (
+            uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files
+          )
+          SELECT 
+            'assign:' || moodle_assign_id,
+            moodle_assign_id,
+            'assign',
+            cmid,
+            course_moodle_id,
+            course_name,
+            name,
+            status,
+            deadline,
+            opened,
+            link,
+            grade,
+            grade_max,
+            last_synced,
+            attachments,
+            submitted_files
+          FROM assignments;
+        `);
+        db.execSync('DROP TABLE IF EXISTS assignments;');
+        db.execSync('ALTER TABLE assignments_v2 RENAME TO assignments;');
+      } catch (errCopy) {
+        console.warn('assignments_v2 copy warning:', errCopy);
+      }
+      db.runSync("INSERT OR REPLACE INTO preferences (key, value) VALUES ('migrated_assignments_v2', '1');");
+    }
+  } catch (e) {
+    console.warn('assignments_v2 migration error:', e);
+  }
+
+  try {
     db.execSync('ALTER TABLE assignments ADD COLUMN attachments TEXT;');
   } catch (e) {
     // Column might already exist
@@ -198,13 +260,34 @@ export function saveSyncResultToDatabase(result: any): void {
     const nowStr = new Date().toISOString();
 
     db.withTransactionSync(() => {
-      // 1. Sync assignments
+      // 1. Sync assignments and quizzes
       for (const a of result.assignments) {
+        const uid = a.uid || `${a.activityType || 'assign'}:${a.id}`;
         db.runSync(
           `INSERT OR REPLACE INTO assignments 
-          (moodle_assign_id, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [a.id, a.cmid, a.courseId, a.courseName, a.name, a.status, a.deadline, a.opened, a.link, a.grade, a.gradeMax, nowStr, JSON.stringify(a.attachments || []), JSON.stringify(a.submittedFiles || [])]
+          (uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files, time_limit_seconds, requires_manual_completion, is_manual_completion_done)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            uid,
+            a.id,
+            a.activityType || 'assign',
+            a.cmid,
+            a.courseId,
+            a.courseName,
+            a.name,
+            a.status,
+            a.deadline,
+            a.opened,
+            a.link,
+            a.grade,
+            a.gradeMax,
+            nowStr,
+            JSON.stringify(a.attachments || []),
+            JSON.stringify(a.submittedFiles || []),
+            a.timeLimitSeconds || null,
+            a.requiresManualCompletion ? 1 : 0,
+            a.isManualCompletionDone ? 1 : 0
+          ]
         );
       }
 

@@ -1286,6 +1286,14 @@ export default function App() {
     };
     setSettingsState(updated);
     await setSettings(updated);
+
+    if (assign && assign.requiresManualCompletion && token) {
+      const willBeCompleted = !currentCompleted.includes(assignmentId) && !isMoodleSubmitted;
+      try {
+        const client = new MoodleClient(token);
+        client.updateActivityCompletionManually(assign.cmid, willBeCompleted).catch(() => {});
+      } catch {}
+    }
     if (updated.googleTasksEnabled) {
       syncGoogleTasksOnBackground(false).catch(() => { });
     }
@@ -6670,7 +6678,14 @@ function CourseDetailView({
                               return (
                                 <div key={a.id} className="section-assignment-item">
                                   <div className="item-meta-row">
-                                    <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
+                                    <span className={`item-type-tag ${a.activityType === 'quiz' ? 'quiz-tag' : 'assign-tag'}`}>
+                                      {a.activityType === 'quiz' ? `❓ ${lang === 'he' ? 'בוחן' : 'Quiz'}` : `📝 ${lang === 'he' ? 'מטלה' : 'Assignment'}`}
+                                    </span>
+                                    {a.timeLimitSeconds ? (
+                                      <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}>
+                                        ⏱️ {Math.round(a.timeLimitSeconds / 60)} {lang === 'he' ? "דק'" : 'min'}
+                                      </span>
+                                    ) : null}
                                     {a.status === 'Submitted' ? (
                                       <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
                                     ) : (
@@ -6691,9 +6706,29 @@ function CourseDetailView({
                                     )}
                                   </span>
                                   <div className="item-actions" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.45rem' }}>
-                                    <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
-                                      {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
-                                    </a>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                      <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
+                                        {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
+                                      </a>
+                                      {onToggleCompleted && (
+                                        <button
+                                          type="button"
+                                          className="secondary-btn btn-sm"
+                                          onClick={() => onToggleCompleted(a.id)}
+                                          style={{
+                                            fontSize: '0.75rem',
+                                            padding: '0.2rem 0.55rem',
+                                            borderRadius: '6px',
+                                            background: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                            color: (a as any).isCompleted ? '#10b981' : 'var(--text-primary)',
+                                            borderColor: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          {(a as any).isCompleted ? '✓ ' + (lang === 'he' ? 'בוצע' : 'Done') : (lang === 'he' ? 'סמן כבוצע' : 'Mark as done')}
+                                        </button>
+                                      )}
+                                    </div>
                                     {a.attachments && a.attachments.length > 0 && (
                                       <div className="files-column-list">
                                         {a.attachments.map((att, attIdx) => {

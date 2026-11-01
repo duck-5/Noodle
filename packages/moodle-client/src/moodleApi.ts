@@ -120,6 +120,54 @@ export interface RawMoodleAssignmentsResponse {
   courses: RawMoodleAssignmentCourse[];
 }
 
+export interface RawMoodleQuiz {
+  id: number;
+  course: number;
+  coursemodule: number;
+  name: string;
+  intro?: string;
+  introformat?: number;
+  timeopen: number;
+  timeclose: number;
+  timelimit: number;
+  attempts: number;
+  grademethod?: number;
+  grade?: number;
+  sumgrades?: number;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+}
+
+export interface RawMoodleQuizzesResponse {
+  quizzes: RawMoodleQuiz[];
+  warnings?: any[];
+}
+
+export interface RawMoodleQuizAttempt {
+  id: number;
+  quiz: number;
+  userid: number;
+  attempt: number;
+  state: 'inprogress' | 'overdue' | 'finished' | 'abandoned';
+  timestart: number;
+  timefinish: number;
+  timemodified: number;
+  sumgrades?: number;
+}
+
+export interface RawMoodleQuizAttemptsResponse {
+  attempts: RawMoodleQuizAttempt[];
+  warnings?: any[];
+}
+
+
 export interface RawSubmissionPluginFile {
   filename: string;
   fileurl: string;
@@ -432,6 +480,33 @@ export class MoodleClient {
       'saveNoodleSettings',
       this.strategies,
       (s) => s.saveNoodleSettings(settingsJson),
+      this.devMode
+    );
+  }
+
+  public async getQuizzes(courseIds: number[]): Promise<RawMoodleQuiz[]> {
+    return executeWithFallback(
+      'getQuizzes',
+      this.strategies,
+      (s) => (s.getQuizzes ? s.getQuizzes(courseIds) : Promise.resolve([])),
+      this.devMode
+    );
+  }
+
+  public async getQuizAttempts(quizId: number): Promise<RawMoodleQuizAttempt[]> {
+    return executeWithFallback(
+      'getQuizAttempts',
+      this.strategies,
+      (s) => (s.getQuizAttempts ? s.getQuizAttempts(quizId) : Promise.resolve([])),
+      this.devMode
+    );
+  }
+
+  public async updateActivityCompletionManually(cmid: number, completed: boolean): Promise<boolean> {
+    return executeWithFallback(
+      'updateActivityCompletionManually',
+      this.strategies,
+      (s) => (s.updateActivityCompletionManually ? s.updateActivityCompletionManually(cmid, completed) : Promise.resolve(false)),
       this.devMode
     );
   }

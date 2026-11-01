@@ -76,15 +76,15 @@ export interface Attachment {
 }
 
 export interface Assignment {
-  id: number;               // Moodle assign ID
-  cmid: number;             // Course-module ID (used in deep links and grade lookups)
+  id: number;               // Moodle assign ID or quiz ID
+  cmid: number;             // Course-module ID (used in deep links, completion updates, and grade lookups)
   courseId: number;         // Moodle course internal ID
   courseName: string;
   name: string;
   status: 'Assigned' | 'Submitted' | 'Not submitted';
   deadline: string | null;  // ISO 8601 string or null
   opened: string | null;
-  link: string;             // https://moodle.tau.ac.il/mod/assign/view.php?id={cmid}
+  link: string;             // https://moodle.tau.ac.il/mod/assign/view.php?id={cmid} or .../mod/quiz/view.php?id={cmid}
   grade: number | null;
   gradeMax: number | null;
   sectionName?: string;
@@ -92,6 +92,14 @@ export interface Assignment {
   submittedFiles?: Attachment[];
   isCompleted?: boolean;
   isHidden?: boolean;
+  activityType?: 'assign' | 'quiz';
+  uid?: string;             // Deterministic composite ID: 'assign:{id}' | 'quiz:{id}'
+  timeLimitSeconds?: number;
+  attemptsAllowed?: number;
+  hasFinishedAttempt?: boolean;
+  requiresManualCompletion?: boolean;
+  isManualCompletionDone?: boolean;
+  completionTracking?: number; // 0=none, 1=manual, 2=automatic
 }
 
 export interface CourseFile {

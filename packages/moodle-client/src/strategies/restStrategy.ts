@@ -6,6 +6,8 @@ import {
   RawMoodleAssignmentsResponse,
   RawMoodleCourse,
   RawSubmissionStatus,
+  RawMoodleQuiz,
+  RawMoodleQuizAttempt,
 } from '../moodleApi.js';
 import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
 
@@ -297,6 +299,55 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       courseid: courseId,
       userid: userId
     }, 'POST', baseUrlOverride);
+  }
+
+
+  public async getQuizzes(courseIds: number[]): Promise<RawMoodleQuiz[]> {
+    if (!courseIds || courseIds.length === 0) return [];
+    const params: Record<string, any> = {};
+    courseIds.forEach((id, idx) => {
+      params[`courseids[${idx}]`] = id;
+    });
+    try {
+      const res = await this.apiCall('mod_quiz_get_quizzes_by_courses', params, 'POST');
+      if (res && Array.isArray(res.quizzes)) {
+        return res.quizzes;
+      }
+      return [];
+    } catch (err) {
+      console.warn('mod_quiz_get_quizzes_by_courses failed:', err);
+      return [];
+    }
+  }
+
+  public async getQuizAttempts(quizId: number): Promise<RawMoodleQuizAttempt[]> {
+    try {
+      const res = await this.apiCall('mod_quiz_get_user_attempts', {
+        quizid: quizId,
+        status: 'all',
+        includepreviews: 0,
+      }, 'POST');
+      if (res && Array.isArray(res.attempts)) {
+        return res.attempts;
+      }
+      return [];
+    } catch (err) {
+      console.warn(`mod_quiz_get_user_attempts for quiz ${quizId} failed:`, err);
+      return [];
+    }
+  }
+
+  public async updateActivityCompletionManually(cmid: number, completed: boolean): Promise<boolean> {
+    try {
+      const res = await this.apiCall('core_completion_update_activity_completion_status_manually', {
+        cmid,
+        completed: completed ? 1 : 0,
+      }, 'POST');
+      return Boolean(res && res.status);
+    } catch (err) {
+      console.warn(`updateActivityCompletionManually for cmid ${cmid} failed:`, err);
+      return false;
+    }
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {

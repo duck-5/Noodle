@@ -132,11 +132,33 @@ export async function syncAssignmentsToGoogleTasks(
     };
   }
 
-  // Helper to extract assignment ID from notes
-  const getMoodleAssignIdFromNotes = (notes?: string): number | null => {
+  // Helper to extract assignment or quiz ID from notes
+  const getMoodleActivityFromNotes = (notes?: string): { id: number; uid: string; isQuiz: boolean } | null => {
     if (!notes) return null;
+    const uidMatch = notes.match(/(?:tautracker|Noodle):uid:([a-zA-Z0-9_:-]+)/i);
+    if (uidMatch) {
+      const rawUid = uidMatch[1];
+      const isQuiz = rawUid.startsWith('quiz:');
+      const parts = rawUid.split(':');
+      const id = parseInt(parts[1] || '0', 10);
+      return { id, uid: rawUid, isQuiz };
+    }
+    const quizMatch = notes.match(/(?:tautracker|Noodle):quizId:(\d+)/i);
+    if (quizMatch) {
+      const id = parseInt(quizMatch[1], 10);
+      return { id, uid: `quiz:${id}`, isQuiz: true };
+    }
     const match = notes.match(/(?:tautracker|Noodle):assignId:(\d+)/i);
-    return match ? parseInt(match[1], 10) : null;
+    if (match) {
+      const id = parseInt(match[1], 10);
+      return { id, uid: `assign:${id}`, isQuiz: false };
+    }
+    return null;
+  };
+
+  const getMoodleAssignIdFromNotes = (notes?: string): number | null => {
+    const act = getMoodleActivityFromNotes(notes);
+    return act ? act.id : null;
   };
 
   const hiddenIds = new Set<number>(
@@ -163,10 +185,10 @@ export async function syncAssignmentsToGoogleTasks(
       : []
   );
 
-  // Helper to check if an assignment is considered completed / marked as done
+  // Helper to check if an assignment/quiz is considered completed / marked as done
   const isAssignmentDone = (assign: Assignment): boolean => {
     if (uncompletedIds.has(assign.id)) return false;
-    if (completedIds.has(assign.id) || assign.isCompleted === true) return true;
+    if (completedIds.has(assign.id) || assign.isCompleted === true || assign.hasFinishedAttempt === true || assign.isManualCompletionDone === true) return true;
     return assign.status === 'Submitted';
   };
 
@@ -193,11 +215,19 @@ export async function syncAssignmentsToGoogleTasks(
       const isDone = isAssignmentDone(assign);
       const isExcludedNoDeadline = !options?.syncWithoutDeadline && !assign.deadline;
 
-      // Find all existing tasks that match this assignment (by assignId or title)
+      const assignUid = assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
+      // Find all existing tasks that match this activity (by UID, assignId/quizId, or title)
       const matchedTasks = existingTasks.filter(
-        (t) =>
-          !deletedTaskIds.has(t.id) &&
-          (getMoodleAssignIdFromNotes(t.notes) === assign.id || t.title.trim() === taskTitle.trim())
+        (t) => {
+          if (deletedTaskIds.has(t.id)) return false;
+          const act = getMoodleActivityFromNotes(t.notes);
+          if (act !== null) {
+            if (act.uid === assignUid) return true;
+            if (act.id === assign.id && act.isQuiz === (assign.activityType === 'quiz')) return true;
+            return false;
+          }
+          return t.title.trim() === taskTitle.trim();
+        }
       );
 
       // RULE: Hidden tasks, completed tasks, or tasks without deadline (when syncWithoutDeadline is off) must not be synced.
@@ -229,7 +259,8 @@ export async function syncAssignmentsToGoogleTasks(
       }
 
       // Active assignment (not hidden, not done):
-      const notes = `Course: ${assign.courseName}\nLink: ${assign.link}\nSource: Moodle (Noodle)\nNoodle:assignId:${assign.id}`;
+      const tag = assign.activityType === 'quiz' ? `Noodle:quizId:${assign.id}` : `Noodle:assignId:${assign.id}`;
+      const notes = `Course: ${assign.courseName}\nLink: ${assign.link}\nSource: Moodle (Noodle)\n${tag}\nNoodle:uid:${assignUid}`;
 
       let dueIso: string | undefined = undefined;
       if (assign.deadline) {

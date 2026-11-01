@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Quizzes & בחנים (`mod_quiz`) End-to-End Tracking (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Implemented `mod_quiz_get_quizzes_by_courses`, `mod_quiz_get_user_attempts`, and `core_completion_update_activity_completion_status_manually` across `RestMoodleStrategy` and `MoodleClient`.
+  - Added support for quiz time limits (`timeLimitSeconds`), open/close timestamps, attempt count restrictions, and automatic completion detection from finished attempts.
+  - Implemented two-way "Mark as done" interactive completion button in Course Detail view that directly dispatches manual activity completion back to Moodle.
+  - Upgraded Google Tasks synchronization to track quizzes (`Noodle:quizId:X` and `Noodle:uid:quiz:X`) alongside assignments with full backward compatibility and bidirectional completion deletion.
+  - Migrated mobile SQLite schema non-destructively to `assignments_v2` with composite `uid TEXT UNIQUE NOT NULL` (`assign:ID` vs `quiz:ID`), eliminating ID collision risks.
+  - Added visual quiz badges (`❓ בוחן` / `Quiz`) and duration pills (`⏱️ 30 דק'`) across Extension and Mobile views.
+  - Added comprehensive test suite `packages/moodle-client/__tests__/quizSync.test.ts`.
 - **2-Level Section Hierarchy & Course Format State Support (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Added format-aware course state extraction (`courseFormatState.ts`) parsing `core_courseformat_get_state` AJAX JSON responses to reconstruct 2-level topic and subtopic tabs (`tabsdata` in `multitopic` format, `parentid` / `levelsan` in `onetopic`, and Moodle 4.5 `mod_subsection` components).
   - Extended shared `MoodleCourse` with `format` and `coursecategory`, and introduced `CourseSection` type with parent-child linkage.
