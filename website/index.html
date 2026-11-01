@@ -6,7 +6,7 @@
   <title>Noodle — Modern Moodle & Google Tasks Companion for TAU Students</title>
   <meta name="description" content="A decentralized, client-only companion for Tel Aviv University's Moodle. Real-time deadlines, split calendar, instant Google Tasks 2-way sync, and live Zoom hub.">
   <link rel="icon" type="image/png" href="assets/logo.png">
-  <link rel="stylesheet" href="styles.css?v=4.0.3">
+  <link rel="stylesheet" href="styles.css?v=4.0.4">
 </head>
 <body>
 
@@ -21,12 +21,12 @@
         </div>
       </a>
 
-      <nav>
+      <nav class="nav-center">
         <ul class="nav-menu">
           <li><a href="#features" class="nav-link">Features</a></li>
           <li><a href="#sync" class="nav-link">Google Tasks</a></li>
           <li><a href="#comparison" class="nav-link">Why Noodle?</a></li>
-          <li><a href="#privacy" class="nav-link">Privacy & Security</a></li>
+          <li><a href="#privacy" class="nav-link">Privacy</a></li>
           <li><a href="#faq" class="nav-link">FAQ</a></li>
         </ul>
       </nav>
@@ -42,20 +42,24 @@
           </button>
         </div>
 
-        <div class="nav-install-btns">
-          <a href="#download" class="btn btn-primary btn-sm nav-install-cta">
-            <span>Install</span>
-            <span>↓</span>
-          </a>
-          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="btn btn-primary btn-sm nav-btn-desktop">
+        <!-- Desktop Segmented Browser Install Pill -->
+        <div class="nav-install-group" title="Install Noodle for your browser">
+          <a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank" class="nav-install-btn chrome" title="Add Noodle to Google Chrome">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" x2="12" y1="8" y2="8"/><line x1="3.95" x2="8.54" y1="6.06" y2="14"/><line x1="10.88" x2="15.46" y1="21.94" y2="14"/></svg>
             <span>Chrome</span>
-            <span>↗</span>
           </a>
-          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="btn btn-secondary btn-sm nav-btn-desktop">
+          <span class="nav-install-sep"></span>
+          <a href="https://github.com/duck-5/Noodle/releases" target="_blank" class="nav-install-btn firefox" title="Add Noodle to Mozilla Firefox">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a8 8 0 0 0-8 8c0 4.418 3.582 8 8 8 2.5 0 4.5-1 5.5-2.5-.5-.5-1-1-1-1.5a3 3 0 0 1 3-3c.5 0 1 .5 1.5 1 0-5.5-4-10-9-10z"/></svg>
             <span>Firefox</span>
-            <span>↗</span>
           </a>
         </div>
+
+        <!-- Mobile Install CTA Button -->
+        <a href="#download" class="btn btn-primary btn-sm nav-install-mobile">
+          <span>Install</span>
+          <span>↓</span>
+        </a>
       </div>
     </div>
   </header>
