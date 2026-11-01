@@ -1,5 +1,20 @@
 import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
-import { SyncResult, Assignment, CourseFile, ZoomMeeting, PanoptoRecording, SyncError, MoodleCredentials, Attachment } from './types.js';
+import {
+  SyncResult,
+  Assignment,
+  CourseFile,
+  CourseSection,
+  CourseFolder,
+  CourseFolderFile,
+  CourseLink,
+  ZoomMeeting,
+  PanoptoRecording,
+  SyncError,
+  MoodleCredentials,
+  Attachment,
+} from './types.js';
+import { fetchCourseFormatState, fetchSesskeyFromJar, ParsedCourseFormatState } from './courseFormatState.js';
+import { buildAuthenticatedFileUrl } from './zipBuilder.js';
 import { parseTauCourseMetadata } from './courseParser.js';
 import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml, decodeHTMLEntities } from './zoomScraper.js';
 import {
@@ -20,6 +35,24 @@ import {
   fetchPanoptoFolderSessions,
   discoverCourseFolderFromBrowse,
 } from './panoptoScraper.js';
+
+export function cleanMoodleString(raw: string, lang: 'he' | 'en' = 'he'): string {
+  if (!raw) return '';
+  let str = raw;
+  if (str.includes('class="multilang"') || str.includes("class='multilang'")) {
+    const langMatch = str.match(new RegExp(`<span[^>]*\\blang=["']${lang}["'][^>]*>([\\s\\S]*?)<\\/span>`, 'i'));
+    if (langMatch && langMatch[1]) {
+      str = langMatch[1];
+    } else {
+      const anyMatch = str.match(/<span[^>]*\bclass=["']multilang["'][^>]*>([\s\S]*?)<\/span>/i);
+      if (anyMatch && anyMatch[1]) {
+        str = anyMatch[1];
+      }
+    }
+  }
+  str = str.replace(/<[^>]+>/g, '');
+  return decodeHTMLEntities(str).trim();
+}
 
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
@@ -69,7 +102,7 @@ export async function runSync(
   let panoptoAuthPromise: Promise<boolean> | null = null;
 
   const getScrapeJar = async (): Promise<CookieJar | null> => {
-    if (!enableScraping && !enablePanopto) return null;
+    if (!enableScraping && !enablePanopto && !creds && !moodleCookies) return null;
     if (scrapedMeetingsJar) return scrapedMeetingsJar;
 
     const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
@@ -153,7 +186,15 @@ export async function runSync(
   }
 
   onProgress('Fetching course mapping...');
-  const courseMap = new Map<number, { display_name: string; name: string; courseCode?: string; year?: string; instanceUrl?: string }>();
+  const courseMap = new Map<number, {
+    display_name: string;
+    name: string;
+    courseCode?: string;
+    year?: string;
+    instanceUrl?: string;
+    format?: string;
+    coursecategory?: string;
+  }>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {

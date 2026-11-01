@@ -15,8 +15,17 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   private archiveTokens = new Map<number, string>();
   private courseYearMap = new Map<number, number>();
   private assignYearMap = new Map<number, number>();
+  private lang: 'he' | 'en' = 'he';
 
-  constructor(private context: StrategyContext) {}
+  constructor(private context: StrategyContext) {
+    if (context.lang) {
+      this.lang = context.lang;
+    }
+  }
+
+  public setLanguage(lang: 'he' | 'en'): void {
+    this.lang = lang;
+  }
 
   private decodeHtmlEntities(text: string): string {
     const entities: { [key: string]: string } = {
@@ -88,6 +97,8 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       wsfunction,
       moodlewsrestformat: 'json',
       ...params,
+      moodlewssettingfilter: 'true',
+      moodlewssettinglang: this.lang,
     };
 
     let url = baseUrlOverride || this.getRestEndpoint();

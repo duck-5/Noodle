@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { parseTauCourseMetadata } from '@tautracker/moodle-client';
-import { downloadMoodleFile } from '../services/fileDownloadService';
-import { getDb, getPreference, setPreference } from '../services/database';
+import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
+import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 import { markSettingUpdatedAndSync } from '../services/settingsSyncService';
@@ -178,6 +178,9 @@ export default function CoursesScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
+  const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
+  const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
 
   // Editing Course Modal State
   const [editingCourse, setEditingCourse] = useState<EditingCourseState | null>(null);
@@ -331,6 +334,20 @@ export default function CoursesScreen({
     }
   };
 
+  async function handleDownloadFolderZip(folder: any) {
+    setDownloadingFolderId(folder.id);
+    try {
+      const result = await downloadMoodleFolderZip(folder);
+      if (!result.success && result.error) {
+        Alert.alert(isRtl ? 'שגיאה בהורדה' : 'Download Error', result.error);
+      }
+    } catch (e: any) {
+      Alert.alert(isRtl ? 'שגיאה בהורדה' : 'Download Error', e.message);
+    } finally {
+      setDownloadingFolderId(null);
+    }
+  }
+
   async function handleDownloadFile(file: any) {
     const res = await downloadMoodleFile(file);
     if (!res.success && res.error) {
@@ -405,17 +422,28 @@ export default function CoursesScreen({
       'SELECT * FROM meetings WHERE course_moodle_id = ?',
       [course.moodle_id]
     );
+    const courseSections = getCourseSections(course.moodle_id);
+    const courseFolders = getCourseFolders(course.moodle_id);
+    const courseLinks = getCourseLinks(course.moodle_id);
 
-    // Group files and assignments by sectionName
-    const sectionsMap: Record<string, { assignments: any[]; files: any[]; meetings: any[] }> = {};
+    const topSections = courseSections.filter((s: any) => s.level === 0 || s.parent_section_id === null);
+    const currentSubSections = activeTopSectionId !== null
+      ? courseSections.filter((s: any) => s.parent_section_id === activeTopSectionId)
+      : [];
+
+    // Group files, assignments, folders, links by sectionName
+    const sectionsMap: Record<string, { assignments: any[]; files: any[]; meetings: any[]; folders: any[]; links: any[] }> = {};
     const getSection = (name: string) => {
       const n = name || (isRtl ? 'כללי' : 'General');
-      if (!sectionsMap[n]) sectionsMap[n] = { assignments: [], files: [], meetings: [] };
+      if (!sectionsMap[n]) sectionsMap[n] = { assignments: [], files: [], meetings: [], folders: [], links: [] };
       return sectionsMap[n];
     };
+    courseSections.forEach((s: any) => getSection(s.name));
     courseFiles.forEach((f: any) => getSection(f.section_name).files.push(f));
     courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General')).assignments.push(a));
     courseMeetings.forEach((m: any) => getSection(m.section_name || (isRtl ? 'כללי' : 'General')).meetings.push(m));
+    courseFolders.forEach((fld: any) => getSection(fld.section_name || (isRtl ? 'כללי' : 'General')).folders.push(fld));
+    courseLinks.forEach((lnk: any) => getSection(lnk.section_name || (isRtl ? 'כללי' : 'General')).links.push(lnk));
     const allSectionEntries = Object.entries(sectionsMap);
 
     // Filter section entries if user selected a specific section pill
@@ -1282,7 +1310,108 @@ export default function CoursesScreen({
                             );
                           })}
 
-                          {content.assignments.length === 0 && content.files.length === 0 && (
+                          {/* Section Folders */}
+                          {content.folders && content.folders.map((fld: any) => {
+                            const isDownloading = downloadingFolderId === fld.id;
+                            return (
+                              <Pressable
+                                key={fld.id}
+                                style={[
+                                  styles.fileRow,
+                                  {
+                                    backgroundColor: theme.background,
+                                    borderColor: theme.border,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                  },
+                                ]}
+                                onPress={() => handleDownloadFolderZip(fld)}
+                                disabled={isDownloading}
+                              >
+                                <Text style={{ fontSize: 16 }}>📁</Text>
+                                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                                  <Text
+                                    style={{
+                                      color: theme.text,
+                                      fontSize: 13,
+                                      fontWeight: '600',
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {fld.name}
+                                  </Text>
+                                  <Text
+                                    style={{
+                                      color: theme.textSecondary,
+                                      fontSize: 11,
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                  >
+                                    {fld.files ? fld.files.length : 0} {isRtl ? 'קבצים' : 'files'}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.smallActionBtn,
+                                    { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
+                                  ]}
+                                >
+                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                    {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+
+                          {/* Section Links */}
+                          {content.links && content.links.map((lnk: any) => {
+                            let icon = '🔗';
+                            if (lnk.link_kind === 'drive') icon = '📁';
+                            else if (lnk.link_kind === 'github') icon = '💻';
+                            else if (lnk.link_kind === 'zoom') icon = '📹';
+                            return (
+                              <Pressable
+                                key={lnk.id}
+                                style={[
+                                  styles.fileRow,
+                                  {
+                                    backgroundColor: theme.background,
+                                    borderColor: theme.border,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                  },
+                                ]}
+                                onPress={() => lnk.target_url && Linking.openURL(lnk.target_url)}
+                              >
+                                <Text style={{ fontSize: 16 }}>{icon}</Text>
+                                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                                  <Text
+                                    style={{
+                                      color: theme.text,
+                                      fontSize: 13,
+                                      fontWeight: '600',
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {lnk.name}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.smallActionBtn,
+                                    { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                                  ]}
+                                >
+                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                    {isRtl ? 'פתח קישור' : 'Open Link'}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+
+                          {content.assignments.length === 0 && content.files.length === 0 && (!content.folders || content.folders.length === 0) && (!content.links || content.links.length === 0) && (
                             <Text
                               style={{
                                 color: theme.textSecondary,

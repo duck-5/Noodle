@@ -28,6 +28,7 @@ export interface StrategyContext {
   baseUrl: string;
   devMode?: boolean;
   enableScraping?: boolean;
+  lang?: 'he' | 'en';
 }
 
 export interface IMoodleStrategy {

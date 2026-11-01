@@ -7,6 +7,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Added
+- **2-Level Section Hierarchy & Course Format State Support (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Added format-aware course state extraction (`courseFormatState.ts`) parsing `core_courseformat_get_state` AJAX JSON responses to reconstruct 2-level topic and subtopic tabs (`tabsdata` in `multitopic` format, `parentid` / `levelsan` in `onetopic`, and Moodle 4.5 `mod_subsection` components).
+  - Extended shared `MoodleCourse` with `format` and `coursecategory`, and introduced `CourseSection` type with parent-child linkage.
+  - Implemented 2-level interactive navigation chips and section accordions across the Extension Course Detail view (`App.tsx`) and Mobile App (`courses.tsx`).
+- **Bulk Folder PKZIP Archive Downloader (`packages/moodle-client/src/zipBuilder.ts`, `apps/extension`, `apps/mobile`)**:
+  - Implemented pure TypeScript, dependency-free ZIP file generator with IEEE 802.3 CRC-32 checksums, UTF-8 filename flag (`0x0800`) for Hebrew paths, and deduplication logic.
+  - Added bounded concurrent batch downloading with Moodle Web Services token injection and `{ exception }` JSON error checking (`downloadFolderAsZip`).
+  - Added interactive folder cards with `📦 הורד תיקייה כ-ZIP` / `Download ZIP` and live file-count/progress feedback in both Extension and Mobile.
+- **`mod_url` External Link Resource Extraction (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Extracted external web resources into typed `CourseLink` entries categorized by link type (`zoom`, `panopto`, `drive`, `github`, `external`).
+  - Rendered typed link badges with direct open action buttons inside section bodies.
+- **Moodle Web Services Multilang Filter & Entity Decoding (`packages/moodle-client/src/strategies/restStrategy.ts`, `syncEngine.ts`)**:
+  - Injected `moodlewssettingfilter: 'true'` and `moodlewssettinglang: 'he'` into REST strategy API calls.
+  - Added `cleanMoodleString()` in `syncEngine.ts` to decode HTML entities and strip `<span class="multilang">` wrappers while favoring Hebrew strings.
+- **Mobile SQLite Section & Folder Schema Expansion (`apps/mobile/src/services/database.ts`)**:
+  - Added `course_sections`, `course_folders`, and `course_links` tables.
+  - Added `section_id`, `section_number`, `folder_id`, `folder_name`, and `relative_path` columns to `files` table.
+
+### Changed
+- **Documentation — Deprecated HTML Scraper as Feature Target (`docs/ARCHITECTURE.md`, `docs/AI_KNOWLEDGE.md`)**:
+  - Documented architectural policy that `ScraperMoodleStrategy` (HTML DOM regex scraping) is unstable across TAU Moodle course formats and themes, and is no longer a target handler for new Moodle structures or features (which must rely exclusively on structured REST Web Services and JSON AJAX endpoints).
 
 ## [4.0.2] - 2026-10-29
 ### Added

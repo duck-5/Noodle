@@ -142,7 +142,7 @@ export class CookieJar {
 
 type ManagedInit = Omit<RequestInit, 'redirect'>;
 
-async function mfetch(jar: CookieJar, url: string, init: ManagedInit = {}): Promise<Response> {
+export async function mfetch(jar: CookieJar, url: string, init: ManagedInit = {}): Promise<Response> {
   const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
 
   const headers: Record<string, string> = {};
@@ -179,7 +179,7 @@ async function mfetch(jar: CookieJar, url: string, init: ManagedInit = {}): Prom
   return res;
 }
 
-async function mfetchFollow(
+export async function mfetchFollow(
   jar: CookieJar,
   url: string,
   init: ManagedInit = {},

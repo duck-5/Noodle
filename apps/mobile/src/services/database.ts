@@ -71,7 +71,45 @@ function initDb(db: SQLite.SQLiteDatabase) {
       key TEXT PRIMARY KEY,
       value TEXT
     );
-  `);
+
+    CREATE TABLE IF NOT EXISTS course_sections (
+      id INTEGER PRIMARY KEY,
+      course_moodle_id INTEGER NOT NULL,
+      section_number INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      summary_html TEXT,
+      parent_section_id INTEGER,
+      level INTEGER DEFAULT 0,
+      is_subsection_module INTEGER DEFAULT 0,
+      section_url TEXT,
+      visible INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS course_folders (
+      id INTEGER PRIMARY KEY,
+      instance_id INTEGER,
+      course_moodle_id INTEGER NOT NULL,
+      course_name TEXT,
+      section_id INTEGER,
+      section_name TEXT,
+      name TEXT NOT NULL,
+      description_html TEXT,
+      moodle_url TEXT,
+      files_json TEXT,
+      total_size INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS course_links (
+      id INTEGER PRIMARY KEY,
+      course_moodle_id INTEGER NOT NULL,
+      course_name TEXT,
+      section_id INTEGER,
+      section_name TEXT,
+      name TEXT NOT NULL,
+      target_url TEXT,
+      moodle_url TEXT,
+      link_kind TEXT
+    );  `);
 
   try {
     const row = db.getFirstSync<{ value: string }>("SELECT value FROM preferences WHERE key = 'migrated_zoom_unique_v2'");
@@ -117,6 +155,11 @@ function initDb(db: SQLite.SQLiteDatabase) {
   try {
     db.execSync('ALTER TABLE meetings ADD COLUMN password TEXT;');
   } catch (e) {}
+  try { db.execSync('ALTER TABLE files ADD COLUMN section_id INTEGER;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE files ADD COLUMN section_number INTEGER;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE files ADD COLUMN folder_id INTEGER;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE files ADD COLUMN folder_name TEXT;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE files ADD COLUMN relative_path TEXT;'); } catch (e) {}
 }
 
 // Preference Helpers
@@ -199,8 +242,119 @@ export function saveSyncResultToDatabase(result: any): void {
           ]
         );
       }
+
+      // 4. Sync sections (if present)
+      if (Array.isArray(result.sections)) {
+        for (const s of result.sections) {
+          db.runSync(
+            `INSERT OR REPLACE INTO course_sections 
+            (id, course_moodle_id, section_number, name, summary_html, parent_section_id, level, is_subsection_module, section_url, visible)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              s.id,
+              s.courseId,
+              s.sectionNumber,
+              s.name,
+              s.summaryHtml || null,
+              s.parentSectionId !== undefined ? s.parentSectionId : null,
+              s.level ?? 0,
+              s.isSubsectionModule ? 1 : 0,
+              s.sectionUrl || null,
+              s.visible ? 1 : 0
+            ]
+          );
+        }
+      }
+
+      // 5. Sync folders (if present)
+      if (Array.isArray(result.folders)) {
+        for (const fld of result.folders) {
+          db.runSync(
+            `INSERT OR REPLACE INTO course_folders 
+            (id, instance_id, course_moodle_id, course_name, section_id, section_name, name, description_html, moodle_url, files_json, total_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              fld.id,
+              fld.instanceId || null,
+              fld.courseId,
+              fld.courseName || '',
+              fld.sectionId || 0,
+              fld.sectionName || '',
+              fld.name,
+              fld.descriptionHtml || null,
+              fld.moodleUrl || null,
+              JSON.stringify(fld.files || []),
+              fld.totalSize || 0
+            ]
+          );
+        }
+      }
+
+      // 6. Sync links (if present)
+      if (Array.isArray(result.links)) {
+        for (const lnk of result.links) {
+          db.runSync(
+            `INSERT OR REPLACE INTO course_links 
+            (id, course_moodle_id, course_name, section_id, section_name, name, target_url, moodle_url, link_kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              lnk.id,
+              lnk.courseId,
+              lnk.courseName || '',
+              lnk.sectionId || 0,
+              lnk.sectionName || '',
+              lnk.name,
+              lnk.targetUrl,
+              lnk.moodleUrl || null,
+              lnk.linkKind || 'external'
+            ]
+          );
+        }
+      }
     });
   } catch (e) {
     console.error('saveSyncResultToDatabase error:', e);
+  }
+}
+
+export function getCourseSections(courseMoodleId?: number): any[] {
+  try {
+    const db = getDb();
+    if (courseMoodleId !== undefined) {
+      return db.getAllSync<any>('SELECT * FROM course_sections WHERE course_moodle_id = ? ORDER BY section_number ASC', [courseMoodleId]);
+    }
+    return db.getAllSync<any>('SELECT * FROM course_sections ORDER BY course_moodle_id ASC, section_number ASC');
+  } catch (e) {
+    console.error('getCourseSections error:', e);
+    return [];
+  }
+}
+
+export function getCourseFolders(courseMoodleId?: number): any[] {
+  try {
+    const db = getDb();
+    const rows = courseMoodleId !== undefined
+      ? db.getAllSync<any>('SELECT * FROM course_folders WHERE course_moodle_id = ?', [courseMoodleId])
+      : db.getAllSync<any>('SELECT * FROM course_folders');
+    return rows.map((r) => ({
+      ...r,
+      files: r.files_json ? JSON.parse(r.files_json) : []
+    }));
+  } catch (e) {
+    console.error('getCourseFolders error:', e);
+    return [];
+  }
+}
+
+export function getCourseLinks(courseMoodleId?: number): any[] {
+  try {
+    const db = getDb();
+    if (courseMoodleId !== undefined) {
+      return db.getAllSync<any>('SELECT * FROM course_links WHERE course_moodle_id = ?', [courseMoodleId]);
+    }
+    return db.getAllSync<any>('SELECT * FROM course_links');
+  } catch (e) {
+    console.error('getCourseLinks error:', e);
+    return [];
   }
 }

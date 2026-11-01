@@ -1,6 +1,16 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import type { SyncResult, SyncError, Assignment, CourseFile, ZoomMeeting, PanoptoRecording } from '@tautracker/moodle-client';
+import type {
+  SyncResult,
+  SyncError,
+  Assignment,
+  CourseFile,
+  CourseSection,
+  CourseFolder,
+  CourseLink,
+  ZoomMeeting,
+  PanoptoRecording,
+} from '@tautracker/moodle-client';
 import {
   parseTauCourseMetadata,
   MoodleClient,
@@ -8,6 +18,7 @@ import {
   collapseRecurringMeetings,
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
+  downloadFolderAsZip,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -1963,6 +1974,9 @@ export default function App() {
                   files={filesList}
                   meetings={meetingsList}
                   recordings={recordingsList}
+                  courseSections={syncResult?.sections}
+                  courseFolders={syncResult?.folders}
+                  courseLinks={syncResult?.links}
                   syncErrors={syncResult?.errors}
                   token={token}
                   getCourseColor={getCourseColor}
@@ -5675,6 +5689,9 @@ function CourseDetailView({
   files,
   meetings,
   recordings,
+  courseSections,
+  courseFolders,
+  courseLinks,
   syncErrors,
   token,
   getCourseColor,
@@ -5699,6 +5716,9 @@ function CourseDetailView({
   files: CourseFile[];
   meetings: ZoomMeeting[];
   recordings?: PanoptoRecording[];
+  courseSections?: CourseSection[];
+  courseFolders?: CourseFolder[];
+  courseLinks?: CourseLink[];
   syncErrors?: SyncError[];
   token: string | null;
   onBack: () => void;
@@ -5726,6 +5746,36 @@ function CourseDetailView({
   const [expandedDetailAssignId, setExpandedDetailAssignId] = useState<number | null>(null);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string> | null>(null);
+  const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
+  const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
+  const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const handleDownloadFolderZip = async (folder: CourseFolder) => {
+    if (!token) return;
+    setDownloadingFolderId(folder.id);
+    setDownloadProgress({ current: 0, total: folder.files.length });
+    try {
+      const zipBytes = await downloadFolderAsZip(folder, token, (completed: number, total: number) => {
+        setDownloadProgress({ current: completed, total });
+      });
+      const blob = new Blob([zipBytes.buffer as ArrayBuffer], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(folder.name || 'folder').replace(/[\\/:*?"<>|]/g, '_')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('ZIP download error:', err);
+      alert(lang === 'he' ? `שגיאה בהורדת התיקייה: ${err.message}` : `Folder download failed: ${err.message}`);
+    } finally {
+      setDownloadingFolderId(null);
+      setDownloadProgress(null);
+    }
+  };
 
   useEffect(() => {
     setPanoptoInputVal(
@@ -5774,32 +5824,51 @@ function CourseDetailView({
     : courseRecordings.find((r) => r.folderUrl)?.folderUrl ||
     'https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx';
 
-  // Group files, assignments, and Panopto recordings by sectionName
+  const thisCourseSections = (courseSections || []).filter((s) => s.courseId === courseId);
+  const thisCourseFolders = (courseFolders || []).filter((f) => f.courseId === courseId);
+  const thisCourseLinks = (courseLinks || []).filter((l) => l.courseId === courseId);
+
+  const topSections = thisCourseSections.filter((s) => s.level === 0 || s.parentSectionId === null);
+  const currentSubSections = activeTopSectionId !== null
+    ? thisCourseSections.filter((s) => s.parentSectionId === activeTopSectionId)
+    : [];
+
+  // Group files, assignments, folders, links, and Panopto recordings by sectionName
   const sectionsMap = new Map<
     string,
     {
       displayTitle: string;
       isPanopto?: boolean;
+      sectionId?: number;
       files: CourseFile[];
       assignments: Assignment[];
       recordings: PanoptoRecording[];
+      folders: CourseFolder[];
+      links: CourseLink[];
     }
   >();
 
   // Initialize section helper
-  const getSection = (key: string, displayTitle?: string, isPanopto = false) => {
+  const getSection = (key: string, displayTitle?: string, isPanopto = false, sectionId?: number) => {
     const sKey = key || 'General';
     if (!sectionsMap.has(sKey)) {
       sectionsMap.set(sKey, {
         displayTitle: displayTitle || sKey,
         isPanopto,
+        sectionId,
         files: [],
         assignments: [],
         recordings: [],
+        folders: [],
+        links: [],
       });
     }
     return sectionsMap.get(sKey)!;
   };
+
+  thisCourseSections.forEach((sec) => {
+    getSection(sec.name, sec.name, false, sec.id);
+  });
 
   courseFiles.forEach((f) => {
     getSection(f.sectionName).files.push(f);
@@ -5807,6 +5876,14 @@ function CourseDetailView({
 
   courseAssignments.forEach((a) => {
     getSection(a.sectionName || 'General').assignments.push(a);
+  });
+
+  thisCourseFolders.forEach((fld) => {
+    getSection(fld.sectionName || 'General').folders.push(fld);
+  });
+
+  thisCourseLinks.forEach((lnk) => {
+    getSection(lnk.sectionName || 'General').links.push(lnk);
   });
 
   // Group Panopto recordings into hardcoded localized "Lectures" and "Recitations" sections
@@ -6329,8 +6406,125 @@ function CourseDetailView({
 
           <h4>{t('course_sections')}</h4>
 
-          {/* Subjects Navigation Tree */}
-          {sectionsList.length > 0 && (
+          {/* Subjects Navigation Tree (2-Level Hierarchy) */}
+          {topSections.length > 0 ? (
+            <div className="subjects-nav-tree-container" style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div className="subjects-nav-tree glass-panel" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
+                padding: '0.75rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '8px',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: '0.5rem' }}>
+                  {lang === 'he' ? 'נווּט נושאים:' : 'Navigate Subjects:'}
+                </span>
+                <button
+                  className="secondary-btn btn-sm"
+                  onClick={() => {
+                    setActiveTopSectionId(null);
+                    setActiveSubSectionId(null);
+                    handleSectionSelect(null);
+                  }}
+                  style={{
+                    background: activeTopSectionId === null && activeSectionName === null ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                    color: activeTopSectionId === null && activeSectionName === null ? '#fff' : 'var(--text-primary)',
+                    borderColor: activeTopSectionId === null && activeSectionName === null ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                    fontWeight: activeTopSectionId === null && activeSectionName === null ? 'bold' : 'normal',
+                    padding: '0.3rem 0.75rem',
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem'
+                  }}
+                >
+                  {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
+                </button>
+                {topSections.map((sec) => {
+                  const isActive = activeTopSectionId === sec.id;
+                  return (
+                    <button
+                      key={sec.id}
+                      className="secondary-btn btn-sm"
+                      onClick={() => {
+                        setActiveTopSectionId(sec.id);
+                        setActiveSubSectionId(null);
+                        handleSectionSelect(sec.name);
+                      }}
+                      style={{
+                        background: isActive ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                        color: isActive ? '#fff' : 'var(--text-primary)',
+                        borderColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                        fontWeight: isActive ? 'bold' : 'normal',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      {sec.name}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeTopSectionId !== null && currentSubSections.length > 0 && (
+                <div className="subsections-nav-row" style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.4rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(255, 255, 255, 0.015)',
+                  borderRadius: '6px',
+                  alignItems: 'center',
+                  marginLeft: lang === 'he' ? 0 : '1rem',
+                  marginRight: lang === 'he' ? '1rem' : 0
+                }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>↳</span>
+                  <button
+                    className="secondary-btn btn-sm"
+                    onClick={() => {
+                      setActiveSubSectionId(null);
+                      const topSec = topSections.find((s) => s.id === activeTopSectionId);
+                      if (topSec) handleSectionSelect(topSec.name);
+                    }}
+                    style={{
+                      background: activeSubSectionId === null ? courseColor : 'rgba(255, 255, 255, 0.04)',
+                      color: activeSubSectionId === null ? '#fff' : 'var(--text-primary)',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    {lang === 'he' ? 'כל תתי-הנושאים' : 'All Subtopics'}
+                  </button>
+                  {currentSubSections.map((sub) => {
+                    const isActive = activeSubSectionId === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        className="secondary-btn btn-sm"
+                        onClick={() => {
+                          setActiveSubSectionId(sub.id);
+                          handleSectionSelect(sub.name);
+                        }}
+                        style={{
+                          background: isActive ? courseColor : 'rgba(255, 255, 255, 0.04)',
+                          color: isActive ? '#fff' : 'var(--text-primary)',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        {sub.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : sectionsList.length > 0 ? (
             <div className="subjects-nav-tree glass-panel" style={{
               display: 'flex',
               flexWrap: 'wrap',
@@ -6383,7 +6577,7 @@ function CourseDetailView({
                 );
               })}
             </div>
-          )}
+          ) : null}
 
           {sectionsList.length === 0 ? (
             <div className="empty-state">{t('empty_sections')}</div>
@@ -6556,6 +6750,121 @@ function CourseDetailView({
                                       aria-label={t('download_file')}
                                     >
                                       <DownloadIcon size={12} />
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {content.folders && content.folders.length > 0 && (
+                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem' }}>
+                            {content.folders.map((fld) => {
+                              const isDownloading = downloadingFolderId === fld.id;
+                              return (
+                                <div
+                                  key={fld.id}
+                                  className="section-folder-card glass-panel"
+                                  style={{
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: '0.5rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '1.2rem' }}>📁</span>
+                                    <div>
+                                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                        {fld.files.length} {lang === 'he' ? 'קבצים' : 'files'}
+                                        {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <a
+                                      href={fld.moodleUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="action-link-btn"
+                                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                    >
+                                      {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                    </a>
+                                    <button
+                                      type="button"
+                                      className="secondary-btn btn-sm"
+                                      disabled={isDownloading}
+                                      onClick={() => handleDownloadFolderZip(fld)}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        fontSize: '0.75rem',
+                                        padding: '0.3rem 0.6rem',
+                                        cursor: isDownloading ? 'wait' : 'pointer'
+                                      }}
+                                    >
+                                      <span>📦</span>
+                                      <span>
+                                        {isDownloading
+                                          ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || fld.files.length})`
+                                          : lang === 'he'
+                                          ? 'הורד כ-ZIP'
+                                          : 'Download ZIP'}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {content.links && content.links.length > 0 && (
+                          <div className="section-links-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
+                            {content.links.map((lnk) => {
+                              let icon = '🔗';
+                              if (lnk.linkKind === 'drive') icon = '📁';
+                              else if (lnk.linkKind === 'github') icon = '💻';
+                              else if (lnk.linkKind === 'zoom') icon = '📹';
+                              else if (lnk.linkKind === 'panopto') icon = '🎬';
+
+                              return (
+                                <div
+                                  key={lnk.id}
+                                  className="section-link-item"
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: '6px',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    fontSize: '0.85rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                    <span>{icon}</span>
+                                    <span style={{ fontWeight: 500 }}>{lnk.name}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <a
+                                      href={lnk.targetUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="action-link-btn"
+                                      style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                    >
+                                      {lang === 'he' ? 'פתח קישור ↗' : 'Open Link ↗'}
                                     </a>
                                   </div>
                                 </div>

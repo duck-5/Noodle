@@ -64,6 +64,16 @@ export interface RawMoodleCourse {
   idnumber: string;
   year?: string;
   instanceUrl?: string;
+  format?: string;
+  coursecategory?: string;
+  startdate?: number;
+  enddate?: number;
+  section?: number;
+  visible?: number;
+  uservisible?: boolean;
+  summary?: string;
+  summaryformat?: number;
+  component?: string;
 }
 
 export interface RawMoodleAssignment {
@@ -75,6 +85,24 @@ export interface RawMoodleAssignment {
   cutoffdate: number;
   allowsubmissionsfromdate: number;
   intro?: string;
+  visible?: number;
+  uservisible?: boolean;
+  visibleoncoursepage?: number;
+  customdata?: string;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+  dates?: Array<{
+    label: string;
+    timestamp: number;
+    dataid: string;
+  }>;
     introattachments?: Array<{
     filename: string;
     fileurl: string;
@@ -157,13 +185,36 @@ export interface RawCourseModule {
   instance?: number;
   description?: string;
   intro?: string;
+  visible?: number;
+  uservisible?: boolean;
+  visibleoncoursepage?: number;
+  customdata?: string;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+  dates?: Array<{
+    label: string;
+    timestamp: number;
+    dataid: string;
+  }>;
   contents?: RawCourseFileContent[];
 }
 
 export interface RawCourseSection {
   id: number;
   name: string;
+  section?: number;
+  visible?: number;
+  uservisible?: boolean;
   summary?: string;
+  summaryformat?: number;
+  component?: string;
   modules: RawCourseModule[];
 }
 
@@ -172,6 +223,7 @@ export interface MoodleClientOptions {
   devMode?: boolean;
   strategies?: IMoodleStrategy[];
   enableScraping?: boolean;
+  lang?: 'he' | 'en';
 }
 
 export class MoodleClient {
@@ -192,6 +244,7 @@ export class MoodleClient {
       baseUrl: this.baseUrl,
       devMode: this.devMode,
       enableScraping: options?.enableScraping,
+      lang: options?.lang,
     };
 
     this.restStrategy = new RestMoodleStrategy(context);
@@ -210,6 +263,10 @@ export class MoodleClient {
       }
       this.strategies = defaultStrategies;
     }
+  }
+
+  public setLanguage(lang: 'he' | 'en'): void {
+    this.restStrategy.setLanguage(lang);
   }
 
   public static async fetchToken(

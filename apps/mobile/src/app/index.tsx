@@ -26,6 +26,7 @@ import { getDb, getPreference, setPreference } from '../services/database';
 import { setGoogleAccessToken } from '../services/googleTasks';
 import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
 import { t } from '../services/i18n';
+import { openMoodleLink } from '../services/moodleLink';
 import { usePreferences } from '../hooks/use-preferences';
 import CoursesScreen from './courses';
 import FilesScreen from './files';
@@ -916,6 +917,12 @@ export default function DashboardScreen() {
                 ? JSON.parse(nextAssignment.attachments)
                 : nextAssignment.attachments || [];
             } catch (e) { nextAttachments = []; }
+            let submittedFiles: any[] = [];
+            try {
+              submittedFiles = typeof nextAssignment.submitted_files === 'string'
+                ? JSON.parse(nextAssignment.submitted_files)
+                : nextAssignment.submitted_files || [];
+            } catch (e) { submittedFiles = []; }
 
             const nextDeadlineBg = timeColor === theme.danger
               ? 'rgba(239, 68, 68, 0.12)'
@@ -1078,7 +1085,7 @@ export default function DashboardScreen() {
                               const mimeType = att.mimeType || att.mimetype;
                               return (
                                 <Pressable
-                                  key={sub -}
+                                  key={`sub-${idx}`}
                                   style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
                                   onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
                                 >
@@ -1292,6 +1299,10 @@ export default function DashboardScreen() {
               try {
                 attachments = typeof a.attachments === 'string' ? JSON.parse(a.attachments) : a.attachments || [];
               } catch (e) { attachments = []; }
+              let submittedFiles: any[] = [];
+              try {
+                submittedFiles = typeof a.submitted_files === 'string' ? JSON.parse(a.submitted_files) : a.submitted_files || [];
+              } catch (e) { submittedFiles = []; }
 
               const deadlineBg = deadlineColor === theme.danger
                 ? 'rgba(239, 68, 68, 0.12)'
@@ -1450,7 +1461,7 @@ export default function DashboardScreen() {
                                 const mimeType = att.mimeType || att.mimetype;
                                 return (
                                   <Pressable
-                                    key={sub -}
+                                    key={`sub-${idx}`}
                                     style={[styles.attachmentChip, { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }]}
                                     onPress={() => fileUrl && handleDownloadFile({ file_name: displayFileName, file_url: fileUrl, mime_type: mimeType })}
                                   >

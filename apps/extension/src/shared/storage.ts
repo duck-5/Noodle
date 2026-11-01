@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import type { SyncResult } from '@tautracker/moodle-client';
+import type { SyncResult, CourseSection, CourseFolder, CourseLink } from '@tautracker/moodle-client';
 
 export interface ExtensionSettings {
   googleTasksEnabled: boolean;
@@ -125,6 +125,21 @@ export async function getCachedSyncResult(): Promise<SyncResult | null> {
 
 export async function setCachedSyncResult(result: SyncResult): Promise<void> {
   await browser.storage.local.set({ cachedSyncResult: result });
+}
+
+export async function getCachedSections(): Promise<CourseSection[]> {
+  const result = await getCachedSyncResult();
+  return result?.sections || [];
+}
+
+export async function getCachedFolders(): Promise<CourseFolder[]> {
+  const result = await getCachedSyncResult();
+  return result?.folders || [];
+}
+
+export async function getCachedLinks(): Promise<CourseLink[]> {
+  const result = await getCachedSyncResult();
+  return result?.links || [];
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {

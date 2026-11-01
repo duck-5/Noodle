@@ -6,3 +6,5 @@ export * from './googleTasksSync.js';
 export * from './zoomScraper.js';
 export * from './panoptoScraper.js';
 export * from './settingsSync.js';
+export * from './zipBuilder.js';
+export * from './courseFormatState.js';

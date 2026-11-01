@@ -171,7 +171,8 @@ graph TD
    Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the user's web `sesskey` and browser session cookie. Supports modern Moodle 4.x dashboard endpoints (e.g. `core_course_get_enrolled_courses_by_timeline_classification`).
    * **Static Operation Filtering**: Operations not exposed by Moodle core over AJAX (`getSiteInfo`, `getAssignments`, `getCourseContents`, `getGradeItems`, etc.) are declared statically via `isOperationSupported(op)`, allowing `fallbackRunner` to skip directly to Tier 3 without attempting doomed calls.
    * **Multi-Year Archive Querying**: Queries root and candidate past academic years (e.g. `/2025/lib/ajax/service.php`, `/2024/...`) with `sesskey`.
-3. **Tier 3 — Scraper Strategy (`ScraperMoodleStrategy`)**:
+3. **Tier 3 — Scraper Strategy (`ScraperMoodleStrategy`) — *[Legacy / Unstable — Not a Target Handler]***:
+   > **Architectural Policy**: Because Moodle's rendered HTML DOM varies drastically across course formats (`topics`, `onetopic`, `multitopic`, `grid`, `remuiformat`), themes (`tauboostunion`), and Moodle upgrades, `ScraperMoodleStrategy` is **very unstable and is NOT a relevant target handler for new features or Moodle structures**. All new synchronization features and Moodle structure parsers MUST rely exclusively on Moodle's structured JSON APIs: **Tier 1 REST (`RestMoodleStrategy`)** and, where supplementary web-only JSON state is needed (such as `core_courseformat_get_state`), **Tier 2 AJAX (`AjaxMoodleStrategy`)**.
    Acts like a standard browser, fetching rendered Moodle pages (`/grade/report/overview/index.php`, `/my/courses.php`, `/user/profile.php`, `/my/`, `/course/view.php?id=...`) with `credentials: 'include'`. Uses pure TypeScript string and regex parsing (fully compliant with Chrome MV3 Service Workers and React Native Hermes) to extract courses, assignment tables, modules, and files.
 
 ### Multi-Year Academic Archive Discovery:
