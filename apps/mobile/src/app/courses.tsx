@@ -422,7 +422,8 @@ export default function CoursesScreen({
       'SELECT * FROM meetings WHERE course_moodle_id = ?',
       [course.moodle_id]
     );
-    const courseSections = getCourseSections(course.moodle_id);
+    const rawCourseSections = getCourseSections(course.moodle_id);
+    const courseSections = rawCourseSections.filter((s: any) => s.visible !== 0 && s.visible !== false);
     const courseFolders = getCourseFolders(course.moodle_id);
     const courseLinks = getCourseLinks(course.moodle_id);
 
@@ -431,25 +432,65 @@ export default function CoursesScreen({
       ? courseSections.filter((s: any) => s.parent_section_id === activeTopSectionId)
       : [];
 
-    // Group files, assignments, folders, links by sectionName
-    const sectionsMap: Record<string, { assignments: any[]; files: any[]; meetings: any[]; folders: any[]; links: any[] }> = {};
-    const getSection = (name: string) => {
+    // Group files, assignments, folders, links by sectionId (with fallback to sectionName)
+    const sectionsMap: Record<
+      string,
+      {
+        displayTitle: string;
+        sectionId?: number;
+        assignments: any[];
+        files: any[];
+        meetings: any[];
+        folders: any[];
+        links: any[];
+      }
+    > = {};
+    const sectionKeyByName = new Map<string, string>();
+    const getSection = (name: string, sectionId?: number | null) => {
       const n = name || (isRtl ? 'כללי' : 'General');
-      if (!sectionsMap[n]) sectionsMap[n] = { assignments: [], files: [], meetings: [], folders: [], links: [] };
-      return sectionsMap[n];
+      const key = sectionId ? `sec_${sectionId}` : (sectionKeyByName.get(n) || `name_${n}`);
+      if (!sectionsMap[key]) {
+        sectionsMap[key] = {
+          displayTitle: n,
+          sectionId: sectionId ?? undefined,
+          assignments: [],
+          files: [],
+          meetings: [],
+          folders: [],
+          links: [],
+        };
+      }
+      if (!sectionKeyByName.has(n)) {
+        sectionKeyByName.set(n, key);
+      }
+      return sectionsMap[key];
     };
-    courseSections.forEach((s: any) => getSection(s.name));
-    courseFiles.forEach((f: any) => getSection(f.section_name).files.push(f));
-    courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General')).assignments.push(a));
+    courseSections.forEach((s: any) => getSection(s.name, s.id));
+    courseFiles.forEach((f: any) => getSection(f.section_name, f.section_id).files.push(f));
+    courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General'), a.section_id).assignments.push(a));
     courseMeetings.forEach((m: any) => getSection(m.section_name || (isRtl ? 'כללי' : 'General')).meetings.push(m));
-    courseFolders.forEach((fld: any) => getSection(fld.section_name || (isRtl ? 'כללי' : 'General')).folders.push(fld));
-    courseLinks.forEach((lnk: any) => getSection(lnk.section_name || (isRtl ? 'כללי' : 'General')).links.push(lnk));
+    courseFolders.forEach((fld: any) => getSection(fld.section_name || (isRtl ? 'כללי' : 'General'), fld.section_id).folders.push(fld));
+    courseLinks.forEach((lnk: any) => getSection(lnk.section_name || (isRtl ? 'כללי' : 'General'), lnk.section_id).links.push(lnk));
     const allSectionEntries = Object.entries(sectionsMap);
 
-    // Filter section entries if user selected a specific section pill
-    const sectionEntries = activeSectionName
-      ? allSectionEntries.filter(([secName]) => secName === activeSectionName)
-      : allSectionEntries;
+    // Filter section entries by 2-level hierarchy or legacy activeSectionName
+    const allowedSubSectionIds = new Set<number>(
+      activeTopSectionId !== null
+        ? [activeTopSectionId, ...currentSubSections.map((s: any) => Number(s.id))]
+        : []
+    );
+    const sectionEntries =
+      activeSubSectionId !== null
+        ? allSectionEntries.filter(([, content]) => content.sectionId === activeSubSectionId)
+        : activeTopSectionId !== null
+        ? allSectionEntries.filter(
+            ([, content]) =>
+              (content.sectionId !== undefined && allowedSubSectionIds.has(content.sectionId)) ||
+              (content.sectionId === undefined && content.displayTitle === activeSectionName)
+          )
+        : activeSectionName
+        ? allSectionEntries.filter(([secKey, content]) => secKey === activeSectionName || content.displayTitle === activeSectionName)
+        : allSectionEntries;
 
     // Calculate course assignment stats
     const totalAssignments = courseAssignments.length;
@@ -947,19 +988,21 @@ export default function CoursesScreen({
                       style={[
                         styles.navPill,
                         {
-                          backgroundColor: activeSectionName === null ? courseColor : theme.backgroundElement,
-                          borderColor: activeSectionName === null ? courseColor : theme.border,
+                          backgroundColor: activeSectionName === null && activeTopSectionId === null ? courseColor : theme.backgroundElement,
+                          borderColor: activeSectionName === null && activeTopSectionId === null ? courseColor : theme.border,
                         },
                       ]}
                       onPress={() => {
                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setActiveTopSectionId(null);
+                        setActiveSubSectionId(null);
                         setActiveSectionName(null);
                       }}
                     >
                       <Text
                         style={{
-                          color: activeSectionName === null ? '#ffffff' : theme.text,
-                          fontWeight: activeSectionName === null ? 'bold' : 'normal',
+                          color: activeSectionName === null && activeTopSectionId === null ? '#ffffff' : theme.text,
+                          fontWeight: activeSectionName === null && activeTopSectionId === null ? 'bold' : 'normal',
                           fontSize: 12,
                         }}
                       >
@@ -967,37 +1010,139 @@ export default function CoursesScreen({
                       </Text>
                     </Pressable>
 
-                    {/* Section Pills */}
-                    {allSectionEntries.map(([secName]) => {
-                      const isSelected = activeSectionName === secName;
-                      return (
-                        <Pressable
-                          key={secName}
-                          style={[
-                            styles.navPill,
-                            {
-                              backgroundColor: isSelected ? courseColor : theme.backgroundElement,
-                              borderColor: isSelected ? courseColor : theme.border,
-                            },
-                          ]}
-                          onPress={() => {
-                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                            setActiveSectionName(isSelected ? null : secName);
+                    {/* Section Pills (Top-Level when hierarchy exists, otherwise all entries) */}
+                    {topSections.length > 0
+                      ? topSections.map((sec: any) => {
+                          const isSelected = activeTopSectionId === sec.id;
+                          return (
+                            <Pressable
+                              key={sec.id}
+                              style={[
+                                styles.navPill,
+                                {
+                                  backgroundColor: isSelected ? courseColor : theme.backgroundElement,
+                                  borderColor: isSelected ? courseColor : theme.border,
+                                },
+                              ]}
+                              onPress={() => {
+                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                setActiveTopSectionId(isSelected ? null : sec.id);
+                                setActiveSubSectionId(null);
+                                setActiveSectionName(isSelected ? null : sec.name);
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: isSelected ? '#ffffff' : theme.text,
+                                  fontWeight: isSelected ? 'bold' : 'normal',
+                                  fontSize: 12,
+                                }}
+                              >
+                                {sec.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })
+                      : allSectionEntries.map(([secKey, content]) => {
+                          const isSelected = activeSectionName === secKey;
+                          return (
+                            <Pressable
+                              key={secKey}
+                              style={[
+                                styles.navPill,
+                                {
+                                  backgroundColor: isSelected ? courseColor : theme.backgroundElement,
+                                  borderColor: isSelected ? courseColor : theme.border,
+                                },
+                              ]}
+                              onPress={() => {
+                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                setActiveSectionName(isSelected ? null : secKey);
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: isSelected ? '#ffffff' : theme.text,
+                                  fontWeight: isSelected ? 'bold' : 'normal',
+                                  fontSize: 12,
+                                }}
+                              >
+                                {content.displayTitle}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                  </ScrollView>
+
+                  {activeTopSectionId !== null && currentSubSections.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                      contentContainerStyle={{
+                        flexDirection: isRtl ? 'row-reverse' : 'row',
+                        gap: 6,
+                        paddingVertical: 2,
+                      }}
+                    >
+                      <Pressable
+                        style={[
+                          styles.navPill,
+                          {
+                            backgroundColor: activeSubSectionId === null ? courseColor : theme.backgroundElement,
+                            borderColor: activeSubSectionId === null ? courseColor : theme.border,
+                            paddingVertical: 4,
+                            paddingHorizontal: 10,
+                          },
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setActiveSubSectionId(null);
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: activeSubSectionId === null ? '#ffffff' : theme.text,
+                            fontWeight: activeSubSectionId === null ? 'bold' : 'normal',
+                            fontSize: 11,
                           }}
                         >
-                          <Text
-                            style={{
-                              color: isSelected ? '#ffffff' : theme.text,
-                              fontWeight: isSelected ? 'bold' : 'normal',
-                              fontSize: 12,
+                          {isRtl ? 'כל תתי-הנושאים' : 'All Subtopics'}
+                        </Text>
+                      </Pressable>
+                      {currentSubSections.map((sub: any) => {
+                        const isSubSelected = activeSubSectionId === sub.id;
+                        return (
+                          <Pressable
+                            key={sub.id}
+                            style={[
+                              styles.navPill,
+                              {
+                                backgroundColor: isSubSelected ? courseColor : theme.backgroundElement,
+                                borderColor: isSubSelected ? courseColor : theme.border,
+                                paddingVertical: 4,
+                                paddingHorizontal: 10,
+                              },
+                            ]}
+                            onPress={() => {
+                              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                              setActiveSubSectionId(isSubSelected ? null : sub.id);
                             }}
                           >
-                            {secName}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+                            <Text
+                              style={{
+                                color: isSubSelected ? '#ffffff' : theme.text,
+                                fontWeight: isSubSelected ? 'bold' : 'normal',
+                                fontSize: 11,
+                              }}
+                            >
+                              {sub.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </View>
               )}
 
@@ -1009,9 +1154,13 @@ export default function CoursesScreen({
                   </Text>
                 </View>
               ) : (
-                sectionEntries.map(([secName, content], secIdx) => {
-                  const isCollapsed = Boolean(collapsedSections[secName]);
-                  const itemCount = content.assignments.length + content.files.length;
+                sectionEntries.map(([secKey, content], secIdx) => {
+                  const isCollapsed = Boolean(collapsedSections[secKey]);
+                  const itemCount =
+                    content.assignments.length +
+                    content.files.length +
+                    (content.folders?.length || 0) +
+                    (content.links?.length || 0);
 
                   return (
                     <View
@@ -1034,7 +1183,7 @@ export default function CoursesScreen({
                             borderBottomWidth: isCollapsed ? 0 : 1,
                           },
                         ]}
-                        onPress={() => toggleCollapseSection(secName)}
+                        onPress={() => toggleCollapseSection(secKey)}
                       >
                         <View
                           style={{
@@ -1052,7 +1201,7 @@ export default function CoursesScreen({
                               textAlign: isRtl ? 'right' : 'left',
                             }}
                           >
-                            {secName}
+                            {content.displayTitle}
                           </Text>
                           <View
                             style={{

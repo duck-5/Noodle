@@ -21,6 +21,10 @@ import {
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
   downloadFolderAsZip,
+  groupEnrolledCourses,
+  expandTrackedCourseIds,
+  aggregateUnifiedCourseItems,
+  isAdministrativeCourse,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -675,8 +679,76 @@ export default function App() {
     }
   }, [token, trackedCourseIds, settings]);
 
+  const groupedCoursesResult = useMemo(() => groupEnrolledCourses(availableCourses), [availableCourses]);
+  const excludedGpaCourseIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (groupedCoursesResult.administrativeUmbrella) {
+      ids.add(-5900);
+      for (const sub of groupedCoursesResult.administrativeUmbrella.subCourses) {
+        ids.add(sub.courseId);
+      }
+    }
+    for (const c of availableCourses) {
+      if (isAdministrativeCourse(c)) ids.add(c.id);
+    }
+    return ids;
+  }, [groupedCoursesResult, availableCourses]);
+
+  // Merge sub-course items into parent academic portals when multiple portals exist for the same course
+  const mergedSyncView = useMemo(() => {
+    if (!syncResult) return null;
+    const multiPortalGroups = groupedCoursesResult.academicCourses.filter((u) => u.subCourses.length > 1);
+    if (multiPortalGroups.length === 0) return syncResult;
+
+    const childCourseIds = new Set<number>();
+    for (const u of multiPortalGroups) {
+      for (const s of u.subCourses) {
+        if (s.courseId !== u.id) childCourseIds.add(s.courseId);
+      }
+    }
+    if (childCourseIds.size === 0) return syncResult;
+
+    let assignments = (syncResult.assignments || []).filter((a) => !childCourseIds.has(a.courseId));
+    let files = (syncResult.files || []).filter((f) => !childCourseIds.has(f.courseId));
+    let meetings = (syncResult.meetings || []).filter((m) => !childCourseIds.has(m.courseId));
+    let folders = (syncResult.folders || []).filter((fld) => !childCourseIds.has(fld.courseId));
+    let links = (syncResult.links || []).filter((lnk) => !childCourseIds.has(lnk.courseId));
+    let sections = (syncResult.sections || []).filter((sec) => !childCourseIds.has(sec.courseId));
+    let announcements = (syncResult.announcements || []).filter((ann) => !childCourseIds.has(ann.courseId));
+    let recordings = (syncResult.recordings || []).filter((rec) => !childCourseIds.has(rec.courseId));
+    const gradeSummaries = { ...(syncResult.gradeSummaries || {}) };
+
+    for (const u of multiPortalGroups) {
+      const agg = aggregateUnifiedCourseItems(u, syncResult);
+      assignments = assignments.filter((a) => a.courseId !== u.id).concat(agg.assignments);
+      files = files.filter((f) => f.courseId !== u.id).concat(agg.files);
+      meetings = meetings.filter((m) => m.courseId !== u.id).concat(agg.meetings);
+      folders = folders.filter((fld) => fld.courseId !== u.id).concat(agg.folders);
+      links = links.filter((lnk) => lnk.courseId !== u.id).concat(agg.links);
+      sections = sections.filter((sec) => sec.courseId !== u.id).concat(agg.sections);
+      announcements = announcements.filter((ann) => ann.courseId !== u.id).concat(agg.announcements);
+      recordings = recordings.filter((rec) => rec.courseId !== u.id).concat(agg.recordings);
+      if (agg.gradeSummary) {
+        gradeSummaries[u.id] = agg.gradeSummary;
+      }
+    }
+
+    return {
+      ...syncResult,
+      assignments,
+      files,
+      meetings,
+      folders,
+      links,
+      sections,
+      announcements,
+      recordings,
+      gradeSummaries,
+    };
+  }, [syncResult, groupedCoursesResult]);
+
   const assignmentsList = useMemo(() => {
-    const rawAssignments = syncResult?.assignments || [];
+    const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const completedSet = new Set(settings?.completedAssignments || []);
     const uncompletedSet = new Set(settings?.uncompletedAssignments || []);
     return rawAssignments.map((a) => {
@@ -698,11 +770,11 @@ export default function App() {
         status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
       };
     });
-  }, [syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+  }, [mergedSyncView, syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
 
-  const filesList = syncResult?.files || [];
-  const meetingsList = syncResult?.meetings || [];
-  const recordingsList = syncResult?.recordings || [];
+  const filesList = mergedSyncView?.files || [];
+  const meetingsList = mergedSyncView?.meetings || [];
+  const recordingsList = mergedSyncView?.recordings || [];
 
   async function loadData() {
     setLoading(true);
@@ -973,7 +1045,9 @@ export default function App() {
   async function handleSaveOnboardingCourses() {
     setLoading(true);
     try {
-      await setTrackedCourseIds(trackedCourseIds);
+      const expandedIds = expandTrackedCourseIds(trackedCourseIds, groupedCoursesResult);
+      setTrackedCourseIdsState(expandedIds);
+      await setTrackedCourseIds(expandedIds);
       setOnboardingStep(3);
       // Run initial sync
       const res = await syncNowOnBackground();
@@ -1290,7 +1364,9 @@ export default function App() {
     await setSettings(updated);
 
     if (assign && assign.requiresManualCompletion && token) {
-      const willBeCompleted = !currentCompleted.includes(assignmentId) && !isMoodleSubmitted;
+      const willBeCompleted = isMoodleSubmitted
+        ? currentUncompleted.includes(assignmentId)
+        : !currentCompleted.includes(assignmentId);
       try {
         const client = new MoodleClient(token);
         client.updateActivityCompletionManually(assign.cmid, willBeCompleted).catch(() => {});
@@ -1984,11 +2060,11 @@ export default function App() {
                   files={filesList}
                   meetings={meetingsList}
                   recordings={recordingsList}
-                  courseSections={syncResult?.sections}
-                  courseFolders={syncResult?.folders}
-                  courseLinks={syncResult?.links}
-                  courseAnnouncements={syncResult?.announcements}
-                  courseGradeSummaries={syncResult?.gradeSummaries}
+                  courseSections={mergedSyncView?.sections}
+                  courseFolders={mergedSyncView?.folders}
+                  courseLinks={mergedSyncView?.links}
+                  courseAnnouncements={mergedSyncView?.announcements}
+                  courseGradeSummaries={mergedSyncView?.gradeSummaries}
                   syncErrors={syncResult?.errors}
                   token={token}
                   getCourseColor={getCourseColor}
@@ -2029,8 +2105,9 @@ export default function App() {
                   onUpdateCustomName={handleUpdateCourseCustomName}
                   onUpdatePanopto={handleUpdateCoursePanopto}
                   onSaveTrackedCourses={async (newIds, panoptoOverrides) => {
-                    setTrackedCourseIdsState(newIds);
-                    await setTrackedCourseIds(newIds);
+                    const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
+                    setTrackedCourseIdsState(expandedIds);
+                    await setTrackedCourseIds(expandedIds);
                     if (panoptoOverrides && settings) {
                       const cleanedMap: Record<number, string> = {};
                       for (const [k, v] of Object.entries(panoptoOverrides)) {
@@ -2085,7 +2162,8 @@ export default function App() {
               {activeTab === 'grades' && (
                 <GradesTab
                   assignments={assignmentsList}
-                  gradeSummaries={syncResult?.gradeSummaries}
+                  gradeSummaries={mergedSyncView?.gradeSummaries}
+                  excludedCourseIds={excludedGpaCourseIds}
                   getCourseColor={getCourseColor}
                   getCourseDisplayName={getCourseDisplayName}
                   t={t}
@@ -4928,6 +5006,7 @@ function AssignmentsTab({
 function GradesTab({
   assignments,
   gradeSummaries,
+  excludedCourseIds,
   getCourseColor,
   getCourseDisplayName,
   t,
@@ -4936,10 +5015,13 @@ function GradesTab({
 }: {
   assignments: Assignment[];
   gradeSummaries?: Record<number, CourseGradeSummary>;
+  excludedCourseIds?: Set<number>;
   tourStep?: number;
 } & TabProps) {
-  // Collect all assignments that are graded
-  const gradedAssigns = assignments.filter((a) => a.grade !== null);
+  // Collect all assignments that are graded (excluding administrative/safety tutorials from GPA)
+  const gradedAssigns = assignments.filter(
+    (a) => a.grade !== null && !excludedCourseIds?.has(a.courseId) && !/^5[89]00\d{4}/.test(a.courseName || '')
+  );
 
   // Group graded assignments by course to calculate averages
   const gradesByCourse: Record<number, { courseName: string; sum: number; count: number; list: Assignment[] }> = {};
@@ -5865,7 +5947,9 @@ function CourseDetailView({
     : courseRecordings.find((r) => r.folderUrl)?.folderUrl ||
     'https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx';
 
-  const thisCourseSections = (courseSections || []).filter((s) => s.courseId === courseId);
+  const thisCourseSections = (courseSections || []).filter(
+    (s) => s.courseId === courseId && s.visible !== false
+  );
   const thisCourseFolders = (courseFolders || []).filter((f) => f.courseId === courseId);
   const thisCourseLinks = (courseLinks || []).filter((l) => l.courseId === courseId);
 
@@ -5874,13 +5958,14 @@ function CourseDetailView({
     ? thisCourseSections.filter((s) => s.parentSectionId === activeTopSectionId)
     : [];
 
-  // Group files, assignments, folders, links, and Panopto recordings by sectionName
+  // Group files, assignments, folders, links, and Panopto recordings by sectionId (with fallback to sectionName)
   const sectionsMap = new Map<
     string,
     {
       displayTitle: string;
       isPanopto?: boolean;
       sectionId?: number;
+      parentSectionId?: number | null;
       summaryHtml?: string;
       files: CourseFile[];
       assignments: Assignment[];
@@ -5889,15 +5974,34 @@ function CourseDetailView({
       links: CourseLink[];
     }
   >();
+  const sectionKeyById = new Map<number, string>();
+  const sectionKeyByName = new Map<string, string>();
 
   // Initialize section helper
-  const getSection = (key: string, displayTitle?: string, isPanopto = false, sectionId?: number) => {
-    const sKey = key || 'General';
+  const getSection = (
+    key: string,
+    displayTitle?: string,
+    isPanopto = false,
+    sectionId?: number,
+    parentSectionId?: number | null
+  ) => {
+    const title = displayTitle || key || 'General';
+    let sKey = key || 'General';
+    if (sectionId !== undefined && sectionKeyById.has(sectionId)) {
+      sKey = sectionKeyById.get(sectionId)!;
+    } else if (sectionId === undefined && sectionKeyByName.has(sKey)) {
+      sKey = sectionKeyByName.get(sKey)!;
+    } else if (sectionId !== undefined && sectionsMap.has(sKey) && sectionsMap.get(sKey)!.sectionId !== sectionId) {
+      // Disambiguate identically named subsections (e.g., two "שבוע 1" under different parent tabs)
+      sKey = `${sKey}__${sectionId}`;
+    }
+
     if (!sectionsMap.has(sKey)) {
       sectionsMap.set(sKey, {
-        displayTitle: displayTitle || sKey,
+        displayTitle: title,
         isPanopto,
         sectionId,
+        parentSectionId,
         files: [],
         assignments: [],
         recordings: [],
@@ -5905,28 +6009,30 @@ function CourseDetailView({
         links: [],
       });
     }
+    if (sectionId !== undefined) sectionKeyById.set(sectionId, sKey);
+    if (!sectionKeyByName.has(title)) sectionKeyByName.set(title, sKey);
     return sectionsMap.get(sKey)!;
   };
 
   thisCourseSections.forEach((sec) => {
-    const s = getSection(sec.name, sec.name, false, sec.id);
+    const s = getSection(sec.name, sec.name, false, sec.id, sec.parentSectionId);
     if (sec.summaryHtml) s.summaryHtml = sec.summaryHtml;
   });
 
   courseFiles.forEach((f) => {
-    getSection(f.sectionName).files.push(f);
+    getSection(f.sectionName, f.sectionName, false, f.sectionId).files.push(f);
   });
 
   courseAssignments.forEach((a) => {
-    getSection(a.sectionName || 'General').assignments.push(a);
+    getSection(a.sectionName || 'General', a.sectionName || 'General', false, a.sectionId).assignments.push(a);
   });
 
   thisCourseFolders.forEach((fld) => {
-    getSection(fld.sectionName || 'General').folders.push(fld);
+    getSection(fld.sectionName || 'General', fld.sectionName || 'General', false, fld.sectionId).folders.push(fld);
   });
 
   thisCourseLinks.forEach((lnk) => {
-    getSection(lnk.sectionName || 'General').links.push(lnk);
+    getSection(lnk.sectionName || 'General', lnk.sectionName || 'General', false, lnk.sectionId).links.push(lnk);
   });
 
   // Group Panopto recordings into hardcoded localized "Lectures" and "Recitations" sections
@@ -6535,7 +6641,21 @@ function CourseDetailView({
                       onClick={() => {
                         setActiveTopSectionId(sec.id);
                         setActiveSubSectionId(null);
-                        handleSectionSelect(sec.name);
+                        const childSubIds = new Set(
+                          thisCourseSections
+                            .filter((s) => s.parentSectionId === sec.id)
+                            .map((s) => s.id)
+                        );
+                        if (childSubIds.size > 0) {
+                          const matchingKeys = sectionsList
+                            .filter(([, c]) => c.sectionId === sec.id || (c.sectionId !== undefined && childSubIds.has(c.sectionId)))
+                            .map(([k]) => k);
+                          setActiveSectionName(matchingKeys[0] || sec.name);
+                          setExpandedSections(new Set(matchingKeys));
+                        } else {
+                          const key = sectionKeyById.get(sec.id) || sec.name;
+                          handleSectionSelect(key);
+                        }
                       }}
                       style={{
                         background: isActive ? courseColor : 'rgba(255, 255, 255, 0.05)',
@@ -6572,7 +6692,18 @@ function CourseDetailView({
                     onClick={() => {
                       setActiveSubSectionId(null);
                       const topSec = topSections.find((s) => s.id === activeTopSectionId);
-                      if (topSec) handleSectionSelect(topSec.name);
+                      if (topSec) {
+                        const childSubIds = new Set(
+                          thisCourseSections
+                            .filter((s) => s.parentSectionId === topSec.id)
+                            .map((s) => s.id)
+                        );
+                        const matchingKeys = sectionsList
+                          .filter(([, c]) => c.sectionId === topSec.id || (c.sectionId !== undefined && childSubIds.has(c.sectionId)))
+                          .map(([k]) => k);
+                        setActiveSectionName(matchingKeys[0] || topSec.name);
+                        setExpandedSections(new Set(matchingKeys));
+                      }
                     }}
                     style={{
                       background: activeSubSectionId === null ? courseColor : 'rgba(255, 255, 255, 0.04)',
@@ -6592,7 +6723,8 @@ function CourseDetailView({
                         className="secondary-btn btn-sm"
                         onClick={() => {
                           setActiveSubSectionId(sub.id);
-                          handleSectionSelect(sub.name);
+                          const key = sectionKeyById.get(sub.id) || sub.name;
+                          handleSectionSelect(key);
                         }}
                         style={{
                           background: isActive ? courseColor : 'rgba(255, 255, 255, 0.04)',

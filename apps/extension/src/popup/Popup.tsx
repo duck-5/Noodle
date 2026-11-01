@@ -1,6 +1,6 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
-import { decodeHTMLEntities, type SyncResult } from '@tautracker/moodle-client';
+import { decodeHTMLEntities, MoodleClient, type SyncResult } from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
@@ -67,6 +67,13 @@ export default function Popup() {
     const updated = { ...settings, completedAssignments: completed, uncompletedAssignments: uncompleted };
     setSettingsState(updated);
     await saveSettings({ completedAssignments: completed, uncompletedAssignments: uncompleted });
+    const assign = (syncResult?.assignments || []).find((a: any) => a.id === assignId);
+    if (assign && assign.requiresManualCompletion && token) {
+      try {
+        const client = new MoodleClient(token);
+        client.updateActivityCompletionManually(assign.cmid, true).catch(() => {});
+      } catch {}
+    }
     browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
     if (settings.googleTasksEnabled) {
       syncGoogleTasksOnBackground(false).catch(() => { });

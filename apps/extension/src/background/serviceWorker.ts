@@ -549,6 +549,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
           enableScraping: settings.scrapingEnabled ?? false,
           enablePanopto: settings.panoptoEnabled ?? false,
           coursesPanoptoMap: settings.coursesPanoptoMap,
+          lang: settings.language || 'he',
           onEnsurePanoptoAuth: (forceRefresh) =>
             ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
         }

@@ -17,6 +17,8 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   private archiveTokens = new Map<number, string>();
   private courseYearMap = new Map<number, number>();
   private assignYearMap = new Map<number, number>();
+  private quizYearMap = new Map<number, number>();
+  private cmidYearMap = new Map<number, number>();
   private lang: 'he' | 'en' = 'he';
 
   constructor(private context: StrategyContext) {
@@ -35,8 +37,6 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     };
     return text.replace(/&[#\w]+;/g, (m) => entities[m] || m);
   }
-
-
 
   public setToken(token: string): void {
     this.context.token = token;
@@ -105,7 +105,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
 
     let url = baseUrlOverride || this.getRestEndpoint();
     if (baseUrlOverride && !url.endsWith('/webservice/rest/server.php')) {
-        url = `${url}/webservice/rest/server.php`;
+      url = `${url}/webservice/rest/server.php`;
     }
     const options: RequestInit = { method };
 
@@ -142,8 +142,8 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       const isAccessOrServiceError =
         code === 'servicenotavailable' ||
         (wsfunction === 'core_webservice_get_site_info' && (
-          code === 'accessexception' || 
-          message.includes('חריגת בקרת גישה') || 
+          code === 'accessexception' ||
+          message.includes('חריגת בקרת גישה') ||
           message.includes('Access to the function')
         ));
 
@@ -172,7 +172,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   public async getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]> {
     const allCourses: RawMoodleCourse[] = [];
     const currentYear = new Date().getFullYear();
-    
+
     // 1. Root
     let rootCourses: any[] = [];
     try {
@@ -214,9 +214,9 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       });
       allCourses.push(...rootCourses);
     }
-    
+
     // 2. Archives (Last year)
-    const archiveYears = [currentYear, currentYear - 1]; 
+    const archiveYears = [currentYear, currentYear - 1];
     const urlHost = new URL(this.context.baseUrl).origin;
 
     for (const year of archiveYears) {
@@ -231,13 +231,13 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     }
     // Deduplicate by course ID (in case the current year archive redirects back to root)
     const uniqueCourses = Array.from(new Map(allCourses.map(c => [c.id, c])).values());
-    
+
     return uniqueCourses;
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
     const res = await this.apiCall('mod_assign_get_assignments');
-    
+
     const currentYear = new Date().getFullYear();
     if (res && Array.isArray(res.courses)) {
       res.courses.forEach((c: any) => {
@@ -245,7 +245,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
         if (c.shortname) {
           const match = c.shortname.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$/);
           if (match) year = match[3];
-        } 
+        }
         if (year === String(currentYear) && c.fullname) {
           const match = c.fullname.match(/\b(20\d{2})\b/);
           if (match) year = match[1];
@@ -257,7 +257,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       });
     }
 
-    const archiveYears = [currentYear - 1]; 
+    const archiveYears = [currentYear - 1];
     const urlHost = new URL(this.context.baseUrl).origin;
 
     for (const year of archiveYears) {
@@ -276,11 +276,11 @@ export class RestMoodleStrategy implements IMoodleStrategy {
         }
       } catch (e) {}
     }
-    
+
     if (res && res.courses) {
       res.courses = Array.from(new Map(res.courses.map((c: any) => [c.id, c])).values());
     }
-    
+
     return res;
   }
 
@@ -301,32 +301,58 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     }, 'POST', baseUrlOverride);
   }
 
-
   public async getQuizzes(courseIds: number[]): Promise<RawMoodleQuiz[]> {
     if (!courseIds || courseIds.length === 0) return [];
-    const params: Record<string, any> = {};
-    courseIds.forEach((id, idx) => {
-      params[`courseids[${idx}]`] = id;
-    });
-    try {
-      const res = await this.apiCall('mod_quiz_get_quizzes_by_courses', params, 'POST');
-      if (res && Array.isArray(res.quizzes)) {
-        return res.quizzes;
-      }
-      return [];
-    } catch (err) {
-      console.warn('mod_quiz_get_quizzes_by_courses failed:', err);
-      return [];
+    const currentYear = new Date().getFullYear();
+    const urlHost = new URL(this.context.baseUrl).origin;
+
+    // Partition courseIds by their Moodle instance year (root vs archive year)
+    const buckets = new Map<number | undefined, number[]>();
+    for (const id of courseIds) {
+      const yr = this.courseYearMap.get(id);
+      const bucketKey = yr && yr !== currentYear ? yr : undefined;
+      if (!buckets.has(bucketKey)) buckets.set(bucketKey, []);
+      buckets.get(bucketKey)!.push(id);
     }
+
+    const allQuizzes: RawMoodleQuiz[] = [];
+    for (const [archiveYear, ids] of buckets.entries()) {
+      const params: Record<string, any> = {};
+      ids.forEach((id, idx) => {
+        params[`courseids[${idx}]`] = id;
+      });
+      const baseUrlOverride = archiveYear ? `${urlHost}/${archiveYear}` : undefined;
+      try {
+        const res = await this.apiCall('mod_quiz_get_quizzes_by_courses', params, 'POST', baseUrlOverride);
+        if (res && Array.isArray(res.quizzes)) {
+          for (const q of res.quizzes) {
+            const effectiveYear = archiveYear || this.courseYearMap.get(q.course) || currentYear;
+            this.quizYearMap.set(q.id, effectiveYear);
+            if (q.coursemodule) {
+              this.cmidYearMap.set(q.coursemodule, effectiveYear);
+            }
+            allQuizzes.push(q);
+          }
+        }
+      } catch (err) {
+        console.warn('mod_quiz_get_quizzes_by_courses failed:', err);
+      }
+    }
+
+    return Array.from(new Map(allQuizzes.map((q) => [q.coursemodule || q.id, q])).values());
   }
 
   public async getQuizAttempts(quizId: number): Promise<RawMoodleQuizAttempt[]> {
+    const currentYear = new Date().getFullYear();
+    const year = this.quizYearMap.get(quizId);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
     try {
       const res = await this.apiCall('mod_quiz_get_user_attempts', {
         quizid: quizId,
         status: 'all',
         includepreviews: 0,
-      }, 'POST');
+      }, 'POST', baseUrlOverride);
       if (res && Array.isArray(res.attempts)) {
         return res.attempts;
       }
@@ -338,11 +364,15 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async updateActivityCompletionManually(cmid: number, completed: boolean): Promise<boolean> {
+    const currentYear = new Date().getFullYear();
+    const year = this.cmidYearMap.get(cmid);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
     try {
       const res = await this.apiCall('core_completion_update_activity_completion_status_manually', {
         cmid,
         completed: completed ? 1 : 0,
-      }, 'POST');
+      }, 'POST', baseUrlOverride);
       return Boolean(res && res.status);
     } catch (err) {
       console.warn(`updateActivityCompletionManually for cmid ${cmid} failed:`, err);
@@ -354,7 +384,18 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     const year = this.courseYearMap.get(courseId);
     const urlHost = new URL(this.context.baseUrl).origin;
     const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
-    return this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', baseUrlOverride);
+    const sections = await this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', baseUrlOverride);
+    if (year && Array.isArray(sections)) {
+      for (const sec of sections) {
+        if (Array.isArray(sec.modules)) {
+          for (const mod of sec.modules) {
+            if (mod.id) this.cmidYearMap.set(mod.id, year);
+            if (mod.modname === 'quiz' && mod.instance) this.quizYearMap.set(mod.instance, year);
+          }
+        }
+      }
+    }
+    return sections;
   }
 
   public async uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }> {

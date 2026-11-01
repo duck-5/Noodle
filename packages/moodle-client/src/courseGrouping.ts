@@ -1,4 +1,17 @@
-import { MoodleCourse, TauSemester, SyncResult, Assignment, CourseFile, ZoomMeeting, CourseFolder, CourseLink } from './types.js';
+import {
+  MoodleCourse,
+  TauSemester,
+  SyncResult,
+  Assignment,
+  CourseFile,
+  ZoomMeeting,
+  CourseFolder,
+  CourseLink,
+  CourseSection,
+  CourseAnnouncement,
+  PanoptoRecording,
+  CourseGradeSummary,
+} from './types.js';
 import { parseTauCourseMetadata } from './courseParser.js';
 
 export interface UnifiedCourseGroup {
@@ -102,22 +115,35 @@ export function groupEnrolledCourses(courses: MoodleCourse[]): GroupedCoursesRes
     };
   }
 
-  // Group Academic courses by base 8-digit course code + year + semester
-  const groupMap = new Map<string, UnifiedCourse>();
+  // Group Academic courses by base 8-digit course code + year + semester,
+  // with fallback matching when a standalone 8/10-digit course has semester='Other' or empty year.
+  const unifiedList: UnifiedCourse[] = [];
 
   for (const c of academicList) {
     const meta = parseTauCourseMetadata(c.idnumber || c.shortname);
-    const courseCode = meta?.courseCode || c.courseId.substring(0, 8) || String(c.id);
-    const year = meta?.year || c.year || String(new Date().getFullYear());
-    const semester: TauSemester = meta?.semester || c.semester || 'Other';
+    const courseCode = meta?.courseCode || (c.courseId ? c.courseId.substring(0, 8) : '') || String(c.id);
+    const year = (meta?.year && meta.year.trim()) || (c.year && c.year.trim()) || String(new Date().getFullYear());
+    const semester: TauSemester =
+      meta?.semester && meta.semester !== 'Other'
+        ? meta.semester
+        : c.semester && c.semester !== 'Other'
+        ? c.semester
+        : 'Other';
     const groupId = meta?.groupId || '00';
-    const isParentPortal = groupId === '99' || groupId === '00' || c.shortname === courseCode;
+    const isParentPortal = groupId === '99' || groupId === '00' || c.shortname.trim() === courseCode;
 
-    const groupKey = `${courseCode}-${year}-${semester}`;
+    // Find an existing group with the same courseCode + year where semesters either match
+    // or one of them is 'Other' (common on standalone 10-digit sub-courses like 0102231201).
+    let unified = unifiedList.find(
+      (u) =>
+        u.courseCode === courseCode &&
+        u.year === year &&
+        (u.semester === semester || u.semester === 'Other' || semester === 'Other')
+    );
 
-    if (!groupMap.has(groupKey)) {
+    if (!unified) {
       const cleanTitle = cleanCourseDisplayName(c.fullname) || c.fullname;
-      groupMap.set(groupKey, {
+      unified = {
         id: c.id,
         courseCode,
         fullname: cleanTitle,
@@ -125,10 +151,12 @@ export function groupEnrolledCourses(courses: MoodleCourse[]): GroupedCoursesRes
         semester,
         year,
         subCourses: [],
-      });
+      };
+      unifiedList.push(unified);
+    } else if (unified.semester === 'Other' && semester !== 'Other') {
+      unified.semester = semester;
     }
 
-    const unified = groupMap.get(groupKey)!;
     // If current entry is parent portal (e.g. -99- or base course code), prefer its ID and clean title
     if (isParentPortal) {
       unified.id = c.id;
@@ -146,14 +174,50 @@ export function groupEnrolledCourses(courses: MoodleCourse[]): GroupedCoursesRes
   }
 
   return {
-    academicCourses: Array.from(groupMap.values()),
+    academicCourses: unifiedList,
     administrativeUmbrella,
   };
 }
 
 /**
- * Aggregates and deduplicates all items (assignments, files, meetings, folders, links)
- * for a unified course across all its underlying sub-courses.
+ * Expands a list of tracked course IDs (which may include a UnifiedCourse parent ID or -5900 umbrella ID)
+ * into all constituent underlying Moodle course IDs for REST API syncing.
+ */
+export function expandTrackedCourseIds(
+  trackedCourseIds: number[],
+  grouped: GroupedCoursesResult
+): number[] {
+  const expanded = new Set<number>();
+  const allUnified: UnifiedCourse[] = [
+    ...grouped.academicCourses,
+    ...(grouped.administrativeUmbrella ? [grouped.administrativeUmbrella] : []),
+  ];
+
+  for (const id of trackedCourseIds) {
+    if (id > 0) {
+      expanded.add(id);
+    }
+    const matchingGroup = allUnified.find(
+      (u) => u.id === id || u.subCourses.some((s) => s.courseId === id)
+    );
+    if (matchingGroup && !matchingGroup.isAdministrativeUmbrella) {
+      for (const sub of matchingGroup.subCourses) {
+        if (sub.courseId > 0) expanded.add(sub.courseId);
+      }
+    } else if (matchingGroup && matchingGroup.isAdministrativeUmbrella && id === -5900) {
+      for (const sub of matchingGroup.subCourses) {
+        if (sub.courseId > 0) expanded.add(sub.courseId);
+      }
+    }
+  }
+
+  return Array.from(expanded);
+}
+
+/**
+ * Aggregates and deduplicates all items (assignments, files, meetings, folders, links,
+ * sections, announcements, recordings, and gradeSummary) for a unified course across
+ * all its underlying sub-courses.
  */
 export function aggregateUnifiedCourseItems(
   unifiedCourse: UnifiedCourse,
@@ -164,6 +228,10 @@ export function aggregateUnifiedCourseItems(
   meetings: ZoomMeeting[];
   folders: CourseFolder[];
   links: CourseLink[];
+  sections: CourseSection[];
+  announcements: CourseAnnouncement[];
+  recordings: PanoptoRecording[];
+  gradeSummary?: CourseGradeSummary;
 } {
   const memberCourseIds = new Set(unifiedCourse.subCourses.map((s) => s.courseId));
 
@@ -245,11 +313,75 @@ export function aggregateUnifiedCourseItems(
     }
   }
 
+  // Sections: preserve all unique section IDs across sub-courses
+  const rawSections = (syncResult.sections || []).filter((sec) => memberCourseIds.has(sec.courseId));
+  const seenSectionIds = new Set<number>();
+  const sections: CourseSection[] = [];
+  for (const sec of rawSections) {
+    if (!seenSectionIds.has(sec.id)) {
+      seenSectionIds.add(sec.id);
+      sections.push({
+        ...sec,
+        sourceCourseId: sec.courseId,
+        courseId: unifiedCourse.id,
+      });
+    }
+  }
+
+  // Announcements: deduplicate by id
+  const rawAnnouncements = (syncResult.announcements || []).filter((ann) => memberCourseIds.has(ann.courseId));
+  const seenAnnIds = new Set<number>();
+  const announcements: CourseAnnouncement[] = [];
+  for (const ann of rawAnnouncements) {
+    if (!seenAnnIds.has(ann.id)) {
+      seenAnnIds.add(ann.id);
+      announcements.push({
+        ...ann,
+        courseId: unifiedCourse.id,
+      });
+    }
+  }
+
+  // Panopto Recordings: deduplicate by id
+  const rawRecordings = (syncResult.recordings || []).filter((rec) => memberCourseIds.has(rec.courseId));
+  const seenRecIds = new Set<string>();
+  const recordings: PanoptoRecording[] = [];
+  for (const rec of rawRecordings) {
+    if (!seenRecIds.has(rec.id)) {
+      seenRecIds.add(rec.id);
+      recordings.push({
+        ...rec,
+        courseId: unifiedCourse.id,
+      });
+    }
+  }
+
+  // Grade Summary: merge items and prefer sub-course with authoritative courseTotal
+  let gradeSummary: CourseGradeSummary | undefined = undefined;
+  if (syncResult.gradeSummaries) {
+    const memberSummaries = Array.from(memberCourseIds)
+      .map((cid) => syncResult.gradeSummaries![cid])
+      .filter((g): g is CourseGradeSummary => Boolean(g));
+    if (memberSummaries.length > 0) {
+      const primary = memberSummaries.find((g) => g.hasCourseTotal) || memberSummaries[0];
+      const mergedItems = memberSummaries.flatMap((g) => g.items);
+      gradeSummary = {
+        ...primary,
+        courseId: unifiedCourse.id,
+        items: mergedItems,
+      };
+    }
+  }
+
   return {
     assignments,
     files,
     meetings,
     folders,
     links,
+    sections,
+    announcements,
+    recordings,
+    gradeSummary,
   };
 }

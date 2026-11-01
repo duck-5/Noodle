@@ -2,28 +2,30 @@ import {
   isAdministrativeCourse,
   cleanCourseDisplayName,
   groupEnrolledCourses,
+  expandTrackedCourseIds,
   aggregateUnifiedCourseItems,
 } from '../src/courseGrouping.js';
 import { MoodleCourse, SyncResult } from '../src/types.js';
 
 describe('Mode A & Mode B Course Grouping', () => {
   const mockCourses: MoodleCourse[] = [
-    // Academic Parent Portal (Picture 2 top)
+    // Academic Parent Portal (Picture 2 top) with 4-segment idnumber (SemesterA)
     {
       id: 101,
       courseId: '01022312',
       shortname: '01022312',
+      idnumber: '01022312-99-2026-1',
       fullname: '01022312 - ביוסטטיסטיקה מתקדמת',
       semester: 'SemesterA',
       year: '2026',
     },
-    // Academic Sub-Course / Recitation (Picture 2 bottom)
+    // Academic Sub-Course / Recitation (Picture 2 bottom) with standalone 10-digit code & semester 'Other'
     {
       id: 102,
       courseId: '0102231201',
       shortname: '0102231201',
       fullname: '0102231201 - ביוסטטיסטיקה מתקדמת',
-      semester: 'SemesterA',
+      semester: 'Other',
       year: '2026',
     },
     // Independent Academic Course
@@ -69,8 +71,9 @@ describe('Mode A & Mode B Course Grouping', () => {
     expect(cleanCourseDisplayName('הדרכת בטיחות כללית')).toBe('הדרכת בטיחות כללית');
   });
 
-  it('should merge parent and sub-course into single unified card and group admin tutorials into umbrella', () => {
-    const { academicCourses, administrativeUmbrella } = groupEnrolledCourses(mockCourses);
+  it('should merge parent and sub-course even when sub-course has standalone 10-digit code (semester=Other)', () => {
+    const grouped = groupEnrolledCourses(mockCourses);
+    const { academicCourses, administrativeUmbrella } = grouped;
 
     // 1. Academic courses: 101 and 102 merged + 201 separate => 2 academic courses
     expect(academicCourses).toHaveLength(2);
@@ -78,6 +81,7 @@ describe('Mode A & Mode B Course Grouping', () => {
     const biostat = academicCourses.find((c) => c.courseCode === '01022312');
     expect(biostat).toBeDefined();
     expect(biostat?.fullname).toBe('ביוסטטיסטיקה מתקדמת');
+    expect(biostat?.semester).toBe('SemesterA');
     expect(biostat?.subCourses).toHaveLength(2);
     expect(biostat?.subCourses.some((s) => s.courseId === 101 && s.isParentPortal)).toBe(true);
     expect(biostat?.subCourses.some((s) => s.courseId === 102 && !s.isParentPortal)).toBe(true);
@@ -88,9 +92,13 @@ describe('Mode A & Mode B Course Grouping', () => {
     expect(administrativeUmbrella?.excludeFromGpa).toBe(true);
     expect(administrativeUmbrella?.subCourses).toHaveLength(2);
     expect(administrativeUmbrella?.fullname).toBe('הדרכות בטיחות והדרכות חובה');
+
+    // 3. expandTrackedCourseIds should expand parent 101 -> [101, 102] and -5900 -> [901, 902]
+    const expanded = expandTrackedCourseIds([101, -5900], grouped);
+    expect(expanded.sort()).toEqual([101, 102, 901, 902]);
   });
 
-  it('should aggregate and deduplicate items across parent and sub-courses', () => {
+  it('should aggregate and deduplicate items (including sections, announcements, and gradeSummary) across parent and sub-courses', () => {
     const { academicCourses } = groupEnrolledCourses(mockCourses);
     const biostat = academicCourses.find((c) => c.courseCode === '01022312')!;
 
@@ -159,6 +167,46 @@ describe('Mode A & Mode B Course Grouping', () => {
           courseName: 'ביוסטטיסטיקה מתקדמת - תרגול',
         },
       ],
+      sections: [
+        {
+          id: 501,
+          courseId: 101,
+          sectionNumber: 1,
+          name: 'הרצאות',
+          parentSectionId: null,
+          level: 0,
+          sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=101&section=1',
+          visible: true,
+        },
+        {
+          id: 601,
+          courseId: 102,
+          sectionNumber: 1,
+          name: 'תרגולים',
+          parentSectionId: null,
+          level: 0,
+          sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=102&section=1',
+          visible: true,
+        },
+      ],
+      announcements: [
+        {
+          id: 701,
+          courseId: 101,
+          name: 'לוח מודעות',
+          moodleUrl: 'https://moodle.tau.ac.il/mod/forum/view.php?id=701',
+        },
+      ],
+      gradeSummaries: {
+        101: {
+          courseId: 101,
+          courseTotalFormatted: '94.00',
+          courseTotalRaw: 94,
+          courseTotalMax: 100,
+          hasCourseTotal: true,
+          items: [],
+        },
+      },
       meetings: [],
       errors: [],
       syncedAt: new Date().toISOString(),
@@ -176,5 +224,11 @@ describe('Mode A & Mode B Course Grouping', () => {
     // Syllabus.pdf deduplicated! (2 items instead of 3)
     expect(aggregated.files).toHaveLength(2);
     expect(aggregated.files.map((f) => f.fileName)).toEqual(['Syllabus.pdf', 'Exercise1.pdf']);
+
+    // Sections, announcements, and gradeSummary aggregated!
+    expect(aggregated.sections).toHaveLength(2);
+    expect(aggregated.sections.every((s) => s.courseId === 101)).toBe(true);
+    expect(aggregated.announcements).toHaveLength(1);
+    expect(aggregated.gradeSummary?.courseTotalFormatted).toBe('94.00');
   });
 });

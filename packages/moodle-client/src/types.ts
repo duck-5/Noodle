@@ -88,6 +88,7 @@ export interface Assignment {
   link: string;             // https://moodle.tau.ac.il/mod/assign/view.php?id={cmid} or .../mod/quiz/view.php?id={cmid}
   grade: number | null;
   gradeMax: number | null;
+  sectionId?: number;
   sectionName?: string;
   attachments?: Attachment[];
   submittedFiles?: Attachment[];
@@ -130,6 +131,7 @@ export interface CourseFile {
 export interface ZoomMeeting {
   title: string;
   meetingUrl: string;
+  sectionId?: number;
   sectionName: string;
   courseId: number;
   courseName: string;

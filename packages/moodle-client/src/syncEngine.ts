@@ -77,6 +77,7 @@ export interface RunSyncOptions {
   enablePanopto?: boolean;
   coursesPanoptoMap?: Record<number, string>;
   onEnsurePanoptoAuth?: (forceRefresh?: boolean) => Promise<boolean>;
+  lang?: 'he' | 'en';
 }
 
 export async function runSync(
@@ -93,7 +94,12 @@ export async function runSync(
   const enableScraping = options?.enableScraping ?? false;
   const enablePanopto = options?.enablePanopto ?? false;
   const coursesPanoptoMap = options?.coursesPanoptoMap || {};
-  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: false, enableScraping });
+  const client = new MoodleClient(token, baseUrl, {
+    sesskey,
+    devMode: false,
+    enableScraping,
+    lang: options?.lang,
+  });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
@@ -240,7 +246,7 @@ export async function runSync(
   onProgress('Fetching assignments, quizzes, and grades...');
   let rawAssignments: RawMoodleAssignment[] = [];
   let rawQuizzes: RawMoodleQuiz[] = [];
-  const rawOrderMap = new Map<number, number>();
+  const rawOrderMap = new Map<string, number>();
   let nextOrderIndex = 0;
   const gradesByCmid = new Map<number, RawGradeItem>();
   const moduleCompletionMap = new Map<number, { completion?: number; completiondata?: any }>();
@@ -253,8 +259,9 @@ export async function runSync(
           if (trackedCourseIds.includes(courseObj.id)) {
             for (const assign of courseObj.assignments) {
               rawAssignments.push(assign);
-              if (!rawOrderMap.has(assign.id)) {
-                rawOrderMap.set(assign.id, nextOrderIndex++);
+              const uid = `assign:${assign.id}`;
+              if (!rawOrderMap.has(uid)) {
+                rawOrderMap.set(uid, nextOrderIndex++);
               }
             }
           }
@@ -270,6 +277,12 @@ export async function runSync(
       try {
         const quizzes = await client.getQuizzes(trackedCourseIds);
         rawQuizzes = quizzes || [];
+        for (const q of rawQuizzes) {
+          const uid = `quiz:${q.id}`;
+          if (!rawOrderMap.has(uid)) {
+            rawOrderMap.set(uid, nextOrderIndex++);
+          }
+        }
       } catch (err: any) {
         errors.push({
           context: 'Processing quizzes',
@@ -335,6 +348,7 @@ export async function runSync(
 
   onProgress(`Fetching contents and submission statuses for ${trackedCourseIds.length} courses...`);
   const cmidToSectionMap = new Map<number, string>();
+  const cmidToSectionIdMap = new Map<number, number>();
   const now = new Date();
 
   const processAssignment = async (assign: RawMoodleAssignment, sectionName?: string) => {
@@ -444,6 +458,7 @@ export async function runSync(
       grade,
       gradeMax,
       attachments,
+      sectionId: cmidToSectionIdMap.get(Number(assign.cmid)),
       sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid)),
       activityType: 'assign',
       uid: `assign:${assign.id}`,
@@ -472,8 +487,10 @@ export async function runSync(
 
     const cmid = quiz.coursemodule;
     const completionInfo = moduleCompletionMap.get(cmid);
-    const requiresManualCompletion = completionInfo?.completion === 1;
-    const isManualCompletionDone = Boolean(completionInfo?.completiondata?.state === 1);
+    const effectiveCompletion = completionInfo?.completion ?? quiz.completion;
+    const effectiveCompletionData = completionInfo?.completiondata ?? quiz.completiondata;
+    const requiresManualCompletion = effectiveCompletion === 1;
+    const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
 
     let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
     if (hasFinished) {
@@ -524,6 +541,7 @@ export async function runSync(
       link: `${quizBaseUrl}/mod/quiz/view.php?id=${quiz.coursemodule}`,
       grade,
       gradeMax,
+      sectionId: cmidToSectionIdMap.get(Number(quiz.coursemodule)),
       sectionName: sectionName || cmidToSectionMap.get(Number(quiz.coursemodule)),
       activityType: 'quiz',
       uid: `quiz:${quiz.id}`,
@@ -532,7 +550,7 @@ export async function runSync(
       hasFinishedAttempt: hasFinished,
       requiresManualCompletion,
       isManualCompletionDone,
-      completionTracking: completionInfo?.completion,
+      completionTracking: effectiveCompletion,
       isCompleted: status === 'Submitted',
     };
 
@@ -551,19 +569,9 @@ export async function runSync(
     }
   }
 
-  await Promise.all([
-    // Process known assignments from getAssignments
-    batchPromises(rawAssignments, 50, async (assign) => {
-      await processAssignment(assign);
-    }),
-
-    // Process quizzes
-    batchPromises(rawQuizzes, 30, async (quiz) => {
-      await processQuiz(quiz);
-    }),
-
-    // Process course contents to find files, zoom meetings, and missing assignments
-    batchPromises(trackedCourseIds, 20, async (courseId) => {
+  // Stage 1: Fetch course contents & format state first so cmidToSectionMap,
+  // cmidToSectionIdMap, moduleCompletionMap, and fallback activities are populated
+  await batchPromises(trackedCourseIds, 20, async (courseId) => {
       const courseName = getCourseDisplayName(courseId);
       const courseInfo = courseMap.get(courseId);
       const courseBaseUrl = courseInfo?.instanceUrl
@@ -626,6 +634,16 @@ export async function runSync(
         }
 
         const rawSections = await client.getCourseContents(courseId);
+        // Map Moodle 4.5+ mod_subsection modules to their delegated child sections
+        const subsectionParentByTitle = new Map<string, number>();
+        for (const sec of rawSections) {
+          for (const mod of sec.modules || []) {
+            if (mod.modname === 'subsection' && mod.name) {
+              subsectionParentByTitle.set(cleanMoodleString(mod.name), sec.id);
+            }
+          }
+        }
+
         for (const section of rawSections) {
           const sectionName = cleanMoodleString(section.name || '');
           if (sectionName && !courseSectionNames.includes(sectionName)) {
@@ -633,14 +651,17 @@ export async function runSync(
           }
 
           const secState = formatState?.sections.get(section.id);
+          const isSubMod = (section as any).component === 'mod_subsection' || subsectionParentByTitle.has(sectionName);
+          const inferredParentId = secState?.parentSectionId ?? subsectionParentByTitle.get(sectionName) ?? null;
           sections.push({
             id: section.id,
             courseId,
             sectionNumber: section.section ?? 0,
             name: sectionName || (section.section === 0 ? 'כללי' : `נושא ${section.section}`),
             summaryHtml: section.summary ? cleanMoodleString(section.summary) : undefined,
-            parentSectionId: secState?.parentSectionId ?? null,
-            level: secState?.level ?? 0,
+            parentSectionId: inferredParentId,
+            level: (secState?.level === 1 || inferredParentId !== null || isSubMod) ? 1 : 0,
+            isSubsectionModule: isSubMod || undefined,
             sectionUrl: secState?.sectionUrl || `${courseBaseUrl}/course/view.php?id=${courseId}&section=${section.section}`,
             visible: section.visible !== undefined ? section.visible !== 0 : true,
           });
@@ -712,6 +733,7 @@ export async function runSync(
 
             if (modname === 'quiz') {
               cmidToSectionMap.set(module.id, sectionName);
+              cmidToSectionIdMap.set(module.id, section.id);
               if (module.completion !== undefined || module.completiondata) {
                 moduleCompletionMap.set(module.id, {
                   completion: module.completion,
@@ -731,12 +753,17 @@ export async function runSync(
                   completion: module.completion,
                   completiondata: module.completiondata,
                 };
+                const uid = `quiz:${synthQuiz.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
+                }
                 rawQuizzes.push(synthQuiz);
               }
             }
 
             if (modname === 'assign') {
               cmidToSectionMap.set(module.id, sectionName);
+              cmidToSectionIdMap.set(module.id, section.id);
               if (module.completion !== undefined || module.completiondata) {
                 moduleCompletionMap.set(module.id, {
                   completion: module.completion,
@@ -754,11 +781,11 @@ export async function runSync(
                   cutoffdate: 0,
                   allowsubmissionsfromdate: 0
                 };
-                if (!rawOrderMap.has(newAssign.id)) {
-                  rawOrderMap.set(newAssign.id, nextOrderIndex++);
+                const uid = `assign:${newAssign.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
                 }
-                // It was discovered here, process it right away
-                await processAssignment(newAssign, sectionName);
+                rawAssignments.push(newAssign);
               }
             }
 
@@ -766,10 +793,13 @@ export async function runSync(
               for (const content of module.contents) {
                 if (content.type === 'file') {
                   const newFile: CourseFile = {
+                    id: module.id,
                     fileName: content.filename || '',
                     fileUrl: content.fileurl || '',
                     fileSize: content.filesize || 0,
                     mimeType: content.mimetype || 'application/octet-stream',
+                    sectionId: section.id,
+                    sectionNumber: section.section,
                     sectionName,
                     timeModified: content.timemodified || 0,
                     courseId,
@@ -1230,7 +1260,16 @@ export async function runSync(
           });
         }
       }
-    })
+    });
+
+  // Stage 2: Process all assignments and quizzes now that section & completion maps are populated
+  await Promise.all([
+    batchPromises(rawAssignments, 50, async (assign) => {
+      await processAssignment(assign);
+    }),
+    batchPromises(rawQuizzes, 30, async (quiz) => {
+      await processQuiz(quiz);
+    }),
   ]);
 
   // Sync sectionName for known assignments in case contents finished after assignment processed
@@ -1259,7 +1298,9 @@ export async function runSync(
       const normalizedLate = normalizeTitle(assign.name);
 
       const regularAssign = assignments.find((other) => {
-        if (other.courseId !== assign.courseId || other.id === assign.id) return false;
+        const assignUid = assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
+        const otherUid = other.uid || `${other.activityType || 'assign'}:${other.id}`;
+        if (other.courseId !== assign.courseId || otherUid === assignUid) return false;
         if (LATE_BOX_REGEX.test(other.name)) return false;
         const normalizedOther = normalizeTitle(other.name);
         return (
@@ -1278,8 +1319,10 @@ export async function runSync(
 
   // Ensure assignments are deterministically ordered matching raw Moodle discovery sequence
   assignments.sort((a, b) => {
-    const orderA = rawOrderMap.has(a.id) ? rawOrderMap.get(a.id)! : 999999 + a.id;
-    const orderB = rawOrderMap.has(b.id) ? rawOrderMap.get(b.id)! : 999999 + b.id;
+    const uidA = a.uid || `${a.activityType || 'assign'}:${a.id}`;
+    const uidB = b.uid || `${b.activityType || 'assign'}:${b.id}`;
+    const orderA = rawOrderMap.has(uidA) ? rawOrderMap.get(uidA)! : 999999 + a.id;
+    const orderB = rawOrderMap.has(uidB) ? rawOrderMap.get(uidB)! : 999999 + b.id;
     return orderA - orderB;
   });
 

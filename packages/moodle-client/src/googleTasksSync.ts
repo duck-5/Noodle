@@ -82,9 +82,9 @@ interface GoogleTask {
 }
 
 export interface GoogleTasksSyncOptions {
-  hiddenAssignmentIds?: number[] | Set<number>;
-  completedAssignmentIds?: number[] | Set<number>;
-  uncompletedAssignmentIds?: number[] | Set<number>;
+  hiddenAssignmentIds?: Array<number | string> | Set<number | string>;
+  completedAssignmentIds?: Array<number | string> | Set<number | string>;
+  uncompletedAssignmentIds?: Array<number | string> | Set<number | string>;
   syncWithoutDeadline?: boolean;
 }
 
@@ -132,7 +132,7 @@ export async function syncAssignmentsToGoogleTasks(
     };
   }
 
-  // Helper to extract assignment or quiz ID from notes
+  // Helper to extract assignment or quiz composite UID and ID from notes
   const getMoodleActivityFromNotes = (notes?: string): { id: number; uid: string; isQuiz: boolean } | null => {
     if (!notes) return null;
     const uidMatch = notes.match(/(?:tautracker|Noodle):uid:([a-zA-Z0-9_:-]+)/i);
@@ -156,12 +156,7 @@ export async function syncAssignmentsToGoogleTasks(
     return null;
   };
 
-  const getMoodleAssignIdFromNotes = (notes?: string): number | null => {
-    const act = getMoodleActivityFromNotes(notes);
-    return act ? act.id : null;
-  };
-
-  const hiddenIds = new Set<number>(
+  const hiddenIds = new Set<number | string>(
     Array.isArray(options?.hiddenAssignmentIds)
       ? options.hiddenAssignmentIds
       : options?.hiddenAssignmentIds instanceof Set
@@ -169,7 +164,7 @@ export async function syncAssignmentsToGoogleTasks(
       : []
   );
 
-  const completedIds = new Set<number>(
+  const completedIds = new Set<number | string>(
     Array.isArray(options?.completedAssignmentIds)
       ? options.completedAssignmentIds
       : options?.completedAssignmentIds instanceof Set
@@ -177,7 +172,7 @@ export async function syncAssignmentsToGoogleTasks(
       : []
   );
 
-  const uncompletedIds = new Set<number>(
+  const uncompletedIds = new Set<number | string>(
     Array.isArray(options?.uncompletedAssignmentIds)
       ? options.uncompletedAssignmentIds
       : options?.uncompletedAssignmentIds instanceof Set
@@ -185,16 +180,35 @@ export async function syncAssignmentsToGoogleTasks(
       : []
   );
 
+  const getActivityUid = (assign: Assignment): string => {
+    return assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
+  };
+
+  const setMatchesActivity = (set: Set<number | string>, assign: Assignment): boolean => {
+    const uid = getActivityUid(assign);
+    if (set.has(uid)) return true;
+    // Support legacy numeric IDs stored in settings
+    if (set.has(assign.id) || set.has(String(assign.id))) return true;
+    return false;
+  };
+
   // Helper to check if an assignment/quiz is considered completed / marked as done
   const isAssignmentDone = (assign: Assignment): boolean => {
-    if (uncompletedIds.has(assign.id)) return false;
-    if (completedIds.has(assign.id) || assign.isCompleted === true || assign.hasFinishedAttempt === true || assign.isManualCompletionDone === true) return true;
+    if (setMatchesActivity(uncompletedIds, assign)) return false;
+    if (
+      setMatchesActivity(completedIds, assign) ||
+      assign.isCompleted === true ||
+      assign.hasFinishedAttempt === true ||
+      assign.isManualCompletionDone === true
+    ) {
+      return true;
+    }
     return assign.status === 'Submitted';
   };
 
   // Helper to check if an assignment is hidden
   const isAssignmentHidden = (assign: Assignment): boolean => {
-    return hiddenIds.has(assign.id) || assign.isHidden === true;
+    return setMatchesActivity(hiddenIds, assign) || assign.isHidden === true;
   };
 
   const deletedTaskIds = new Set<string>();
@@ -215,20 +229,18 @@ export async function syncAssignmentsToGoogleTasks(
       const isDone = isAssignmentDone(assign);
       const isExcludedNoDeadline = !options?.syncWithoutDeadline && !assign.deadline;
 
-      const assignUid = assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
+      const assignUid = getActivityUid(assign);
       // Find all existing tasks that match this activity (by UID, assignId/quizId, or title)
-      const matchedTasks = existingTasks.filter(
-        (t) => {
-          if (deletedTaskIds.has(t.id)) return false;
-          const act = getMoodleActivityFromNotes(t.notes);
-          if (act !== null) {
-            if (act.uid === assignUid) return true;
-            if (act.id === assign.id && act.isQuiz === (assign.activityType === 'quiz')) return true;
-            return false;
-          }
-          return t.title.trim() === taskTitle.trim();
+      const matchedTasks = existingTasks.filter((t) => {
+        if (deletedTaskIds.has(t.id)) return false;
+        const act = getMoodleActivityFromNotes(t.notes);
+        if (act !== null) {
+          if (act.uid === assignUid) return true;
+          if (act.id === assign.id && act.isQuiz === (assign.activityType === 'quiz')) return true;
+          return false;
         }
-      );
+        return t.title.trim() === taskTitle.trim();
+      });
 
       // RULE: Hidden tasks, completed tasks, or tasks without deadline (when syncWithoutDeadline is off) must not be synced.
       // If such a task exists in Google Tasks, delete it!
@@ -311,11 +323,13 @@ export async function syncAssignmentsToGoogleTasks(
           patchBody.title = taskTitle;
         }
 
-        if (
-          !matchedTask.notes ||
-          (!matchedTask.notes.includes(`Noodle:assignId:${assign.id}`) &&
-            !matchedTask.notes.includes(`tautracker:assignId:${assign.id}`))
-        ) {
+        const hasMatchingTag =
+          Boolean(matchedTask.notes) &&
+          (matchedTask.notes!.includes(`Noodle:uid:${assignUid}`) ||
+            matchedTask.notes!.includes(tag) ||
+            matchedTask.notes!.includes(`tautracker:assignId:${assign.id}`));
+
+        if (!hasMatchingTag) {
           patchBody.notes = notes;
         }
 
@@ -371,18 +385,18 @@ export async function syncAssignmentsToGoogleTasks(
     }
   });
 
-  // 3. Delete orphaned tasks or completed tasks in Google Tasks
-  const activeAssignIds = new Set(
+  // 3. Delete orphaned tasks or completed tasks in Google Tasks using composite UIDs
+  const activeActivityUids = new Set(
     assignments
       .filter((a) => !isAssignmentHidden(a) && !isAssignmentDone(a) && (options?.syncWithoutDeadline || !!a.deadline))
-      .map((a) => a.id)
+      .map((a) => getActivityUid(a))
   );
 
   const tasksToDelete = existingTasks.filter((task) => {
     if (deletedTaskIds.has(task.id)) return false;
-    const taskId = getMoodleAssignIdFromNotes(task.notes);
-    if (taskId === null) return false;
-    const isStillActive = activeAssignIds.has(taskId);
+    const act = getMoodleActivityFromNotes(task.notes);
+    if (act === null) return false;
+    const isStillActive = activeActivityUids.has(act.uid);
     const isCompletedInGoogle = task.status === 'completed';
     const isHiddenInGoogle = task.hidden === true;
     return !isStillActive || isCompletedInGoogle || isHiddenInGoogle;
