@@ -7,6 +7,9 @@ import {
   CourseFolder,
   CourseFolderFile,
   CourseLink,
+  CourseAnnouncement,
+  CourseGradeSummary,
+  CourseGradeItem,
   ZoomMeeting,
   PanoptoRecording,
   SyncError,
@@ -96,6 +99,11 @@ export async function runSync(
   const files: CourseFile[] = [];
   const meetings: ZoomMeeting[] = [];
   const recordings: PanoptoRecording[] = [];
+  const folders: CourseFolder[] = [];
+  const links: CourseLink[] = [];
+  const sections: CourseSection[] = [];
+  const announcements: CourseAnnouncement[] = [];
+  const gradeSummaries: Record<number, CourseGradeSummary> = {};
 
   let scrapedMeetingsJar: CookieJar | null = null;
   let didAttemptLogin = false;
@@ -273,11 +281,48 @@ export async function runSync(
       try {
         const gradesResp = await client.getGradeItems(courseId, userId);
         for (const userGrade of gradesResp.usergrades) {
+          const cId = userGrade.courseid;
+          let courseTotalFormatted: string | null = null;
+          let courseTotalRaw: number | null = null;
+          let courseTotalMax: number | null = null;
+          let hasCourseTotal = false;
+          const items: CourseGradeItem[] = [];
+
           for (const item of userGrade.gradeitems) {
-            if (item.itemtype === 'mod' && (item.itemmodule === 'assign' || item.itemmodule === 'quiz') && item.cmid !== null) {
+            if (item.itemtype === 'course') {
+              hasCourseTotal = true;
+              courseTotalFormatted = item.gradeformatted || null;
+              courseTotalRaw = item.graderaw;
+              courseTotalMax = item.grademax;
+            }
+
+            const isBonus = (item.grademax > 0 && item.grademax <= 5) || /בונוס|bonus/i.test(item.itemname || '');
+
+            if (item.itemtype === 'mod' && item.cmid !== null) {
               gradesByCmid.set(Number(item.cmid), item);
             }
+
+            items.push({
+              cmid: item.cmid !== null ? Number(item.cmid) : null,
+              itemName: cleanMoodleString(item.itemname || ''),
+              itemType: item.itemtype,
+              itemModule: item.itemmodule,
+              gradeFormatted: item.gradeformatted || '-',
+              gradeRaw: item.graderaw,
+              gradeMax: item.grademax,
+              isBonus,
+              feedback: item.feedback ? cleanMoodleString(item.feedback) : undefined,
+            });
           }
+
+          gradeSummaries[cId] = {
+            courseId: cId,
+            courseTotalFormatted,
+            courseTotalRaw,
+            courseTotalMax,
+            hasCourseTotal,
+            items,
+          };
         }
       } catch (err: any) {
         errors.push({
@@ -349,10 +394,16 @@ export async function runSync(
     const gradeInfo = gradesByCmid.get(Number(assign.cmid));
     let grade: number | null = null;
     let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = false;
 
     if (gradeInfo && !gradeInfo.gradeishidden) {
       grade = gradeInfo.graderaw;
       gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if ((gradeInfo.grademax > 0 && gradeInfo.grademax <= 5) || /בונוס|bonus/i.test(assign.name || '')) {
+        isBonus = true;
+      }
     }
 
     let attachments = assign.introattachments
@@ -397,6 +448,8 @@ export async function runSync(
       activityType: 'assign',
       uid: `assign:${assign.id}`,
       isCompleted: status === 'Submitted',
+      feedback,
+      isBonus,
     };
 
     assignments.push(processedAssign);
@@ -559,12 +612,38 @@ export async function runSync(
       };
 
       try {
-        const sections = await client.getCourseContents(courseId);
-        for (const section of sections) {
-          const sectionName = section.name || '';
+        let formatState: ParsedCourseFormatState | null = null;
+        if (sesskey) {
+          try {
+            formatState = await fetchCourseFormatState({
+              instanceBaseUrl: courseBaseUrl,
+              courseId,
+              sesskey,
+            });
+          } catch {
+            // Non-critical, fallback to flat sections
+          }
+        }
+
+        const rawSections = await client.getCourseContents(courseId);
+        for (const section of rawSections) {
+          const sectionName = cleanMoodleString(section.name || '');
           if (sectionName && !courseSectionNames.includes(sectionName)) {
             courseSectionNames.push(sectionName);
           }
+
+          const secState = formatState?.sections.get(section.id);
+          sections.push({
+            id: section.id,
+            courseId,
+            sectionNumber: section.section ?? 0,
+            name: sectionName || (section.section === 0 ? 'כללי' : `נושא ${section.section}`),
+            summaryHtml: section.summary ? cleanMoodleString(section.summary) : undefined,
+            parentSectionId: secState?.parentSectionId ?? null,
+            level: secState?.level ?? 0,
+            sectionUrl: secState?.sectionUrl || `${courseBaseUrl}/course/view.php?id=${courseId}&section=${section.section}`,
+            visible: section.visible !== undefined ? section.visible !== 0 : true,
+          });
 
           // 1. Scan section summary for embedded Zoom & Panopto links
           if (section.summary) {
@@ -616,6 +695,18 @@ export async function runSync(
                 if (!discoveredPanoptoLtiInstances.includes(module.instance)) {
                   discoveredPanoptoLtiInstances.push(module.instance);
                 }
+              }
+            }
+
+            if (modname === 'forum') {
+              const ANNOUNCEMENTS_REGEX = /לוח\s+מודעות|הודעות\s+הקורס|הודעות\s+ודרשות|announcements|news\s+forum/i;
+              if (ANNOUNCEMENTS_REGEX.test(name)) {
+                announcements.push({
+                  id: module.id,
+                  courseId,
+                  name: cleanMoodleString(name),
+                  moodleUrl: `${courseBaseUrl}/mod/forum/view.php?id=${module.id}`,
+                });
               }
             }
 
@@ -687,6 +778,86 @@ export async function runSync(
                   files.push(newFile);
                   if (onPartialSync) onPartialSync({ files: [...files] });
                 }
+              }
+            }
+
+            // --- FOLDER DETECTION (mod_folder) ---
+            if (modname === 'folder' && module.contents) {
+              const folderFiles: CourseFolderFile[] = [];
+              let totalFolderSize = 0;
+              for (const c of module.contents) {
+                if (c.type === 'file') {
+                  const fileSize = c.filesize || 0;
+                  totalFolderSize += fileSize;
+                  folderFiles.push({
+                    fileName: c.filename || '',
+                    relativePath: c.filepath ? c.filepath.replace(/^\/+/, '') : '',
+                    fileSize,
+                    fileUrl: c.fileurl || '',
+                    downloadUrl: buildAuthenticatedFileUrl(c.fileurl || '', token),
+                    timeModified: c.timemodified || 0,
+                    mimeType: c.mimetype || 'application/octet-stream',
+                  });
+
+                  files.push({
+                    id: module.id,
+                    fileName: c.filename || '',
+                    fileUrl: c.fileurl || '',
+                    downloadUrl: buildAuthenticatedFileUrl(c.fileurl || '', token),
+                    fileSize,
+                    mimeType: c.mimetype || 'application/octet-stream',
+                    sectionId: section.id,
+                    sectionNumber: section.section,
+                    sectionName,
+                    folderId: module.id,
+                    folderName: name,
+                    relativePath: c.filepath ? c.filepath.replace(/^\/+/, '') : '',
+                    timeModified: c.timemodified || 0,
+                    courseId,
+                    courseName,
+                  });
+                }
+              }
+
+              const newFolder: CourseFolder = {
+                id: module.id,
+                instanceId: module.instance || module.id,
+                courseId,
+                courseName,
+                sectionId: section.id,
+                sectionName,
+                name: cleanMoodleString(name),
+                descriptionHtml: module.description ? cleanMoodleString(module.description) : undefined,
+                moodleUrl: `${courseBaseUrl}/mod/folder/view.php?id=${module.id}`,
+                files: folderFiles,
+                totalSize: totalFolderSize,
+              };
+              folders.push(newFolder);
+              if (onPartialSync) onPartialSync({ folders: [...folders], files: [...files] });
+            }
+
+            // --- EXTERNAL LINK DETECTION (mod_url) ---
+            if (modname === 'url') {
+              const targetUrl = module.contents?.[0]?.fileurl || module.url || '';
+              let linkKind: 'zoom' | 'panopto' | 'drive' | 'github' | 'external' = 'external';
+              if (isZoomUrl(targetUrl)) linkKind = 'zoom';
+              else if (isPanoptoUrl(targetUrl)) linkKind = 'panopto';
+              else if (/drive\.google\.com/i.test(targetUrl)) linkKind = 'drive';
+              else if (/github\.com/i.test(targetUrl)) linkKind = 'github';
+
+              if (targetUrl) {
+                links.push({
+                  id: module.id,
+                  courseId,
+                  courseName,
+                  sectionId: section.id,
+                  sectionName,
+                  name: cleanMoodleString(name),
+                  targetUrl,
+                  moodleUrl: `${courseBaseUrl}/mod/url/view.php?id=${module.id}`,
+                  linkKind,
+                });
+                if (onPartialSync) onPartialSync({ links: [...links] });
               }
             }
 
@@ -1070,6 +1241,41 @@ export async function runSync(
     }
   }
 
+  // Late Submission Box Auto-Suppression Heuristic
+  const LATE_BOX_REGEX = /הגשה\s+באיחור|תיבת\s+הגשה\s+באיחור|הגשה\s+מאוחרת|מועד\s+מיוחד|late\s+submission/i;
+
+  const normalizeTitle = (title: string): string => {
+    return title
+      .replace(LATE_BOX_REGEX, '')
+      .replace(/[-–—:()\[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  };
+
+  for (const assign of assignments) {
+    if (LATE_BOX_REGEX.test(assign.name)) {
+      assign.isLateSubmissionBox = true;
+      const normalizedLate = normalizeTitle(assign.name);
+
+      const regularAssign = assignments.find((other) => {
+        if (other.courseId !== assign.courseId || other.id === assign.id) return false;
+        if (LATE_BOX_REGEX.test(other.name)) return false;
+        const normalizedOther = normalizeTitle(other.name);
+        return (
+          normalizedLate === normalizedOther ||
+          normalizedLate.includes(normalizedOther) ||
+          normalizedOther.includes(normalizedLate)
+        );
+      });
+
+      if (regularAssign && (regularAssign.status === 'Submitted' || regularAssign.isCompleted)) {
+        assign.isHidden = true;
+        assign.status = 'Submitted';
+      }
+    }
+  }
+
   // Ensure assignments are deterministically ordered matching raw Moodle discovery sequence
   assignments.sort((a, b) => {
     const orderA = rawOrderMap.has(a.id) ? rawOrderMap.get(a.id)! : 999999 + a.id;
@@ -1084,6 +1290,11 @@ export async function runSync(
     meetings,
     recordings,
     errors,
+    sections,
+    folders,
+    links,
+    announcements,
+    gradeSummaries,
     syncedAt: new Date().toISOString(),
   };
 }

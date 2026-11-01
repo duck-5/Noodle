@@ -101,6 +101,9 @@ export interface Assignment {
   requiresManualCompletion?: boolean;
   isManualCompletionDone?: boolean;
   completionTracking?: number; // 0=none, 1=manual, 2=automatic
+  feedback?: string;
+  isBonus?: boolean;
+  isLateSubmissionBox?: boolean;
 }
 
 export interface CourseFile {
@@ -135,6 +138,35 @@ export interface ZoomMeeting {
   password?: string;
 }
 
+
+export interface CourseAnnouncement {
+  id: number;
+  courseId: number;
+  name: string;
+  moodleUrl: string;
+}
+
+export interface CourseGradeItem {
+  cmid: number | null;
+  itemName: string;
+  itemType: string;
+  itemModule: string;
+  gradeFormatted: string;
+  gradeRaw: number | null;
+  gradeMax: number;
+  isBonus?: boolean;
+  feedback?: string;
+}
+
+export interface CourseGradeSummary {
+  courseId: number;
+  courseTotalFormatted: string | null;
+  courseTotalRaw: number | null;
+  courseTotalMax: number | null;
+  hasCourseTotal: boolean;
+  items: CourseGradeItem[];
+}
+
 export interface PanoptoRecording {
   id: string;
   title: string;
@@ -154,6 +186,8 @@ export interface SyncResult {
   sections?: CourseSection[];
   folders?: CourseFolder[];
   links?: CourseLink[];
+  announcements?: CourseAnnouncement[];
+  gradeSummaries?: Record<number, CourseGradeSummary>;
   assignments: Assignment[];
   files: CourseFile[];
   meetings: ZoomMeeting[];

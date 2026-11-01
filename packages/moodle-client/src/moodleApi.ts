@@ -105,6 +105,7 @@ export interface RawMoodleAssignment {
   }>;
     introattachments?: Array<{
     filename: string;
+  filepath?: string;
     fileurl: string;
   }>;
 }
@@ -197,13 +198,18 @@ export interface RawSubmissionStatus {
 }
 
 export interface RawGradeItem {
+  id?: number;
+  itemname?: string;
   itemtype: string;
   itemmodule: string;
   cmid: number | null;
   gradeformatted: string;
   graderaw: number | null;
+  grademin?: number;
   grademax: number;
   gradeishidden: boolean;
+  feedback?: string;
+  feedbackformat?: number;
 }
 
 export interface RawUserGrade {
@@ -219,6 +225,7 @@ export interface RawGradeReportResponse {
 export interface RawCourseFileContent {
   type: string;
   filename: string;
+  filepath?: string;
   fileurl: string;
   filesize: number;
   mimetype: string;

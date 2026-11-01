@@ -109,6 +109,13 @@ function initDb(db: SQLite.SQLiteDatabase) {
       target_url TEXT,
       moodle_url TEXT,
       link_kind TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS course_announcements (
+      id INTEGER PRIMARY KEY,
+      course_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      moodle_url TEXT NOT NULL
     );  `);
 
   try {
@@ -222,6 +229,9 @@ function initDb(db: SQLite.SQLiteDatabase) {
   try { db.execSync('ALTER TABLE files ADD COLUMN folder_id INTEGER;'); } catch (e) {}
   try { db.execSync('ALTER TABLE files ADD COLUMN folder_name TEXT;'); } catch (e) {}
   try { db.execSync('ALTER TABLE files ADD COLUMN relative_path TEXT;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE assignments ADD COLUMN feedback TEXT;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE assignments ADD COLUMN is_bonus INTEGER DEFAULT 0;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE assignments ADD COLUMN is_late_submission_box INTEGER DEFAULT 0;'); } catch (e) {}
 }
 
 // Preference Helpers
@@ -394,6 +404,18 @@ export function saveSyncResultToDatabase(result: any): void {
           );
         }
       }
+
+      // 7. Sync announcements (if present)
+      if (Array.isArray(result.announcements)) {
+        for (const ann of result.announcements) {
+          db.runSync(
+            `INSERT OR REPLACE INTO course_announcements 
+            (id, course_id, name, moodle_url)
+            VALUES (?, ?, ?, ?)`,
+            [ann.id, ann.courseId, ann.name, ann.moodleUrl]
+          );
+        }
+      }
     });
   } catch (e) {
     console.error('saveSyncResultToDatabase error:', e);
@@ -438,6 +460,19 @@ export function getCourseLinks(courseMoodleId?: number): any[] {
     return db.getAllSync<any>('SELECT * FROM course_links');
   } catch (e) {
     console.error('getCourseLinks error:', e);
+    return [];
+  }
+}
+
+export function getCourseAnnouncements(courseMoodleId?: number): any[] {
+  try {
+    const db = getDb();
+    if (courseMoodleId !== undefined) {
+      return db.getAllSync<any>('SELECT * FROM course_announcements WHERE course_id = ? ORDER BY id ASC;', [courseMoodleId]);
+    }
+    return db.getAllSync<any>('SELECT * FROM course_announcements ORDER BY id ASC;');
+  } catch (e) {
+    console.error('getCourseAnnouncements error:', e);
     return [];
   }
 }

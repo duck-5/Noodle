@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Gradebook Fidelity, Late-Submission Box Auto-Suppression & Course Announcements (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Implemented late-submission box auto-suppression heuristic (`isLateSubmissionBox`): automatically hides duplicate late submission boxes when the regular assignment has already been submitted or completed.
+  - Implemented bonus heuristic (`isBonus`): flags assignment and grade items with `grademax <= 5` or bonus keywords (`"בונוס"` / `"bonus"`).
+  - Added full gradebook fidelity extraction in sync engine (`CourseGradeSummary`, `CourseGradeItem`): extracts authoritative course totals (`itemtype === 'course'`) from `gradereport_user_get_grade_items` and prioritizes them in Course Detail and Grades Tab.
+  - Added feedback extraction (`feedback` on `Assignment` and `CourseGradeItem`) and rendered feedback chips across assignment cards and gradebook tables.
+  - Added course announcements extraction (`mod_forum` matching course noticeboard keywords) into `CourseAnnouncement`, rendering noticeboard cards in Course Detail view.
+  - Rendered section summary HTML banners (`summaryHtml`) at the top of expanded course sections.
+  - Added mobile SQLite support for announcements (`course_announcements`) and assignment metadata (`feedback`, `is_bonus`, `is_late_submission_box`).
+  - Added comprehensive test suite `packages/moodle-client/__tests__/gradebookAndHeuristics.test.ts`.
 - **Academic Parent/Sub-Course Merging & Administrative Umbrella UX (`packages/moodle-client/src/courseGrouping.ts`, `courseParser.ts`)**:
   - Implemented Mode A academic course grouping merging common lecture portals (e.g. 8-digit `01022312` or `-99-`) and group recitations/labs (e.g. 10-digit `0102231201`) into unified course cards while aggregating all course modules, assignments, and files.
   - Implemented Mode B administrative umbrella grouping safety and compliance tutorials (`5900*`, `5800*`, and category `"בטיחות"` / `"Safety"`) into a dedicated `"הדרכות בטיחות והדרכות חובה"` container excluded from GPA calculation.

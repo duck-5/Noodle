@@ -8,6 +8,8 @@ import type {
   CourseSection,
   CourseFolder,
   CourseLink,
+  CourseAnnouncement,
+  CourseGradeSummary,
   ZoomMeeting,
   PanoptoRecording,
 } from '@tautracker/moodle-client';
@@ -1985,6 +1987,8 @@ export default function App() {
                   courseSections={syncResult?.sections}
                   courseFolders={syncResult?.folders}
                   courseLinks={syncResult?.links}
+                  courseAnnouncements={syncResult?.announcements}
+                  courseGradeSummaries={syncResult?.gradeSummaries}
                   syncErrors={syncResult?.errors}
                   token={token}
                   getCourseColor={getCourseColor}
@@ -2081,6 +2085,7 @@ export default function App() {
               {activeTab === 'grades' && (
                 <GradesTab
                   assignments={assignmentsList}
+                  gradeSummaries={syncResult?.gradeSummaries}
                   getCourseColor={getCourseColor}
                   getCourseDisplayName={getCourseDisplayName}
                   t={t}
@@ -4922,12 +4927,15 @@ function AssignmentsTab({
 // 4. GRADES TAB
 function GradesTab({
   assignments,
+  gradeSummaries,
   getCourseColor,
   getCourseDisplayName,
   t,
+  lang,
   tourStep,
 }: {
   assignments: Assignment[];
+  gradeSummaries?: Record<number, CourseGradeSummary>;
   tourStep?: number;
 } & TabProps) {
   // Collect all assignments that are graded
@@ -4977,16 +4985,36 @@ function GradesTab({
               <div key={courseId} className="course-grades-group glass-panel" style={{ borderLeft: `4px solid ${color}` }}>
                 <div className="group-header">
                   <h4 style={{ color }}>{getCourseDisplayName(courseId, group.courseName)}</h4>
-                  <span className="course-avg-badge">{t('course_average_label')}: {courseAverage}</span>
+                  {gradeSummaries?.[courseId]?.hasCourseTotal && gradeSummaries[courseId].courseTotalFormatted ? (
+                    <span className="course-avg-badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+                      🏆 {lang === 'he' ? 'ציון סופי:' : 'Course Total:'} {gradeSummaries[courseId].courseTotalFormatted}
+                    </span>
+                  ) : (
+                    <span className="course-avg-badge">{t('course_average_label')}: {courseAverage}</span>
+                  )}
                 </div>
 
                 <div className="grades-table">
                   {group.list.map((a) => (
-                    <div key={a.id} className="grade-row">
-                      <span className="grade-assign-name">{a.name}</span>
-                      <span className="grade-value-span">
-                        {a.grade} / {a.gradeMax}
-                      </span>
+                    <div key={a.id} className="grade-row" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="grade-assign-name">
+                          {a.name}
+                          {a.isBonus && (
+                            <span className="badge" style={{ marginInlineStart: '0.4rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)', fontSize: '0.72rem', padding: '0.1rem 0.4rem' }}>
+                              ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
+                            </span>
+                          )}
+                        </span>
+                        <span className="grade-value-span">
+                          {a.grade} / {a.gradeMax}
+                        </span>
+                      </div>
+                      {a.feedback && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', paddingInlineStart: '0.5rem', borderInlineStart: '2px solid #10b981' }}>
+                          💬 {a.feedback}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -5700,6 +5728,8 @@ function CourseDetailView({
   courseSections,
   courseFolders,
   courseLinks,
+  courseAnnouncements,
+  courseGradeSummaries,
   syncErrors,
   token,
   getCourseColor,
@@ -5727,6 +5757,8 @@ function CourseDetailView({
   courseSections?: CourseSection[];
   courseFolders?: CourseFolder[];
   courseLinks?: CourseLink[];
+  courseAnnouncements?: CourseAnnouncement[];
+  courseGradeSummaries?: Record<number, CourseGradeSummary>;
   syncErrors?: SyncError[];
   token: string | null;
   onBack: () => void;
@@ -5848,6 +5880,7 @@ function CourseDetailView({
       displayTitle: string;
       isPanopto?: boolean;
       sectionId?: number;
+      summaryHtml?: string;
       files: CourseFile[];
       assignments: Assignment[];
       recordings: PanoptoRecording[];
@@ -5875,7 +5908,8 @@ function CourseDetailView({
   };
 
   thisCourseSections.forEach((sec) => {
-    getSection(sec.name, sec.name, false, sec.id);
+    const s = getSection(sec.name, sec.name, false, sec.id);
+    if (sec.summaryHtml) s.summaryHtml = sec.summaryHtml;
   });
 
   courseFiles.forEach((f) => {
@@ -5936,12 +5970,54 @@ function CourseDetailView({
         <div className="detail-title-section">
           <h3 style={{ color: courseColor }}>{courseDisplayName}</h3>
           <span className="course-id-badge">{rawCourseName}</span>
+          {courseGradeSummaries?.[courseId]?.hasCourseTotal && (
+            <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+              🏆 {lang === 'he' ? 'ציון כולל:' : 'Total Grade:'} {courseGradeSummaries[courseId].courseTotalFormatted}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="detail-grid">
         {/* Left column: Section Tree */}
         <div className="detail-main-tree">
+          {(() => {
+            const courseAnns = (courseAnnouncements || []).filter(a => a.courseId === courseId);
+            if (courseAnns.length === 0) return null;
+            return (
+              <div className="course-announcements-card glass-panel" style={{
+                padding: '0.75rem 1rem',
+                marginBottom: '1.25rem',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                background: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>📢</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#60a5fa' }}>
+                    {lang === 'he' ? 'לוח מודעות והודעות' : 'Announcements & News'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                    {courseAnns.map((ann) => (
+                      <a
+                        key={ann.id}
+                        href={ann.moodleUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="action-link-btn"
+                        style={{ fontSize: '0.8rem', padding: '0.2rem 0.55rem' }}
+                      >
+                        {ann.name} ↗
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {(() => {
             const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
             const courseMeetings = collapseRecurringMeetings(rawCourseMeetings, new Date());
@@ -6663,6 +6739,22 @@ function CourseDetailView({
 
                     {!isCollapsed && (
                       <div className="section-node-body" style={{ marginTop: '1rem' }}>
+                        {content.summaryHtml && (
+                          <div
+                            className="section-summary-banner"
+                            style={{
+                              padding: '0.65rem 0.85rem',
+                              marginBottom: '0.85rem',
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              borderRadius: '6px',
+                              borderInlineStart: `3px solid ${courseColor}`,
+                              fontSize: '0.85rem',
+                              color: 'var(--text-secondary)',
+                              lineHeight: '1.45',
+                            }}
+                            dangerouslySetInnerHTML={{ __html: content.summaryHtml }}
+                          />
+                        )}
                         {content.assignments.length > 0 && (
                           <div className="section-assignments-list">
                             {content.assignments.map((a) => {
@@ -6686,6 +6778,16 @@ function CourseDetailView({
                                         ⏱️ {Math.round(a.timeLimitSeconds / 60)} {lang === 'he' ? "דק'" : 'min'}
                                       </span>
                                     ) : null}
+                                    {a.isBonus && (
+                                      <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)' }}>
+                                        ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
+                                      </span>
+                                    )}
+                                    {a.isLateSubmissionBox && (
+                                      <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', borderColor: 'rgba(249, 115, 22, 0.3)' }}>
+                                        ⏳ {lang === 'he' ? 'הגשה באיחור' : 'Late Box'}
+                                      </span>
+                                    )}
                                     {a.status === 'Submitted' ? (
                                       <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
                                     ) : (
@@ -6694,6 +6796,11 @@ function CourseDetailView({
                                   </div>
                                   <span className="item-name">
                                     {a.name}
+                                    {a.feedback && (
+                                      <div style={{ marginTop: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.3rem 0.55rem', borderRadius: '4px', borderInlineStart: '3px solid #10b981' }}>
+                                        💬 <strong>{lang === 'he' ? 'משוב:' : 'Feedback:'}</strong> {a.feedback}
+                                      </div>
+                                    )}
                                     {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
                                       <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
                                         {t('not_submitted_tag')}
