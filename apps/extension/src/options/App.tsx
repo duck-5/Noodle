@@ -3966,7 +3966,7 @@ function DashboardTab({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                           {next5Assignments.map((a) => {
                             const isAssignExpanded = expandedCourseAssignId === a.id;
-                            const isHidden = settings?.hiddenAssignments?.includes(a.id);
+                            const isHidden = settings?.hiddenAssignments?.includes(a.id) || !!a.isHidden;
                             const isCompleted = a.isCompleted;
                             const { badgeClass, deadlineText } = getDueTextAndClass(
                               a.deadline || null,
@@ -5849,7 +5849,8 @@ function CourseDetailView({
   const courseDisplayName = getCourseDisplayName(courseId, rawCourseName);
 
   // Filter items for this course
-  const courseAssignments = assignments.filter((a) => a.courseId === courseId);
+  const allCourseAssignments = assignments.filter((a) => a.courseId === courseId);
+  const courseAssignments = allCourseAssignments.filter((a) => !a.isHidden && !settings?.hiddenAssignments?.includes(a.id));
   const courseFiles = files.filter((f) => f.courseId === courseId);
   const courseRecordings = (settings?.panoptoEnabled ? (recordings || []) : []).filter((r) => r.courseId === courseId);
   const watchedSet = new Set(settings?.watchedRecordings || []);
@@ -5940,7 +5941,7 @@ function CourseDetailView({
   const sectionsList = Array.from(sectionsMap.entries());
 
   // Order assignments for this course by due date (with deterministic tie-breaker)
-  const sortedCourseAssigns = [...courseAssignments].sort((a, b) => {
+  const sortedCourseAssigns = [...allCourseAssignments].sort((a, b) => {
     if (!a.deadline && !b.deadline) return a.id - b.id;
     if (!a.deadline) return 1;
     if (!b.deadline) return -1;

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Browser E2E Automated Verification Suite (`apps/extension/e2e/moodle-structures.spec.ts`)**:
+  - Implemented end-to-end browser test in headless Chromium with real extension loading verifying 2-level topic navigation chips, subsection expansion, quizzes and בחנים badging, interactive manual completion, folder ZIP downloads, external links, course announcements, authoritative gradebook totals, and full visual screenshot capture (`TC-EXT-015`, `TC-EXT-016`).
 - **Comprehensive Test Suite & Documentation Synchronization (`docs/TEST_CASES.md`, `API_DESCRIPTION.md`, `ARCHITECTURE.md`, `UI_SPECIFICATION.md`, `AI_KNOWLEDGE.md`)**:
   - Registered test cases `TC-API-009`, `TC-API-010`, `TC-API-011`, `TC-SYNC-008`, `TC-SYNC-009`, `TC-SYNC-010`, `TC-EXT-015`, and `TC-MOB-015`.
   - Documented Moodle REST and AJAX endpoints, multilang header injection, pure-TS PKZIP specification, and HTML scraping deprecation policy across all authoritative architecture and design docs.
@@ -52,6 +54,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Mobile SQLite Section & Folder Schema Expansion (`apps/mobile/src/services/database.ts`)**:
   - Added `course_sections`, `course_folders`, and `course_links` tables.
   - Added `section_id`, `section_number`, `folder_id`, `folder_name`, and `relative_path` columns to `files` table.
+
+### Fixed
+- **Course Detail Section Filter on Suppressed / Hidden Assignments (`apps/extension/src/options/App.tsx`)**:
+  - Filtered out auto-suppressed late submission boxes and user-hidden assignments from active section item trees while preserving them in the sidebar overview.
 
 ### Changed
 - **Documentation — Deprecated HTML Scraper as Feature Target (`docs/ARCHITECTURE.md`, `docs/AI_KNOWLEDGE.md`)**:
