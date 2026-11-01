@@ -94,6 +94,22 @@ describe('Phase 1: zipBuilder (Pure TypeScript PKZIP generator & wstoken Bulk Do
       expect(decoded).toContain('notes/summary (2).txt');
     });
 
+    it('should strip traversal sequences and correctly disambiguate filenames in dotted subdirectories', () => {
+      const data1 = new TextEncoder().encode('Payload 1');
+      const data2 = new TextEncoder().encode('Payload 2');
+
+      const entries: ZipEntryInput[] = [
+        { path: '../../course.v1/lecture.notes.pdf', data: data1 },
+        { path: '../../course.v1/lecture.notes.pdf', data: data2 },
+      ];
+
+      const zipBytes = buildZipArchive(entries);
+      const decoded = new TextDecoder().decode(zipBytes);
+      expect(decoded).not.toContain('..');
+      expect(decoded).toContain('course.v1/lecture.notes.pdf');
+      expect(decoded).toContain('course.v1/lecture.notes (2).pdf');
+    });
+
     it('should format authenticated file URLs with token parameter correctly', () => {
       expect(buildAuthenticatedFileUrl('https://moodle.tau.ac.il/file.pdf', 'MY_TOKEN')).toBe(
         'https://moodle.tau.ac.il/file.pdf?token=MY_TOKEN'

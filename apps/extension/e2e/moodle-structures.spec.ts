@@ -96,7 +96,7 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               courseId: cId,
               sectionNumber: 0,
               name: 'כללי ומבוא',
-              summaryHtml: '<p>ברוכים הבאים לקורס מבני נתונים!</p>',
+              summaryHtml: 'ברוכים הבאים לקורס מבני נתונים!',
               parentSectionId: null,
               level: 0,
               sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=101&section=0',

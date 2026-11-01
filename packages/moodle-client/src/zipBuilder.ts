@@ -48,20 +48,23 @@ function sanitizeAndDeduplicatePaths(entries: ZipEntryInput[]): { pathBytes: Uin
 
   for (const entry of entries) {
     let cleanPath = entry.path.replace(/\\/g, '/').replace(/^\/+/, '');
-    cleanPath = cleanPath.replace(/\/{2,}/g, '/');
+    cleanPath = cleanPath.replace(/\.\./g, '').replace(/\/{2,}/g, '/');
 
     const lower = cleanPath.toLowerCase();
     const count = seenPaths.get(lower) || 0;
     seenPaths.set(lower, count + 1);
 
     if (count > 0) {
-      const dotIndex = cleanPath.lastIndexOf('.');
+      const slashIndex = cleanPath.lastIndexOf('/');
+      const fileName = slashIndex >= 0 ? cleanPath.slice(slashIndex + 1) : cleanPath;
+      const dirPrefix = slashIndex >= 0 ? cleanPath.slice(0, slashIndex + 1) : '';
+      const dotIndex = fileName.lastIndexOf('.');
       if (dotIndex > 0) {
-        const base = cleanPath.slice(0, dotIndex);
-        const ext = cleanPath.slice(dotIndex);
-        cleanPath = `${base} (${count + 1})${ext}`;
+        const base = fileName.slice(0, dotIndex);
+        const ext = fileName.slice(dotIndex);
+        cleanPath = `${dirPrefix}${base} (${count + 1})${ext}`;
       } else {
-        cleanPath = `${cleanPath} (${count + 1})`;
+        cleanPath = `${dirPrefix}${fileName} (${count + 1})`;
       }
     }
 
@@ -231,8 +234,12 @@ export async function downloadFolderAsZip(
 
         const arrayBuf = await res.arrayBuffer();
         const data = new Uint8Array(arrayBuf);
-        const rel = (file.relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
-        const entryPath = rel ? `${rel}${file.fileName}` : file.fileName;
+        const rel = (file.relativePath || '')
+          .replace(/\\/g, '/')
+          .replace(/\.\./g, '')
+          .replace(/^\/+/, '')
+          .replace(/\/+$/, '');
+        const entryPath = rel ? `${rel}/${file.fileName}` : file.fileName;
 
         entries.push({
           path: entryPath,

@@ -466,7 +466,11 @@ export default function CoursesScreen({
       return sectionsMap[key];
     };
     courseSections.forEach((s: any) => getSection(s.name, s.id));
-    courseFiles.forEach((f: any) => getSection(f.section_name, f.section_id).files.push(f));
+    courseFiles.forEach((f: any) => {
+      if (!f.folder_id) {
+        getSection(f.section_name, f.section_id).files.push(f);
+      }
+    });
     courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General'), a.section_id).assignments.push(a));
     courseMeetings.forEach((m: any) => getSection(m.section_name || (isRtl ? 'כללי' : 'General')).meetings.push(m));
     courseFolders.forEach((fld: any) => getSection(fld.section_name || (isRtl ? 'כללי' : 'General'), fld.section_id).folders.push(fld));

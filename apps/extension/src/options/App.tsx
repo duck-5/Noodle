@@ -5031,8 +5031,10 @@ function GradesTab({
       gradesByCourse[a.courseId] = { courseName: a.courseName, sum: 0, count: 0, list: [] };
     }
     const ratio = a.gradeMax ? a.grade / a.gradeMax : 0;
-    gradesByCourse[a.courseId].sum += ratio * 100;
-    gradesByCourse[a.courseId].count += 1;
+    if (!a.isBonus) {
+      gradesByCourse[a.courseId].sum += ratio * 100;
+      gradesByCourse[a.courseId].count += 1;
+    }
     gradesByCourse[a.courseId].list.push(a);
   });
 
@@ -5040,8 +5042,10 @@ function GradesTab({
   let totalCourseAverageSum = 0;
   let courseAveragesCount = 0;
   Object.values(gradesByCourse).forEach((c) => {
-    totalCourseAverageSum += c.sum / c.count;
-    courseAveragesCount++;
+    if (c.count > 0) {
+      totalCourseAverageSum += c.sum / c.count;
+      courseAveragesCount++;
+    }
   });
   const overallGpa = courseAveragesCount > 0 ? (totalCourseAverageSum / courseAveragesCount).toFixed(2) : '-';
 
@@ -5062,7 +5066,7 @@ function GradesTab({
           {Object.entries(gradesByCourse).map(([courseIdStr, group]) => {
             const courseId = Number(courseIdStr);
             const color = getCourseColor(courseId);
-            const courseAverage = (group.sum / group.count).toFixed(2);
+            const courseAverage = group.count > 0 ? (group.sum / group.count).toFixed(2) : '-';
             return (
               <div key={courseId} className="course-grades-group glass-panel" style={{ borderLeft: `4px solid ${color}` }}>
                 <div className="group-header">
@@ -6020,7 +6024,9 @@ function CourseDetailView({
   });
 
   courseFiles.forEach((f) => {
-    getSection(f.sectionName, f.sectionName, false, f.sectionId).files.push(f);
+    if (!f.folderId) {
+      getSection(f.sectionName, f.sectionName, false, f.sectionId).files.push(f);
+    }
   });
 
   courseAssignments.forEach((a) => {
@@ -6884,9 +6890,11 @@ function CourseDetailView({
                               fontSize: '0.85rem',
                               color: 'var(--text-secondary)',
                               lineHeight: '1.45',
+                              whiteSpace: 'pre-line',
                             }}
-                            dangerouslySetInnerHTML={{ __html: content.summaryHtml }}
-                          />
+                          >
+                            {content.summaryHtml}
+                          </div>
                         )}
                         {content.assignments.length > 0 && (
                           <div className="section-assignments-list">

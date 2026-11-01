@@ -1,4 +1,4 @@
-import { Paths, File } from 'expo-file-system';
+import { Paths, File, FileMode } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { CourseFolder, downloadFolderAsZip } from '@tautracker/moodle-client';
@@ -151,15 +151,6 @@ export async function downloadMoodleFile(
 }
 
 
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
 export async function downloadMoodleFolderZip(
   folder: CourseFolder,
   onProgress?: (completed: number, total: number) => void
@@ -178,10 +169,12 @@ export async function downloadMoodleFolderZip(
 
     const zipBytes = await downloadFolderAsZip(folder, token, onProgress);
     const cleanName = sanitizeFileName(folder.name || 'folder') + '.zip';
-    const destUri = `${FileSystemLegacy.cacheDirectory || FileSystemLegacy.documentDirectory}${cleanName}`;
-    await FileSystemLegacy.writeAsStringAsync(destUri, uint8ArrayToBase64(zipBytes), {
-      encoding: FileSystemLegacy.EncodingType.Base64,
-    });
+    const targetFile = new File(Paths.cache, cleanName);
+    targetFile.create({ overwrite: true });
+    const handle = targetFile.open(FileMode.WriteOnly);
+    handle.writeBytes(zipBytes);
+    handle.close();
+    const destUri = targetFile.uri;
 
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(destUri, {

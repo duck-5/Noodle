@@ -86,6 +86,20 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
                     intro: 'תיבת הגשה באיחור למטלה 2',
                     duedate: 1762600000,
                   },
+                  {
+                    id: 6,
+                    cmid: 1006,
+                    name: 'מטלה 10 - סיבוכיות',
+                    intro: 'מטלה 10',
+                    duedate: 1762700000,
+                  },
+                  {
+                    id: 7,
+                    cmid: 1007,
+                    name: 'תיבת הגשה באיחור',
+                    intro: 'תיבה כללית ללא שם מטלה',
+                    duedate: 1762800000,
+                  },
                 ],
               },
             ],
@@ -97,7 +111,20 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ quizzes: [] }),
+          json: async () => ({
+            quizzes: [
+              {
+                id: 20,
+                course: 101,
+                coursemodule: 2020,
+                name: 'בוחן 1 - שאלת בונוס',
+                timelimit: 1800,
+                attempts: 1,
+                timeopen: 1760000000,
+                timeclose: 1762000000,
+              },
+            ],
+          }),
         };
       }
 
@@ -140,9 +167,21 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
                     itemmodule: 'assign',
                     cmid: 1003,
                     graderaw: 5,
-                    grademax: 5, // <= 5 bonus heuristic
+                    grademax: 5,
                     gradeformatted: '5.00',
                     gradeishidden: false,
+                  },
+                  {
+                    id: 2020,
+                    itemname: 'בוחן 1 - שאלת בונוס',
+                    itemtype: 'mod',
+                    itemmodule: 'quiz',
+                    cmid: 2020,
+                    graderaw: 10,
+                    grademax: 10,
+                    gradeformatted: '10.00',
+                    gradeishidden: false,
+                    feedback: 'מעולה!',
                   },
                 ],
               },
@@ -257,10 +296,26 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
     expect(lateAssign2?.isLateSubmissionBox).toBe(true);
     expect(lateAssign2?.isHidden).toBeUndefined();
 
-    // 2. Verify Bonus Heuristic
+    // CR-06: Generic late box without assignment title must NOT be auto-suppressed
+    const lateAssignGeneric = result.assignments.find((a) => a.id === 7);
+    expect(lateAssignGeneric).toBeDefined();
+    expect(lateAssignGeneric?.isLateSubmissionBox).toBe(true);
+    expect(lateAssignGeneric?.isHidden).toBeUndefined();
+
+    // CR-06: Word-boundary: מטלה 10 must not be confused with מטלה 1
+    const assign10 = result.assignments.find((a) => a.id === 6);
+    expect(assign10).toBeDefined();
+    expect(assign10?.isHidden).toBeUndefined();
+
+    // 2. Verify Bonus Heuristic & Quiz Feedback (CR-12)
     const bonusAssign = result.assignments.find((a) => a.id === 3);
     expect(bonusAssign).toBeDefined();
     expect(bonusAssign?.isBonus).toBe(true);
+
+    const bonusQuiz = result.assignments.find((a) => a.id === 20);
+    expect(bonusQuiz).toBeDefined();
+    expect(bonusQuiz?.isBonus).toBe(true);
+    expect(bonusQuiz?.feedback).toBe('מעולה!');
 
     // 3. Verify Feedback Extraction
     const assign1 = result.assignments.find((a) => a.id === 1);
@@ -273,7 +328,7 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
     expect(courseGrade.hasCourseTotal).toBe(true);
     expect(courseGrade.courseTotalFormatted).toBe('92.50');
     expect(courseGrade.courseTotalRaw).toBe(92.5);
-    expect(courseGrade.items).toHaveLength(3);
+    expect(courseGrade.items).toHaveLength(4);
 
     // 5. Verify Announcements extraction
     expect(result.announcements).toBeDefined();

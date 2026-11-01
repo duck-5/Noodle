@@ -309,7 +309,7 @@ export async function runSync(
               courseTotalMax = item.grademax;
             }
 
-            const isBonus = (item.grademax > 0 && item.grademax <= 5) || /בונוס|bonus/i.test(item.itemname || '');
+            const isBonus = /בונוס|bonus/i.test(item.itemname || '');
 
             if (item.itemtype === 'mod' && item.cmid !== null) {
               gradesByCmid.set(Number(item.cmid), item);
@@ -409,13 +409,13 @@ export async function runSync(
     let grade: number | null = null;
     let gradeMax: number | null = null;
     let feedback: string | undefined = undefined;
-    let isBonus = false;
+    let isBonus = /בונוס|bonus/i.test(assign.name || '');
 
     if (gradeInfo && !gradeInfo.gradeishidden) {
       grade = gradeInfo.graderaw;
       gradeMax = gradeInfo.grademax;
       if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
-      if ((gradeInfo.grademax > 0 && gradeInfo.grademax <= 5) || /בונוס|bonus/i.test(assign.name || '')) {
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
         isBonus = true;
       }
     }
@@ -515,9 +515,15 @@ export async function runSync(
     const gradeInfo = gradesByCmid.get(Number(cmid));
     let grade: number | null = null;
     let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = /בונוס|bonus/i.test(quiz.name || '');
     if (gradeInfo && !gradeInfo.gradeishidden) {
       grade = gradeInfo.graderaw;
       gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
+        isBonus = true;
+      }
     } else if (quiz.sumgrades !== undefined && quiz.sumgrades !== null) {
       gradeMax = quiz.sumgrades;
     }
@@ -541,6 +547,8 @@ export async function runSync(
       link: `${quizBaseUrl}/mod/quiz/view.php?id=${quiz.coursemodule}`,
       grade,
       gradeMax,
+      feedback,
+      isBonus: isBonus || undefined,
       sectionId: cmidToSectionIdMap.get(Number(quiz.coursemodule)),
       sectionName: sectionName || cmidToSectionMap.get(Number(quiz.coursemodule)),
       activityType: 'quiz',
@@ -1292,10 +1300,19 @@ export async function runSync(
       .toLowerCase();
   };
 
+  const isWordBoundaryMatch = (full: string, sub: string): boolean => {
+    if (!full || !sub || sub.length < 2) return false;
+    if (full === sub) return true;
+    const escaped = sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(^|[^a-zA-Z0-9\\u0590-\\u05FF])${escaped}($|[^a-zA-Z0-9\\u0590-\\u05FF])`);
+    return regex.test(full);
+  };
+
   for (const assign of assignments) {
     if (LATE_BOX_REGEX.test(assign.name)) {
       assign.isLateSubmissionBox = true;
       const normalizedLate = normalizeTitle(assign.name);
+      if (!normalizedLate || normalizedLate.length < 2) continue;
 
       const regularAssign = assignments.find((other) => {
         const assignUid = assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
@@ -1303,10 +1320,11 @@ export async function runSync(
         if (other.courseId !== assign.courseId || otherUid === assignUid) return false;
         if (LATE_BOX_REGEX.test(other.name)) return false;
         const normalizedOther = normalizeTitle(other.name);
+        if (!normalizedOther || normalizedOther.length < 2) return false;
         return (
           normalizedLate === normalizedOther ||
-          normalizedLate.includes(normalizedOther) ||
-          normalizedOther.includes(normalizedLate)
+          isWordBoundaryMatch(normalizedLate, normalizedOther) ||
+          isWordBoundaryMatch(normalizedOther, normalizedLate)
         );
       });
 
