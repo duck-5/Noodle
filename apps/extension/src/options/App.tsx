@@ -448,6 +448,44 @@ export default function App() {
   const [hasGoogleTasksToken, setHasGoogleTasksToken] = useState<boolean>(false);
   const [googleTasksAuthError, setGoogleTasksAuthError] = useState<string | null>(null);
 
+  // Panopto Host Permissions State
+  const PANOPTO_ORIGINS = ['https://*.panopto.eu/*', '*://*.panopto.tau.ac.il/*'];
+  const [hasPanoptoPermission, setHasPanoptoPermission] = useState<boolean>(true);
+
+  const checkPanoptoPermission = async () => {
+    if (typeof browser !== 'undefined' && browser.permissions?.contains) {
+      try {
+        const hasIt = await browser.permissions.contains({ origins: PANOPTO_ORIGINS });
+        setHasPanoptoPermission(hasIt);
+        return hasIt;
+      } catch {
+        setHasPanoptoPermission(true);
+        return true;
+      }
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    checkPanoptoPermission();
+  }, [settings?.panoptoEnabled]);
+
+  const handleRequestPanoptoPermission = async () => {
+    if (typeof browser !== 'undefined' && browser.permissions?.request) {
+      try {
+        const granted = await browser.permissions.request({ origins: PANOPTO_ORIGINS });
+        if (granted) {
+          setHasPanoptoPermission(true);
+          handleManualSync();
+        }
+        return granted;
+      } catch (err) {
+        console.warn('[Panopto] Error requesting permissions:', err);
+      }
+    }
+    return false;
+  };
+
 
   // Backup and custom disconnect states
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
@@ -1981,6 +2019,8 @@ export default function App() {
                   onToggleRecordingWatched={handleToggleRecordingWatched}
                   onUpdatePanopto={handleUpdateCoursePanopto}
                   isSyncing={loading || isSyncing}
+                  hasPanoptoPermission={hasPanoptoPermission}
+                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
                 />
               ) : activeTab === 'dashboard' ? (
                 <DashboardTab
@@ -2034,6 +2074,8 @@ export default function App() {
                   onSyncGoogle={handleSyncGoogleTasks}
                   googleSyncLoading={googleSyncLoading}
                   onToggleRecordingWatched={handleToggleRecordingWatched}
+                  hasPanoptoPermission={hasPanoptoPermission}
+                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
                 />
               ) : activeTab === 'assignments' ? (
                 <AssignmentsTab
@@ -2122,6 +2164,19 @@ export default function App() {
                   }}
                   onTogglePanopto={async (enabled: boolean) => {
                     if (!settings) return;
+                    if (enabled && typeof browser !== 'undefined' && browser.permissions?.request) {
+                      try {
+                        const hasPerm = await browser.permissions.contains({ origins: PANOPTO_ORIGINS });
+                        if (!hasPerm) {
+                          const granted = await browser.permissions.request({ origins: PANOPTO_ORIGINS });
+                          setHasPanoptoPermission(granted);
+                        } else {
+                          setHasPanoptoPermission(true);
+                        }
+                      } catch (err) {
+                        console.warn('[Panopto] Error requesting permissions:', err);
+                      }
+                    }
                     const updated = { ...settings, panoptoEnabled: enabled };
                     setSettingsState(updated);
                     await setSettings(updated);
@@ -2149,6 +2204,8 @@ export default function App() {
                     await setSettings(updated);
                     browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
                   }}
+                  hasPanoptoPermission={hasPanoptoPermission}
+                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
                 />
               )}
 
@@ -2601,6 +2658,8 @@ function DashboardTab({
   onSyncGoogle,
   googleSyncLoading,
   onToggleRecordingWatched,
+  hasPanoptoPermission = true,
+  onRequestPanoptoPermission,
 }: {
   assignments: EnhancedAssignment[];
   meetings: ZoomMeeting[];
@@ -2628,6 +2687,8 @@ function DashboardTab({
   onSyncGoogle?: () => void;
   googleSyncLoading?: boolean;
   onToggleRecordingWatched?: (recordingId: string) => void;
+  hasPanoptoPermission?: boolean;
+  onRequestPanoptoPermission?: () => void;
 } & TabProps) {
   const [isHeroExpanded, setIsHeroExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
@@ -2771,6 +2832,45 @@ function DashboardTab({
               style={{ whiteSpace: 'nowrap' }}
             >
               {googleSyncLoading ? t('syncing') : t('connect_now')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Panopto missing browser host permissions warning */}
+      {isPanoptoActive && !hasPanoptoPermission && (
+        <div
+          className="panopto-perm-warning-banner glass-panel"
+          style={{
+            marginBottom: '1rem',
+            padding: '0.85rem 1.25rem',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            background: 'rgba(245, 158, 11, 0.1)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '1.4rem' }}>🎬</span>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)' }}>
+                {t('panopto_perm_needed_title')}
+              </div>
+              <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
+                {t('panopto_perm_needed_desc')}
+              </div>
+            </div>
+          </div>
+          {onRequestPanoptoPermission && (
+            <button
+              className="primary-btn btn-sm"
+              onClick={onRequestPanoptoPermission}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {t('panopto_grant_perm_btn')}
             </button>
           )}
         </div>
@@ -5007,6 +5107,8 @@ function SettingsTab({
   onUpdateDashboardWidth,
   onResetDashboardWidth,
   onUpdateSyncInterval,
+  hasPanoptoPermission = true,
+  onRequestPanoptoPermission,
 }: {
   settings: ExtensionSettings | null;
   onToggleGoogle: (e: boolean) => void;
@@ -5036,6 +5138,8 @@ function SettingsTab({
   onUpdateDashboardWidth?: (width: number) => void;
   onResetDashboardWidth?: () => void;
   onUpdateSyncInterval?: (val: number) => void;
+  hasPanoptoPermission?: boolean;
+  onRequestPanoptoPermission?: () => void;
 }) {
   if (!settings) return null;
 
@@ -5482,6 +5586,40 @@ function SettingsTab({
             <span className="slider round"></span>
           </label>
         </div>
+        {settings.panoptoEnabled && !hasPanoptoPermission && (
+          <div
+            style={{
+              marginTop: '0.75rem',
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '0.75rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem' }}>
+                ⚠️ {t('panopto_perm_needed_title')}
+              </div>
+              <div style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.2rem' }}>
+                {t('panopto_perm_needed_desc')}
+              </div>
+            </div>
+            {onRequestPanoptoPermission && (
+              <button
+                type="button"
+                className="primary-btn btn-sm"
+                onClick={onRequestPanoptoPermission}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                {t('panopto_grant_perm_btn')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <hr className="settings-divider" />
@@ -5693,6 +5831,8 @@ function CourseDetailView({
   onToggleRecordingWatched,
   onUpdatePanopto,
   isSyncing,
+  hasPanoptoPermission = true,
+  onRequestPanoptoPermission,
 }: {
   courseId: number;
   assignments: Assignment[];
@@ -5715,6 +5855,8 @@ function CourseDetailView({
   onToggleRecordingWatched?: (recordingId: string) => void;
   onUpdatePanopto?: (courseId: number, panoptoVal: string, triggerSync?: boolean) => void;
   isSyncing?: boolean;
+  hasPanoptoPermission?: boolean;
+  onRequestPanoptoPermission?: () => void;
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const [expandedPanopto, setExpandedPanopto] = useState<boolean>(true);
@@ -6202,6 +6344,40 @@ function CourseDetailView({
                       gap: '0.75rem',
                     }}
                   >
+                    {!hasPanoptoPermission && (
+                      <div
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.12)',
+                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '0.75rem 1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '1rem',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem' }}>
+                            ⚠️ {t('panopto_perm_needed_title')}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.2rem' }}>
+                            {t('panopto_perm_needed_desc')}
+                          </div>
+                        </div>
+                        {onRequestPanoptoPermission && (
+                          <button
+                            type="button"
+                            className="primary-btn btn-sm"
+                            onClick={onRequestPanoptoPermission}
+                            style={{ whiteSpace: 'nowrap' }}
+                          >
+                            {t('panopto_grant_perm_btn')}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Inline Folder URL / UUID Override Bar */}
                     {onUpdatePanopto && (
                       <div

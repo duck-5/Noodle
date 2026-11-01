@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Fixed
+- **Firefox/Zen MV3 Host Permissions & CORS Rejection for Panopto (`apps/extension/src/options/App.tsx`, `background/serviceWorker.ts`, `shared/i18n.ts`)**:
+  - Resolved CORS rejection (`Reason: CORS header 'Access-Control-Allow-Origin' does not match`) and 25-second hidden-tab timeout on release builds installed from AMO/Firefox. In Firefox Manifest V3, newly introduced host permissions (e.g. `*.panopto.eu`) are treated as user-controllable and left disabled by default on extension updates.
+  - Added proactive runtime permission checks via `browser.permissions.contains` and prompt triggers via `browser.permissions.request` when enabling Panopto in Settings.
+  - Added warning alert banners in the Dashboard, Settings, and Course Details Panopto section with a 1-click "Grant Permission" button whenever `panoptoEnabled` is active but browser host permissions have not yet been approved.
+  - Enhanced error diagnostics in `ensurePanoptoAuthViaHiddenTab` and `executeStepInTab` to log permission failures explicitly instead of silently timing out.
 
 ## [4.0.2] - 2026-10-29
 ### Added
