@@ -158,5 +158,45 @@ When testing extension changes or verifying new features, agents must NOT ask th
    - Inspect pictures immediately using `view_file`.
 4. **Reference Guide**: Read [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md) for complete implementation patterns.
 
+---
 
+## 7. Moodle Structures & Heuristics Knowledge
 
+### A. TAU Course Code Taxonomy & Grouping Modes
+Tel Aviv University Moodle course codes adhere to specific institutional conventions:
+1. **Academic Common Lecture vs Group Portals (Mode A)**:
+   - **8-Digit Base Code** (e.g. `01022312` or containing `-99-`): The unified common lecture and general materials portal.
+   - **10-Digit Group Code** (e.g. `0102231201`): The recitation, exercise, or lab submission portal.
+   - *Heuristic:* `courseGrouping.ts` matches the first 8 digits of both portals and groups them into a single high-level course card, aggregating assignments, quizzes, and files while keeping `sourceCourseId` intact for accurate deep links.
+2. **Administrative & Compliance Tutorials (Mode B)**:
+   - Course codes starting with `5900*`, `5800*`, or categorized under `בטיחות` / `Safety` represent mandatory safety tutorials (e.g. fire safety, electrical safety, biological safety).
+   - *Heuristic:* Consolidated into a single dedicated `הדרכות בטיחות והדרכות חובה` umbrella card and strictly excluded from student GPA calculations (`excludeFromGpa: true`).
+3. **Semester Codes**:
+   - `1`: Semester A (Fall/Winter)
+   - `2`: Semester B (Spring)
+   - `3`: Summer Semester (Summer)
+
+### B. HTML Scraper Strategy Deprecation Policy
+- **Policy:** The HTML DOM scraping strategy (`ScraperMoodleStrategy`) is permanently deprecated for all newly introduced structures.
+- **Rationale:** TAU Moodle utilizes diverse and evolving page formats (`multitopic`, `onetopic`, `tiles`, `weeks`, `mod_subsection`), making regex parsing of server-rendered HTML fragile and prone to silent failures.
+- **Standard:** All new capabilities (quizzes, format hierarchy, folder PKZIPs, external links, announcements, gradebook summaries) MUST strictly consume official Moodle REST Web Services and authenticated JSON AJAX endpoints (`sesskey`).
+
+### C. Multilang Filter Protocol
+- Moodle titles frequently contain bilingual strings wrapped in `<span class="multilang" lang="he">...` and `<span class="multilang" lang="en">...`.
+- When making REST requests, always include:
+  ```
+  moodlewssettingfilter: 'true'
+  moodlewssettinglang: 'he'
+  ```
+- Always sanitize residual markup using `cleanMoodleString(str, 'he')`, which extracts the Hebrew span and strips leftover multilang HTML tags.
+
+### D. Late-Submission Box Auto-Suppression Heuristic
+- TAU courses frequently configure a second Moodle assignment box specifically for late submissions (e.g. `מטלה 1 - הגשה באיחור`).
+- If left unmanaged, students see a perpetual overdue warning even after submitting on time.
+- *Heuristic:* When a late submission box is detected, Noodle checks if the regular assignment has `status === 'Submitted'` or `isCompleted === true`. If so, the late box is automatically suppressed (`isHidden: true`). If the regular assignment is not submitted, the late box stays visible as an active submission pathway.
+
+### E. Pure-TS PKZIP Engine Constraints
+- Shared client code under `packages/moodle-client` runs inside Chrome/Firefox MV3 Service Workers and React Native's Hermes engine.
+- Neither Node.js native binary modules nor `zlib` / `Buffer` / `stream` are available.
+- `zipBuilder.ts` constructs raw PKZIP 2.0 archives using typed byte arrays (`Uint8Array`, `DataView`) and manual IEEE 802.3 CRC-32 polynomials.
+- Always set bit 11 (`0x0800`) in the general purpose bit flag to ensure cross-platform UTF-8 rendering of Hebrew folder contents.

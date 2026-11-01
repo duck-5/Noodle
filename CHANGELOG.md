@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Comprehensive Test Suite & Documentation Synchronization (`docs/TEST_CASES.md`, `API_DESCRIPTION.md`, `ARCHITECTURE.md`, `UI_SPECIFICATION.md`, `AI_KNOWLEDGE.md`)**:
+  - Registered test cases `TC-API-009`, `TC-API-010`, `TC-API-011`, `TC-SYNC-008`, `TC-SYNC-009`, `TC-SYNC-010`, `TC-EXT-015`, and `TC-MOB-015`.
+  - Documented Moodle REST and AJAX endpoints, multilang header injection, pure-TS PKZIP specification, and HTML scraping deprecation policy across all authoritative architecture and design docs.
+  - Documented 2-level section navigation chip bar, quiz activity badges, two-way manual completion sync, and authoritative gradebook total displays.
 - **Gradebook Fidelity, Late-Submission Box Auto-Suppression & Course Announcements (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Implemented late-submission box auto-suppression heuristic (`isLateSubmissionBox`): automatically hides duplicate late submission boxes when the regular assignment has already been submitted or completed.
   - Implemented bonus heuristic (`isBonus`): flags assignment and grade items with `grademax <= 5` or bonus keywords (`"בונוס"` / `"bonus"`).
