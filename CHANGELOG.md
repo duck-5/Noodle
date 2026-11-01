@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Academic Parent/Sub-Course Merging & Administrative Umbrella UX (`packages/moodle-client/src/courseGrouping.ts`, `courseParser.ts`)**:
+  - Implemented Mode A academic course grouping merging common lecture portals (e.g. 8-digit `01022312` or `-99-`) and group recitations/labs (e.g. 10-digit `0102231201`) into unified course cards while aggregating all course modules, assignments, and files.
+  - Implemented Mode B administrative umbrella grouping safety and compliance tutorials (`5900*`, `5800*`, and category `"בטיחות"` / `"Safety"`) into a dedicated `"הדרכות בטיחות והדרכות חובה"` container excluded from GPA calculation.
+  - Added multi-format TAU course code parser supporting Summer semester (`-3`), standalone 8-digit and 10-digit codes, and reversed year-first syntax.
+  - Added item aggregator and deduplicator (`aggregateUnifiedCourseItems`) across merged parent and sub-courses with `sourceCourseId` preservation.
+  - Added unit test suite `packages/moodle-client/__tests__/courseGrouping.test.ts`.
 - **Quizzes & בחנים (`mod_quiz`) End-to-End Tracking (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
   - Implemented `mod_quiz_get_quizzes_by_courses`, `mod_quiz_get_user_attempts`, and `core_completion_update_activity_completion_status_manually` across `RestMoodleStrategy` and `MoodleClient`.
   - Added support for quiz time limits (`timeLimitSeconds`), open/close timestamps, attempt count restrictions, and automatic completion detection from finished attempts.

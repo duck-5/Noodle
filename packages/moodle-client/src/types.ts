@@ -79,6 +79,7 @@ export interface Assignment {
   id: number;               // Moodle assign ID or quiz ID
   cmid: number;             // Course-module ID (used in deep links, completion updates, and grade lookups)
   courseId: number;         // Moodle course internal ID
+  sourceCourseId?: number;   // Underlying Moodle course ID (when merged in parent/sub-course)
   courseName: string;
   name: string;
   status: 'Assigned' | 'Submitted' | 'Not submitted';

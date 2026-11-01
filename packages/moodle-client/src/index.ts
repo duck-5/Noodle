@@ -8,3 +8,4 @@ export * from './panoptoScraper.js';
 export * from './settingsSync.js';
 export * from './zipBuilder.js';
 export * from './courseFormatState.js';
+export * from './courseGrouping.js';
