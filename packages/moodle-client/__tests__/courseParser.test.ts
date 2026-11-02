@@ -27,6 +27,16 @@ describe('parseTauCourseMetadata', () => {
     expect(parsed8?.groupId).toBe('00');
   });
 
+  it('should handle course codes with trailing titles', () => {
+    const parsedWithTitle = parseTauCourseMetadata('01022312 - ביוסטטיסטיקה מתקדמת');
+    expect(parsedWithTitle?.courseCode).toBe('01022312');
+    expect(parsedWithTitle?.groupId).toBe('00');
+
+    const parsedSubWithTitle = parseTauCourseMetadata('0102231201 - ביוסטטיסטיקה מתקדמת');
+    expect(parsedSubWithTitle?.courseCode).toBe('01022312');
+    expect(parsedSubWithTitle?.groupId).toBe('01');
+  });
+
   it('should handle reversed format year-group-code-semester', () => {
     const parsed = parseTauCourseMetadata('2026-01-01022312-1');
     expect(parsed?.courseCode).toBe('01022312');

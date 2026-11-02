@@ -258,10 +258,17 @@ export async function runSync(
         for (const courseObj of assignmentsResp.courses) {
           if (trackedCourseIds.includes(courseObj.id)) {
             for (const assign of courseObj.assignments) {
-              rawAssignments.push(assign);
-              const uid = `assign:${assign.id}`;
-              if (!rawOrderMap.has(uid)) {
-                rawOrderMap.set(uid, nextOrderIndex++);
+              const alreadyHas = rawAssignments.some(
+                (a) =>
+                  (assign.id && a.id === assign.id && a.course === courseObj.id) ||
+                  (assign.cmid && a.cmid && a.cmid === assign.cmid)
+              );
+              if (!alreadyHas) {
+                rawAssignments.push(assign);
+                const uid = `assign:${assign.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
+                }
               }
             }
           }
@@ -350,8 +357,15 @@ export async function runSync(
   const cmidToSectionMap = new Map<number, string>();
   const cmidToSectionIdMap = new Map<number, number>();
   const now = new Date();
+  const seenProcessedAssignKeys = new Set<string>();
+  const seenProcessedQuizKeys = new Set<string>();
 
   const processAssignment = async (assign: RawMoodleAssignment, sectionName?: string) => {
+    const key = assign.cmid ? `cmid:${assign.cmid}` : `id:${assign.course}:${assign.id}`;
+    if (seenProcessedAssignKeys.has(key)) return;
+    seenProcessedAssignKeys.add(key);
+    if (assign.cmid) seenProcessedAssignKeys.add(`cmid:${assign.cmid}`);
+    if (assign.id) seenProcessedAssignKeys.add(`id:${assign.course}:${assign.id}`);
     let subStatus = 'new';
     let extensionDueDate = 0;
     let submittedFiles: Attachment[] | undefined = undefined;
@@ -474,6 +488,12 @@ export async function runSync(
   };
 
   const processQuiz = async (quiz: RawMoodleQuiz, sectionName?: string) => {
+    const key = quiz.coursemodule ? `cmid:${quiz.coursemodule}` : `id:${quiz.course}:${quiz.id}`;
+    if (seenProcessedQuizKeys.has(key)) return;
+    seenProcessedQuizKeys.add(key);
+    if (quiz.coursemodule) seenProcessedQuizKeys.add(`cmid:${quiz.coursemodule}`);
+    if (quiz.id) seenProcessedQuizKeys.add(`id:${quiz.course}:${quiz.id}`);
+
     let hasFinished = false;
     try {
       const attempts = await client.getQuizAttempts(quiz.id);
@@ -643,11 +663,25 @@ export async function runSync(
 
         const rawSections = await client.getCourseContents(courseId);
         // Map Moodle 4.5+ mod_subsection modules to their delegated child sections
+        const subsectionParentBySectionId = new Map<number, number>();
         const subsectionParentByTitle = new Map<string, number>();
         for (const sec of rawSections) {
           for (const mod of sec.modules || []) {
-            if (mod.modname === 'subsection' && mod.name) {
-              subsectionParentByTitle.set(cleanMoodleString(mod.name), sec.id);
+            if (mod.modname === 'subsection') {
+              if (mod.customdata) {
+                try {
+                  const cd = typeof mod.customdata === 'string' ? JSON.parse(mod.customdata) : mod.customdata;
+                  const targetSecId = Number(cd?.sectionid || cd?.section);
+                  if (!isNaN(targetSecId) && targetSecId > 0) {
+                    subsectionParentBySectionId.set(targetSecId, sec.id);
+                  }
+                } catch {
+                  // Ignore JSON parse error and fallback to title
+                }
+              }
+              if (mod.name) {
+                subsectionParentByTitle.set(cleanMoodleString(mod.name), sec.id);
+              }
             }
           }
         }
@@ -659,8 +693,13 @@ export async function runSync(
           }
 
           const secState = formatState?.sections.get(section.id);
-          const isSubMod = (section as any).component === 'mod_subsection' || subsectionParentByTitle.has(sectionName);
-          const inferredParentId = secState?.parentSectionId ?? subsectionParentByTitle.get(sectionName) ?? null;
+          const isSubMod = (section as any).component === 'mod_subsection' ||
+            subsectionParentBySectionId.has(section.id) ||
+            subsectionParentByTitle.has(sectionName);
+          const inferredParentId = secState?.parentSectionId ??
+            subsectionParentBySectionId.get(section.id) ??
+            subsectionParentByTitle.get(sectionName) ??
+            null;
           sections.push({
             id: section.id,
             courseId,
@@ -671,7 +710,9 @@ export async function runSync(
             level: (secState?.level === 1 || inferredParentId !== null || isSubMod) ? 1 : 0,
             isSubsectionModule: isSubMod || undefined,
             sectionUrl: secState?.sectionUrl || `${courseBaseUrl}/course/view.php?id=${courseId}&section=${section.section}`,
-            visible: section.visible !== undefined ? section.visible !== 0 : true,
+            visible: (section as any).uservisible !== undefined
+              ? Boolean((section as any).uservisible)
+              : (section.visible !== undefined ? section.visible !== 0 || Boolean(isSubMod) || ((section.modules?.length ?? 0) > 0) : true),
           });
 
           // 1. Scan section summary for embedded Zoom & Panopto links
@@ -748,7 +789,17 @@ export async function runSync(
                   completiondata: module.completiondata,
                 });
               }
-              if (!rawQuizzes.some((q) => q.coursemodule === module.id)) {
+              const existingQuiz = rawQuizzes.find(
+                (q) =>
+                  (module.instance && q.id === module.instance) ||
+                  (q.coursemodule && q.coursemodule === module.id) ||
+                  (q.course === courseId && q.name === name)
+              );
+              if (existingQuiz) {
+                if (!existingQuiz.coursemodule) {
+                  existingQuiz.coursemodule = module.id;
+                }
+              } else {
                 const synthQuiz: RawMoodleQuiz = {
                   id: module.instance || module.id,
                   course: courseId,
@@ -778,8 +829,17 @@ export async function runSync(
                   completiondata: module.completiondata,
                 });
               }
-              const exists = rawAssignments.some(a => a.cmid === module.id);
-              if (!exists) {
+              const existingAssign = rawAssignments.find(
+                (a) =>
+                  (module.instance && a.id === module.instance) ||
+                  (a.cmid && a.cmid === module.id) ||
+                  (a.course === courseId && a.name === name)
+              );
+              if (existingAssign) {
+                if (!existingAssign.cmid) {
+                  existingAssign.cmid = module.id;
+                }
+              } else {
                 const newAssign: RawMoodleAssignment = {
                   id: module.instance || module.id,
                   cmid: module.id,
@@ -1032,6 +1092,9 @@ export async function runSync(
               }
             }
           }
+        }
+        if (onPartialSync && sections.length > 0) {
+          onPartialSync({ sections: [...sections] });
         }
       } catch (err: any) {
         errors.push({

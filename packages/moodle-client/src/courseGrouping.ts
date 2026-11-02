@@ -120,7 +120,7 @@ export function groupEnrolledCourses(courses: MoodleCourse[]): GroupedCoursesRes
   const unifiedList: UnifiedCourse[] = [];
 
   for (const c of academicList) {
-    const meta = parseTauCourseMetadata(c.idnumber || c.shortname);
+    const meta = parseTauCourseMetadata(c.idnumber || c.shortname || c.fullname);
     const courseCode = meta?.courseCode || (c.courseId ? c.courseId.substring(0, 8) : '') || String(c.id);
     const year = (meta?.year && meta.year.trim()) || (c.year && c.year.trim()) || String(new Date().getFullYear());
     const semester: TauSemester =
@@ -180,32 +180,21 @@ export function groupEnrolledCourses(courses: MoodleCourse[]): GroupedCoursesRes
 }
 
 /**
- * Expands a list of tracked course IDs (which may include a UnifiedCourse parent ID or -5900 umbrella ID)
- * into all constituent underlying Moodle course IDs for REST API syncing.
+ * Expands a list of tracked course IDs (which may include a -5900 synthetic administrative umbrella ID)
+ * into constituent underlying real positive Moodle course IDs for REST API syncing.
+ * Academic courses selected by the user are preserved as chosen (parent or child) without force-expanding unselected sub-courses.
  */
 export function expandTrackedCourseIds(
   trackedCourseIds: number[],
   grouped: GroupedCoursesResult
 ): number[] {
   const expanded = new Set<number>();
-  const allUnified: UnifiedCourse[] = [
-    ...grouped.academicCourses,
-    ...(grouped.administrativeUmbrella ? [grouped.administrativeUmbrella] : []),
-  ];
 
   for (const id of trackedCourseIds) {
     if (id > 0) {
       expanded.add(id);
-    }
-    const matchingGroup = allUnified.find(
-      (u) => u.id === id || u.subCourses.some((s) => s.courseId === id)
-    );
-    if (matchingGroup && !matchingGroup.isAdministrativeUmbrella) {
-      for (const sub of matchingGroup.subCourses) {
-        if (sub.courseId > 0) expanded.add(sub.courseId);
-      }
-    } else if (matchingGroup && matchingGroup.isAdministrativeUmbrella && id === -5900) {
-      for (const sub of matchingGroup.subCourses) {
+    } else if (id === -5900 && grouped.administrativeUmbrella) {
+      for (const sub of grouped.administrativeUmbrella.subCourses) {
         if (sub.courseId > 0) expanded.add(sub.courseId);
       }
     }
@@ -241,8 +230,12 @@ export function aggregateUnifiedCourseItems(
   const assignments: Assignment[] = [];
   for (const a of rawAssigns) {
     const key = a.uid || `${a.activityType || 'assign'}:${a.id}`;
-    if (!seenAssignKeys.has(key)) {
+    const cmidKey = a.cmid ? `cmid:${a.cmid}` : '';
+    const nameKey = `${(a.name || '').trim().toLowerCase()}_${a.deadline || ''}`;
+    if (!seenAssignKeys.has(key) && (!cmidKey || !seenAssignKeys.has(cmidKey)) && !seenAssignKeys.has(nameKey)) {
       seenAssignKeys.add(key);
+      if (cmidKey) seenAssignKeys.add(cmidKey);
+      seenAssignKeys.add(nameKey);
       assignments.push({
         ...a,
         sourceCourseId: a.courseId,

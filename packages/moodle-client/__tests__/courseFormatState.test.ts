@@ -121,6 +121,65 @@ describe('Phase 1: courseFormatState & cleanMoodleString (Hard Item #2 & multila
       expect(java?.level).toBe(0);
     });
 
+    it('should not treat sections pointing to section 0 as subsections and correctly distinguish levelsan', async () => {
+      const mockFormatResponse = [
+        {
+          error: false,
+          data: JSON.stringify({
+            course: {
+              id: 101,
+              format: 'topics',
+            },
+            section: [
+              {
+                id: '500',
+                section: 0,
+                levelsan: 0,
+              },
+              {
+                id: '501',
+                section: 1,
+                parentid: '500', // Points to Section 0
+                levelsan: 1,     // Standard top-level page/topic
+              },
+              {
+                id: '502',
+                section: 2,
+                parentid: '501', // Real subsection under Section 1
+                levelsan: 2,     // Subtopic level
+              },
+            ],
+          }),
+        },
+      ];
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockFormatResponse,
+      } as any);
+
+      const result = await fetchCourseFormatState({
+        instanceBaseUrl: 'https://moodle.tau.ac.il',
+        courseId: 101,
+        sesskey: 'TEST_SESSKEY',
+      });
+
+      expect(result).not.toBeNull();
+      const sections = result!.sections;
+
+      // Section 0
+      expect(sections.get(500)?.parentSectionId).toBeNull();
+      expect(sections.get(500)?.level).toBe(0);
+
+      // Section 1 pointing to Section 0 is root (level 0, parentSectionId null)
+      expect(sections.get(501)?.parentSectionId).toBeNull();
+      expect(sections.get(501)?.level).toBe(0);
+
+      // Section 2 pointing to Section 1 is genuine subsection
+      expect(sections.get(502)?.parentSectionId).toBe(501);
+      expect(sections.get(502)?.level).toBe(1);
+    });
+
     it('should degrade gracefully and return null when sesskey is missing or response is invalid', async () => {
       const nullResult = await fetchCourseFormatState({
         instanceBaseUrl: 'https://moodle.tau.ac.il',

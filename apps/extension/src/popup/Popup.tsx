@@ -1,6 +1,14 @@
 import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
-import { decodeHTMLEntities, MoodleClient, type SyncResult } from '@tautracker/moodle-client';
+import {
+  decodeHTMLEntities,
+  MoodleClient,
+  type SyncResult,
+  getActivityUid,
+  isActivityHidden,
+  isActivityCompleted,
+  matchesActivityIdentifier,
+} from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass } from '../shared/dateUtils.js';
@@ -59,18 +67,25 @@ export default function Popup() {
     }
   };
 
-  const handleMarkDone = async (e: React.MouseEvent, assignId: number) => {
+  const handleMarkDone = async (e: React.MouseEvent, assignId: number | string) => {
     e.stopPropagation();
     if (!settings) return;
-    const completed = Array.from(new Set([...(settings.completedAssignments || []), assignId]));
-    const uncompleted = (settings.uncompletedAssignments || []).filter((id: number) => id !== assignId);
+    const assign = (syncResult?.assignments || []).find(
+      (a: any) => a.uid === assignId || a.id === assignId || getActivityUid(a) === String(assignId)
+    );
+    const targetKey = assign ? getActivityUid(assign) : String(assignId);
+
+    const completed = Array.from(new Set([...(settings.completedAssignments || []), targetKey]));
+    const uncompleted = (settings.uncompletedAssignments || []).filter(
+      (id: any) => !matchesActivityIdentifier(id, assign || { id: Number(assignId) })
+    );
     const updated = { ...settings, completedAssignments: completed, uncompletedAssignments: uncompleted };
     setSettingsState(updated);
     await saveSettings({ completedAssignments: completed, uncompletedAssignments: uncompleted });
-    const assign = (syncResult?.assignments || []).find((a: any) => a.id === assignId);
     if (assign && assign.requiresManualCompletion && token) {
       try {
-        const client = new MoodleClient(token);
+        const instanceBaseUrl = assign.link ? new URL(assign.link).origin : undefined;
+        const client = new MoodleClient(token, instanceBaseUrl);
         client.updateActivityCompletionManually(assign.cmid, true).catch(() => {});
       } catch {}
     }
@@ -116,9 +131,6 @@ export default function Popup() {
     );
   }
 
-  const hiddenSet = new Set<number>(settings?.hiddenAssignments || []);
-  const completedSet = new Set<number>(settings?.completedAssignments || []);
-  const uncompletedSet = new Set<number>(settings?.uncompletedAssignments || []);
   const watchedSet = new Set<string>(settings?.watchedRecordings || []);
 
   const unwatchedRecordings = settings?.panoptoEnabled
@@ -127,15 +139,9 @@ export default function Popup() {
       .sort((a: any, b: any) => (b.publishedDate || '').localeCompare(a.publishedDate || ''))
     : [];
 
-  const isDone = (a: any) => {
-    if (uncompletedSet.has(a.id)) return false;
-    if (completedSet.has(a.id) || a.isCompleted === true) return true;
-    return a.status === 'Submitted';
-  };
-
   const now = Date.now();
   const pendingAssigns = (syncResult?.assignments || [])
-    .filter((a: any) => !hiddenSet.has(a.id) && !a.isHidden && !isDone(a))
+    .filter((a: any) => !isActivityHidden(a, settings?.hiddenAssignments) && !isActivityCompleted(a, settings?.completedAssignments, settings?.uncompletedAssignments))
     .sort((a: any, b: any) => {
       const aHasNoDl = !a.deadline;
       const bHasNoDl = !b.deadline;

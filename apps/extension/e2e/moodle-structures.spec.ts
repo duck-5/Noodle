@@ -18,6 +18,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               cmid: 1001,
               courseId: cId,
               courseName: 'מבני נתונים - 03682161',
+              sectionId: 22,
+              sectionName: 'שבוע 2 - עצי חיפוש',
               name: 'מטלה 1 - עצי חיפוש בינאריים',
               status: 'Submitted',
               deadline: new Date(currentTime + 24 * 3600 * 1000).toISOString(),
@@ -37,6 +39,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               cmid: 1002,
               courseId: cId,
               courseName: 'מבני נתונים - 03682161',
+              sectionId: 22,
+              sectionName: 'שבוע 2 - עצי חיפוש',
               name: 'מטלה 1 - תיבת הגשה באיחור',
               status: 'Submitted',
               deadline: new Date(currentTime + 48 * 3600 * 1000).toISOString(),
@@ -56,6 +60,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               cmid: 1003,
               courseId: cId,
               courseName: 'מבני נתונים - 03682161',
+              sectionId: 21,
+              sectionName: 'שבוע 1 - מבוא וסיבוכיות',
               name: 'בוחן 1 - בדיקת ידע עצמי',
               status: 'Not submitted',
               deadline: new Date(currentTime + 72 * 3600 * 1000).toISOString(),
@@ -76,6 +82,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               cmid: 1004,
               courseId: cId,
               courseName: 'מבני נתונים - 03682161',
+              sectionId: 21,
+              sectionName: 'שבוע 1 - מבוא וסיבוכיות',
               name: 'שאלת בונוס מתקדמת',
               status: 'Submitted',
               deadline: new Date(currentTime + 96 * 3600 * 1000).toISOString(),
@@ -133,6 +141,28 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
               parentSectionId: 20,
               level: 1,
               sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=101&section=3',
+              visible: true,
+            },
+            // Child subsection 2c: Week 3 (Empty)
+            {
+              id: 23,
+              courseId: cId,
+              sectionNumber: 4,
+              name: 'שבוע 3 - נושא עתידי',
+              parentSectionId: 20,
+              level: 1,
+              sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=101&section=4',
+              visible: true,
+            },
+            // Top-level section 3: Empty Section
+            {
+              id: 30,
+              courseId: cId,
+              sectionNumber: 5,
+              name: 'פרויקט גמר (ריק)',
+              parentSectionId: null,
+              level: 0,
+              sectionUrl: 'https://moodle.tau.ac.il/course/view.php?id=101&section=5',
               visible: true,
             },
           ],
@@ -251,6 +281,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     await expect(navTree).toBeVisible();
     await expect(navTree).toContainText('כללי ומבוא');
     await expect(navTree).toContainText('הרצאות הקורס');
+    // Verify empty top-level section is hidden by default
+    await expect(navTree).not.toContainText('פרויקט גמר (ריק)');
 
     // Click on "הרצאות הקורס" which has child sub-sections
     const lecturesChip = navTree.locator('button', { hasText: 'הרצאות הקורס' });
@@ -261,6 +293,25 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     await expect(subtopicsRow).toBeVisible();
     await expect(subtopicsRow).toContainText('שבוע 1 - מבוא וסיבוכיות');
     await expect(subtopicsRow).toContainText('שבוע 2 - עצי חיפוש');
+    // Verify empty sub-topic is hidden by default
+    await expect(subtopicsRow).not.toContainText('שבוע 3 - נושא עתידי');
+
+    // 4b. Verify Empty Sections Toggle (Show / Hide)
+    const toggleBtn = detailView.locator('.toggle-empty-sections-btn');
+    await expect(toggleBtn).toBeVisible();
+    await expect(toggleBtn).toContainText(/הצג נושאים ריקים|Show empty sections/);
+
+    // Click toggle to SHOW empty sections
+    await toggleBtn.click();
+    await expect(toggleBtn).toContainText(/הסתר נושאים ריקים|Hide empty sections/);
+    await expect(navTree).toContainText('פרויקט גמר (ריק)');
+    await expect(subtopicsRow).toContainText('שבוע 3 - נושא עתידי');
+
+    // Click toggle to HIDE empty sections again
+    await toggleBtn.click();
+    await expect(toggleBtn).toContainText(/הצג נושאים ריקים|Show empty sections/);
+    await expect(navTree).not.toContainText('פרויקט גמר (ריק)');
+    await expect(subtopicsRow).not.toContainText('שבוע 3 - נושא עתידי');
 
     // Click on "All 🌐" to view all sections again
     const allChip = navTree.locator('button', { hasText: /הכל 🌐|All 🌐/ });

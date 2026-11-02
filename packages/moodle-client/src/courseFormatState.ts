@@ -76,6 +76,20 @@ export async function fetchCourseFormatState(options: {
     const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
     const sectionMap = new Map<number, ParsedSectionState>();
 
+    // Identify Section 0 (general/header) so topics pointing to it are not treated as subsections
+    let sectionZeroId: number | null = null;
+    if (Array.isArray(data.section)) {
+      for (const s of data.section) {
+        if (s.section === 0 || s.section === '0') {
+          const sid = Number(s.id);
+          if (!isNaN(sid)) {
+            sectionZeroId = sid;
+          }
+          break;
+        }
+      }
+    }
+
     if (Array.isArray(data.section)) {
       for (const s of data.section) {
         const secId = Number(s.id);
@@ -84,9 +98,15 @@ export async function fetchCourseFormatState(options: {
         const rawParentId = s.parentid !== undefined && s.parentid !== null && s.parentid !== ''
           ? Number(s.parentid)
           : null;
-        const parentSectionId = rawParentId !== null && rawParentId !== secId ? rawParentId : null;
-        const levelsan = typeof s.levelsan === 'number' ? s.levelsan : Number(s.levelsan);
-        const level: 0 | 1 = (levelsan >= 1 || parentSectionId !== null) ? 1 : 0;
+        const parentSectionId = rawParentId !== null &&
+          rawParentId > 0 &&
+          rawParentId !== secId &&
+          (sectionZeroId === null || rawParentId !== sectionZeroId)
+          ? rawParentId
+          : null;
+        const levelsanNum = typeof s.levelsan === 'number' ? s.levelsan : Number(s.levelsan);
+        const isNestedLevel = !isNaN(levelsanNum) ? levelsanNum >= 2 : false;
+        const level: 0 | 1 = (isNestedLevel || parentSectionId !== null) ? 1 : 0;
         const sectionUrl = s.sectionurl ? String(s.sectionurl) : undefined;
 
         sectionMap.set(secId, {
@@ -101,18 +121,28 @@ export async function fetchCourseFormatState(options: {
     if (data.course && Array.isArray(data.course.tabsdata)) {
       for (const tab of data.course.tabsdata) {
         const topSecId = Number(tab.sectionid);
-        if (isNaN(topSecId) || !Array.isArray(tab.subtree)) continue;
+        if (isNaN(topSecId)) continue;
 
-        for (const child of tab.subtree) {
-          const childSecId = Number(child.sectionid);
-          if (isNaN(childSecId) || childSecId === topSecId) continue;
+        // Ensure top-level tab is level: 0 and parentSectionId: null
+        const existingTop = sectionMap.get(topSecId);
+        sectionMap.set(topSecId, {
+          parentSectionId: null,
+          level: 0,
+          sectionUrl: existingTop?.sectionUrl,
+        });
 
-          const existing = sectionMap.get(childSecId);
-          sectionMap.set(childSecId, {
-            parentSectionId: topSecId,
-            level: 1,
-            sectionUrl: existing?.sectionUrl,
-          });
+        if (Array.isArray(tab.subtree)) {
+          for (const child of tab.subtree) {
+            const childSecId = Number(child.sectionid);
+            if (isNaN(childSecId) || childSecId === topSecId) continue;
+
+            const existing = sectionMap.get(childSecId);
+            sectionMap.set(childSecId, {
+              parentSectionId: topSecId,
+              level: 1,
+              sectionUrl: existing?.sectionUrl,
+            });
+          }
         }
       }
     }

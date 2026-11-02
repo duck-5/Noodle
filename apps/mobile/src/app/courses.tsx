@@ -12,8 +12,9 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { parseTauCourseMetadata } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
 import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
+import { getMoodleToken } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
@@ -399,7 +400,7 @@ export default function CoursesScreen({
       const rawMoodleSubmitted = a.status === 'Submitted';
       mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-      if (hiddenIds.includes(a.moodle_assign_id)) {
+      if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
         mod.isHidden = true;
       }
 
@@ -496,10 +497,11 @@ export default function CoursesScreen({
         ? allSectionEntries.filter(([secKey, content]) => secKey === activeSectionName || content.displayTitle === activeSectionName)
         : allSectionEntries;
 
-    // Calculate course assignment stats
-    const totalAssignments = courseAssignments.length;
-    const submittedCount = courseAssignments.filter((a) => a.status === 'Submitted').length;
-    const pendingCount = totalAssignments - submittedCount;
+    // Calculate course assignment stats (exclude hidden tasks from active tracking & gaps count)
+    const visibleAssignments = courseAssignments.filter((a) => !a.isHidden);
+    const totalAssignments = visibleAssignments.length;
+    const submittedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+    const pendingCount = Math.max(0, totalAssignments - submittedCount);
     const gradedAssignments = courseAssignments.filter(
       (a) => a.grade !== null && a.grade !== undefined && a.grade_max
     );
@@ -1866,23 +1868,38 @@ export default function CoursesScreen({
                             const uncompletedStr = getPreference('uncompleted_assignments');
                             let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
 
+                            let willBeCompleted = false;
                             if (rawMoodleSubmitted) {
                               if (uncompletedList.includes(a.moodle_assign_id)) {
                                 uncompletedList = uncompletedList.filter((id: number) => id !== a.moodle_assign_id);
+                                willBeCompleted = true;
                               } else {
                                 uncompletedList.push(a.moodle_assign_id);
+                                willBeCompleted = false;
                               }
                               setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
                               markSettingUpdatedAndSync(['uncompletedAssignments']);
                             } else {
                               if (completedList.includes(a.moodle_assign_id)) {
                                 completedList = completedList.filter((id: number) => id !== a.moodle_assign_id);
+                                willBeCompleted = false;
                               } else {
                                 completedList.push(a.moodle_assign_id);
+                                willBeCompleted = true;
                               }
                               setPreference('completed_assignments', JSON.stringify(completedList));
                               markSettingUpdatedAndSync(['completedAssignments']);
                             }
+
+                            if (a.requires_manual_completion && a.cmid) {
+                              getMoodleToken().then((tok) => {
+                                if (!tok) return;
+                                const instanceBaseUrl = a.link ? new URL(a.link).origin : undefined;
+                                const client = new MoodleClient(tok, instanceBaseUrl);
+                                client.updateActivityCompletionManually(a.cmid, willBeCompleted).catch(() => {});
+                              }).catch(() => {});
+                            }
+
                             setRefreshKey(prev => prev + 1);
                           }}
                         >

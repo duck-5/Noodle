@@ -239,22 +239,36 @@ export default function DashboardScreen() {
     const uncompletedStr = getPreference('uncompleted_assignments');
     let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
 
+    let willBeCompleted = false;
     if (rawMoodleSubmitted) {
       if (uncompletedList.includes(assignMoodleId)) {
         uncompletedList = uncompletedList.filter((id: number) => id !== assignMoodleId);
+        willBeCompleted = true;
       } else {
         uncompletedList.push(assignMoodleId);
+        willBeCompleted = false;
       }
       setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
       markSettingUpdatedAndSync(['uncompletedAssignments']);
     } else {
       if (completedList.includes(assignMoodleId)) {
         completedList = completedList.filter((id: number) => id !== assignMoodleId);
+        willBeCompleted = false;
       } else {
         completedList.push(assignMoodleId);
+        willBeCompleted = true;
       }
       setPreference('completed_assignments', JSON.stringify(completedList));
       markSettingUpdatedAndSync(['completedAssignments']);
+    }
+
+    if (target?.requires_manual_completion && target?.cmid) {
+      getMoodleToken().then((tok) => {
+        if (!tok) return;
+        const instanceBaseUrl = target.link ? new URL(target.link).origin : undefined;
+        const client = new MoodleClient(tok, instanceBaseUrl);
+        client.updateActivityCompletionManually(target.cmid, willBeCompleted).catch(() => {});
+      }).catch(() => {});
     }
 
     loadDashboardData();
@@ -467,7 +481,7 @@ export default function DashboardScreen() {
         const rawMoodleSubmitted = a.status === 'Submitted';
         mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-        if (hiddenIds.includes(a.moodle_assign_id)) {
+        if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
           mod.isHidden = true;
         }
 

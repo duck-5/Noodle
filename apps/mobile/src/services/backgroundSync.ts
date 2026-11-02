@@ -66,10 +66,15 @@ export async function triggerForegroundSync(): Promise<any> {
     undefined, 
     (partial) => {
       saveSyncResultToDatabase({
-        assignments: partial.assignments || [],
-        meetings: partial.meetings || [],
-        files: partial.files || [],
-        errors: partial.errors || []
+        assignments: partial.assignments,
+        meetings: partial.meetings,
+        files: partial.files,
+        sections: partial.sections,
+        folders: partial.folders,
+        links: partial.links,
+        announcements: partial.announcements,
+        recordings: partial.recordings,
+        errors: partial.errors,
       });
     }
   );
@@ -113,10 +118,15 @@ TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
       undefined, 
       (partial) => {
         saveSyncResultToDatabase({
-          assignments: partial.assignments || [],
-          meetings: partial.meetings || [],
-          files: partial.files || [],
-          errors: partial.errors || []
+          assignments: partial.assignments,
+          meetings: partial.meetings,
+          files: partial.files,
+          sections: partial.sections,
+          folders: partial.folders,
+          links: partial.links,
+          announcements: partial.announcements,
+          recordings: partial.recordings,
+          errors: partial.errors,
         });
       }
     );

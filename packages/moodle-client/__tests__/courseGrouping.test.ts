@@ -93,9 +93,12 @@ describe('Mode A & Mode B Course Grouping', () => {
     expect(administrativeUmbrella?.subCourses).toHaveLength(2);
     expect(administrativeUmbrella?.fullname).toBe('הדרכות בטיחות והדרכות חובה');
 
-    // 3. expandTrackedCourseIds should expand parent 101 -> [101, 102] and -5900 -> [901, 902]
-    const expanded = expandTrackedCourseIds([101, -5900], grouped);
-    expect(expanded.sort()).toEqual([101, 102, 901, 902]);
+    // 3. expandTrackedCourseIds should expand synthetic -5900 -> [901, 902] while preserving explicitly selected academic courses (101 without forcing unselected 102)
+    const expandedOnlyParent = expandTrackedCourseIds([101, -5900], grouped);
+    expect(expandedOnlyParent.sort()).toEqual([101, 901, 902]);
+
+    const expandedBoth = expandTrackedCourseIds([101, 102, -5900], grouped);
+    expect(expandedBoth.sort()).toEqual([101, 102, 901, 902]);
   });
 
   it('should aggregate and deduplicate items (including sections, announcements, and gradeSummary) across parent and sub-courses', () => {

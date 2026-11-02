@@ -43,18 +43,20 @@ function dateToDosTime(date: Date): { dosTime: number; dosDate: number } {
 
 function sanitizeAndDeduplicatePaths(entries: ZipEntryInput[]): { pathBytes: Uint8Array; entry: ZipEntryInput }[] {
   const encoder = new TextEncoder();
-  const seenPaths = new Map<string, number>();
+  const seenPaths = new Set<string>();
   const result: { pathBytes: Uint8Array; entry: ZipEntryInput }[] = [];
 
   for (const entry of entries) {
-    let cleanPath = entry.path.replace(/\\/g, '/').replace(/^\/+/, '');
-    cleanPath = cleanPath.replace(/\.\./g, '').replace(/\/{2,}/g, '/');
+    const rawSegments = entry.path.replace(/\\/g, '/').split('/');
+    const safeSegments = rawSegments
+      .map((s) => s.trim())
+      .filter((seg) => seg !== '' && seg !== '.' && seg !== '..');
+    const cleanPath = safeSegments.join('/') || 'file';
 
-    const lower = cleanPath.toLowerCase();
-    const count = seenPaths.get(lower) || 0;
-    seenPaths.set(lower, count + 1);
-
-    if (count > 0) {
+    let candidate = cleanPath;
+    let counter = 1;
+    while (seenPaths.has(candidate.toLowerCase())) {
+      counter++;
       const slashIndex = cleanPath.lastIndexOf('/');
       const fileName = slashIndex >= 0 ? cleanPath.slice(slashIndex + 1) : cleanPath;
       const dirPrefix = slashIndex >= 0 ? cleanPath.slice(0, slashIndex + 1) : '';
@@ -62,14 +64,15 @@ function sanitizeAndDeduplicatePaths(entries: ZipEntryInput[]): { pathBytes: Uin
       if (dotIndex > 0) {
         const base = fileName.slice(0, dotIndex);
         const ext = fileName.slice(dotIndex);
-        cleanPath = `${dirPrefix}${base} (${count + 1})${ext}`;
+        candidate = `${dirPrefix}${base} (${counter})${ext}`;
       } else {
-        cleanPath = `${dirPrefix}${fileName} (${count + 1})`;
+        candidate = `${dirPrefix}${fileName} (${counter})`;
       }
     }
+    seenPaths.add(candidate.toLowerCase());
 
     result.push({
-      pathBytes: encoder.encode(cleanPath),
+      pathBytes: encoder.encode(candidate),
       entry,
     });
   }

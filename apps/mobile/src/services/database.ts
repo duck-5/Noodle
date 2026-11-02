@@ -194,7 +194,8 @@ function initDb(db: SQLite.SQLiteDatabase) {
           section_name TEXT,
           feedback TEXT,
           is_bonus INTEGER DEFAULT 0,
-          is_late_submission_box INTEGER DEFAULT 0
+          is_late_submission_box INTEGER DEFAULT 0,
+          is_hidden INTEGER DEFAULT 0
         );
       `);
       try {
@@ -246,6 +247,7 @@ function initDb(db: SQLite.SQLiteDatabase) {
   try { db.execSync('ALTER TABLE assignments ADD COLUMN feedback TEXT;'); } catch (e) {}
   try { db.execSync('ALTER TABLE assignments ADD COLUMN is_bonus INTEGER DEFAULT 0;'); } catch (e) {}
   try { db.execSync('ALTER TABLE assignments ADD COLUMN is_late_submission_box INTEGER DEFAULT 0;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE assignments ADD COLUMN is_hidden INTEGER DEFAULT 0;'); } catch (e) {}
 }
 
 // Preference Helpers
@@ -300,28 +302,31 @@ export function saveSyncResultToDatabase(result: any): void {
     addCourseIds(result.announcements);
 
     db.withTransactionSync(() => {
-      // Prune stale rows for courses covered by this sync
-      for (const cid of syncedCourseIds) {
-        if (Array.isArray(result.assignments)) {
-          db.runSync('DELETE FROM assignments WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.files)) {
-          db.runSync('DELETE FROM files WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.meetings)) {
-          db.runSync('DELETE FROM meetings WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.sections)) {
-          db.runSync('DELETE FROM course_sections WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.folders)) {
-          db.runSync('DELETE FROM course_folders WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.links)) {
-          db.runSync('DELETE FROM course_links WHERE course_moodle_id = ?', [cid]);
-        }
-        if (Array.isArray(result.announcements)) {
-          db.runSync('DELETE FROM course_announcements WHERE course_id = ?', [cid]);
+      // Prune stale rows for courses covered by this sync (only on final authoritative sync payloads)
+      const isFinalSync = Boolean(result.syncedAt);
+      if (isFinalSync) {
+        for (const cid of syncedCourseIds) {
+          if (Array.isArray(result.assignments)) {
+            db.runSync('DELETE FROM assignments WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.files)) {
+            db.runSync('DELETE FROM files WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.meetings)) {
+            db.runSync('DELETE FROM meetings WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.sections)) {
+            db.runSync('DELETE FROM course_sections WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.folders)) {
+            db.runSync('DELETE FROM course_folders WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.links)) {
+            db.runSync('DELETE FROM course_links WHERE course_moodle_id = ?', [cid]);
+          }
+          if (Array.isArray(result.announcements)) {
+            db.runSync('DELETE FROM course_announcements WHERE course_id = ?', [cid]);
+          }
         }
       }
 
@@ -330,8 +335,8 @@ export function saveSyncResultToDatabase(result: any): void {
         const uid = a.uid || `${a.activityType || 'assign'}:${a.id}`;
         db.runSync(
           `INSERT OR REPLACE INTO assignments 
-          (uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files, time_limit_seconds, requires_manual_completion, is_manual_completion_done, section_id, section_name, feedback, is_bonus, is_late_submission_box)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files, time_limit_seconds, requires_manual_completion, is_manual_completion_done, section_id, section_name, feedback, is_bonus, is_late_submission_box, is_hidden)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             uid,
             a.id,
@@ -357,6 +362,7 @@ export function saveSyncResultToDatabase(result: any): void {
             a.feedback || null,
             a.isBonus ? 1 : 0,
             a.isLateSubmissionBox ? 1 : 0,
+            a.isHidden ? 1 : 0,
           ]
         );
       }

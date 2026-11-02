@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Hidden Tasks Excluded from Gaps Count & Course Statistics (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`, `e2e/dashboard.spec.ts`)**:
+  - Filtered `courseAssigns` by `!isActivityHidden(a, settings?.hiddenAssignments)` when computing course breakdown stats, active task totals (`totalAssigns`), and gaps count (`gapAssigns`).
+  - Guaranteed that hidden assignments (e.g. companion late boxes, optional exercises, or exercises for other groups) no longer artificially penalize the student with "gaps" / פערים or degrade the course completion progress bar.
+  - Added automated test in Playwright (`TC-DASH-REHAUL-09`) in `e2e/dashboard.spec.ts` validating that hiding an unsubmitted task dynamically removes it from the course card gaps count.
+- **Empty Sections Suppression by Default & Visibility Toggle (`apps/extension/src/options/App.tsx`, `i18n.ts`, `e2e/moodle-structures.spec.ts`)**:
+  - Implemented automatic suppression of empty course sections by default on Course Detail pages across both "Navigate subjects" (top topic tabs & subtopics) and Course Section cards.
+  - Defined strict section emptiness criteria: sections containing 0 files, 0 assignments/quizzes, 0 Panopto recordings, 0 folders, 0 external links, and no meaningful summary text are classified as empty. For hierarchical parent sections, content presence is recursively evaluated based on child sub-sections.
+  - Added interactive visibility toggle controls (`.toggle-empty-sections-btn` in the Course Sections header and `.toggle-empty-sections-nav-btn` in the Navigate Subjects bar) with eye icon indicators and bilingual labels ("הצג נושאים ריקים" / "הסתר נושאים ריקים").
+  - Persisted user toggle preference across sessions in `localStorage` under `noodle_show_empty_sections`.
+  - Added empty section notice (`.empty-section-placeholder`) when expanding an empty section in revealed mode.
+  - Added automated browser E2E test coverage in `e2e/moodle-structures.spec.ts` (`TC-EXT-018`) verifying default suppression and toggle behavior.
+- **Hierarchical Manage Courses Configuration Tree (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Replaced the flat list in `CoursesConfigTable` with a structured hierarchical tree view displaying unified parent course portals with "פורטל ראשי" badges alongside independently selectable, indented child sub-courses (`↳`, `קבוצה 01`, `מעבדה`) and administrative umbrella safety tutorials.
 - **Browser E2E Automated Verification Suite (`apps/extension/e2e/moodle-structures.spec.ts`)**:
   - Implemented end-to-end browser test in headless Chromium with real extension loading verifying 2-level topic navigation chips, subsection expansion, quizzes and בחנים badging, interactive manual completion, folder ZIP downloads, external links, course announcements, authoritative gradebook totals, and full visual screenshot capture (`TC-EXT-015`, `TC-EXT-016`).
 - **Comprehensive Test Suite & Documentation Synchronization (`docs/TEST_CASES.md`, `API_DESCRIPTION.md`, `ARCHITECTURE.md`, `UI_SPECIFICATION.md`, `AI_KNOWLEDGE.md`)**:
@@ -56,6 +69,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added `section_id`, `section_number`, `folder_id`, `folder_name`, and `relative_path` columns to `files` table.
 
 ### Fixed
+- **Course Assignment & Quiz Deduplication Across Multi-Portal & Content Fallbacks (`packages/moodle-client/src/syncEngine.ts`, `courseGrouping.ts`)**:
+  - Fixed assignment and quiz duplication in courses (e.g. "גלים" repeating "תרגיל בית 1") by reconciling `rawAssignments` and `rawQuizzes` against course modules by `(module.instance && a.id === module.instance) || (a.cmid && a.cmid === module.id) || (a.course === courseId && a.name === name)` and backfilling missing `cmid` instead of pushing duplicate objects.
+  - Added tracking sets `seenProcessedAssignKeys` and `seenProcessedQuizKeys` to prevent re-processing identical assignments and quizzes across multiple stages.
+  - Enhanced `aggregateUnifiedCourseItems` to deduplicate merged sub-course assignments by composite `uid`, `cmid`, and normalized `(name, deadline)`.
+- **Course Card Next Task Urgency Prioritization & Rule-Based Color Thresholds (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Replaced hardcoded red color on `.course-row-next-assign .due` with dynamic threshold classes (`due-green`, `due-yellow`, `due-red`, `due-overdue`) adhering to user-configured days thresholds (`assignmentGreenDaysThreshold`, `assignmentYellowDaysThreshold`).
+  - Prioritized upcoming future tasks (`new Date(deadline) >= now`) over past-due tasks in Course Card "המטלה הבאה" spotlight, preventing month-old past-due tasks from displacing active upcoming deadlines.
+- **Hidden & Overdue Assignment Behavior in Assignments Tab (`apps/extension/src/options/App.tsx`, `packages/moodle-client/src/activityState.ts`)**:
+  - Fixed issue where unhiding an overdue assignment in the assignments tab caused it to immediately vanish from view by automatically activating `filterPast` (or `filterCompleted`) upon unhiding so the item remains visible on screen.
+  - Replaced remaining raw `settings?.hiddenAssignments?.includes(id)` checks with type-safe `isActivityHidden` across hero banners, upcoming task queues, and course cards.
+- **Subject Navigation Disappearance & False Hierarchy Guard (`apps/extension/src/options/App.tsx`)**:
+  - Prevented course sections in "נווט נושאים" from disappearing mid-sync or collapsing into a single section by ensuring `hasValidHierarchy` requires genuine multi-tab structures; linear courses with single parent pointers fall back to flat section button listings.
+- **Autonomous Course Tracking Freedom & Multi-Portal Absorption Isolation (`CR2-02`)**:
+  - Removed aggressive auto-expansion of academic courses in `expandTrackedCourseIds`, allowing students to selectively track parent portals without forcing child groups (or vice-versa).
+  - Isolated multi-portal item merging in `mergedSyncView` in Extension `App.tsx` so child courses are only absorbed into parent portals if the parent portal is actively tracked; when tracking a child course alone, its items are preserved independently and not remapped.
+  - Filtered absorbed child course cards from `displayCourseIds` on the Extension Dashboard when the parent portal is also tracked, eliminating empty `0/0 (0%)` ghost cards while merging their items into the parent card.
+  - Enhanced `parseTauCourseMetadata` with prefix-tolerant matching so courses with titles appended to `shortname` (e.g. `"01022312 - ביוסטטיסטיקה מתקדמת"`) are properly recognized and grouped.
+- **Section Persistence, Navigation Subjects & Format Hierarchy Fidelity (`CR2-01`, `CR2-03`)**:
+  - Fixed `SYNC_PARTIAL` in `App.tsx` by spreading `...prev` and preserving `sections`, `folders`, `links`, `announcements`, and `gradeSummaries`, preventing subjects, folder cards, and grade summaries from disappearing mid-sync.
+  - Fixed Moodle 4.3+ delegated subsection visibility in `syncEngine.ts`: `visible` evaluates `uservisible` and preserves sections containing modules, preventing delegated sections from being marked invisible.
+  - Fixed `courseFormatState.ts` section hierarchy parsing: dynamically detected `sectionZeroId` so sections pointing to Section 0 are treated as root level, distinguished `levelsan >= 2` (nested subtopics) from `levelsan === 1` (top-level tabs), and strictly set `level: 0` for all top tabs in `tabsdata`.
+  - Added robust fallback and orphan section inclusion in `CourseDetailView`: ensured `thisCourseSections` never drops sections containing files, assignments, folders, or links; used 2-level hierarchy only when `topSections.length > 1`, and fell back to `sectionsList` whenever top sections collapse, preventing subjects from disappearing mid-sync or showing only the first section.
+  - Emitted `sections` directly from `syncEngine.ts` via `onPartialSync` as soon as course sections are parsed.
+  - Fixed mobile `backgroundSync.ts` to pass `partial` properties directly without `|| []` coercions, and guarded SQLite table pruning behind `Boolean(result.syncedAt)` so partial sync chunks never wipe assignments or meetings mid-sync.
+- **Unified Activity State & Identity Helpers (`CR2-04`, `CR2-06`, `CR2-12`)**:
+  - Created `@tautracker/moodle-client/activityState` (`getActivityUid`, `isActivityHidden`, `isActivityCompleted`, `matchesActivityIdentifier`) with transparent backwards-compatibility for legacy numeric IDs in storage.
+  - Prevented ID collisions between `mod_assign` and `mod_quiz` in completion/hidden lists, background push notifications (`serviceWorker.ts`), and mobile SQLite.
+  - Added `is_hidden` column to mobile `assignments` SQLite schema and ensured auto-suppressed late submission boxes (`a.isHidden = true`) do not leak into active task views, progress counters, or push notifications.
+- **ZIP Path Traversal Sanitization & Collision Prevention (`CR2-05`)**:
+  - Replaced naive `replace(/\.\./g, '')` in `zipBuilder.ts` with path segment splitting and filtering on `.` and `..`, preventing filename corruption on files containing `".."` and ensuring no illegal leading `/` is emitted in PKZIP headers.
+  - Implemented `while (seenPaths.has(...))` loop for collision-free deduplication.
+- **Multi-Instance Manual Completion Routing & Mobile Completion Parity (`CR2-07`)**:
+  - Passed instance base URL derived from `assign.link` into `MoodleClient` on manual completion toggles in `App.tsx` and `Popup.tsx`, supporting archive-year courses.
+  - Wired two-way `updateActivityCompletionManually` on mobile `index.tsx` and `courses.tsx` when checking off manual-completion tasks.
+- **Mobile Gradebook Fidelity & Bonus Exclusion (`CR2-08`)**:
+  - Excluded bonus items (`is_bonus === 1`) and administrative/safety courses from GPA calculation in mobile `grades.tsx`, and rendered bonus badges and instructor feedback.
+- **Moodle 4.5 `mod_subsection` ID Mapping & Section Header Link (`CR2-09`, `CR2-10`, `CR2-11`)**:
+  - Inspected `mod.customdata` `sectionid` before falling back to title in `syncEngine.ts`.
+  - Used `sec.sectionUrl` for section header Moodle links with fallback to real constituent course ID.
+  - Passed `lang` in `serviceWorker.ts` token-refresh retry and added quick-jump Panopto chips to 2-level nav bar.
 - **Localized Heuristic, Path Sanitization & Rendering Refinements (`CR-05`, `CR-06`, `CR-08`, `CR-09`, `CR-12`)**:
   - **Section Summary Plain-Text Rendering (`CR-05`)**: Replaced `dangerouslySetInnerHTML` with plain text `{content.summaryHtml}` and `whiteSpace: 'pre-line'` in `App.tsx`, preserving line breaks safely and eliminating raw HTML injection risk from decoded Moodle text.
   - **Late-Submission Box Substring & Word-Boundary Guards (`CR-06`)**: Added title length guards and alphanumeric/Hebrew word boundary regex matching in `syncEngine.ts`, ensuring generic `"תיבת הגשה באיחור"` boxes do not match arbitrary assignments and `"תרגיל 1"` does not match `"תרגיל 10"`.
@@ -178,6 +231,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Replaced Ghost Button with Rotating Chevron Span in Tracked Course Cards (`apps/extension/src/options/App.tsx`)**:
   - Replaced the `.btn-ghost` button at the end of each course item under "My Tracked Courses" with a sleek inline-block rotating chevron `<span>▼</span>` matching the styling and transition behavior of the Upcoming To-Do queue.
 ### Removed
+- **Emoji Visual Noise Removal (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed `🏆` emoji from total course grade badges across all views.
+  - Replaced watch/timer emoji (`⏱️`) on the live sync countdown with `<SyncClockIcon />` (SVG glyph with `.sync-icon-spin` animation).
 - **Mobile App References on Landing Page (`website/index.html`)**:
   - Removed all references to a mobile app from the install section, navigation, FAQ, and footer, reflecting that Noodle is currently focused exclusively as a desktop browser extension for Chromium and Firefox.
 

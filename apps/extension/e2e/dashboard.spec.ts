@@ -241,6 +241,34 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await optionsPage.screenshot({ path: 'screenshots/dashboard-coffee-theme.png' });
   });
 
+  test('TC-DASH-REHAUL-09: Hidden tasks are excluded from the course card gaps count', async ({ optionsPage }) => {
+    // 1. Initial state: Course 1 has Assignment 101 (pending) and Assignment 103 (submitted)
+    const firstCourseCard = optionsPage.locator('.course-row-card').first();
+    await expect(firstCourseCard).toBeVisible();
+
+    // Verify initial breakdown: (1/2) and 1 gap
+    const gapStat = firstCourseCard.locator('.course-stat-gap').first();
+    await expect(gapStat).toContainText(/1 פער|1 gap/);
+    await expect(firstCourseCard.locator('.stat-count').first()).toContainText('(1/2)');
+
+    // 2. Hide Assignment 101 via settings
+    await optionsPage.evaluate(async () => {
+      const data = await chrome.storage.sync.get('settings');
+      const settings = data.settings || {};
+      settings.hiddenAssignments = [101];
+      await chrome.storage.sync.set({ settings });
+    });
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+
+    // 3. Verify Course 1 breakdown now reflects only visible tasks: (1/1) and 0 gaps
+    const updatedCard = optionsPage.locator('.course-row-card').first();
+    await expect(updatedCard).toBeVisible();
+    const updatedGapStat = updatedCard.locator('.course-stat-gap').first();
+    await expect(updatedGapStat).toContainText(/0 פערים|0 gaps/);
+    await expect(updatedCard.locator('.stat-count').first()).toContainText('(1/1)');
+  });
+
   test('TC-DASH-REHAUL-08: Toggling to cards view switches to responsive card grid and horizontal 2-section layout', async ({ optionsPage }) => {
     // 1. Check segmented view mode buttons exist
     const viewModeGroup = optionsPage.locator('.view-mode-toggle-group');

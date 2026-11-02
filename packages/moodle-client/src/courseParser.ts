@@ -18,7 +18,7 @@ export function parseTauCourseMetadata(idnumberOrShortname: string): TauCourseMe
   const str = idnumberOrShortname.trim();
 
   // Pattern 1: Standard [8-digit Course Code]-[2-digit Group]-[4-digit Year]-[1-digit Semester]
-  const matchStandard = str.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)$/);
+  const matchStandard = str.match(/^(\d{4}-?\d{4})-(\d{2})-(\d{4})-(\d)(?:[\s\-:|/]|$)/);
   if (matchStandard) {
     const [, rawCourseCode, groupId, year, semesterCode] = matchStandard;
     const courseCode = rawCourseCode.replace('-', '');
@@ -37,7 +37,7 @@ export function parseTauCourseMetadata(idnumberOrShortname: string): TauCourseMe
   }
 
   // Pattern 2: Reversed format [Year]-[Group]-[CourseCode]-[Semester]
-  const matchReversed = str.match(/^(\d{4})-(\d{2})-(\d{8,10})-(\d)$/);
+  const matchReversed = str.match(/^(\d{4})-(\d{2})-(\d{8,10})-(\d)(?:[\s\-:|/]|$)/);
   if (matchReversed) {
     const [, year, groupId, rawCode, semesterCode] = matchReversed;
     const courseCode = rawCode.substring(0, 8);
@@ -56,8 +56,8 @@ export function parseTauCourseMetadata(idnumberOrShortname: string): TauCourseMe
     };
   }
 
-  // Pattern 3: Standalone 10-digit code [8-digit course][2-digit group]
-  const matchTenDigits = str.match(/^(\d{8})(\d{2})$/);
+  // Pattern 3: Standalone 10-digit code [8-digit course][2-digit group] (with optional trailing title)
+  const matchTenDigits = str.match(/^(\d{8})(\d{2})(?:\s+[-–—:]\s*|\s*:\s*|\s+[^\d\s]|[\s/]+|$)/);
   if (matchTenDigits) {
     return {
       courseCode: matchTenDigits[1],
@@ -67,8 +67,8 @@ export function parseTauCourseMetadata(idnumberOrShortname: string): TauCourseMe
     };
   }
 
-  // Pattern 4: Standalone 8-digit code [8-digit course]
-  const matchEightDigits = str.match(/^(\d{8})$/);
+  // Pattern 4: Standalone 8-digit code [8-digit course] (with optional trailing title)
+  const matchEightDigits = str.match(/^(\d{8})(?:\s+[-–—:]\s*|\s*:\s*|\s+[^\d\s]|[\s/]+|$)/);
   if (matchEightDigits) {
     return {
       courseCode: matchEightDigits[1],

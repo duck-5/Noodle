@@ -1,5 +1,15 @@
 import browser from 'webextension-polyfill';
-import { runSync, getOrCreateTaskList, syncAssignmentsToGoogleTasks, MoodleClient, SettingsSyncManager, type SyncResult } from '@tautracker/moodle-client';
+import {
+  runSync,
+  getOrCreateTaskList,
+  syncAssignmentsToGoogleTasks,
+  MoodleClient,
+  SettingsSyncManager,
+  type SyncResult,
+  getActivityUid,
+  isActivityHidden,
+  isActivityCompleted,
+} from '@tautracker/moodle-client';
 import {
   getStoredToken,
   setStoredToken,
@@ -583,6 +593,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
                 enableScraping: settings.scrapingEnabled ?? false,
                 enablePanopto: settings.panoptoEnabled ?? false,
                 coursesPanoptoMap: settings.coursesPanoptoMap,
+                lang: settings.language || 'he',
                 onEnsurePanoptoAuth: (forceRefresh) =>
                   ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
               }
@@ -841,33 +852,29 @@ async function triggerGoogleTasksSync(interactive: boolean): Promise<string> {
 
 async function checkAndNotify(newAssigns: any[], oldAssigns: any[], settings?: any) {
   const activeSettings = settings || (await getSettings());
-  const hiddenSet = new Set(activeSettings.hiddenAssignments || []);
-  const completedSet = new Set(activeSettings.completedAssignments || []);
-  const uncompletedSet = new Set(activeSettings.uncompletedAssignments || []);
 
-  const isDone = (a: any) => {
-    if (uncompletedSet.has(a.id)) return false;
-    if (completedSet.has(a.id) || a.isCompleted === true) return true;
-    return a.status === 'Submitted';
-  };
-
-  const oldIds = new Set(oldAssigns.map((a) => a.id));
+  const oldIds = new Set(oldAssigns.map((a) => a.uid || getActivityUid(a)));
   const allLocal = await browser.storage.local.get(null);
   const newNotifiedUpdates: Record<string, boolean> = {};
 
   for (const assign of newAssigns) {
+    const uid = assign.uid || getActivityUid(assign);
     // Skip hidden, completed/submitted, or undated assignments
-    if (!assign.deadline || hiddenSet.has(assign.id) || assign.isHidden || isDone(assign)) {
+    if (
+      !assign.deadline ||
+      isActivityHidden(assign, activeSettings.hiddenAssignments) ||
+      isActivityCompleted(assign, activeSettings.completedAssignments, activeSettings.uncompletedAssignments)
+    ) {
       continue;
     }
 
     const courseDisplayName = activeSettings.coursesCustomNames?.[assign.courseId]?.trim() || assign.courseName;
 
     // 1. Notify for new assignments (only if we already had a previous sync snapshot)
-    if (oldAssigns.length > 0 && !oldIds.has(assign.id)) {
+    if (oldAssigns.length > 0 && !oldIds.has(uid)) {
       const deadlineText = `Due: ${new Date(assign.deadline).toLocaleString()}`;
 
-      browser.notifications.create(`new_assign_${assign.id}`, {
+      browser.notifications.create(`new_assign_${uid}`, {
         type: 'basic',
         iconUrl: browser.runtime.getURL('icon-128.png'),
         title: 'New Moodle Assignment',
@@ -879,10 +886,10 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[], settings?: a
     const deadline = new Date(assign.deadline);
     const hoursLeft = (deadline.getTime() - Date.now()) / (1000 * 60 * 60);
 
-    const key24h = `notified_24h_${assign.id}`;
+    const key24h = `notified_24h_${uid}`;
     const wasNotified24h = !!allLocal[key24h] || !!newNotifiedUpdates[key24h];
     if (hoursLeft <= 24 && hoursLeft > 1 && !wasNotified24h) {
-      browser.notifications.create(`upcoming_24h_${assign.id}`, {
+      browser.notifications.create(`upcoming_24h_${uid}`, {
         type: 'basic',
         iconUrl: browser.runtime.getURL('icon-128.png'),
         title: 'Assignment Due Within 24 Hours',
@@ -891,10 +898,10 @@ async function checkAndNotify(newAssigns: any[], oldAssigns: any[], settings?: a
       newNotifiedUpdates[key24h] = true;
     }
 
-    const key1h = `notified_1h_${assign.id}`;
+    const key1h = `notified_1h_${uid}`;
     const wasNotified1h = !!allLocal[key1h] || !!newNotifiedUpdates[key1h];
     if (hoursLeft <= 1 && hoursLeft > 0 && !wasNotified1h) {
-      browser.notifications.create(`upcoming_1h_${assign.id}`, {
+      browser.notifications.create(`upcoming_1h_${uid}`, {
         type: 'basic',
         iconUrl: browser.runtime.getURL('icon-128.png'),
         title: 'Assignment Due In 1 Hour!',

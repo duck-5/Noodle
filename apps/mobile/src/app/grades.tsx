@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { isAdministrativeCourse } from '@tautracker/moodle-client';
 import { getDb } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
@@ -64,18 +65,26 @@ export default function GradesScreen() {
     if (!gradesByCourse[a.course_moodle_id]) {
       gradesByCourse[a.course_moodle_id] = { courseName: a.course_name, sum: 0, count: 0, list: [] };
     }
+    gradesByCourse[a.course_moodle_id].list.push(a);
+
+    // Skip bonus items from percentage average calculation
+    if (a.is_bonus === 1) return;
+
     const ratio = a.grade_max ? a.grade / a.grade_max : 0;
     gradesByCourse[a.course_moodle_id].sum += ratio * 100;
     gradesByCourse[a.course_moodle_id].count += 1;
-    gradesByCourse[a.course_moodle_id].list.push(a);
   });
 
-  // Calculate overall average GPA
+  // Calculate overall average GPA (excluding administrative/safety courses and bonus items)
   let totalCourseAverageSum = 0;
   let courseAveragesCount = 0;
-  Object.values(gradesByCourse).forEach((c) => {
-    totalCourseAverageSum += c.sum / c.count;
-    courseAveragesCount++;
+  Object.entries(gradesByCourse).forEach(([moodleIdStr, c]) => {
+    const moodleId = Number(moodleIdStr);
+    if (isAdministrativeCourse({ id: moodleId, courseId: String(moodleId), fullname: c.courseName, shortname: c.courseName } as any)) return;
+    if (c.count > 0) {
+      totalCourseAverageSum += c.sum / c.count;
+      courseAveragesCount++;
+    }
   });
   const overallAverage = courseAveragesCount > 0 ? (totalCourseAverageSum / courseAveragesCount).toFixed(1) : '-';
 
@@ -135,11 +144,25 @@ export default function GradesScreen() {
 
                 <View style={styles.gradesList}>
                   {group.list.map((a) => (
-                    <View key={a.id} style={[styles.gradeRow, { flexDirection: isRtl ? 'row-reverse' : 'row', borderBottomColor: theme.border }]}>
-                      <Text style={[styles.gradeName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
-                      <Text style={[styles.gradeValLabel, { color: theme.text }]}>
-                        {a.grade} / {a.grade_max}
-                      </Text>
+                    <View key={a.id} style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border, paddingVertical: 8 }}>
+                      <View style={[styles.gradeRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
+                        <View style={{ flex: 1, flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.gradeName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
+                          {a.is_bonus === 1 && (
+                            <View style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                              <Text style={{ color: '#eab308', fontSize: 10, fontWeight: 'bold' }}>BONUS</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.gradeValLabel, { color: theme.text }]}>
+                          {a.grade} / {a.grade_max}
+                        </Text>
+                      </View>
+                      {a.feedback && (
+                        <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }}>
+                          💬 {a.feedback}
+                        </Text>
+                      )}
                     </View>
                   ))}
                 </View>
