@@ -1387,6 +1387,22 @@ async function ensurePanoptoAuthViaHiddenTab(
     try {
       const resolvedCreds = creds || (await getMoodleCredentials()) || undefined;
 
+      // In Firefox/Zen, verify if host permissions for panopto.eu are actually granted
+      if (typeof browser !== 'undefined' && browser.permissions?.contains) {
+        try {
+          const hasHostPerm = await browser.permissions.contains({
+            origins: ['https://*.panopto.eu/*'],
+          });
+          if (!hasHostPerm) {
+            console.warn(
+              '[Panopto][HiddenTab] Host permission for "https://*.panopto.eu/*" is NOT granted in this browser! In Firefox/Zen, grant this in about:addons -> Noodle -> Permissions tab or via Extension Settings.'
+            );
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
       // Always remove any stale/expired .ASPXAUTH cookie before opening the login tab
       // so we don't mistake an old cookie for a newly issued one during the polling loop
       await clearPanoptoAuthCookies();
@@ -1420,13 +1436,18 @@ async function ensurePanoptoAuthViaHiddenTab(
               args: argList,
             });
             return Array.isArray(res) ? res.map((r: any) => String(r?.result || '')) : [];
-          } catch {
-            const res = await scriptingApi.executeScript({
-              target: { tabId: targetTabId, allFrames: true },
-              func: injectedPanoptoLoginStep,
-              args: argList,
-            });
-            return Array.isArray(res) ? res.map((r: any) => String(r?.result || '')) : [];
+          } catch (e1) {
+            try {
+              const res = await scriptingApi.executeScript({
+                target: { tabId: targetTabId, allFrames: true },
+                func: injectedPanoptoLoginStep,
+                args: argList,
+              });
+              return Array.isArray(res) ? res.map((r: any) => String(r?.result || '')) : [];
+            } catch (e2) {
+              console.warn('[Panopto][HiddenTab] executeScript failed in tab:', e2);
+              return [];
+            }
           }
         }
         return [];

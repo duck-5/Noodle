@@ -1,7 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Theme Switcher
+  // 1. Theme Switcher (Noodle & Coffee)
   const themeBtns = document.querySelectorAll('.theme-btn');
-  const savedTheme = localStorage.getItem('noodle-landing-theme') || 'light';
+  let savedTheme = localStorage.getItem('noodle-landing-theme') || 'light';
+  if (savedTheme !== 'coffee') {
+    savedTheme = 'light';
+  }
   setTheme(savedTheme);
 
   themeBtns.forEach((btn) => {
@@ -13,15 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setTheme(theme) {
     document.body.classList.remove('theme-dark', 'theme-coffee');
-    if (theme === 'dark') {
-      document.body.classList.add('theme-dark');
-    } else if (theme === 'coffee') {
+    if (theme === 'coffee') {
       document.body.classList.add('theme-coffee');
     }
-    localStorage.setItem('noodle-landing-theme', theme);
+    localStorage.setItem('noodle-landing-theme', theme === 'coffee' ? 'coffee' : 'light');
 
     themeBtns.forEach((b) => {
-      b.classList.toggle('active', b.getAttribute('data-theme') === theme);
+      b.classList.toggle('active', b.getAttribute('data-theme') === (theme === 'coffee' ? 'coffee' : 'light'));
     });
   }
 

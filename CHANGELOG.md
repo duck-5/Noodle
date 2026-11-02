@@ -123,6 +123,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Section ID Keying & Multi-Instance Archive Routing (`CR-10`, `CR-11`)**: Keyed Course Detail section maps by `sectionId` (`sec_${id}`) so identically named sub-tabs across different parent tabs do not collide, expanded child subsections when clicking a Level-0 parent tab, filtered `visible === false` sections, fixed `willBeCompleted` state toggle in `App.tsx`, wired `updateActivityCompletionManually` in `Popup.tsx`, partitioned `getQuizzes`/`getQuizAttempts`/`updateActivityCompletionManually` across archive Moodle year instances in `RestMoodleStrategy`, and forwarded UI `lang` into `runSync`.
 - **Course Detail Section Filter on Suppressed / Hidden Assignments (`apps/extension/src/options/App.tsx`)**:
   - Filtered out auto-suppressed late submission boxes and user-hidden assignments from active section item trees while preserving them in the sidebar overview.
+- **Firefox/Zen MV3 Host Permissions & CORS Rejection for Panopto (`apps/extension/src/options/App.tsx`, `background/serviceWorker.ts`, `shared/i18n.ts`)**:
+  - Resolved CORS rejection (`Reason: CORS header 'Access-Control-Allow-Origin' does not match`) and 25-second hidden-tab timeout on release builds installed from AMO/Firefox. In Firefox Manifest V3, newly introduced host permissions (e.g. `*.panopto.eu`) are treated as user-controllable and left disabled by default on extension updates.
+  - Added proactive runtime permission checks via `browser.permissions.contains` and prompt triggers via `browser.permissions.request` when enabling Panopto in Settings.
+  - Added warning alert banners in the Dashboard, Settings, and Course Details Panopto section with a 1-click "Grant Permission" button whenever `panoptoEnabled` is active but browser host permissions have not yet been approved.
+  - Enhanced error diagnostics in `ensurePanoptoAuthViaHiddenTab` and `executeStepInTab` to log permission failures explicitly instead of silently timing out.
 
 ### Changed
 - **Documentation — Deprecated HTML Scraper as Feature Target (`docs/ARCHITECTURE.md`, `docs/AI_KNOWLEDGE.md`)**:
@@ -198,6 +203,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added support for configuring a custom Google OAuth 2.0 Client ID (`googleClientId`).
   - Added a manual access token input field with a 1-click "שמור וסנכרן" / "Save & Sync" button as an alternative direct fallback.
 ### Fixed
+- **Landing Website Privacy Icon Sizing & CSS Cache Invalidation (`website/index.html`, `website/styles.css`, `ServerPages/nginx.conf`)**:
+  - Added hardcoded inline dimensions (`width="24" height="24"`) to SVGs in the Privacy & Security section, strict dimensions on `.privacy-card-icon`, and a global `max-width: 100%` SVG reset.
+  - Fixed an issue where edge caching by Cloudflare served stale CSS without `.privacy-card-icon` rules, causing SVGs to expand to full container width.
+  - Added asset version query strings (`styles.css?v=4.0.2`, `app.js?v=4.0.2`) and configured `Cache-Control: no-cache, must-revalidate` in Nginx for real-time asset freshness.
 - **Google Tasks Developer ID Preservation & OAuth Redirect Parity (`apps/extension/vite.config.ts`, `scripts/build-releases.py`, `scripts/test-build-parity.mjs`, `TC-EXT-BRW-01`, `TC-EXT-BRW-02`)**:
   - Retained `manifest.key` in `apps/extension/dist/manifest.json` for local unpacked development, guaranteeing the extension keeps the static developer extension ID (`gaiognmkgghdihdeokgmpcdndmencdbj`) and preventing `Error 400: redirect_uri_mismatch`.
   - Automated stripping of `key` specifically in `scripts/build-releases.py` when packaging `releases/noodle-chrome.zip` for Chrome Web Store uploads, where Google signs packages with the permanent production store ID (`nelflkccefbdpnaphjabcgkpakhdoope`).
