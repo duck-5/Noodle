@@ -6,7 +6,7 @@
   <title>Noodle — Modern Moodle & Google Tasks Companion for TAU Students</title>
   <meta name="description" content="A decentralized, client-only companion for Tel Aviv University's Moodle. Real-time deadlines, split calendar, instant Google Tasks 2-way sync, and live Zoom hub.">
   <link rel="icon" type="image/png" href="assets/logo.png">
-  <link rel="stylesheet" href="styles.css?v=4.0.4">
+  <link rel="stylesheet" href="styles.css?v=4.0.5">
 </head>
 <body>
 
@@ -24,9 +24,8 @@
       <nav class="nav-center">
         <ul class="nav-menu">
           <li><a href="#features" class="nav-link">Features</a></li>
-          <li><a href="#showcase" class="nav-link">Showcase</a></li>
-          <li><a href="#sync" class="nav-link">Google Tasks</a></li>
-          <li><a href="#comparison" class="nav-link">Why Noodle?</a></li>
+          <li><a href="#why" class="nav-link">Why Noodle?</a></li>
+          <li><a href="#comparison" class="nav-link">Comparison</a></li>
           <li><a href="#privacy" class="nav-link">Privacy</a></li>
           <li><a href="#faq" class="nav-link">FAQ</a></li>
         </ul>
@@ -135,9 +134,9 @@
               <button class="mockup-tab-btn active" data-target="mock-dash">Dashboard</button>
               <button class="mockup-tab-btn" data-target="mock-calendar">Calendar</button>
               <button class="mockup-tab-btn" data-target="mock-grades">Grades & GPA</button>
+              <button class="mockup-tab-btn" data-target="mock-course">Course Hub</button>
               <button class="mockup-tab-btn" data-target="mock-coffee">Coffee Theme</button>
-              <button class="mockup-tab-btn" data-target="mock-zoom">Zoom & Panopto</button>
-              <button class="mockup-tab-btn" data-target="mock-sync">Google Tasks</button>
+              <button class="mockup-tab-btn" data-target="mock-settings">Settings</button>
             </div>
 
             <div class="mockup-platform-tag">
@@ -146,162 +145,12 @@
           </div>
 
           <div class="mockup-image-holder">
-            <img id="mock-dash" src="assets/promo-1-hero-overview.png" alt="Noodle Dashboard Overview" class="mockup-image active">
-            <img id="mock-calendar" src="assets/promo-6-calendar-hub.png" alt="Noodle Split-Pane Calendar View" class="mockup-image">
-            <img id="mock-grades" src="assets/promo-7-grades-analytics.png" alt="Noodle Academic Grades & GPA Tracker" class="mockup-image">
-            <img id="mock-coffee" src="assets/promo-5-productivity-themes.png" alt="Noodle Coffee Theme" class="mockup-image">
-            <img id="mock-zoom" src="assets/promo-3-zoom-hub.png" alt="Noodle Zoom Hub and Schedule" class="mockup-image">
-            <img id="mock-sync" src="assets/promo-8-google-tasks-sync.png" alt="Noodle Two-Way Google Tasks Sync" class="mockup-image">
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- VISUAL SHOWCASE & APP GALLERY -->
-  <section id="showcase" class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-tag">Visual Tour</span>
-        <h2 class="section-title">Designed for focus. Built for your semester.</h2>
-        <p class="section-subtitle">
-          Explore every view and feature in action — from deadline countdowns to split monthly planning.
-        </p>
-      </div>
-
-      <div class="gallery-grid">
-        <!-- Card 1: Modern Study Cockpit -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-1-hero-overview.png" alt="Study Cockpit Dashboard" loading="lazy">
-            <div class="gallery-overlay-badge">Study Cockpit</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">Daily Focus</div>
-            <h4 class="gallery-card-title">Deadline Spotlight & Upcoming Queue</h4>
-            <p class="gallery-card-desc">Your closest homework submission pinned at the top with live timer, expandable topic files, and a prioritized to-do list.</p>
-          </div>
-        </div>
-
-        <!-- Card 2: Interactive Split-Pane Calendar -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-6-calendar-hub.png" alt="Split-Pane Calendar Hub" loading="lazy">
-            <div class="gallery-overlay-badge">Monthly Calendar</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">Visual Scheduling</div>
-            <h4 class="gallery-card-title">Interactive Monthly Calendar Grid</h4>
-            <p class="gallery-card-desc">All course deadlines plotted onto a responsive calendar. Click any assignment pill to jump straight to submission requirements.</p>
-          </div>
-        </div>
-
-        <!-- Card 3: Two-Way Google Tasks Sync -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-8-google-tasks-sync.png" alt="Google Tasks & Calendar Sync" loading="lazy">
-            <div class="gallery-overlay-badge">2-Way Sync</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">Everywhere You Study</div>
-            <h4 class="gallery-card-title">Google Tasks & Calendar Integration</h4>
-            <p class="gallery-card-desc">Automatic client-side sync creates a dedicated University task list. Check off tasks on your phone, watch, or browser.</p>
-          </div>
-        </div>
-
-        <!-- Card 4: Academic Grades & GPA Performance -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-7-grades-analytics.png" alt="Academic Grades & GPA Tracker" loading="lazy">
-            <div class="gallery-overlay-badge">GPA Tracker</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">Academic Insight</div>
-            <h4 class="gallery-card-title">Smart GPA & Performance Analytics</h4>
-            <p class="gallery-card-desc">Real-time cumulative GPA estimation, per-course weighted averages, and complete history of submission grades and feedback.</p>
-          </div>
-        </div>
-
-        <!-- Card 5: Lecture Materials & Zoom Hub -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-3-zoom-hub.png" alt="Zoom Hub & Course Materials" loading="lazy">
-            <div class="gallery-overlay-badge">Materials Hub</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">1-Click Access</div>
-            <h4 class="gallery-card-title">Course Slides & Live Zoom Detection</h4>
-            <p class="gallery-card-desc">Download course materials with exact file sizes, preview problem sets inline, and join active lectures via pulsing "Active Now" alerts.</p>
-          </div>
-        </div>
-
-        <!-- Card 6: Late-Night Themes & Instant Toolbar Popup -->
-        <div class="gallery-card">
-          <div class="gallery-img-wrap">
-            <img src="assets/promo-5-productivity-themes.png" alt="Coffee Theme & Toolbar Popup" loading="lazy">
-            <div class="gallery-overlay-badge">Productivity Suite</div>
-          </div>
-          <div class="gallery-card-body">
-            <div class="gallery-card-badge">Built for Late Nights</div>
-            <h4 class="gallery-card-title">Cozy Coffee Theme & Toolbar Popup</h4>
-            <p class="gallery-card-desc">Switch between warm paper light and cozy dark espresso themes. Check deadlines in 1 click right from your browser toolbar icon.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- WHY NOODLE SECTION -->
-  <section id="comparison" class="section">
-    <div class="container">
-      <div class="section-head">
-        <span class="section-tag">Why We Built Noodle</span>
-        <h2 class="section-title">Moodle wasn't built for fast daily workflows.</h2>
-        <p class="section-subtitle">
-          Tel Aviv University's Moodle has all your courses, but finding homework or Zoom links takes too many clicks through nested folders and subpages.
-        </p>
-      </div>
-
-      <div class="pain-grid">
-        <div class="pain-card">
-          <div class="pain-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
-          </div>
-          <h3 class="pain-title">Buried Deadlines</h3>
-          <p class="pain-text">
-            Deadlines are spread across different course pages and accordions. Keeping track of what's due this week takes unnecessary mental effort.
-          </p>
-          <div class="pain-solution">
-            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-            <span><strong>Upcoming Spotlight:</strong> Every active assignment gathered in a single sorted queue with live countdowns.</span>
-          </div>
-        </div>
-
-        <div class="pain-card">
-          <div class="pain-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
-          </div>
-          <h3 class="pain-title">Disconnected Calendar</h3>
-          <p class="pain-text">
-            Moodle doesn't sync with your personal calendar. Manually copying due dates into Google Calendar takes time and easily gets outdated.
-          </p>
-          <div class="pain-solution">
-            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-            <span><strong>Google Tasks 2-Way Sync:</strong> Assignments sync automatically to Google Tasks and appear directly on your Google Calendar.</span>
-          </div>
-        </div>
-
-        <div class="pain-card">
-          <div class="pain-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
-          </div>
-          <h3 class="pain-title">Scattered Meetings & Recordings</h3>
-          <p class="pain-text">
-            Zoom links and Panopto lecture recordings are often buried across forums, announcements, and syllabus documents.
-          </p>
-          <div class="pain-solution">
-            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-            <span><strong>Course Meeting Hub:</strong> Live Zoom alerts and organized lecture recordings right inside each course view.</span>
+            <img id="mock-dash" src="assets/main-dashboard.png" alt="Noodle Dashboard Overview" class="mockup-image active">
+            <img id="mock-calendar" src="assets/calendar-view.png" alt="Noodle Split-Pane Calendar View" class="mockup-image">
+            <img id="mock-grades" src="assets/grades-page.png" alt="Noodle Academic Grades & GPA Performance" class="mockup-image">
+            <img id="mock-course" src="assets/course-9999-detail.png" alt="Noodle Course Materials and Lecture Hub" class="mockup-image">
+            <img id="mock-coffee" src="assets/dashboard-coffee-theme.png" alt="Noodle Cozy Coffee Theme" class="mockup-image">
+            <img id="mock-settings" src="assets/settings-page.png" alt="Noodle Settings and Synchronization" class="mockup-image">
           </div>
         </div>
       </div>
@@ -333,6 +182,10 @@
           <button class="feature-nav-btn" data-panel="panel-calendar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
             <span>Calendar View</span>
+          </button>
+          <button class="feature-nav-btn" data-panel="panel-grades">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            <span>Grades & GPA</span>
           </button>
           <button class="feature-nav-btn" data-panel="panel-zoom">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
@@ -425,7 +278,34 @@
           </div>
         </div>
 
-        <!-- Panel 4: Zoom Hub & Materials -->
+        <!-- Panel 4: Academic Grades & GPA Analytics -->
+        <div id="panel-grades" class="feature-tab-panel">
+          <div class="feature-panel-text">
+            <h3>Smart GPA & academic performance analytics.</h3>
+            <p>
+              Real-time cumulative GPA estimation, per-course weighted averages, and complete history of submission grades and feedback without manual calculations.
+            </p>
+            <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><strong>Live Cumulative GPA:</strong> Instant GPA calculation based on completed TAU credit points and weighted averages.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><strong>Detailed Course Breakdown:</strong> View submitted assignments, letter grades, class averages, and professor feedback.</div>
+              </li>
+              <li class="feature-check-item">
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                <div><strong>Submission Reviews:</strong> Direct links to view submission history, rubric breakdowns, and grader comments.</div>
+              </li>
+            </ul>
+          </div>
+          <div class="feature-preview-card">
+            <img src="assets/promo-7-grades-analytics.png" alt="Smart GPA and Academic Performance Analytics" class="feature-preview-img">
+          </div>
+        </div>
+
+        <!-- Panel 5: Zoom Hub & Materials -->
         <div id="panel-zoom" class="feature-tab-panel">
           <div class="feature-panel-text">
             <h3>All lecture recordings, links, and slides in one spot.</h3>
@@ -452,7 +332,7 @@
           </div>
         </div>
 
-        <!-- Panel 5: Customization -->
+        <!-- Panel 6: Customization -->
         <div id="panel-custom" class="feature-tab-panel">
           <div class="feature-panel-text">
             <h3>Make Moodle look and feel like your own workspace.</h3>
@@ -482,8 +362,65 @@
     </div>
   </section>
 
+  <!-- WHY NOODLE SECTION -->
+  <section id="why" class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag">Why We Built Noodle</span>
+        <h2 class="section-title">Moodle wasn't built for fast daily workflows.</h2>
+        <p class="section-subtitle">
+          Tel Aviv University's Moodle has all your courses, but finding homework or Zoom links takes too many clicks through nested folders and subpages.
+        </p>
+      </div>
+
+      <div class="pain-grid">
+        <div class="pain-card">
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+          </div>
+          <h3 class="pain-title">Buried Deadlines</h3>
+          <p class="pain-text">
+            Deadlines are spread across different course pages and accordions. Keeping track of what's due this week takes unnecessary mental effort.
+          </p>
+          <div class="pain-solution">
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Upcoming Spotlight:</strong> Every active assignment gathered in a single sorted queue with live countdowns.</span>
+          </div>
+        </div>
+
+        <div class="pain-card">
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          </div>
+          <h3 class="pain-title">Disconnected Calendar</h3>
+          <p class="pain-text">
+            Moodle doesn't sync with your personal calendar. Manually copying due dates into Google Calendar takes time and easily gets outdated.
+          </p>
+          <div class="pain-solution">
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Google Tasks 2-Way Sync:</strong> Assignments sync automatically to Google Tasks and appear directly on your Google Calendar.</span>
+          </div>
+        </div>
+
+        <div class="pain-card">
+          <div class="pain-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+          </div>
+          <h3 class="pain-title">Scattered Meetings & Recordings</h3>
+          <p class="pain-text">
+            Zoom links and Panopto lecture recordings are often buried across forums, announcements, and syllabus documents.
+          </p>
+          <div class="pain-solution">
+            <span class="pain-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span><strong>Course Meeting Hub:</strong> Live Zoom alerts and organized lecture recordings right inside each course view.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- BEFORE & AFTER COMPARISON -->
-  <section class="section" style="background: var(--bg-subtle);">
+  <section id="comparison" class="section" style="background: var(--bg-subtle);">
     <div class="container">
       <div class="section-head">
         <span class="section-tag">Comparison</span>
@@ -655,10 +592,10 @@
             <h5>Product</h5>
             <ul class="footer-links">
               <li><a href="#features">Features</a></li>
-              <li><a href="#showcase">Visual Tour</a></li>
-              <li><a href="#sync">Google Tasks</a></li>
-              <li><a href="#comparison">Why Noodle?</a></li>
+              <li><a href="#why">Why Noodle?</a></li>
+              <li><a href="#comparison">Comparison</a></li>
               <li><a href="#privacy">Privacy & Security</a></li>
+              <li><a href="#faq">FAQ</a></li>
               <li><a href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope" target="_blank">Chrome Web Store</a></li>
               <li><a href="https://github.com/duck-5/Noodle/releases" target="_blank">Firefox Add-on</a></li>
             </ul>
@@ -687,6 +624,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=4.0.3"></script>
+  <script src="app.js?v=4.0.4"></script>
 </body>
 </html>

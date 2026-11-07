@@ -206,6 +206,7 @@ graph LR
 | **TC-EXT-DEVTOOLS-01** | Chrome DevTools Service Worker & Options Log Stream | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-EXT-DEVTOOLS-02** | Full Sync Pipeline DevTools Network & UI Validation | Extension (Chromium Specific) | Automated & Browser Agent | DevTools & Sync Lifecycle |
 | **TC-EXT-PROMO-01** | High-Resolution Webstore Promotional Asset Suite Generation | Extension (Chrome & Webstore) | Automated | Extension Branding & Assets |
+| **TC-WEB-001** | Official Website Showcase & Responsive Feature Explorer | Website (noodle.mantin.dev) | Automated & Browser Agent | Web Showcase & Landing |
 | **TC-MOB-01** | Animated Splash & Brand Launch Screen | Mobile Only | Browser Agent | Mobile Specials |
 | **TC-MOB-02** | Offline SQLite Cache Rendering | Mobile Only | Automated & Browser Agent | Mobile Specials |
 | **TC-EDGE-01** | Token Expiration During Active Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Edge & Stress |
@@ -1306,6 +1307,12 @@ graph LR
 * **Modality**: `Automated`
 * **Description**: Renders and exports 10 pixel-perfect, high-DPI marketing and web showcase assets at Retina 2× resolution (8 full 2560×1600 carousel slides, 2800×1120 marquee banner, and 880×560 redesigned non-industrial small promo tile). Validates clean, modern branding with no cramped checkmark dividers, authentic pastel color coding (#E07A5F and #A0613E), rich mock assignments dataset, and showcases across the Cockpit Dashboard, Assignments Hub, Course Materials & Zoom Hub, Manage Courses, Late-Night Themes, Split Calendar, Academic GPA Tracker, and Two-Way Google Tasks Sync.
 * **Automated Runner Command**: `node apps/extension/scripts/generate-promo-assets.mjs`
+
+#### TC-WEB-001: Official Website Showcase & Responsive Feature Explorer
+* **Platform Target**: `Website (noodle.mantin.dev)`
+* **Modality**: `Automated & Browser Agent`
+* **Description**: Validates that the official landing site renders the 6-tab Hero Mockup Frame with authentic 2880×1900 high-resolution desktop application captures (`main-dashboard.png`, `calendar-view.png`, `grades-page.png`, `course-9999-detail.png`, `dashboard-coffee-theme.png`, `settings-page.png`), the 6-tab interactive Feature Explorer (`#features`), deep-link hash navigation (`#sync`, `#calendar`, `#grades`, `#zoom`), responsive mobile styling with clean navigation bar, zero duplicate HTML IDs, and zero emojis.
+* **Automated Runner Command**: `python3 -c "import html.parser; ..."` & `curl -sI https://noodle.mantin.dev`
 
 ---
 

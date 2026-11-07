@@ -7,14 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Changed
+- **Unified Feature Explorer & High-Resolution Real App Mockup Showcase (`website/index.html`, `website/app.js`, `website/styles.css`, `CHANGELOG.md`)**:
+  - Replaced promotional marketing slides inside the desktop window mockup frame (`.mockup-frame`) with real 2880×1900 high-resolution application screenshots (`main-dashboard.png`, `calendar-view.png`, `grades-page.png`, `course-9999-detail.png`, `dashboard-coffee-theme.png`, `settings-page.png`), giving visitors an authentic, interactive preview of the running extension.
+  - Unified the static showcase gallery cards and feature tabs into a single responsive, interactive 6-tab Feature Explorer (`#features`): Deadlines & Spotlight, Google Tasks Sync, Calendar View, Grades & GPA, Zoom & Panopto, and Themes & Personalization.
+  - Eliminated repeating content and redundant card grids to create a concise, focused narrative flow without repeating assets or copy.
+  - Added hash deep-linking (`#sync`, `#calendar`, `#grades`, `#zoom`, etc.) in `app.js` to automatically activate corresponding feature tabs and smooth-scroll to `#features`.
+  - Fixed duplicate HTML ID by mapping "Why We Built Noodle" to `id="why"` and "Default Moodle vs Noodle" to `id="comparison"`.
+  - Streamlined desktop and mobile navbar links to eliminate top bar clutter and text meshing.
+  - Synced Google verification token (`googlecf7315beb0f24cc0.html`) into `Noodle/website` and updated live deployment at `noodle.mantin.dev`.
+- **Extended Website Showcase Gallery & High-Res App Mockups (`website/index.html`, `website/styles.css`, `website/assets/`, `scripts/generate-promo-assets.mjs`)**:
+  - Added 3 new high-resolution promotional slides to the generation suite: Slide 6 (Visual Monthly Calendar Hub), Slide 7 (Academic Grades & GPA Tracker), and Slide 8 (Two-Way Google Tasks & Calendar Sync).
+  - Expanded the Hero Mockup switcher on `noodle.mantin.dev` to 6 live interactive tabs (`Dashboard`, `Calendar`, `Grades & GPA`, `Course Hub`, `Coffee Theme`, and `Settings`).
+
 ### Added
 - **Redesigned Clean Small Promo Tile (`apps/extension/scripts/generate-promo-assets.mjs`, `promo/promo-small-tile.png`, `website/assets/promo-small-tile.png`)**:
   - Redesigned the Chrome Web Store small promo tile (440×280) to eliminate industrial dividers and checklist bullet points.
   - Features clean, bold typography (`Noodle`, `Free Modern Moodle Client.`) on the left and the full, smiling mascot noodle bowl with a warm ambient aura and soft drop-shadow on the right over a warm cream pastel canvas.
-- **Extended Website Showcase Gallery & High-Res App Mockups (`website/index.html`, `website/styles.css`, `website/assets/`, `scripts/generate-promo-assets.mjs`)**:
-  - Added 3 new high-resolution promotional slides to the generation suite: Slide 6 (Visual Monthly Calendar Hub), Slide 7 (Academic Grades & GPA Tracker), and Slide 8 (Two-Way Google Tasks & Calendar Sync).
-  - Expanded the Hero Mockup switcher on `noodle.mantin.dev` to 6 live interactive tabs (`Dashboard`, `Calendar`, `Grades & GPA`, `Coffee Theme`, `Zoom & Panopto`, and `Google Tasks`).
-  - Added a dedicated responsive "Visual Tour & App Gallery" section (`#showcase`) with 6 feature showcase cards on the official landing website.
 ### Added
 - **Subtle Metallic Horizontal Glow Wave for Nearest Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
   - Added an elegant, non-intrusive metallic horizontal glow wave animation (`.closest-metallic-wave`) across the single nearest pending deadline in the Upcoming To-Do queue.

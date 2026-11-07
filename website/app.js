@@ -112,4 +112,38 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // 6. Deep-link Hash Navigation for Feature Panels
+  function handleHash() {
+    const hash = window.location.hash.toLowerCase();
+    const hashMap = {
+      '#cockpit': 'panel-cockpit',
+      '#deadlines': 'panel-cockpit',
+      '#sync': 'panel-sync',
+      '#tasks': 'panel-sync',
+      '#google-tasks': 'panel-sync',
+      '#calendar': 'panel-calendar',
+      '#grades': 'panel-grades',
+      '#gpa': 'panel-grades',
+      '#zoom': 'panel-zoom',
+      '#panopto': 'panel-zoom',
+      '#custom': 'panel-custom',
+      '#themes': 'panel-custom'
+    };
+
+    const targetPanelId = hashMap[hash];
+    if (targetPanelId) {
+      const targetBtn = document.querySelector(`.feature-nav-btn[data-panel="${targetPanelId}"]`);
+      if (targetBtn) {
+        targetBtn.click();
+        const featuresSection = document.getElementById('features');
+        if (featuresSection) {
+          featuresSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    }
+  }
+
+  window.addEventListener('hashchange', handleHash);
+  setTimeout(handleHash, 100);
 });
