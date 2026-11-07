@@ -86,7 +86,10 @@ Noodle/
 │   └── moodle-client/              # Shared pure TypeScript API integration layer
 │       ├── src/
 │       │   ├── moodleApi.ts        # fetch()-based Moodle Web Service functions
-│       │   ├── syncEngine.ts       # Orchestrates sync stages, files, Zoom, and Panopto
+│       │   ├── syncEngine.ts       # Two-stage deterministic sync pipeline (contents -> activities/quizzes)
+│       │   ├── courseFormatState.ts# 2-level section hierarchy & mod_subsection parser
+│       │   ├── courseGrouping.ts   # Academic parent/sub-course & 5900* umbrella grouping
+│       │   ├── zipBuilder.ts       # Pure-TS PKZIP archive builder for mod_folder downloads
 │       │   ├── panoptoScraper.ts   # 3-tier Panopto folder discovery, session fetching & deduplication
 │       │   └── courseParser.ts     # Regular expressions for TAU shortnames
 │
@@ -171,7 +174,8 @@ graph TD
    Uses Moodle's internal AJAX endpoint (`/lib/ajax/service.php`) with the user's web `sesskey` and browser session cookie. Supports modern Moodle 4.x dashboard endpoints (e.g. `core_course_get_enrolled_courses_by_timeline_classification`).
    * **Static Operation Filtering**: Operations not exposed by Moodle core over AJAX (`getSiteInfo`, `getAssignments`, `getCourseContents`, `getGradeItems`, etc.) are declared statically via `isOperationSupported(op)`, allowing `fallbackRunner` to skip directly to Tier 3 without attempting doomed calls.
    * **Multi-Year Archive Querying**: Queries root and candidate past academic years (e.g. `/2025/lib/ajax/service.php`, `/2024/...`) with `sesskey`.
-3. **Tier 3 — Scraper Strategy (`ScraperMoodleStrategy`)**:
+3. **Tier 3 — Scraper Strategy (`ScraperMoodleStrategy`) — *[Legacy / Unstable — Not a Target Handler]***:
+   > **Architectural Policy**: Because Moodle's rendered HTML DOM varies drastically across course formats (`topics`, `onetopic`, `multitopic`, `grid`, `remuiformat`), themes (`tauboostunion`), and Moodle upgrades, `ScraperMoodleStrategy` is **very unstable and is NOT a relevant target handler for new features or Moodle structures**. All new synchronization features and Moodle structure parsers MUST rely exclusively on Moodle's structured JSON APIs: **Tier 1 REST (`RestMoodleStrategy`)** and, where supplementary web-only JSON state is needed (such as `core_courseformat_get_state`), **Tier 2 AJAX (`AjaxMoodleStrategy`)**.
    Acts like a standard browser, fetching rendered Moodle pages (`/grade/report/overview/index.php`, `/my/courses.php`, `/user/profile.php`, `/my/`, `/course/view.php?id=...`) with `credentials: 'include'`. Uses pure TypeScript string and regex parsing (fully compliant with Chrome MV3 Service Workers and React Native Hermes) to extract courses, assignment tables, modules, and files.
 
 ### Multi-Year Academic Archive Discovery:
@@ -263,4 +267,62 @@ Noodle's public web showcase (`website/`) is hosted via the **Mantin Server Gate
 - **Cloudflare Ingress Target**: Points to `http://static-router:80` with the `Host: noodle.mantin.dev` header preserved.
 - **Mount Pipeline**: Bind mounts `/home/mantin-server/Noodle/website` into `/usr/share/nginx/html/noodle:ro` allowing real-time static asset delivery without build or duplication overhead.
 
+---
 
+## 11. Moodle Hierarchical Structures & Heuristics Architecture
+
+To fully represent Tel Aviv University's complex Moodle environments without relying on fragile HTML scraping, Noodle incorporates structured hierarchical models and heuristics:
+
+```mermaid
+flowchart TD
+    subgraph REST & AJAX Discovery
+        WS_Course[core_enrol_get_users_courses]
+        WS_Contents[core_course_get_contents]
+        WS_Quizzes[mod_quiz_get_quizzes_by_courses]
+        WS_Attempts[mod_quiz_get_user_attempts]
+        WS_Grades[gradereport_user_get_grade_items]
+        AJAX_State[core_courseformat_get_state]
+    end
+
+    subgraph Sync Engine & Heuristics
+        Clean[cleanMoodleString / Multilang Sanitizer]
+        FormatState[Course Format State Parser]
+        Pairing[Late Box Auto-Suppression Heuristic]
+        Grouping[Mode A & B Course Grouping]
+        Zip[Pure-TS PKZIP Builder]
+    end
+
+    subgraph Storage & Presentation
+        ExtensionUI[Extension 2-Level Accordion & Detail View]
+        MobileDB[(SQLite assignments_v2, sections, folders)]
+        GTasks[Google Tasks Two-Way Sync]
+    end
+
+    WS_Course --> Grouping
+    WS_Contents --> Clean --> FormatState
+    AJAX_State --> FormatState
+    WS_Quizzes & WS_Attempts --> Pairing
+    WS_Grades --> Pairing
+    FormatState --> ExtensionUI & MobileDB
+    Grouping --> ExtensionUI & MobileDB
+    Pairing --> GTasks & ExtensionUI & MobileDB
+```
+
+### 1. Academic Parent/Sub-Course Grouping (Mode A) & Administrative Umbrella (Mode B)
+* **Mode A (Academic Courses)**: Departments frequently split a course into an 8-digit lecture portal (e.g. `01022312` or `-99-`) and a 10-digit group/recitation portal (e.g. `0102231201`). Noodle pairs and aggregates them into a single high-level course card, merging section hierarchies, assignments, quizzes, and files while preserving the underlying `sourceCourseId` for API deep links.
+* **Mode B (Administrative Umbrella)**: Compliance and safety tutorials (such as `5900*`, `5800*`, or categorized under `בטיחות` / `Safety`) are grouped into a dedicated administrative card (`הדרכות בטיחות והדרכות חובה`) and excluded from academic GPA calculations (`excludeFromGpa: true`).
+
+### 2. Format-Aware 2-Level Section Hierarchy (`courseFormatState.ts`)
+Moodle courses in TAU utilize advanced course formats (`multitopic` and `onetopic`) alongside Moodle 4.5 nested subsections:
+* **AJAX Inspection**: Queries `core_courseformat_get_state` using the active `sesskey`.
+* **Tree Reconstruction**: Parses `tabsdata` subtrees in `multitopic` courses and `parentid` / `levelsan` attributes in `onetopic` courses, structuring sections into top-level tabs (`level: 0`) and nested sub-topics (`level: 1`) with parent linkage.
+* **Moodle 4.5 Sub-Sections**: Native `mod_subsection` sub-components are extracted and mapped directly into child sections with format-aware URL hashes.
+
+### 3. Quizzes (`mod_quiz`) & Two-Way Interactive Completion Sync
+* **Full Parity**: Quizzes and online exams are elevated to first-class citizens alongside assignments in the unified `Assignment` schema with composite UIDs (`quiz:ID` vs `assign:ID`).
+* **Availability & Restrictions**: Extracts `timelimit` (duration restriction in seconds), `timeopen`, `timeclose`, and allowed attempt counts.
+* **Two-Way Completion Sync**: When an activity specifies manual completion tracking (`completion === 1`), clicking "Mark as done" directly dispatches `core_completion_update_activity_completion_status_manually` to the Moodle server.
+
+### 4. Heuristics: Late-Submission Box Auto-Suppression & Bonus Heuristic
+* **Late-Submission Box Pairing**: TAU professors routinely maintain a second submission box labeled `הגשה באיחור` or `תיבת הגשה באיחור`. Noodle's sync engine pairs late boxes with their base assignments; if the student has already submitted the regular assignment, the late box is automatically suppressed (`isHidden: true`) to keep the dashboard uncluttered.
+* **Bonus Identification**: Grade items and assignments with `grademax <= 5` or carrying the keyword `בונוס` / `bonus` are automatically flagged with `isBonus: true`.

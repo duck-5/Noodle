@@ -395,3 +395,42 @@ The extension includes a 10-step interactive walkthrough designed in the v4 fros
   - `Escape` key immediately closes the tour and sets `hasSeenTour: true`.
   - On-screen monospace keyboard badge row (`[←] [→] [Esc]`) informs users of keyboard shortcuts.
 - **Multi-Theme Parity**: Complete visual integration across `dark`, `theme-noodle`, and `theme-coffee` palettes.
+
+---
+
+## 7. Hierarchical Course Detail, Quizzes & Gradebook Components
+
+### A. 2-Level Section Navigation Chip Bar
+Course Detail views in the desktop extension and mobile apps render a format-aware 2-level topic chip bar:
+1. **Top-Level Topic Bar**: Horizontally scrollable row displaying main course sections (e.g. "Intro", "Lectures", "Recitations", "Home assignments", "Quick-check quizzes").
+2. **Child Subtopic Pill Row**: When a top-level topic containing nested subtopics or Moodle 4.5 subsections (`mod_subsection`) is selected, an indented secondary row appears displaying its child sections (e.g. "Week 1", "Week 2").
+3. **Smooth Scroll Docking**: Clicking any chip smoothly scrolls the viewport to the matching section card and automatically expands it.
+
+### B. Quizzes & בחנים (`mod_quiz`) UI Components
+1. **Activity Badges**:
+   - Distinctive purple badge: `❓ בוחן` (Hebrew) / `❓ Quiz` (English).
+   - Time limit pill: `⏱️ 30 דק'` / `⏱️ 30 min` displayed whenever `timelimit > 0`.
+2. **Interactive Two-Way Completion Checkbox**:
+   - For activities with manual completion tracking (`requiresManualCompletion`), renders an interactive `Mark as done` (`סמן כבוצע`) button.
+   - Clicking toggles state locally and synchronously dispatches completion back to Moodle server via `core_completion_update_activity_completion_status_manually`.
+   - Visual state changes to green `✓ בוצע` / `✓ Done`.
+
+### C. Folder Cards & Pure-TS ZIP Downloader
+1. **Folder Container**: Renders a dedicated card for Moodle folders (`mod_folder`) displaying folder title, description, and file count.
+2. **Bulk ZIP Download Button**:
+   - Prominent action button labeled `📦 הורד תיקייה כ-ZIP` / `Download ZIP`.
+   - On click, triggers pure TypeScript in-memory ZIP assembly with live progress bar (`מוריד 2/5 קבצים...`).
+   - Automatically prompts native browser or mobile OS save dialog with UTF-8 Hebrew filename preservation.
+
+### D. Course Announcements Noticeboard Card
+Renders a blue accent noticeboard card at the top of the course detail page for courses with active announcement forums (`mod_forum`):
+- Icon: `📢`.
+- Title: `לוח מודעות והודעות` / `Announcements & News`.
+- Direct action buttons linking straight to individual Moodle forum views.
+
+### E. Gradebook Fidelity, Bonus Badges & Feedback
+1. **Authoritative Course Total**:
+   - When Moodle's gradebook contains an official course total item (`itemtype === 'course'`), Course Detail and Grades Tab prioritize it over synthetic assignment averages.
+   - Displayed with golden trophy badge: `🏆 ציון כולל: 92.50` / `Course Total: 92.50`.
+2. **Bonus Badges**: Assignments and grade items flagged as bonus (`grademax <= 5` or `בונוס` in title) carry a yellow `✨ בונוס` / `✨ Bonus` badge.
+3. **Instructor Feedback**: Assignment and grade rows display feedback notes in an indented green callout: `💬 משוב: כל הכבוד, עבודה מצוינת!`.

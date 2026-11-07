@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+### Added
 - **Subtle Metallic Horizontal Glow Wave for Nearest Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
   - Added an elegant, non-intrusive metallic horizontal glow wave animation (`.closest-metallic-wave`) across the single nearest pending deadline in the Upcoming To-Do queue.
   - Implemented as a continuous, smooth 5-second linear loop that steadily traverses the card without cooldown pauses, using semi-transparent platinum/silver shimmer in Dark theme, warm bronze in Noodle theme, and champagne/crema in Coffee theme.
@@ -15,6 +16,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Replaced hardcoded colored bitmap SVG assets (`dashboard.svg`, `settings.svg`, `about.svg`) and unicode emojis (🎓 for Grades, ▶ / ◀ for Collapse) with modern, scalable inline SVG vector components (`DashboardIcon`, `AssignmentsIcon`, `GradesIcon`, `SettingsIcon`, `AboutIcon`, `CollapseSidebarIcon`, `ExitIcon`).
   - Implemented dynamic `currentColor` inheritance that adapts seamlessly across all themes: default Dark mode (silver/indigo), Coffee mode (warm oat milk/crema), and Noodle Light mode (deep mocha/terracotta).
   - Added dedicated theme overrides for hover, active tabs, and focus borders across light, dark, and coffee themes.
+- **Automated Shared Client Build on Install & Dev (`package.json`, `apps/extension/package.json`)**:
+  - Added root `postinstall` script (`pnpm run build:moodle-client`) and prepended shared client compilation to extension `dev` and `dev:firefox` scripts so TypeScript declarations in `packages/moodle-client/dist` are always up to date after `git pull` or `pnpm install`.
+- **Hidden Tasks Excluded from Gaps Count & Course Statistics (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`, `e2e/dashboard.spec.ts`)**:
+  - Filtered `courseAssigns` by `!isActivityHidden(a, settings?.hiddenAssignments)` when computing course breakdown stats, active task totals (`totalAssigns`), and gaps count (`gapAssigns`).
+  - Guaranteed that hidden assignments (e.g. companion late boxes, optional exercises, or exercises for other groups) no longer artificially penalize the student with "gaps" / פערים or degrade the course completion progress bar.
+  - Added automated test in Playwright (`TC-DASH-REHAUL-09`) in `e2e/dashboard.spec.ts` validating that hiding an unsubmitted task dynamically removes it from the course card gaps count.
+- **Empty Sections Suppression by Default & Visibility Toggle (`apps/extension/src/options/App.tsx`, `i18n.ts`, `e2e/moodle-structures.spec.ts`)**:
+  - Implemented automatic suppression of empty course sections by default on Course Detail pages across both "Navigate subjects" (top topic tabs & subtopics) and Course Section cards.
+  - Defined strict section emptiness criteria: sections containing 0 files, 0 assignments/quizzes, 0 Panopto recordings, 0 folders, 0 external links, and no meaningful summary text are classified as empty. For hierarchical parent sections, content presence is recursively evaluated based on child sub-sections.
+  - Added interactive visibility toggle controls (`.toggle-empty-sections-btn` in the Course Sections header and `.toggle-empty-sections-nav-btn` in the Navigate Subjects bar) with eye icon indicators and bilingual labels ("הצג נושאים ריקים" / "הסתר נושאים ריקים").
+  - Persisted user toggle preference across sessions in `localStorage` under `noodle_show_empty_sections`.
+  - Added empty section notice (`.empty-section-placeholder`) when expanding an empty section in revealed mode.
+  - Added automated browser E2E test coverage in `e2e/moodle-structures.spec.ts` (`TC-EXT-018`) verifying default suppression and toggle behavior.
+- **Hierarchical Manage Courses Configuration Tree (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Replaced the flat list in `CoursesConfigTable` with a structured hierarchical tree view displaying unified parent course portals with "פורטל ראשי" badges alongside independently selectable, indented child sub-courses (`↳`, `קבוצה 01`, `מעבדה`) and administrative umbrella safety tutorials.
+- **Browser E2E Automated Verification Suite (`apps/extension/e2e/moodle-structures.spec.ts`)**:
+  - Implemented end-to-end browser test in headless Chromium with real extension loading verifying 2-level topic navigation chips, subsection expansion, quizzes and בחנים badging, interactive manual completion, folder ZIP downloads, external links, course announcements, authoritative gradebook totals, and full visual screenshot capture (`TC-EXT-015`, `TC-EXT-016`).
+- **Comprehensive Test Suite & Documentation Synchronization (`docs/TEST_CASES.md`, `API_DESCRIPTION.md`, `ARCHITECTURE.md`, `UI_SPECIFICATION.md`, `AI_KNOWLEDGE.md`)**:
+  - Registered test cases `TC-API-009`, `TC-API-010`, `TC-API-011`, `TC-SYNC-008`, `TC-SYNC-009`, `TC-SYNC-010`, `TC-EXT-015`, and `TC-MOB-015`.
+  - Documented Moodle REST and AJAX endpoints, multilang header injection, pure-TS PKZIP specification, and HTML scraping deprecation policy across all authoritative architecture and design docs.
+  - Documented 2-level section navigation chip bar, quiz activity badges, two-way manual completion sync, and authoritative gradebook total displays.
+- **Gradebook Fidelity, Late-Submission Box Auto-Suppression & Course Announcements (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Implemented late-submission box auto-suppression heuristic (`isLateSubmissionBox`): automatically hides duplicate late submission boxes when the regular assignment has already been submitted or completed.
+  - Implemented bonus heuristic (`isBonus`): flags assignment and grade items with `grademax <= 5` or bonus keywords (`"בונוס"` / `"bonus"`).
+  - Added full gradebook fidelity extraction in sync engine (`CourseGradeSummary`, `CourseGradeItem`): extracts authoritative course totals (`itemtype === 'course'`) from `gradereport_user_get_grade_items` and prioritizes them in Course Detail and Grades Tab.
+  - Added feedback extraction (`feedback` on `Assignment` and `CourseGradeItem`) and rendered feedback chips across assignment cards and gradebook tables.
+  - Added course announcements extraction (`mod_forum` matching course noticeboard keywords) into `CourseAnnouncement`, rendering noticeboard cards in Course Detail view.
+  - Rendered section summary HTML banners (`summaryHtml`) at the top of expanded course sections.
+  - Added mobile SQLite support for announcements (`course_announcements`) and assignment metadata (`feedback`, `is_bonus`, `is_late_submission_box`).
+  - Added comprehensive test suite `packages/moodle-client/__tests__/gradebookAndHeuristics.test.ts`.
+- **Academic Parent/Sub-Course Merging & Administrative Umbrella UX (`packages/moodle-client/src/courseGrouping.ts`, `courseParser.ts`)**:
+  - Implemented Mode A academic course grouping merging common lecture portals (e.g. 8-digit `01022312` or `-99-`) and group recitations/labs (e.g. 10-digit `0102231201`) into unified course cards while aggregating all course modules, assignments, and files.
+  - Implemented Mode B administrative umbrella grouping safety and compliance tutorials (`5900*`, `5800*`, and category `"בטיחות"` / `"Safety"`) into a dedicated `"הדרכות בטיחות והדרכות חובה"` container excluded from GPA calculation.
+  - Added multi-format TAU course code parser supporting Summer semester (`-3`), standalone 8-digit and 10-digit codes, and reversed year-first syntax.
+  - Added item aggregator and deduplicator (`aggregateUnifiedCourseItems`) across merged parent and sub-courses with `sourceCourseId` preservation.
+  - Added unit test suite `packages/moodle-client/__tests__/courseGrouping.test.ts`.
+- **Quizzes & בחנים (`mod_quiz`) End-to-End Tracking (`packages/moodle-client`, `apps/extension`, `apps/mobile`)**:
+  - Integrated `mod_quiz` activities seamlessly alongside traditional assignments with unified types (`Assignment.activityType = 'quiz'`).
+- **Localized Heuristic, Path Sanitization & Rendering Refinements (`CR-05`, `CR-06`, `CR-08`, `CR-09`, `CR-12`)**:
+  - **Section Summary Plain-Text Rendering (`CR-05`)**: Replaced `dangerouslySetInnerHTML` with plain text `{content.summaryHtml}` and `whiteSpace: 'pre-line'` in `App.tsx`, preserving line breaks safely and eliminating raw HTML injection risk from decoded Moodle text.
+  - **Late-Submission Box Substring & Word-Boundary Guards (`CR-06`)**: Added title length guards and alphanumeric/Hebrew word boundary regex matching in `syncEngine.ts`, ensuring generic `"תיבת הגשה באיחור"` boxes do not match arbitrary assignments and `"תרגיל 1"` does not match `"תרגיל 10"`.
+  - **ZIP Path Traversal Sanitization & Mobile Native Byte Writing (`CR-08`)**: Stripped `..` sequences, guaranteed `/` path separator between relative path and file name, isolated directory prefixes during duplicate filename suffix insertion in `zipBuilder.ts`, and replaced `uint8ArrayToBase64` + `writeAsStringAsync` with direct `FileMode.WriteOnly` and `handle.writeBytes(zipBytes)` in mobile `fileDownloadService.ts`.
+  - **Deduplication of Folder Files from Standalone Section Lists (`CR-09`)**: Filtered out files with `folderId` (`f.folderId` / `f.folder_id`) from standalone section file listings in both Extension `App.tsx` and Mobile `courses.tsx`, preventing duplication with the Folder ZIP card.
+  - **Bonus Grade Keyword Refinement & GPA Protection (`CR-12`)**: Replaced the overly broad `grademax <= 5` bonus rule with explicit `/בונוס|bonus/i` keyword detection across `syncEngine.ts` and `GradeSummaries`, extracted feedback and bonus tags on `mod_quiz` activities, and excluded `isBonus` items from baseline `courseAverage` and unweighted `overallGpa` calculation in `GradesTab`.
+- **Post-Review Multi-File Architectural & Sync Pipeline Fixes (`CR-01`, `CR-02`, `CR-03`, `CR-04`, `CR-07`, `CR-10`, `CR-11`)**:
+  - **Deterministic Two-Stage Sync Pipeline (`CR-03`)**: Refactored `runSync` in `syncEngine.ts` so `core_course_get_contents` and `core_courseformat_get_state` complete before `processAssignment` and `processQuiz` execute. Fixed the `Promise.all` race condition where `moduleCompletionMap` was empty during quiz processing, processed fallback-discovered `mod_quiz` modules when `mod_quiz_get_quizzes_by_courses` returns empty, and attached `sectionId` (`cmidToSectionIdMap`) and Moodle 4.5+ `mod_subsection` parent linkage.
+  - **Unified Academic Course Merging & Administrative Umbrella Integration (`CR-02`)**: Fixed `groupEnrolledCourses` to merge standalone 8/10-digit sub-courses (`semester: 'Other'`) with concrete-semester parent portals; added `expandTrackedCourseIds` to expand unified parent IDs and `-5900` administrative umbrella IDs; wired `groupEnrolledCourses` and `aggregateUnifiedCourseItems` (`sections`, `announcements`, `recordings`, `gradeSummary`) into `App.tsx`, and excluded safety/administrative courses (`5900*`, `5800*`) from GPA calculations.
+  - **Composite `uid` Collision Prevention (`CR-04`)**: Keyed `rawOrderMap` and late-submission self-comparison by composite `uid` (`assign:X` vs `quiz:X`), updated `googleTasksSync.ts` orphan cleanup to compare composite `uid`s so same-ID assignments and quizzes do not delete each other's Google Tasks, and fixed redundant `PATCH` updates on active quizzes.
+  - **Mobile SQLite Migration, Persistence & 2-Level Section UI (`CR-01`, `CR-07`)**: Fixed fresh-install `assignments_v2` SQLite migration failure, persisted all new assignment/file metadata columns (`feedback`, `is_bonus`, `is_late_submission_box`, `section_id`, `section_name`, `folder_id`, `folder_name`, `relative_path`), pruned stale rows per synced course, and wired the 2-level section and subsection pill bars in `apps/mobile/src/app/courses.tsx`.
+  - **Section ID Keying & Multi-Instance Archive Routing (`CR-10`, `CR-11`)**: Keyed Course Detail section maps by `sectionId` (`sec_${id}`) so identically named sub-tabs across different parent tabs do not collide, expanded child subsections when clicking a Level-0 parent tab, filtered `visible === false` sections, fixed `willBeCompleted` state toggle in `App.tsx`, wired `updateActivityCompletionManually` in `Popup.tsx`, partitioned `getQuizzes`/`getQuizAttempts`/`updateActivityCompletionManually` across archive Moodle year instances in `RestMoodleStrategy`, and forwarded UI `lang` into `runSync`.
+- **Course Detail Section Filter on Suppressed / Hidden Assignments (`apps/extension/src/options/App.tsx`)**:
+  - Filtered out auto-suppressed late submission boxes and user-hidden assignments from active section item trees while preserving them in the sidebar overview.
 
 ### Changed
 - **Equal-Width Hero Action Strip Layout (`apps/extension/src/options/App.css`)**:
@@ -48,6 +101,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added proactive runtime permission checks via `browser.permissions.contains` and prompt triggers via `browser.permissions.request` when enabling Panopto in Settings.
   - Added warning alert banners in the Dashboard, Settings, and Course Details Panopto section with a 1-click "Grant Permission" button whenever `panoptoEnabled` is active but browser host permissions have not yet been approved.
   - Enhanced error diagnostics in `ensurePanoptoAuthViaHiddenTab` and `executeStepInTab` to log permission failures explicitly instead of silently timing out.
+
+### Changed
+- **Documentation — Deprecated HTML Scraper as Feature Target (`docs/ARCHITECTURE.md`, `docs/AI_KNOWLEDGE.md`)**:
+  - Documented architectural policy that `ScraperMoodleStrategy` (HTML DOM regex scraping) is unstable across TAU Moodle course formats and themes, and is no longer a target handler for new Moodle structures or features (which must rely exclusively on structured REST Web Services and JSON AJAX endpoints).
 
 ## [4.0.2] - 2026-10-29
 ### Added
@@ -156,6 +213,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Replaced Ghost Button with Rotating Chevron Span in Tracked Course Cards (`apps/extension/src/options/App.tsx`)**:
   - Replaced the `.btn-ghost` button at the end of each course item under "My Tracked Courses" with a sleek inline-block rotating chevron `<span>▼</span>` matching the styling and transition behavior of the Upcoming To-Do queue.
 ### Removed
+- **Emoji Visual Noise Removal (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed `🏆` emoji from total course grade badges across all views.
+  - Replaced watch/timer emoji (`⏱️`) on the live sync countdown with `<SyncClockIcon />` (SVG glyph with `.sync-icon-spin` animation).
 - **Mobile App References on Landing Page (`website/index.html`)**:
   - Removed all references to a mobile app from the install section, navigation, FAQ, and footer, reflecting that Noodle is currently focused exclusively as a desktop browser extension for Chromium and Firefox.
 

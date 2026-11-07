@@ -1,6 +1,7 @@
-import { Paths, File } from 'expo-file-system';
+import { Paths, File, FileMode } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { CourseFolder, downloadFolderAsZip } from '@tautracker/moodle-client';
 import { getMoodleToken, setMoodleToken } from './backgroundSync';
 import { getStoredCredentials, loginTauSso } from './auth';
 
@@ -146,5 +147,45 @@ export async function downloadMoodleFile(
       success: false,
       error: e.message || 'An error occurred during file download. Please check your connection.',
     };
+  }
+}
+
+
+export async function downloadMoodleFolderZip(
+  folder: CourseFolder,
+  onProgress?: (completed: number, total: number) => void
+): Promise<{ success: boolean; uri?: string; error?: string }> {
+  try {
+    let token = await getMoodleToken();
+    if (!token) {
+      const creds = await getStoredCredentials();
+      if (creds) {
+        token = await loginTauSso(creds.username, creds.idNumber, creds.password);
+        await setMoodleToken(token);
+      } else {
+        return { success: false, error: 'Moodle token not found. Please log in again.' };
+      }
+    }
+
+    const zipBytes = await downloadFolderAsZip(folder, token, onProgress);
+    const cleanName = sanitizeFileName(folder.name || 'folder') + '.zip';
+    const targetFile = new File(Paths.cache, cleanName);
+    targetFile.create({ overwrite: true });
+    const handle = targetFile.open(FileMode.WriteOnly);
+    handle.writeBytes(zipBytes);
+    handle.close();
+    const destUri = targetFile.uri;
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(destUri, {
+        mimeType: 'application/zip',
+        dialogTitle: cleanName,
+      });
+    }
+
+    return { success: true, uri: destUri };
+  } catch (err: any) {
+    console.error('downloadMoodleFolderZip error:', err);
+    return { success: false, error: err.message || 'Folder download failed' };
   }
 }

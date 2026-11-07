@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import type { SyncResult } from '@tautracker/moodle-client';
+import type { SyncResult, CourseSection, CourseFolder, CourseLink, CourseAnnouncement, CourseGradeSummary } from '@tautracker/moodle-client';
 
 export interface ExtensionSettings {
   googleTasksEnabled: boolean;
@@ -14,9 +14,9 @@ export interface ExtensionSettings {
   theme?: 'dark' | 'noodle' | 'coffee';
   interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
   showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
-  hiddenAssignments?: number[];  // Array of assignment ids that are hidden
-  completedAssignments?: number[]; // Array of assignment ids that are marked as completed
-  uncompletedAssignments?: number[]; // Array of assignment ids marked as To Do even if submitted
+  hiddenAssignments?: Array<number | string>;  // Array of assignment ids or uids that are hidden
+  completedAssignments?: Array<number | string>; // Array of assignment ids or uids that are marked as completed
+  uncompletedAssignments?: Array<number | string>; // Array of assignment ids or uids marked as To Do even if submitted
   scrapingEnabled?: boolean;
   syncWithoutDeadline?: boolean;
   panoptoEnabled?: boolean;
@@ -125,6 +125,31 @@ export async function getCachedSyncResult(): Promise<SyncResult | null> {
 
 export async function setCachedSyncResult(result: SyncResult): Promise<void> {
   await browser.storage.local.set({ cachedSyncResult: result });
+}
+
+export async function getCachedSections(): Promise<CourseSection[]> {
+  const result = await getCachedSyncResult();
+  return result?.sections || [];
+}
+
+export async function getCachedFolders(): Promise<CourseFolder[]> {
+  const result = await getCachedSyncResult();
+  return result?.folders || [];
+}
+
+export async function getCachedLinks(): Promise<CourseLink[]> {
+  const result = await getCachedSyncResult();
+  return result?.links || [];
+}
+
+export async function getCachedAnnouncements(): Promise<CourseAnnouncement[]> {
+  const result = await getCachedSyncResult();
+  return result?.announcements || [];
+}
+
+export async function getCachedGradeSummaries(): Promise<Record<number, CourseGradeSummary>> {
+  const result = await getCachedSyncResult();
+  return result?.gradeSummaries || {};
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {

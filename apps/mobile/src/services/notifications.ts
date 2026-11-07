@@ -1,4 +1,5 @@
-import { Assignment } from '@tautracker/moodle-client';
+import { Assignment, isActivityHidden, isActivityCompleted } from '@tautracker/moodle-client';
+import { getPreference } from './database';
 
 // expo-notifications remote push support was removed from Expo Go in SDK 53.
 // All calls are wrapped so the app still runs in Expo Go (local/scheduled
@@ -38,10 +39,24 @@ export async function scheduleDeadlineNotifications(assignments: Assignment[]): 
     // 1. Cancel all current scheduled notifications
     await Notifications.cancelAllScheduledNotificationsAsync();
 
+    let hiddenIds: string[] = [];
+    let completedIds: string[] = [];
+    let uncompletedIds: string[] = [];
+    try {
+      const h = getPreference('hidden_assignments');
+      if (h) hiddenIds = JSON.parse(h);
+      const c = getPreference('completed_assignments');
+      if (c) completedIds = JSON.parse(c);
+      const u = getPreference('uncompleted_assignments');
+      if (u) uncompletedIds = JSON.parse(u);
+    } catch {}
+
     const now = new Date();
 
     for (const assignment of assignments) {
-      if (!assignment.deadline || assignment.status === 'Submitted') continue;
+      if (!assignment.deadline) continue;
+      if (isActivityHidden(assignment, hiddenIds)) continue;
+      if (isActivityCompleted(assignment, completedIds, uncompletedIds)) continue;
 
       const deadline = new Date(assignment.deadline);
       const hoursUntilDeadline = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);

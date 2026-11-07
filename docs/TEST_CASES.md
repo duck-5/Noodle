@@ -227,6 +227,19 @@ graph LR
 | **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-18** | Scraper Strategy Gated by enableScraping Configuration | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-API-009** | Multilang Filter & Hebrew Entity Sanitization | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
+| **TC-API-010** | 2-Level Section Hierarchy & Course Format State Extraction | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
+| **TC-API-011** | Pure-TS IEEE 802.3 CRC-32 PKZIP Archive Builder | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
+| **TC-SYNC-008** | Quizzes (`mod_quiz`) & Interactive Two-Way Completion Sync | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Sync Engine |
+| **TC-SYNC-009** | Academic Course Merging (Mode A) & Administrative Umbrella (Mode B) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Sync Engine |
+| **TC-SYNC-010** | Late-Submission Box Auto-Suppression & Bonus Detection | All (Mobile + Chrome + Firefox) | Automated | Sync Engine |
+| **TC-EXT-015** | Extension 2-Level Section Navigation, ZIP Downloader & Gradebook | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI |
+| **TC-MOB-015** | Mobile SQLite `assignments_v2` Migration & 2-Level Section Navigation | Mobile Only | Automated & Browser Agent | Mobile UI & SQLite |
+| **TC-SYNC-011** | Selective Course Tracking Freedom & Absorbed Sub-Course Card Dedup | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Grouping & UI |
+| **TC-SYNC-012** | Unified Activity State Identity (`uid`) & Partial-Sync Protection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Sync Engine & State |
+| **TC-EXT-017** | Hierarchical Course Management, Assignment Deduplication, Card Urgency Thresholds & Unhide Filter Activation | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Sync Engine |
+| **TC-EXT-018** | Empty Course Sections Suppression by Default & Interactive Visibility Toggle | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI |
+| **TC-DASH-REHAUL-09** | Hidden Tasks Excluded from Gaps Count & Course Card Breakdown | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Dashboard |
 
 
 ---
@@ -1575,9 +1588,148 @@ graph LR
   3. The `SyncCountdown` timer in the dashboard header reflects the new interval immediately.
   4. The setting syncs to Moodle Calendar private storage (`NOODLE_SYNC_DATA`) and propagates across devices with Last-Write-Wins (LWW) conflict resolution.
 
+---
 
+## 4. Moodle Missing Structures Overhaul Test Suite
 
+#### TC-API-009: Multilang Filter & Hebrew Entity Sanitization
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/strategies/restStrategy.ts`, `syncEngine.ts`
+* **Description**:
+  1. REST strategy passes `moodlewssettingfilter: 'true'` and `moodlewssettinglang: 'he'` in all POST bodies to Moodle REST endpoint.
+  2. `cleanMoodleString()` strips `<span class="multilang" lang="he">...` wrappers, decodes HTML entities (`&quot;`, `&#039;`, `&amp;`), and removes residual HTML tags while preserving pure Hebrew text.
+* **Verification**: `jest packages/moodle-client/__tests__/grades.test.ts` and `syncEngine.ts` assertions.
 
+#### TC-API-010: 2-Level Section Hierarchy & Course Format State Extraction
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/courseFormatState.ts`
+* **Description**:
+  1. Queries Moodle AJAX `core_courseformat_get_state` using `sesskey`.
+  2. Resolves `tabsdata` in `multitopic` courses into parent tabs and child subtopic tabs, strictly setting `level: 0` for all root tabs.
+  3. Detects `sectionZeroId` so topics pointing to Section 0 are treated as root level, and resolves `levelsan >= 2` as genuine nested subtopics while keeping `levelsan === 1` as top-level pages.
+  4. Resolves Moodle 4.3+ delegated subsections (`mod_subsection`) using `uservisible` and non-empty module presence, linking them with `parentSectionId`.
+* **Verification**: `jest packages/moodle-client/__tests__/courseFormatState.test.ts`.
 
+#### TC-API-011: Pure-TS IEEE 802.3 CRC-32 PKZIP Archive Builder
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/zipBuilder.ts`
+* **Description**:
+  1. Generates valid PKZIP 2.0 archives without Node.js native dependencies (`fs`, `zlib`, `buffer`), running seamlessly in Browser MV3 Service Workers and React Native Hermes engine.
+  2. Calculates accurate IEEE 802.3 CRC-32 polynomials table and sets bit 11 (`0x0800`) in the general purpose bit flag for UTF-8 Hebrew filename encoding.
+  3. Disambiguates duplicate filenames with sequential indexing (`file (1).pdf`).
+  4. Validates bounded concurrency download with Moodle token injection and catches `{ exception: ... }` JSON error payloads.
+* **Verification**: `jest packages/moodle-client/__tests__/zipBuilder.test.ts`.
 
+#### TC-SYNC-008: Quizzes (`mod_quiz`) & Interactive Two-Way Completion Sync
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/strategies/restStrategy.ts`, `syncEngine.ts`, `googleTasksSync.ts`, `apps/extension/src/options/App.tsx`
+* **Description**:
+  1. Sync engine invokes `mod_quiz_get_quizzes_by_courses` and `mod_quiz_get_user_attempts`, mapping quizzes into unified `Assignment` records with `activityType: 'quiz'` and composite UID (`quiz:ID`).
+  2. Quizzes with `timeclose` map to deadlines; finished attempts (`state === 'finished'`) automatically set `isCompleted: true` and status `Submitted`.
+  3. Clicking "Mark as done" (`סמן כבוצע`) on a manual-completion quiz dispatches `core_completion_update_activity_completion_status_manually` with `cmid` and `completed: 1`, synchronizing back to Moodle server.
+  4. Google Tasks sync recognizes `Noodle:quizId:X` and `Noodle:uid:quiz:X`, synchronizing quizzes with bidirectional completion tracking.
+* **Verification**: `jest packages/moodle-client/__tests__/quizSync.test.ts` and `googleTasks.test.ts`.
 
+#### TC-SYNC-009: Academic Course Merging (Mode A) & Administrative Umbrella (Mode B)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/courseGrouping.ts`, `courseParser.ts`
+* **Description**:
+  1. Mode A: Pairs 8-digit lecture portal (e.g. `01022312` or `-99-`) with 10-digit group/recitation (e.g. `0102231201`), merging them into a unified course card while aggregating sub-courses, assignments, folders, and meetings.
+  2. Mode B: Consolidates safety and compliance tutorials (`5900*`, `5800*`, or category `בטיחות` / `Safety`) into a single administrative umbrella card (`הדרכות בטיחות והדרכות חובה`) with `excludeFromGpa: true`.
+  3. Course code parser accurately resolves Summer semester (`-3`), standalone 8- and 10-digit codes, and reversed year-first syntax.
+* **Verification**: `jest packages/moodle-client/__tests__/courseGrouping.test.ts` and `courseParser.test.ts`.
+
+#### TC-SYNC-010: Late-Submission Box Auto-Suppression & Bonus Detection
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/syncEngine.ts`
+* **Description**:
+  1. Sync engine detects late submission boxes matching regex (`הגשה באיחור`, `תיבת הגשה באיחור`, `מועד מיוחד`, `late submission`).
+  2. Pairs late box with its regular assignment in the same course. If regular assignment has `status === 'Submitted'` or `isCompleted === true`, the late box is automatically suppressed (`isHidden: true` and `status: 'Submitted'`).
+  3. If regular assignment is unsubmitted, late box remains visible as a safety net.
+  4. Identifies bonus assignments and grade items with `grademax <= 5` or `בונוס` / `bonus` keywords, marking `isBonus: true`.
+* **Verification**: `jest packages/moodle-client/__tests__/gradebookAndHeuristics.test.ts`.
+
+#### TC-EXT-015: Extension 2-Level Section Navigation, ZIP Downloader & Gradebook
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/options/App.tsx`
+* **Description**:
+  1. Course Detail view displays 2-level topic chips (top-level topics and nested subtopics) with smooth scrolling to matching section cards.
+  2. Displays folder cards with `📦 הורד תיקייה כ-ZIP` button, triggering bounded parallel file downloads with live progress bar and direct browser download.
+  3. Displays course announcements banner (`📢`) linking directly to Moodle forum notices.
+  4. Grades Tab and Course Detail view prioritize authoritative course totals (`🏆 ציון כולל`) from gradebook summaries, bonus badges (`✨ בונוס`), and instructor feedback notes (`💬`).
+* **Verification**: Headless Chromium & Firefox build verification (`pnpm --filter extension run build`).
+
+#### TC-EXT-018: Empty Course Sections Suppression by Default & Interactive Visibility Toggle
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/options/App.tsx`, `apps/extension/src/shared/i18n.ts`, `apps/extension/e2e/moodle-structures.spec.ts`
+* **Description**:
+  1. Empty sections (0 files, 0 assignments, 0 recordings, 0 folders, 0 links, and no summary text) are automatically hidden by default in Course Detail view.
+  2. Hidden sections do not appear as top-level buttons or subtopic pills in "Navigate subjects" (`.subjects-nav-tree`, `.subsections-nav-row`) and do not render as cards in the Course Sections list.
+  3. Parent sections in hierarchical courses remain visible if any child sub-section has content.
+  4. Clicking the empty sections toggle button (`.toggle-empty-sections-btn` or `.toggle-empty-sections-nav-btn`) reveals all empty sections across both Navigate subjects and Course Section cards.
+  5. Revealed empty sections display a subtle placeholder notice (`.empty-section-placeholder`) when expanded.
+  6. The toggle state persists across page reloads in `localStorage` under `noodle_show_empty_sections`.
+* **Verification**: Run Playwright suite `pnpm --filter extension test:e2e -- moodle-structures.spec.ts`.
+
+#### TC-DASH-REHAUL-09: Hidden Tasks Excluded from Gaps Count & Course Card Breakdown
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/options/App.tsx`, `apps/extension/e2e/dashboard.spec.ts`
+* **Description**:
+  1. In the course cards grid and list views, active assignments breakdown (`doneAssigns` / `totalAssigns`) and gaps count (`gapAssigns`) strictly filter out assignments where `isActivityHidden(a, settings?.hiddenAssignments)` is true.
+  2. When a user hides an unsubmitted assignment, it is immediately removed from the gaps count (`פערים` / `gaps`), preventing unneeded or optional assignments from showing as overdue gaps.
+  3. The overall progress bar and percentage reflect the proportion of completed tasks relative to active (non-hidden) tasks.
+* **Verification**: Run Playwright suite `pnpm --filter extension test:e2e -- dashboard.spec.ts`.
+
+#### TC-MOB-015: Mobile SQLite `assignments_v2` Migration & 2-Level Section Navigation
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/src/services/database.ts`, `apps/mobile/src/app/courses.tsx`
+* **Description**:
+  1. Non-destructive migration creates `assignments_v2` with composite `uid TEXT UNIQUE NOT NULL` and copies legacy records with `assign:ID` prefix.
+  2. SQLite schema includes `course_sections`, `course_folders`, `course_links`, and `course_announcements` tables.
+  3. Mobile Courses view renders 2-level topic and subtopic tabs, folder cards with mobile ZIP download, and external resource links.
+* **Verification**: `pnpm --filter mobile exec tsc --noEmit`.
+
+#### TC-SYNC-011: Selective Course Tracking Freedom & Absorbed Sub-Course Card Dedup
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/courseGrouping.ts`, `apps/extension/src/options/App.tsx`
+* **Description**:
+  1. In the Course Management table, selecting a parent course portal without selecting its child groups tracks only the parent course without auto-expanding or saving unselected children.
+  2. In the Course Management table, selecting both a parent course and a child group syncs both Moodle portals while aggregating items under the unified parent course on the dashboard.
+  3. Absorbed child sub-courses are filtered out from `displayCourseIds` on the Dashboard, preventing empty duplicate ghost cards.
+  4. When tracking a child sub-course without tracking the parent portal, child course items are preserved independently and not remapped to the unselected parent.
+  5. Prefix-tolerant parsing in `parseTauCourseMetadata` identifies 8/10-digit codes with appended course titles (e.g. `01022312 - ביוסטטיסטיקה מתקדמת`).
+* **Verification**: `jest packages/moodle-client/__tests__/courseGrouping.test.ts`.
+
+#### TC-SYNC-012: Unified Activity State Identity (`uid`) & Partial-Sync Protection
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/activityState.ts`, `apps/extension/src/options/App.tsx`, `apps/mobile/src/services/database.ts`
+* **Description**:
+  1. Activity completion and visibility (`isActivityHidden`, `isActivityCompleted`, `getActivityUid`) match by composite `uid` (`assign:ID` vs `quiz:ID`) while maintaining backwards-compatibility with legacy numeric storage IDs.
+  2. Auto-suppressed late submission boxes (`isHidden: true`) are excluded from active task listings, progress calculations, and deadline notifications.
+  3. Incremental `SYNC_PARTIAL` messages preserve existing `sections`, `folders`, `links`, and `gradeSummaries`, preventing subjects from disappearing mid-sync.
+  4. Mobile partial sync updates do not execute table-wide `DELETE` pruning in SQLite until the final sync payload with `syncedAt` arrives.
+* **Verification**: `jest packages/moodle-client/__tests__/activityState.test.ts`.
+
+#### TC-EXT-017: Hierarchical Course Management, Assignment Deduplication, Card Urgency Thresholds & Unhide Filter Activation
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `packages/moodle-client/src/syncEngine.ts`
+* **Description**:
+  1. Manage courses modal renders a hierarchical tree view grouping parent course portals with "פורטל ראשי" badge and indented sub-courses (`↳`, `קבוצה 01`, `מעבדה`) and administrative umbrella tutorials.
+  2. Multi-portal and content-fallback assignments (e.g. "גלים" - "תרגיל בית 1") are deduplicated without duplicated rows or submission links.
+  3. Course card "המטלה הבאה" prioritizes upcoming future deadlines over past-due tasks and applies rule-based threshold classes (`due-green`, `due-yellow`, `due-red`).
+  4. Unhiding an overdue assignment in the assignments tab automatically enables `filterPast` so the assignment stays visible instead of vanishing into a disabled filter.
+  5. Emoji visual cleanup: total grade badge is clean without 🏆 emoji, and sync timer countdown uses minimalistic `<SyncClockIcon />` SVG glyph.
+* **Verification**: Headless Chromium & Firefox build verification (`pnpm --filter extension run build`).

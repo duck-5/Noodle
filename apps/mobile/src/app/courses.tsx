@@ -12,9 +12,10 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { parseTauCourseMetadata } from '@tautracker/moodle-client';
-import { downloadMoodleFile } from '../services/fileDownloadService';
-import { getDb, getPreference, setPreference } from '../services/database';
+import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
+import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
+import { getMoodleToken } from '../services/backgroundSync';
+import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 import { markSettingUpdatedAndSync } from '../services/settingsSyncService';
@@ -178,6 +179,9 @@ export default function CoursesScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
+  const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
+  const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
 
   // Editing Course Modal State
   const [editingCourse, setEditingCourse] = useState<EditingCourseState | null>(null);
@@ -331,6 +335,20 @@ export default function CoursesScreen({
     }
   };
 
+  async function handleDownloadFolderZip(folder: any) {
+    setDownloadingFolderId(folder.id);
+    try {
+      const result = await downloadMoodleFolderZip(folder);
+      if (!result.success && result.error) {
+        Alert.alert(isRtl ? 'שגיאה בהורדה' : 'Download Error', result.error);
+      }
+    } catch (e: any) {
+      Alert.alert(isRtl ? 'שגיאה בהורדה' : 'Download Error', e.message);
+    } finally {
+      setDownloadingFolderId(null);
+    }
+  }
+
   async function handleDownloadFile(file: any) {
     const res = await downloadMoodleFile(file);
     if (!res.success && res.error) {
@@ -382,7 +400,7 @@ export default function CoursesScreen({
       const rawMoodleSubmitted = a.status === 'Submitted';
       mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-      if (hiddenIds.includes(a.moodle_assign_id)) {
+      if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
         mod.isHidden = true;
       }
 
@@ -405,28 +423,85 @@ export default function CoursesScreen({
       'SELECT * FROM meetings WHERE course_moodle_id = ?',
       [course.moodle_id]
     );
+    const rawCourseSections = getCourseSections(course.moodle_id);
+    const courseSections = rawCourseSections.filter((s: any) => s.visible !== 0 && s.visible !== false);
+    const courseFolders = getCourseFolders(course.moodle_id);
+    const courseLinks = getCourseLinks(course.moodle_id);
 
-    // Group files and assignments by sectionName
-    const sectionsMap: Record<string, { assignments: any[]; files: any[]; meetings: any[] }> = {};
-    const getSection = (name: string) => {
+    const topSections = courseSections.filter((s: any) => s.level === 0 || s.parent_section_id === null);
+    const currentSubSections = activeTopSectionId !== null
+      ? courseSections.filter((s: any) => s.parent_section_id === activeTopSectionId)
+      : [];
+
+    // Group files, assignments, folders, links by sectionId (with fallback to sectionName)
+    const sectionsMap: Record<
+      string,
+      {
+        displayTitle: string;
+        sectionId?: number;
+        assignments: any[];
+        files: any[];
+        meetings: any[];
+        folders: any[];
+        links: any[];
+      }
+    > = {};
+    const sectionKeyByName = new Map<string, string>();
+    const getSection = (name: string, sectionId?: number | null) => {
       const n = name || (isRtl ? 'כללי' : 'General');
-      if (!sectionsMap[n]) sectionsMap[n] = { assignments: [], files: [], meetings: [] };
-      return sectionsMap[n];
+      const key = sectionId ? `sec_${sectionId}` : (sectionKeyByName.get(n) || `name_${n}`);
+      if (!sectionsMap[key]) {
+        sectionsMap[key] = {
+          displayTitle: n,
+          sectionId: sectionId ?? undefined,
+          assignments: [],
+          files: [],
+          meetings: [],
+          folders: [],
+          links: [],
+        };
+      }
+      if (!sectionKeyByName.has(n)) {
+        sectionKeyByName.set(n, key);
+      }
+      return sectionsMap[key];
     };
-    courseFiles.forEach((f: any) => getSection(f.section_name).files.push(f));
-    courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General')).assignments.push(a));
+    courseSections.forEach((s: any) => getSection(s.name, s.id));
+    courseFiles.forEach((f: any) => {
+      if (!f.folder_id) {
+        getSection(f.section_name, f.section_id).files.push(f);
+      }
+    });
+    courseAssignments.forEach((a: any) => getSection(a.section_name || (isRtl ? 'כללי' : 'General'), a.section_id).assignments.push(a));
     courseMeetings.forEach((m: any) => getSection(m.section_name || (isRtl ? 'כללי' : 'General')).meetings.push(m));
+    courseFolders.forEach((fld: any) => getSection(fld.section_name || (isRtl ? 'כללי' : 'General'), fld.section_id).folders.push(fld));
+    courseLinks.forEach((lnk: any) => getSection(lnk.section_name || (isRtl ? 'כללי' : 'General'), lnk.section_id).links.push(lnk));
     const allSectionEntries = Object.entries(sectionsMap);
 
-    // Filter section entries if user selected a specific section pill
-    const sectionEntries = activeSectionName
-      ? allSectionEntries.filter(([secName]) => secName === activeSectionName)
-      : allSectionEntries;
+    // Filter section entries by 2-level hierarchy or legacy activeSectionName
+    const allowedSubSectionIds = new Set<number>(
+      activeTopSectionId !== null
+        ? [activeTopSectionId, ...currentSubSections.map((s: any) => Number(s.id))]
+        : []
+    );
+    const sectionEntries =
+      activeSubSectionId !== null
+        ? allSectionEntries.filter(([, content]) => content.sectionId === activeSubSectionId)
+        : activeTopSectionId !== null
+        ? allSectionEntries.filter(
+            ([, content]) =>
+              (content.sectionId !== undefined && allowedSubSectionIds.has(content.sectionId)) ||
+              (content.sectionId === undefined && content.displayTitle === activeSectionName)
+          )
+        : activeSectionName
+        ? allSectionEntries.filter(([secKey, content]) => secKey === activeSectionName || content.displayTitle === activeSectionName)
+        : allSectionEntries;
 
-    // Calculate course assignment stats
-    const totalAssignments = courseAssignments.length;
-    const submittedCount = courseAssignments.filter((a) => a.status === 'Submitted').length;
-    const pendingCount = totalAssignments - submittedCount;
+    // Calculate course assignment stats (exclude hidden tasks from active tracking & gaps count)
+    const visibleAssignments = courseAssignments.filter((a) => !a.isHidden);
+    const totalAssignments = visibleAssignments.length;
+    const submittedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+    const pendingCount = Math.max(0, totalAssignments - submittedCount);
     const gradedAssignments = courseAssignments.filter(
       (a) => a.grade !== null && a.grade !== undefined && a.grade_max
     );
@@ -924,19 +999,21 @@ export default function CoursesScreen({
                       style={[
                         styles.navPill,
                         {
-                          backgroundColor: activeSectionName === null ? courseColor : theme.backgroundElement,
-                          borderColor: activeSectionName === null ? courseColor : theme.border,
+                          backgroundColor: activeSectionName === null && activeTopSectionId === null ? courseColor : theme.backgroundElement,
+                          borderColor: activeSectionName === null && activeTopSectionId === null ? courseColor : theme.border,
                         },
                       ]}
                       onPress={() => {
                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setActiveTopSectionId(null);
+                        setActiveSubSectionId(null);
                         setActiveSectionName(null);
                       }}
                     >
                       <Text
                         style={{
-                          color: activeSectionName === null ? '#ffffff' : theme.text,
-                          fontWeight: activeSectionName === null ? 'bold' : 'normal',
+                          color: activeSectionName === null && activeTopSectionId === null ? '#ffffff' : theme.text,
+                          fontWeight: activeSectionName === null && activeTopSectionId === null ? 'bold' : 'normal',
                           fontSize: 12,
                         }}
                       >
@@ -944,37 +1021,139 @@ export default function CoursesScreen({
                       </Text>
                     </Pressable>
 
-                    {/* Section Pills */}
-                    {allSectionEntries.map(([secName]) => {
-                      const isSelected = activeSectionName === secName;
-                      return (
-                        <Pressable
-                          key={secName}
-                          style={[
-                            styles.navPill,
-                            {
-                              backgroundColor: isSelected ? courseColor : theme.backgroundElement,
-                              borderColor: isSelected ? courseColor : theme.border,
-                            },
-                          ]}
-                          onPress={() => {
-                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                            setActiveSectionName(isSelected ? null : secName);
+                    {/* Section Pills (Top-Level when hierarchy exists, otherwise all entries) */}
+                    {topSections.length > 0
+                      ? topSections.map((sec: any) => {
+                          const isSelected = activeTopSectionId === sec.id;
+                          return (
+                            <Pressable
+                              key={sec.id}
+                              style={[
+                                styles.navPill,
+                                {
+                                  backgroundColor: isSelected ? courseColor : theme.backgroundElement,
+                                  borderColor: isSelected ? courseColor : theme.border,
+                                },
+                              ]}
+                              onPress={() => {
+                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                setActiveTopSectionId(isSelected ? null : sec.id);
+                                setActiveSubSectionId(null);
+                                setActiveSectionName(isSelected ? null : sec.name);
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: isSelected ? '#ffffff' : theme.text,
+                                  fontWeight: isSelected ? 'bold' : 'normal',
+                                  fontSize: 12,
+                                }}
+                              >
+                                {sec.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })
+                      : allSectionEntries.map(([secKey, content]) => {
+                          const isSelected = activeSectionName === secKey;
+                          return (
+                            <Pressable
+                              key={secKey}
+                              style={[
+                                styles.navPill,
+                                {
+                                  backgroundColor: isSelected ? courseColor : theme.backgroundElement,
+                                  borderColor: isSelected ? courseColor : theme.border,
+                                },
+                              ]}
+                              onPress={() => {
+                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                setActiveSectionName(isSelected ? null : secKey);
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: isSelected ? '#ffffff' : theme.text,
+                                  fontWeight: isSelected ? 'bold' : 'normal',
+                                  fontSize: 12,
+                                }}
+                              >
+                                {content.displayTitle}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                  </ScrollView>
+
+                  {activeTopSectionId !== null && currentSubSections.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 6 }}
+                      contentContainerStyle={{
+                        flexDirection: isRtl ? 'row-reverse' : 'row',
+                        gap: 6,
+                        paddingVertical: 2,
+                      }}
+                    >
+                      <Pressable
+                        style={[
+                          styles.navPill,
+                          {
+                            backgroundColor: activeSubSectionId === null ? courseColor : theme.backgroundElement,
+                            borderColor: activeSubSectionId === null ? courseColor : theme.border,
+                            paddingVertical: 4,
+                            paddingHorizontal: 10,
+                          },
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setActiveSubSectionId(null);
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: activeSubSectionId === null ? '#ffffff' : theme.text,
+                            fontWeight: activeSubSectionId === null ? 'bold' : 'normal',
+                            fontSize: 11,
                           }}
                         >
-                          <Text
-                            style={{
-                              color: isSelected ? '#ffffff' : theme.text,
-                              fontWeight: isSelected ? 'bold' : 'normal',
-                              fontSize: 12,
+                          {isRtl ? 'כל תתי-הנושאים' : 'All Subtopics'}
+                        </Text>
+                      </Pressable>
+                      {currentSubSections.map((sub: any) => {
+                        const isSubSelected = activeSubSectionId === sub.id;
+                        return (
+                          <Pressable
+                            key={sub.id}
+                            style={[
+                              styles.navPill,
+                              {
+                                backgroundColor: isSubSelected ? courseColor : theme.backgroundElement,
+                                borderColor: isSubSelected ? courseColor : theme.border,
+                                paddingVertical: 4,
+                                paddingHorizontal: 10,
+                              },
+                            ]}
+                            onPress={() => {
+                              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                              setActiveSubSectionId(isSubSelected ? null : sub.id);
                             }}
                           >
-                            {secName}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+                            <Text
+                              style={{
+                                color: isSubSelected ? '#ffffff' : theme.text,
+                                fontWeight: isSubSelected ? 'bold' : 'normal',
+                                fontSize: 11,
+                              }}
+                            >
+                              {sub.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </View>
               )}
 
@@ -986,9 +1165,13 @@ export default function CoursesScreen({
                   </Text>
                 </View>
               ) : (
-                sectionEntries.map(([secName, content], secIdx) => {
-                  const isCollapsed = Boolean(collapsedSections[secName]);
-                  const itemCount = content.assignments.length + content.files.length;
+                sectionEntries.map(([secKey, content], secIdx) => {
+                  const isCollapsed = Boolean(collapsedSections[secKey]);
+                  const itemCount =
+                    content.assignments.length +
+                    content.files.length +
+                    (content.folders?.length || 0) +
+                    (content.links?.length || 0);
 
                   return (
                     <View
@@ -1011,7 +1194,7 @@ export default function CoursesScreen({
                             borderBottomWidth: isCollapsed ? 0 : 1,
                           },
                         ]}
-                        onPress={() => toggleCollapseSection(secName)}
+                        onPress={() => toggleCollapseSection(secKey)}
                       >
                         <View
                           style={{
@@ -1029,7 +1212,7 @@ export default function CoursesScreen({
                               textAlign: isRtl ? 'right' : 'left',
                             }}
                           >
-                            {secName}
+                            {content.displayTitle}
                           </Text>
                           <View
                             style={{
@@ -1287,7 +1470,108 @@ export default function CoursesScreen({
                             );
                           })}
 
-                          {content.assignments.length === 0 && content.files.length === 0 && (
+                          {/* Section Folders */}
+                          {content.folders && content.folders.map((fld: any) => {
+                            const isDownloading = downloadingFolderId === fld.id;
+                            return (
+                              <Pressable
+                                key={fld.id}
+                                style={[
+                                  styles.fileRow,
+                                  {
+                                    backgroundColor: theme.background,
+                                    borderColor: theme.border,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                  },
+                                ]}
+                                onPress={() => handleDownloadFolderZip(fld)}
+                                disabled={isDownloading}
+                              >
+                                <Text style={{ fontSize: 16 }}>📁</Text>
+                                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                                  <Text
+                                    style={{
+                                      color: theme.text,
+                                      fontSize: 13,
+                                      fontWeight: '600',
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {fld.name}
+                                  </Text>
+                                  <Text
+                                    style={{
+                                      color: theme.textSecondary,
+                                      fontSize: 11,
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                  >
+                                    {fld.files ? fld.files.length : 0} {isRtl ? 'קבצים' : 'files'}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.smallActionBtn,
+                                    { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
+                                  ]}
+                                >
+                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                    {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+
+                          {/* Section Links */}
+                          {content.links && content.links.map((lnk: any) => {
+                            let icon = '🔗';
+                            if (lnk.link_kind === 'drive') icon = '📁';
+                            else if (lnk.link_kind === 'github') icon = '💻';
+                            else if (lnk.link_kind === 'zoom') icon = '📹';
+                            return (
+                              <Pressable
+                                key={lnk.id}
+                                style={[
+                                  styles.fileRow,
+                                  {
+                                    backgroundColor: theme.background,
+                                    borderColor: theme.border,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                  },
+                                ]}
+                                onPress={() => lnk.target_url && Linking.openURL(lnk.target_url)}
+                              >
+                                <Text style={{ fontSize: 16 }}>{icon}</Text>
+                                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                                  <Text
+                                    style={{
+                                      color: theme.text,
+                                      fontSize: 13,
+                                      fontWeight: '600',
+                                      textAlign: isRtl ? 'right' : 'left',
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {lnk.name}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.smallActionBtn,
+                                    { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                                  ]}
+                                >
+                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                    {isRtl ? 'פתח קישור' : 'Open Link'}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+
+                          {content.assignments.length === 0 && content.files.length === 0 && (!content.folders || content.folders.length === 0) && (!content.links || content.links.length === 0) && (
                             <Text
                               style={{
                                 color: theme.textSecondary,
@@ -1589,23 +1873,38 @@ export default function CoursesScreen({
                             const uncompletedStr = getPreference('uncompleted_assignments');
                             let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
 
+                            let willBeCompleted = false;
                             if (rawMoodleSubmitted) {
                               if (uncompletedList.includes(a.moodle_assign_id)) {
                                 uncompletedList = uncompletedList.filter((id: number) => id !== a.moodle_assign_id);
+                                willBeCompleted = true;
                               } else {
                                 uncompletedList.push(a.moodle_assign_id);
+                                willBeCompleted = false;
                               }
                               setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
                               markSettingUpdatedAndSync(['uncompletedAssignments']);
                             } else {
                               if (completedList.includes(a.moodle_assign_id)) {
                                 completedList = completedList.filter((id: number) => id !== a.moodle_assign_id);
+                                willBeCompleted = false;
                               } else {
                                 completedList.push(a.moodle_assign_id);
+                                willBeCompleted = true;
                               }
                               setPreference('completed_assignments', JSON.stringify(completedList));
                               markSettingUpdatedAndSync(['completedAssignments']);
                             }
+
+                            if (a.requires_manual_completion && a.cmid) {
+                              getMoodleToken().then((tok) => {
+                                if (!tok) return;
+                                const instanceBaseUrl = a.link ? new URL(a.link).origin : undefined;
+                                const client = new MoodleClient(tok, instanceBaseUrl);
+                                client.updateActivityCompletionManually(a.cmid, willBeCompleted).catch(() => {});
+                              }).catch(() => {});
+                            }
+
                             setRefreshKey(prev => prev + 1);
                           }}
                         >

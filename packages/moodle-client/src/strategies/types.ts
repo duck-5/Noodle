@@ -5,6 +5,8 @@ import {
   RawSubmissionStatus,
   RawGradeReportResponse,
   RawCourseSection,
+  RawMoodleQuiz,
+  RawMoodleQuizAttempt,
 } from '../moodleApi.js';
 
 export class UnsupportedStrategyError extends Error {
@@ -28,6 +30,7 @@ export interface StrategyContext {
   baseUrl: string;
   devMode?: boolean;
   enableScraping?: boolean;
+  lang?: 'he' | 'en';
 }
 
 export interface IMoodleStrategy {
@@ -39,6 +42,10 @@ export interface IMoodleStrategy {
   getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus>;
   getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse>;
   getCourseContents(courseId: number): Promise<RawCourseSection[]>;
+  getQuizzes?(courseIds: number[]): Promise<RawMoodleQuiz[]>;
+  getQuizAttempts?(quizId: number): Promise<RawMoodleQuizAttempt[]>;
+  updateActivityCompletionManually?(cmid: number, completed: boolean): Promise<boolean>;
+
   uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }>;
   saveSubmission(assignId: number, itemId: number): Promise<any>;
   submitForGrading(assignId: number): Promise<any>;

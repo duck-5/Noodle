@@ -1,5 +1,23 @@
-import { MoodleClient, RawGradeItem, RawMoodleAssignment } from './moodleApi.js';
-import { SyncResult, Assignment, CourseFile, ZoomMeeting, PanoptoRecording, SyncError, MoodleCredentials, Attachment } from './types.js';
+import { MoodleClient, RawGradeItem, RawMoodleAssignment, RawMoodleQuiz } from './moodleApi.js';
+import {
+  SyncResult,
+  Assignment,
+  CourseFile,
+  CourseSection,
+  CourseFolder,
+  CourseFolderFile,
+  CourseLink,
+  CourseAnnouncement,
+  CourseGradeSummary,
+  CourseGradeItem,
+  ZoomMeeting,
+  PanoptoRecording,
+  SyncError,
+  MoodleCredentials,
+  Attachment,
+} from './types.js';
+import { fetchCourseFormatState, fetchSesskeyFromJar, ParsedCourseFormatState } from './courseFormatState.js';
+import { buildAuthenticatedFileUrl } from './zipBuilder.js';
 import { parseTauCourseMetadata } from './courseParser.js';
 import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml, decodeHTMLEntities } from './zoomScraper.js';
 import {
@@ -21,6 +39,24 @@ import {
   discoverCourseFolderFromBrowse,
 } from './panoptoScraper.js';
 
+export function cleanMoodleString(raw: string, lang: 'he' | 'en' = 'he'): string {
+  if (!raw) return '';
+  let str = raw;
+  if (str.includes('class="multilang"') || str.includes("class='multilang'")) {
+    const langMatch = str.match(new RegExp(`<span[^>]*\\blang=["']${lang}["'][^>]*>([\\s\\S]*?)<\\/span>`, 'i'));
+    if (langMatch && langMatch[1]) {
+      str = langMatch[1];
+    } else {
+      const anyMatch = str.match(/<span[^>]*\bclass=["']multilang["'][^>]*>([\s\S]*?)<\/span>/i);
+      if (anyMatch && anyMatch[1]) {
+        str = anyMatch[1];
+      }
+    }
+  }
+  str = str.replace(/<[^>]+>/g, '');
+  return decodeHTMLEntities(str).trim();
+}
+
 // Dependency-free batch promise runner to limit concurrency and avoid Moodle rate limits
 async function batchPromises<T, R>(
   items: T[],
@@ -41,6 +77,7 @@ export interface RunSyncOptions {
   enablePanopto?: boolean;
   coursesPanoptoMap?: Record<number, string>;
   onEnsurePanoptoAuth?: (forceRefresh?: boolean) => Promise<boolean>;
+  lang?: 'he' | 'en';
 }
 
 export async function runSync(
@@ -57,19 +94,29 @@ export async function runSync(
   const enableScraping = options?.enableScraping ?? false;
   const enablePanopto = options?.enablePanopto ?? false;
   const coursesPanoptoMap = options?.coursesPanoptoMap || {};
-  const client = new MoodleClient(token, baseUrl, { sesskey, devMode: false, enableScraping });
+  const client = new MoodleClient(token, baseUrl, {
+    sesskey,
+    devMode: false,
+    enableScraping,
+    lang: options?.lang,
+  });
   const errors: SyncError[] = [];
   const assignments: Assignment[] = [];
   const files: CourseFile[] = [];
   const meetings: ZoomMeeting[] = [];
   const recordings: PanoptoRecording[] = [];
+  const folders: CourseFolder[] = [];
+  const links: CourseLink[] = [];
+  const sections: CourseSection[] = [];
+  const announcements: CourseAnnouncement[] = [];
+  const gradeSummaries: Record<number, CourseGradeSummary> = {};
 
   let scrapedMeetingsJar: CookieJar | null = null;
   let didAttemptLogin = false;
   let panoptoAuthPromise: Promise<boolean> | null = null;
 
   const getScrapeJar = async (): Promise<CookieJar | null> => {
-    if (!enableScraping && !enablePanopto) return null;
+    if (!enableScraping && !enablePanopto && !creds && !moodleCookies) return null;
     if (scrapedMeetingsJar) return scrapedMeetingsJar;
 
     const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
@@ -153,7 +200,15 @@ export async function runSync(
   }
 
   onProgress('Fetching course mapping...');
-  const courseMap = new Map<number, { display_name: string; name: string; courseCode?: string; year?: string; instanceUrl?: string }>();
+  const courseMap = new Map<number, {
+    display_name: string;
+    name: string;
+    courseCode?: string;
+    year?: string;
+    instanceUrl?: string;
+    format?: string;
+    coursecategory?: string;
+  }>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {
@@ -188,11 +243,13 @@ export async function runSync(
     return rawNameFromAssign || `Course ${moodleCourseId}`;
   };
 
-  onProgress('Fetching assignments and grades...');
+  onProgress('Fetching assignments, quizzes, and grades...');
   let rawAssignments: RawMoodleAssignment[] = [];
-  const rawOrderMap = new Map<number, number>();
+  let rawQuizzes: RawMoodleQuiz[] = [];
+  const rawOrderMap = new Map<string, number>();
   let nextOrderIndex = 0;
   const gradesByCmid = new Map<number, RawGradeItem>();
+  const moduleCompletionMap = new Map<number, { completion?: number; completiondata?: any }>();
 
   await Promise.all([
     (async () => {
@@ -201,9 +258,17 @@ export async function runSync(
         for (const courseObj of assignmentsResp.courses) {
           if (trackedCourseIds.includes(courseObj.id)) {
             for (const assign of courseObj.assignments) {
-              rawAssignments.push(assign);
-              if (!rawOrderMap.has(assign.id)) {
-                rawOrderMap.set(assign.id, nextOrderIndex++);
+              const alreadyHas = rawAssignments.some(
+                (a) =>
+                  (assign.id && a.id === assign.id && a.course === courseObj.id) ||
+                  (assign.cmid && a.cmid && a.cmid === assign.cmid)
+              );
+              if (!alreadyHas) {
+                rawAssignments.push(assign);
+                const uid = `assign:${assign.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
+                }
               }
             }
           }
@@ -215,15 +280,69 @@ export async function runSync(
         });
       }
     })(),
+    (async () => {
+      try {
+        const quizzes = await client.getQuizzes(trackedCourseIds);
+        rawQuizzes = quizzes || [];
+        for (const q of rawQuizzes) {
+          const uid = `quiz:${q.id}`;
+          if (!rawOrderMap.has(uid)) {
+            rawOrderMap.set(uid, nextOrderIndex++);
+          }
+        }
+      } catch (err: any) {
+        errors.push({
+          context: 'Processing quizzes',
+          message: err.message,
+        });
+      }
+    })(),
     batchPromises(trackedCourseIds, 100, async (courseId) => {
       try {
         const gradesResp = await client.getGradeItems(courseId, userId);
         for (const userGrade of gradesResp.usergrades) {
+          const cId = userGrade.courseid;
+          let courseTotalFormatted: string | null = null;
+          let courseTotalRaw: number | null = null;
+          let courseTotalMax: number | null = null;
+          let hasCourseTotal = false;
+          const items: CourseGradeItem[] = [];
+
           for (const item of userGrade.gradeitems) {
-            if (item.itemtype === 'mod' && item.itemmodule === 'assign' && item.cmid !== null) {
+            if (item.itemtype === 'course') {
+              hasCourseTotal = true;
+              courseTotalFormatted = item.gradeformatted || null;
+              courseTotalRaw = item.graderaw;
+              courseTotalMax = item.grademax;
+            }
+
+            const isBonus = /בונוס|bonus/i.test(item.itemname || '');
+
+            if (item.itemtype === 'mod' && item.cmid !== null) {
               gradesByCmid.set(Number(item.cmid), item);
             }
+
+            items.push({
+              cmid: item.cmid !== null ? Number(item.cmid) : null,
+              itemName: cleanMoodleString(item.itemname || ''),
+              itemType: item.itemtype,
+              itemModule: item.itemmodule,
+              gradeFormatted: item.gradeformatted || '-',
+              gradeRaw: item.graderaw,
+              gradeMax: item.grademax,
+              isBonus,
+              feedback: item.feedback ? cleanMoodleString(item.feedback) : undefined,
+            });
           }
+
+          gradeSummaries[cId] = {
+            courseId: cId,
+            courseTotalFormatted,
+            courseTotalRaw,
+            courseTotalMax,
+            hasCourseTotal,
+            items,
+          };
         }
       } catch (err: any) {
         errors.push({
@@ -236,9 +355,17 @@ export async function runSync(
 
   onProgress(`Fetching contents and submission statuses for ${trackedCourseIds.length} courses...`);
   const cmidToSectionMap = new Map<number, string>();
+  const cmidToSectionIdMap = new Map<number, number>();
   const now = new Date();
+  const seenProcessedAssignKeys = new Set<string>();
+  const seenProcessedQuizKeys = new Set<string>();
 
   const processAssignment = async (assign: RawMoodleAssignment, sectionName?: string) => {
+    const key = assign.cmid ? `cmid:${assign.cmid}` : `id:${assign.course}:${assign.id}`;
+    if (seenProcessedAssignKeys.has(key)) return;
+    seenProcessedAssignKeys.add(key);
+    if (assign.cmid) seenProcessedAssignKeys.add(`cmid:${assign.cmid}`);
+    if (assign.id) seenProcessedAssignKeys.add(`id:${assign.course}:${assign.id}`);
     let subStatus = 'new';
     let extensionDueDate = 0;
     let submittedFiles: Attachment[] | undefined = undefined;
@@ -295,10 +422,16 @@ export async function runSync(
     const gradeInfo = gradesByCmid.get(Number(assign.cmid));
     let grade: number | null = null;
     let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = /בונוס|bonus/i.test(assign.name || '');
 
     if (gradeInfo && !gradeInfo.gradeishidden) {
       grade = gradeInfo.graderaw;
       gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
+        isBonus = true;
+      }
     }
 
     let attachments = assign.introattachments
@@ -330,7 +463,7 @@ export async function runSync(
       cmid: assign.cmid,
       courseId: assign.course,
       courseName: getCourseDisplayName(assign.course),
-      name: decodeHTMLEntities(assign.name || ''),
+      name: cleanMoodleString(assign.name || ''),
       status,
       submittedFiles,
       deadline: deadlineIso,
@@ -339,10 +472,117 @@ export async function runSync(
       grade,
       gradeMax,
       attachments,
-      sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid))
+      sectionId: cmidToSectionIdMap.get(Number(assign.cmid)),
+      sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid)),
+      activityType: 'assign',
+      uid: `assign:${assign.id}`,
+      isCompleted: status === 'Submitted',
+      feedback,
+      isBonus,
     };
 
     assignments.push(processedAssign);
+    if (onPartialSync) {
+      onPartialSync({ assignments: [...assignments] });
+    }
+  };
+
+  const processQuiz = async (quiz: RawMoodleQuiz, sectionName?: string) => {
+    const key = quiz.coursemodule ? `cmid:${quiz.coursemodule}` : `id:${quiz.course}:${quiz.id}`;
+    if (seenProcessedQuizKeys.has(key)) return;
+    seenProcessedQuizKeys.add(key);
+    if (quiz.coursemodule) seenProcessedQuizKeys.add(`cmid:${quiz.coursemodule}`);
+    if (quiz.id) seenProcessedQuizKeys.add(`id:${quiz.course}:${quiz.id}`);
+
+    let hasFinished = false;
+    try {
+      const attempts = await client.getQuizAttempts(quiz.id);
+      hasFinished = attempts.some((att) => att.state === 'finished');
+    } catch (err: any) {
+      errors.push({
+        context: `Fetching attempts for quiz ${quiz.name} (id: ${quiz.id})`,
+        message: err.message,
+      });
+    }
+
+    const cmid = quiz.coursemodule;
+    const completionInfo = moduleCompletionMap.get(cmid);
+    const effectiveCompletion = completionInfo?.completion ?? quiz.completion;
+    const effectiveCompletionData = completionInfo?.completiondata ?? quiz.completiondata;
+    const requiresManualCompletion = effectiveCompletion === 1;
+    const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
+    if (hasFinished) {
+      status = 'Submitted';
+    } else if (requiresManualCompletion && isManualCompletionDone) {
+      status = 'Submitted';
+    }
+
+    const closeTs = quiz.timeclose || 0;
+    let deadlineIso: string | null = null;
+    if (closeTs > 0) {
+      const closeDate = new Date(closeTs * 1000);
+      deadlineIso = closeDate.toISOString();
+      if (status !== 'Submitted' && closeDate < now) {
+        status = 'Not submitted';
+      }
+    }
+
+    const openTs = quiz.timeopen || 0;
+    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
+
+    const gradeInfo = gradesByCmid.get(Number(cmid));
+    let grade: number | null = null;
+    let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = /בונוס|bonus/i.test(quiz.name || '');
+    if (gradeInfo && !gradeInfo.gradeishidden) {
+      grade = gradeInfo.graderaw;
+      gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
+        isBonus = true;
+      }
+    } else if (quiz.sumgrades !== undefined && quiz.sumgrades !== null) {
+      gradeMax = quiz.sumgrades;
+    }
+
+    const courseInfo = courseMap.get(quiz.course);
+    const quizBaseUrl = courseInfo?.instanceUrl
+      ? courseInfo.instanceUrl
+      : courseInfo?.year && courseInfo.year !== String(new Date().getFullYear())
+      ? `https://moodle.tau.ac.il/${courseInfo.year}`
+      : 'https://moodle.tau.ac.il';
+
+    const processedQuiz: Assignment = {
+      id: quiz.id,
+      cmid: quiz.coursemodule,
+      courseId: quiz.course,
+      courseName: getCourseDisplayName(quiz.course),
+      name: cleanMoodleString(quiz.name || ''),
+      status,
+      deadline: deadlineIso,
+      opened: openedIso,
+      link: `${quizBaseUrl}/mod/quiz/view.php?id=${quiz.coursemodule}`,
+      grade,
+      gradeMax,
+      feedback,
+      isBonus: isBonus || undefined,
+      sectionId: cmidToSectionIdMap.get(Number(quiz.coursemodule)),
+      sectionName: sectionName || cmidToSectionMap.get(Number(quiz.coursemodule)),
+      activityType: 'quiz',
+      uid: `quiz:${quiz.id}`,
+      timeLimitSeconds: quiz.timelimit > 0 ? quiz.timelimit : undefined,
+      attemptsAllowed: quiz.attempts > 0 ? quiz.attempts : undefined,
+      hasFinishedAttempt: hasFinished,
+      requiresManualCompletion,
+      isManualCompletionDone,
+      completionTracking: effectiveCompletion,
+      isCompleted: status === 'Submitted',
+    };
+
+    assignments.push(processedQuiz);
     if (onPartialSync) {
       onPartialSync({ assignments: [...assignments] });
     }
@@ -357,14 +597,9 @@ export async function runSync(
     }
   }
 
-  await Promise.all([
-    // Process known assignments from getAssignments
-    batchPromises(rawAssignments, 50, async (assign) => {
-      await processAssignment(assign);
-    }),
-
-    // Process course contents to find files, zoom meetings, and missing assignments
-    batchPromises(trackedCourseIds, 20, async (courseId) => {
+  // Stage 1: Fetch course contents & format state first so cmidToSectionMap,
+  // cmidToSectionIdMap, moduleCompletionMap, and fallback activities are populated
+  await batchPromises(trackedCourseIds, 20, async (courseId) => {
       const courseName = getCourseDisplayName(courseId);
       const courseInfo = courseMap.get(courseId);
       const courseBaseUrl = courseInfo?.instanceUrl
@@ -413,12 +648,72 @@ export async function runSync(
       };
 
       try {
-        const sections = await client.getCourseContents(courseId);
-        for (const section of sections) {
-          const sectionName = section.name || '';
+        let formatState: ParsedCourseFormatState | null = null;
+        if (sesskey) {
+          try {
+            formatState = await fetchCourseFormatState({
+              instanceBaseUrl: courseBaseUrl,
+              courseId,
+              sesskey,
+            });
+          } catch {
+            // Non-critical, fallback to flat sections
+          }
+        }
+
+        const rawSections = await client.getCourseContents(courseId);
+        // Map Moodle 4.5+ mod_subsection modules to their delegated child sections
+        const subsectionParentBySectionId = new Map<number, number>();
+        const subsectionParentByTitle = new Map<string, number>();
+        for (const sec of rawSections) {
+          for (const mod of sec.modules || []) {
+            if (mod.modname === 'subsection') {
+              if (mod.customdata) {
+                try {
+                  const cd = typeof mod.customdata === 'string' ? JSON.parse(mod.customdata) : mod.customdata;
+                  const targetSecId = Number(cd?.sectionid || cd?.section);
+                  if (!isNaN(targetSecId) && targetSecId > 0) {
+                    subsectionParentBySectionId.set(targetSecId, sec.id);
+                  }
+                } catch {
+                  // Ignore JSON parse error and fallback to title
+                }
+              }
+              if (mod.name) {
+                subsectionParentByTitle.set(cleanMoodleString(mod.name), sec.id);
+              }
+            }
+          }
+        }
+
+        for (const section of rawSections) {
+          const sectionName = cleanMoodleString(section.name || '');
           if (sectionName && !courseSectionNames.includes(sectionName)) {
             courseSectionNames.push(sectionName);
           }
+
+          const secState = formatState?.sections.get(section.id);
+          const isSubMod = (section as any).component === 'mod_subsection' ||
+            subsectionParentBySectionId.has(section.id) ||
+            subsectionParentByTitle.has(sectionName);
+          const inferredParentId = secState?.parentSectionId ??
+            subsectionParentBySectionId.get(section.id) ??
+            subsectionParentByTitle.get(sectionName) ??
+            null;
+          sections.push({
+            id: section.id,
+            courseId,
+            sectionNumber: section.section ?? 0,
+            name: sectionName || (section.section === 0 ? 'כללי' : `נושא ${section.section}`),
+            summaryHtml: section.summary ? cleanMoodleString(section.summary) : undefined,
+            parentSectionId: inferredParentId,
+            level: (secState?.level === 1 || inferredParentId !== null || isSubMod) ? 1 : 0,
+            isSubsectionModule: isSubMod || undefined,
+            sectionUrl: secState?.sectionUrl || `${courseBaseUrl}/course/view.php?id=${courseId}&section=${section.section}`,
+            visible: (section as any).uservisible !== undefined
+              ? Boolean((section as any).uservisible)
+              : (section.visible !== undefined ? section.visible !== 0 || Boolean(isSubMod) || ((section.modules?.length ?? 0) > 0) : true),
+          });
 
           // 1. Scan section summary for embedded Zoom & Panopto links
           if (section.summary) {
@@ -473,10 +768,78 @@ export async function runSync(
               }
             }
 
+            if (modname === 'forum') {
+              const ANNOUNCEMENTS_REGEX = /לוח\s+מודעות|הודעות\s+הקורס|הודעות\s+ודרשות|announcements|news\s+forum/i;
+              if (ANNOUNCEMENTS_REGEX.test(name)) {
+                announcements.push({
+                  id: module.id,
+                  courseId,
+                  name: cleanMoodleString(name),
+                  moodleUrl: `${courseBaseUrl}/mod/forum/view.php?id=${module.id}`,
+                });
+              }
+            }
+
+            if (modname === 'quiz') {
+              cmidToSectionMap.set(module.id, sectionName);
+              cmidToSectionIdMap.set(module.id, section.id);
+              if (module.completion !== undefined || module.completiondata) {
+                moduleCompletionMap.set(module.id, {
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                });
+              }
+              const existingQuiz = rawQuizzes.find(
+                (q) =>
+                  (module.instance && q.id === module.instance) ||
+                  (q.coursemodule && q.coursemodule === module.id) ||
+                  (q.course === courseId && q.name === name)
+              );
+              if (existingQuiz) {
+                if (!existingQuiz.coursemodule) {
+                  existingQuiz.coursemodule = module.id;
+                }
+              } else {
+                const synthQuiz: RawMoodleQuiz = {
+                  id: module.instance || module.id,
+                  course: courseId,
+                  coursemodule: module.id,
+                  name: name,
+                  timeopen: 0,
+                  timeclose: 0,
+                  timelimit: 0,
+                  attempts: 0,
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                };
+                const uid = `quiz:${synthQuiz.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
+                }
+                rawQuizzes.push(synthQuiz);
+              }
+            }
+
             if (modname === 'assign') {
               cmidToSectionMap.set(module.id, sectionName);
-              const exists = rawAssignments.some(a => a.cmid === module.id);
-              if (!exists) {
+              cmidToSectionIdMap.set(module.id, section.id);
+              if (module.completion !== undefined || module.completiondata) {
+                moduleCompletionMap.set(module.id, {
+                  completion: module.completion,
+                  completiondata: module.completiondata,
+                });
+              }
+              const existingAssign = rawAssignments.find(
+                (a) =>
+                  (module.instance && a.id === module.instance) ||
+                  (a.cmid && a.cmid === module.id) ||
+                  (a.course === courseId && a.name === name)
+              );
+              if (existingAssign) {
+                if (!existingAssign.cmid) {
+                  existingAssign.cmid = module.id;
+                }
+              } else {
                 const newAssign: RawMoodleAssignment = {
                   id: module.instance || module.id,
                   cmid: module.id,
@@ -486,11 +849,11 @@ export async function runSync(
                   cutoffdate: 0,
                   allowsubmissionsfromdate: 0
                 };
-                if (!rawOrderMap.has(newAssign.id)) {
-                  rawOrderMap.set(newAssign.id, nextOrderIndex++);
+                const uid = `assign:${newAssign.id}`;
+                if (!rawOrderMap.has(uid)) {
+                  rawOrderMap.set(uid, nextOrderIndex++);
                 }
-                // It was discovered here, process it right away
-                await processAssignment(newAssign, sectionName);
+                rawAssignments.push(newAssign);
               }
             }
 
@@ -498,10 +861,13 @@ export async function runSync(
               for (const content of module.contents) {
                 if (content.type === 'file') {
                   const newFile: CourseFile = {
+                    id: module.id,
                     fileName: content.filename || '',
                     fileUrl: content.fileurl || '',
                     fileSize: content.filesize || 0,
                     mimeType: content.mimetype || 'application/octet-stream',
+                    sectionId: section.id,
+                    sectionNumber: section.section,
                     sectionName,
                     timeModified: content.timemodified || 0,
                     courseId,
@@ -510,6 +876,86 @@ export async function runSync(
                   files.push(newFile);
                   if (onPartialSync) onPartialSync({ files: [...files] });
                 }
+              }
+            }
+
+            // --- FOLDER DETECTION (mod_folder) ---
+            if (modname === 'folder' && module.contents) {
+              const folderFiles: CourseFolderFile[] = [];
+              let totalFolderSize = 0;
+              for (const c of module.contents) {
+                if (c.type === 'file') {
+                  const fileSize = c.filesize || 0;
+                  totalFolderSize += fileSize;
+                  folderFiles.push({
+                    fileName: c.filename || '',
+                    relativePath: c.filepath ? c.filepath.replace(/^\/+/, '') : '',
+                    fileSize,
+                    fileUrl: c.fileurl || '',
+                    downloadUrl: buildAuthenticatedFileUrl(c.fileurl || '', token),
+                    timeModified: c.timemodified || 0,
+                    mimeType: c.mimetype || 'application/octet-stream',
+                  });
+
+                  files.push({
+                    id: module.id,
+                    fileName: c.filename || '',
+                    fileUrl: c.fileurl || '',
+                    downloadUrl: buildAuthenticatedFileUrl(c.fileurl || '', token),
+                    fileSize,
+                    mimeType: c.mimetype || 'application/octet-stream',
+                    sectionId: section.id,
+                    sectionNumber: section.section,
+                    sectionName,
+                    folderId: module.id,
+                    folderName: name,
+                    relativePath: c.filepath ? c.filepath.replace(/^\/+/, '') : '',
+                    timeModified: c.timemodified || 0,
+                    courseId,
+                    courseName,
+                  });
+                }
+              }
+
+              const newFolder: CourseFolder = {
+                id: module.id,
+                instanceId: module.instance || module.id,
+                courseId,
+                courseName,
+                sectionId: section.id,
+                sectionName,
+                name: cleanMoodleString(name),
+                descriptionHtml: module.description ? cleanMoodleString(module.description) : undefined,
+                moodleUrl: `${courseBaseUrl}/mod/folder/view.php?id=${module.id}`,
+                files: folderFiles,
+                totalSize: totalFolderSize,
+              };
+              folders.push(newFolder);
+              if (onPartialSync) onPartialSync({ folders: [...folders], files: [...files] });
+            }
+
+            // --- EXTERNAL LINK DETECTION (mod_url) ---
+            if (modname === 'url') {
+              const targetUrl = module.contents?.[0]?.fileurl || module.url || '';
+              let linkKind: 'zoom' | 'panopto' | 'drive' | 'github' | 'external' = 'external';
+              if (isZoomUrl(targetUrl)) linkKind = 'zoom';
+              else if (isPanoptoUrl(targetUrl)) linkKind = 'panopto';
+              else if (/drive\.google\.com/i.test(targetUrl)) linkKind = 'drive';
+              else if (/github\.com/i.test(targetUrl)) linkKind = 'github';
+
+              if (targetUrl) {
+                links.push({
+                  id: module.id,
+                  courseId,
+                  courseName,
+                  sectionId: section.id,
+                  sectionName,
+                  name: cleanMoodleString(name),
+                  targetUrl,
+                  moodleUrl: `${courseBaseUrl}/mod/url/view.php?id=${module.id}`,
+                  linkKind,
+                });
+                if (onPartialSync) onPartialSync({ links: [...links] });
               }
             }
 
@@ -646,6 +1092,9 @@ export async function runSync(
               }
             }
           }
+        }
+        if (onPartialSync && sections.length > 0) {
+          onPartialSync({ sections: [...sections] });
         }
       } catch (err: any) {
         errors.push({
@@ -882,7 +1331,16 @@ export async function runSync(
           });
         }
       }
-    })
+    });
+
+  // Stage 2: Process all assignments and quizzes now that section & completion maps are populated
+  await Promise.all([
+    batchPromises(rawAssignments, 50, async (assign) => {
+      await processAssignment(assign);
+    }),
+    batchPromises(rawQuizzes, 30, async (quiz) => {
+      await processQuiz(quiz);
+    }),
   ]);
 
   // Sync sectionName for known assignments in case contents finished after assignment processed
@@ -893,10 +1351,59 @@ export async function runSync(
     }
   }
 
+  // Late Submission Box Auto-Suppression Heuristic
+  const LATE_BOX_REGEX = /הגשה\s+באיחור|תיבת\s+הגשה\s+באיחור|הגשה\s+מאוחרת|מועד\s+מיוחד|late\s+submission/i;
+
+  const normalizeTitle = (title: string): string => {
+    return title
+      .replace(LATE_BOX_REGEX, '')
+      .replace(/[-–—:()\[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  };
+
+  const isWordBoundaryMatch = (full: string, sub: string): boolean => {
+    if (!full || !sub || sub.length < 2) return false;
+    if (full === sub) return true;
+    const escaped = sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(^|[^a-zA-Z0-9\\u0590-\\u05FF])${escaped}($|[^a-zA-Z0-9\\u0590-\\u05FF])`);
+    return regex.test(full);
+  };
+
+  for (const assign of assignments) {
+    if (LATE_BOX_REGEX.test(assign.name)) {
+      assign.isLateSubmissionBox = true;
+      const normalizedLate = normalizeTitle(assign.name);
+      if (!normalizedLate || normalizedLate.length < 2) continue;
+
+      const regularAssign = assignments.find((other) => {
+        const assignUid = assign.uid || `${assign.activityType || 'assign'}:${assign.id}`;
+        const otherUid = other.uid || `${other.activityType || 'assign'}:${other.id}`;
+        if (other.courseId !== assign.courseId || otherUid === assignUid) return false;
+        if (LATE_BOX_REGEX.test(other.name)) return false;
+        const normalizedOther = normalizeTitle(other.name);
+        if (!normalizedOther || normalizedOther.length < 2) return false;
+        return (
+          normalizedLate === normalizedOther ||
+          isWordBoundaryMatch(normalizedLate, normalizedOther) ||
+          isWordBoundaryMatch(normalizedOther, normalizedLate)
+        );
+      });
+
+      if (regularAssign && (regularAssign.status === 'Submitted' || regularAssign.isCompleted)) {
+        assign.isHidden = true;
+        assign.status = 'Submitted';
+      }
+    }
+  }
+
   // Ensure assignments are deterministically ordered matching raw Moodle discovery sequence
   assignments.sort((a, b) => {
-    const orderA = rawOrderMap.has(a.id) ? rawOrderMap.get(a.id)! : 999999 + a.id;
-    const orderB = rawOrderMap.has(b.id) ? rawOrderMap.get(b.id)! : 999999 + b.id;
+    const uidA = a.uid || `${a.activityType || 'assign'}:${a.id}`;
+    const uidB = b.uid || `${b.activityType || 'assign'}:${b.id}`;
+    const orderA = rawOrderMap.has(uidA) ? rawOrderMap.get(uidA)! : 999999 + a.id;
+    const orderB = rawOrderMap.has(uidB) ? rawOrderMap.get(uidB)! : 999999 + b.id;
     return orderA - orderB;
   });
 
@@ -907,6 +1414,11 @@ export async function runSync(
     meetings,
     recordings,
     errors,
+    sections,
+    folders,
+    links,
+    announcements,
+    gradeSummaries,
     syncedAt: new Date().toISOString(),
   };
 }

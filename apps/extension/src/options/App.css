@@ -22,6 +22,11 @@
   }
 }
 
+.sync-icon-spin {
+  animation: spin 1.2s linear infinite;
+  transform-origin: center;
+}
+
 /* Onboarding Card styling */
 .onboarding-container {
   display: flex;
@@ -3699,8 +3704,21 @@ body.theme-coffee .course-card-progress-box .course-prog-bar-bg {
 
 .course-row-next-assign .due {
   font-size: 0.75rem;
-  color: var(--danger);
+  color: var(--text-secondary);
   font-weight: 500;
+}
+
+.course-row-next-assign .due.due-green {
+  color: #10b981;
+}
+
+.course-row-next-assign .due.due-yellow {
+  color: #f59e0b;
+}
+
+.course-row-next-assign .due.due-red,
+.course-row-next-assign .due.due-overdue {
+  color: var(--danger);
 }
 
 .course-row-actions {

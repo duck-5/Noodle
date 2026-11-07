@@ -1,6 +1,19 @@
 import browser from 'webextension-polyfill';
-import { useState, useEffect, useMemo, useRef } from 'react';
-import type { SyncResult, SyncError, Assignment, CourseFile, ZoomMeeting, PanoptoRecording } from '@tautracker/moodle-client';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import type {
+  SyncResult,
+  SyncError,
+  Assignment,
+  CourseFile,
+  CourseSection,
+  CourseFolder,
+  CourseLink,
+  CourseAnnouncement,
+  CourseGradeSummary,
+  ZoomMeeting,
+  PanoptoRecording,
+  GroupedCoursesResult,
+} from '@tautracker/moodle-client';
 import {
   parseTauCourseMetadata,
   MoodleClient,
@@ -8,6 +21,15 @@ import {
   collapseRecurringMeetings,
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
+  downloadFolderAsZip,
+  groupEnrolledCourses,
+  expandTrackedCourseIds,
+  aggregateUnifiedCourseItems,
+  isAdministrativeCourse,
+  getActivityUid,
+  isActivityHidden,
+  isActivityCompleted,
+  matchesActivityIdentifier,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -205,7 +227,7 @@ function SyncCountdown({
   if (isSyncing) {
     return (
       <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
-        ⏱️ {currentLang === 'he' ? 'מסנכרן...' : 'Syncing...'}
+        <SyncClockIcon spinning /> {currentLang === 'he' ? 'מסנכרן...' : 'Syncing...'}
       </span>
     );
   }
@@ -213,12 +235,33 @@ function SyncCountdown({
   if (nextSyncSecs !== null && nextSyncSecs > 0) {
     return (
       <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
-        ⏱️ {Math.floor(nextSyncSecs / 60)}:{(nextSyncSecs % 60).toString().padStart(2, '0')}
+        <SyncClockIcon /> {Math.floor(nextSyncSecs / 60)}:{(nextSyncSecs % 60).toString().padStart(2, '0')}
       </span>
     );
   }
 
   return null;
+}
+
+function SyncClockIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={spinning ? 'sync-icon-spin' : undefined}
+      style={{ verticalAlign: '-1px', marginInlineEnd: '0.3rem', opacity: 0.8 }}
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <polyline points="21 3 21 9 15 9" />
+    </svg>
+  );
 }
 
 export function getCourseMoodleUrl(
@@ -615,11 +658,17 @@ export default function App() {
       if (msg.type === 'SYNC_PARTIAL') {
         if (msg.partial && typeof msg.partial === 'object') {
           setSyncResult((prev) => ({
+            ...prev,
             syncedAt: msg.partial.syncedAt || prev?.syncedAt || new Date().toISOString(),
             assignments: msg.partial.assignments ?? prev?.assignments ?? [],
             meetings: msg.partial.meetings ?? prev?.meetings ?? [],
             files: msg.partial.files ?? prev?.files ?? [],
             recordings: msg.partial.recordings ?? prev?.recordings ?? [],
+            sections: msg.partial.sections ?? prev?.sections ?? [],
+            folders: msg.partial.folders ?? prev?.folders ?? [],
+            links: msg.partial.links ?? prev?.links ?? [],
+            announcements: msg.partial.announcements ?? prev?.announcements ?? [],
+            gradeSummaries: msg.partial.gradeSummaries ?? prev?.gradeSummaries ?? {},
             errors: msg.partial.errors ?? prev?.errors ?? [],
           }));
         } else {
@@ -697,8 +746,83 @@ export default function App() {
     }
   }, [token, trackedCourseIds, settings]);
 
+  const groupedCoursesResult = useMemo(() => groupEnrolledCourses(availableCourses), [availableCourses]);
+  const excludedGpaCourseIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (groupedCoursesResult.administrativeUmbrella) {
+      ids.add(-5900);
+      for (const sub of groupedCoursesResult.administrativeUmbrella.subCourses) {
+        ids.add(sub.courseId);
+      }
+    }
+    for (const c of availableCourses) {
+      if (isAdministrativeCourse(c)) ids.add(c.id);
+    }
+    return ids;
+  }, [groupedCoursesResult, availableCourses]);
+
+  // Merge tracked sub-course items into parent academic portals when multiple portals exist for the same course and parent is tracked
+  const mergedSyncView = useMemo(() => {
+    if (!syncResult) return null;
+    const trackedSet = new Set(trackedCourseIds);
+    const multiPortalGroups = groupedCoursesResult.academicCourses
+      .filter((u) => u.subCourses.length > 1 && trackedSet.has(u.id))
+      .map((u) => ({
+        ...u,
+        subCourses: u.subCourses.filter((s) => trackedSet.has(s.courseId)),
+      }))
+      .filter((u) => u.subCourses.length > 1);
+    if (multiPortalGroups.length === 0) return syncResult;
+
+    const childCourseIds = new Set<number>();
+    for (const u of multiPortalGroups) {
+      for (const s of u.subCourses) {
+        if (s.courseId !== u.id) childCourseIds.add(s.courseId);
+      }
+    }
+    if (childCourseIds.size === 0) return syncResult;
+
+    let assignments = (syncResult.assignments || []).filter((a) => !childCourseIds.has(a.courseId));
+    let files = (syncResult.files || []).filter((f) => !childCourseIds.has(f.courseId));
+    let meetings = (syncResult.meetings || []).filter((m) => !childCourseIds.has(m.courseId));
+    let folders = (syncResult.folders || []).filter((fld) => !childCourseIds.has(fld.courseId));
+    let links = (syncResult.links || []).filter((lnk) => !childCourseIds.has(lnk.courseId));
+    let sections = (syncResult.sections || []).filter((sec) => !childCourseIds.has(sec.courseId));
+    let announcements = (syncResult.announcements || []).filter((ann) => !childCourseIds.has(ann.courseId));
+    let recordings = (syncResult.recordings || []).filter((rec) => !childCourseIds.has(rec.courseId));
+    const gradeSummaries = { ...(syncResult.gradeSummaries || {}) };
+
+    for (const u of multiPortalGroups) {
+      const agg = aggregateUnifiedCourseItems(u, syncResult);
+      assignments = assignments.filter((a) => a.courseId !== u.id).concat(agg.assignments);
+      files = files.filter((f) => f.courseId !== u.id).concat(agg.files);
+      meetings = meetings.filter((m) => m.courseId !== u.id).concat(agg.meetings);
+      folders = folders.filter((fld) => fld.courseId !== u.id).concat(agg.folders);
+      links = links.filter((lnk) => lnk.courseId !== u.id).concat(agg.links);
+      sections = sections.filter((sec) => sec.courseId !== u.id).concat(agg.sections);
+      announcements = announcements.filter((ann) => ann.courseId !== u.id).concat(agg.announcements);
+      recordings = recordings.filter((rec) => rec.courseId !== u.id).concat(agg.recordings);
+      if (agg.gradeSummary) {
+        gradeSummaries[u.id] = agg.gradeSummary;
+      }
+    }
+
+    return {
+      ...syncResult,
+      assignments,
+      files,
+      meetings,
+      folders,
+      links,
+      sections,
+      announcements,
+      recordings,
+      gradeSummaries,
+    };
+  }, [syncResult, groupedCoursesResult, trackedCourseIds]);
+
   const assignmentsList = useMemo(() => {
-    const rawAssignments = syncResult?.assignments || [];
+    const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const completedSet = new Set(settings?.completedAssignments || []);
     const uncompletedSet = new Set(settings?.uncompletedAssignments || []);
     return rawAssignments.map((a) => {
@@ -720,11 +844,11 @@ export default function App() {
         status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
       };
     });
-  }, [syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+  }, [mergedSyncView, syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
 
-  const filesList = syncResult?.files || [];
-  const meetingsList = syncResult?.meetings || [];
-  const recordingsList = syncResult?.recordings || [];
+  const filesList = mergedSyncView?.files || [];
+  const meetingsList = mergedSyncView?.meetings || [];
+  const recordingsList = mergedSyncView?.recordings || [];
 
   async function loadData() {
     setLoading(true);
@@ -995,7 +1119,9 @@ export default function App() {
   async function handleSaveOnboardingCourses() {
     setLoading(true);
     try {
-      await setTrackedCourseIds(trackedCourseIds);
+      const expandedIds = expandTrackedCourseIds(trackedCourseIds, groupedCoursesResult);
+      setTrackedCourseIdsState(expandedIds);
+      await setTrackedCourseIds(expandedIds);
       setOnboardingStep(3);
       // Run initial sync
       const res = await syncNowOnBackground();
@@ -1277,29 +1403,39 @@ export default function App() {
     await setSettings(updated);
   }
 
-  async function handleToggleCompleted(assignmentId: number) {
+  async function handleToggleCompleted(assignmentId: number | string) {
     if (!settings) return;
-    const rawAssignments = syncResult?.assignments || [];
-    const assign = rawAssignments.find(x => x.id === assignmentId);
-    const isMoodleSubmitted = assign ? assign.status === 'Submitted' : false;
+    const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
+    const assign = rawAssignments.find(
+      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+    );
+    const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
+    const isMoodleSubmitted = assign ? assign.status === 'Submitted' || Boolean(assign.isManualCompletionDone) : false;
 
     const currentCompleted = settings.completedAssignments || [];
     const currentUncompleted = settings.uncompletedAssignments || [];
 
-    let updatedCompleted = [...currentCompleted];
-    let updatedUncompleted = [...currentUncompleted];
+    const isCurrentlyCompleted = isActivityCompleted(
+      assign || { id: Number(assignmentId), status: 'Not submitted' },
+      currentCompleted,
+      currentUncompleted
+    );
 
-    if (isMoodleSubmitted) {
-      if (currentUncompleted.includes(assignmentId)) {
-        updatedUncompleted = currentUncompleted.filter(id => id !== assignmentId);
-      } else {
-        updatedUncompleted.push(assignmentId);
+    let updatedCompleted = currentCompleted.filter(
+      (id) => !matchesActivityIdentifier(id, assign || { id: Number(assignmentId) })
+    );
+    let updatedUncompleted = currentUncompleted.filter(
+      (id) => !matchesActivityIdentifier(id, assign || { id: Number(assignmentId) })
+    );
+
+    const willBeCompleted = !isCurrentlyCompleted;
+    if (willBeCompleted) {
+      if (!isMoodleSubmitted) {
+        updatedCompleted.push(targetKey);
       }
     } else {
-      if (currentCompleted.includes(assignmentId)) {
-        updatedCompleted = currentCompleted.filter(id => id !== assignmentId);
-      } else {
-        updatedCompleted.push(assignmentId);
+      if (isMoodleSubmitted) {
+        updatedUncompleted.push(targetKey);
       }
     }
 
@@ -1310,20 +1446,40 @@ export default function App() {
     };
     setSettingsState(updated);
     await setSettings(updated);
+
+    if (assign && assign.requiresManualCompletion && token) {
+      try {
+        const instanceBaseUrl = assign.link ? new URL(assign.link).origin : undefined;
+        const client = new MoodleClient(token, instanceBaseUrl);
+        client.updateActivityCompletionManually(assign.cmid, willBeCompleted).catch(() => {});
+      } catch {}
+    }
     if (updated.googleTasksEnabled) {
       syncGoogleTasksOnBackground(false).catch(() => { });
     }
   }
 
-  async function handleToggleHidden(assignmentId: number) {
+  async function handleToggleHidden(assignmentId: number | string) {
     if (!settings) return;
+    const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
+    const assign = rawAssignments.find(
+      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+    );
+    const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
     const currentHidden = settings.hiddenAssignments || [];
-    let updatedHidden;
-    if (currentHidden.includes(assignmentId)) {
-      updatedHidden = currentHidden.filter(id => id !== assignmentId);
-    } else {
-      updatedHidden = [...currentHidden, assignmentId];
+
+    const isCurrentlyHidden = isActivityHidden(
+      assign || { id: Number(assignmentId) },
+      currentHidden
+    );
+
+    let updatedHidden = currentHidden.filter(
+      (id) => !matchesActivityIdentifier(id, assign || { id: Number(assignmentId) })
+    );
+    if (!isCurrentlyHidden) {
+      updatedHidden.push(targetKey);
     }
+
     const updated = { ...settings, hiddenAssignments: updatedHidden };
     setSettingsState(updated);
     await setSettings(updated);
@@ -1997,6 +2153,11 @@ export default function App() {
                   files={filesList}
                   meetings={meetingsList}
                   recordings={recordingsList}
+                  courseSections={mergedSyncView?.sections}
+                  courseFolders={mergedSyncView?.folders}
+                  courseLinks={mergedSyncView?.links}
+                  courseAnnouncements={mergedSyncView?.announcements}
+                  courseGradeSummaries={mergedSyncView?.gradeSummaries}
                   syncErrors={syncResult?.errors}
                   token={token}
                   getCourseColor={getCourseColor}
@@ -2039,8 +2200,9 @@ export default function App() {
                   onUpdateCustomName={handleUpdateCourseCustomName}
                   onUpdatePanopto={handleUpdateCoursePanopto}
                   onSaveTrackedCourses={async (newIds, panoptoOverrides) => {
-                    setTrackedCourseIdsState(newIds);
-                    await setTrackedCourseIds(newIds);
+                    const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
+                    setTrackedCourseIdsState(expandedIds);
+                    await setTrackedCourseIds(expandedIds);
                     if (panoptoOverrides && settings) {
                       const cleanedMap: Record<number, string> = {};
                       for (const [k, v] of Object.entries(panoptoOverrides)) {
@@ -2061,7 +2223,7 @@ export default function App() {
                     setAssignmentFilterCourseId(courseId);
                     setActiveTab('assignments');
                   }}
-                  syncResult={syncResult}
+                  syncResult={mergedSyncView || syncResult}
                   onToggleCompleted={handleToggleCompleted}
                   onToggleHidden={handleToggleHidden}
                   onLabDetected={(id, name) => setLabModalCourse({ id, name })}
@@ -2070,6 +2232,7 @@ export default function App() {
                   onSyncGoogle={handleSyncGoogleTasks}
                   googleSyncLoading={googleSyncLoading}
                   onToggleRecordingWatched={handleToggleRecordingWatched}
+                  groupedCoursesResult={groupedCoursesResult}
                   hasPanoptoPermission={hasPanoptoPermission}
                   onRequestPanoptoPermission={handleRequestPanoptoPermission}
                 />
@@ -2097,6 +2260,8 @@ export default function App() {
               {activeTab === 'grades' && (
                 <GradesTab
                   assignments={assignmentsList}
+                  gradeSummaries={mergedSyncView?.gradeSummaries}
+                  excludedCourseIds={excludedGpaCourseIds}
                   getCourseColor={getCourseColor}
                   getCourseDisplayName={getCourseDisplayName}
                   t={t}
@@ -2599,26 +2764,6 @@ function CoursesConfigTable({
   t: (key: any) => string;
   lang: 'he' | 'en';
 }) {
-  const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
-
-  if (enrolledCourses && enrolledCourses.length > 0) {
-    enrolledCourses.forEach((c) => {
-      coursesMap.set(c.id, {
-        id: c.id,
-        name: c.fullname || c.shortname || `Course ${c.id}`,
-        idnumber: c.idnumber || c.shortname || '',
-      });
-    });
-  } else if (syncResult) {
-    syncResult.assignments.forEach((a) => {
-      coursesMap.set(a.courseId, { id: a.courseId, name: a.courseName, idnumber: '' });
-    });
-    syncResult.files.forEach((f) => {
-      coursesMap.set(f.courseId, { id: f.courseId, name: f.courseName, idnumber: '' });
-    });
-  }
-
-  const coursesList = Array.from(coursesMap.values());
   const [activeTrackedIds, setActiveTrackedIds] = useState<number[]>(trackedCourseIds);
   const [localPanoptoMap, setLocalPanoptoMap] = useState<Record<number, string>>(coursesPanoptoMap || {});
 
@@ -2630,19 +2775,39 @@ function CoursesConfigTable({
     setLocalPanoptoMap(coursesPanoptoMap || {});
   }, [coursesPanoptoMap]);
 
+  // Compute hierarchical groups using groupEnrolledCourses when full enrolled list is available
+  const hierarchicalGrouping = useMemo(() => {
+    if (!enrolledCourses || enrolledCourses.length === 0) return null;
+    return groupEnrolledCourses(enrolledCourses);
+  }, [enrolledCourses]);
+
   const handleToggle = (id: number) => {
     if (activeTrackedIds.includes(id)) {
       setActiveTrackedIds(activeTrackedIds.filter((cid) => cid !== id));
     } else {
       setActiveTrackedIds([...activeTrackedIds, id]);
-      const c = coursesList.find((x) => x.id === id);
-      if (c && c.name && c.name.includes('מעבדה')) {
-        onLabDetected?.(id, c.name);
+      if (enrolledCourses) {
+        const c = enrolledCourses.find((x) => x.id === id);
+        if (c && ((c.fullname && c.fullname.includes('מעבדה')) || (c.shortname && c.shortname.includes('מעבדה')))) {
+          onLabDetected?.(id, c.fullname || c.shortname || `Course ${id}`);
+        }
       }
     }
   };
 
-  if (coursesList.length === 0) {
+  // Fallback flat course mapping if enrolledCourses is not available
+  const coursesMap = new Map<number, { id: number; name: string; idnumber: string }>();
+  if (syncResult && (!enrolledCourses || enrolledCourses.length === 0)) {
+    syncResult.assignments.forEach((a) => {
+      coursesMap.set(a.courseId, { id: a.courseId, name: a.courseName, idnumber: '' });
+    });
+    syncResult.files.forEach((f) => {
+      coursesMap.set(f.courseId, { id: f.courseId, name: f.courseName, idnumber: '' });
+    });
+  }
+  const flatCoursesList = Array.from(coursesMap.values());
+
+  if (!hierarchicalGrouping && flatCoursesList.length === 0) {
     return (
       <div className="empty-state">
         {lang === 'he' ? 'לא נטענו קורסים עדיין. הרץ סנכרון תחילה.' : 'No courses loaded yet. Run a sync first.'}
@@ -2650,92 +2815,388 @@ function CoursesConfigTable({
     );
   }
 
+  // Partition academic unified courses by semester
+  const semesterSections = useMemo(() => {
+    if (!hierarchicalGrouping) return [];
+    const groups: Record<string, { semesterKey: string; label: string; courses: typeof hierarchicalGrouping.academicCourses }> = {};
+
+    for (const u of hierarchicalGrouping.academicCourses) {
+      const year = u.year || '';
+      const sem = u.semester || 'Other';
+      const key = year ? `${year}-${sem}` : 'Other';
+
+      if (!groups[key]) {
+        let label = key;
+        if (key === 'Other') {
+          label = lang === 'he' ? 'קורסים נוספים' : 'Other Courses';
+        } else {
+          const semName =
+            sem === 'SemesterA'
+              ? (lang === 'he' ? "סמסטר א'" : 'Semester A')
+              : sem === 'SemesterB'
+              ? (lang === 'he' ? "סמסטר ב'" : 'Semester B')
+              : sem === 'Summer'
+              ? (lang === 'he' ? 'סמסטר קיץ' : 'Summer Semester')
+              : sem === 'Yearly'
+              ? (lang === 'he' ? 'שנתי' : 'Yearly')
+              : sem;
+          label = lang === 'he' ? `שנת ${year} - ${semName}` : `Year ${year} - ${semName}`;
+        }
+        groups[key] = { semesterKey: key, label, courses: [] };
+      }
+      groups[key].courses.push(u);
+    }
+
+    // Sort semester sections descending by year
+    return Object.values(groups).sort((a, b) => b.semesterKey.localeCompare(a.semesterKey));
+  }, [hierarchicalGrouping, lang]);
+
   return (
     <>
-      <div className="courses-grouped-container" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-        {groupAndSortCourses(coursesList, lang).map((group) => (
-          <div key={group.semesterKey} className="semester-group-section" style={{ marginBottom: '2rem' }}>
-            <h4
-              className="semester-group-title"
-              style={{
-                borderBottom: '1px solid rgba(255,255,255,0.1)',
-                paddingBottom: '0.4rem',
-                marginBottom: '0.8rem',
-                color: 'var(--text-primary)',
-                textAlign: lang === 'he' ? 'right' : 'left',
-              }}
-            >
-              {group.label}
-            </h4>
-            <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
-              <div className="table-header">
-                <div>{t('track')}</div>
-                <div>{t('course_code_name')}</div>
-                <div>{t('display_nickname')}</div>
-                {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
-                <div>{t('theme_color_label')}</div>
+      <div className="courses-grouped-container" style={{ maxHeight: '440px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+        {hierarchicalGrouping ? (
+          <>
+            {semesterSections.map((sec) => (
+              <div key={sec.semesterKey} className="semester-group-section" style={{ marginBottom: '2rem' }}>
+                <h4
+                  className="semester-group-title"
+                  style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.1)',
+                    paddingBottom: '0.4rem',
+                    marginBottom: '0.8rem',
+                    color: 'var(--text-primary)',
+                    textAlign: lang === 'he' ? 'right' : 'left',
+                  }}
+                >
+                  {sec.label}
+                </h4>
+                <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+                  <div className="table-header">
+                    <div>{t('track')}</div>
+                    <div>{t('course_code_name')}</div>
+                    <div>{t('display_nickname')}</div>
+                    {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
+                    <div>{t('theme_color_label')}</div>
+                  </div>
+
+                  {sec.courses.map((u) => {
+                    const isMultiPortal = u.subCourses.length > 1;
+                    const childSubCourses = isMultiPortal ? u.subCourses.filter((s) => s.courseId !== u.id) : [];
+
+                    return (
+                      <Fragment key={u.id}>
+                        {/* Parent Portal Row */}
+                        <div className="table-row">
+                          <div>
+                            <input
+                              type="checkbox"
+                              checked={activeTrackedIds.includes(u.id)}
+                              onChange={() => handleToggle(u.id)}
+                            />
+                          </div>
+                          <div>
+                            <span className="course-code-span">{u.courseCode}</span>
+                            {isMultiPortal && (
+                              <span
+                                className="badge-primary"
+                                style={{
+                                  fontSize: '0.68rem',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  marginInlineEnd: '6px',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {lang === 'he' ? 'פורטל ראשי' : 'Main Portal'}
+                              </span>
+                            )}
+                            <p className="course-full-p" style={{ fontWeight: isMultiPortal ? 600 : 400 }}>
+                              {u.fullname}
+                            </p>
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              className="nickname-input"
+                              defaultValue={getCourseDisplayName(u.id, '')}
+                              placeholder={t('nickname_placeholder')}
+                              onBlur={(e) => onUpdateCustomName && onUpdateCustomName(u.id, e.target.value)}
+                            />
+                          </div>
+                          {panoptoEnabled && (
+                            <div>
+                              <input
+                                type="text"
+                                className="nickname-input panopto-folder-input"
+                                value={localPanoptoMap[u.id] ?? ''}
+                                placeholder={t('panopto_folder_placeholder')}
+                                dir="ltr"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setLocalPanoptoMap((prev) => ({ ...prev, [u.id]: val }));
+                                }}
+                                onBlur={(e) => onUpdatePanopto && onUpdatePanopto(u.id, e.target.value)}
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <input
+                              type="color"
+                              className="color-picker"
+                              value={getCourseColor(u.id)}
+                              onChange={(e) => onUpdateColor && onUpdateColor(u.id, e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Indented Sub-Course Rows */}
+                        {childSubCourses.map((sub) => {
+                          const isLab = sub.fullname && sub.fullname.includes('מעבדה');
+                          return (
+                            <div
+                              key={sub.courseId}
+                              className="table-row subcourse-row"
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                paddingInlineStart: '2.2rem',
+                              }}
+                            >
+                              <div>
+                                <input
+                                  type="checkbox"
+                                  checked={activeTrackedIds.includes(sub.courseId)}
+                                  onChange={() => handleToggle(sub.courseId)}
+                                />
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', marginInlineEnd: '0.4rem', fontFamily: 'monospace' }}>↳</span>
+                                {sub.groupId && sub.groupId !== '00' && sub.groupId !== '99' && (
+                                  <span
+                                    className="badge-secondary"
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      marginInlineEnd: '4px',
+                                    }}
+                                  >
+                                    {lang === 'he' ? `קבוצה ${sub.groupId}` : `Group ${sub.groupId}`}
+                                  </span>
+                                )}
+                                {isLab && (
+                                  <span
+                                    className="badge-warning"
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      marginInlineEnd: '4px',
+                                    }}
+                                  >
+                                    {lang === 'he' ? 'מעבדה' : 'Lab'}
+                                  </span>
+                                )}
+                                <p className="course-full-p" style={{ display: 'inline', color: 'var(--text-secondary)' }}>
+                                  {sub.fullname}
+                                </p>
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  className="nickname-input"
+                                  defaultValue={getCourseDisplayName(sub.courseId, '')}
+                                  placeholder={t('nickname_placeholder')}
+                                  onBlur={(e) => onUpdateCustomName && onUpdateCustomName(sub.courseId, e.target.value)}
+                                />
+                              </div>
+                              {panoptoEnabled && (
+                                <div>
+                                  <input
+                                    type="text"
+                                    className="nickname-input panopto-folder-input"
+                                    value={localPanoptoMap[sub.courseId] ?? ''}
+                                    placeholder={t('panopto_folder_placeholder')}
+                                    dir="ltr"
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setLocalPanoptoMap((prev) => ({ ...prev, [sub.courseId]: val }));
+                                    }}
+                                    onBlur={(e) => onUpdatePanopto && onUpdatePanopto(sub.courseId, e.target.value)}
+                                  />
+                                </div>
+                              )}
+                              <div>
+                                <input
+                                  type="color"
+                                  className="color-picker"
+                                  value={getCourseColor(sub.courseId)}
+                                  onChange={(e) => onUpdateColor && onUpdateColor(sub.courseId, e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
+                </div>
               </div>
-              {[...group.courses]
-                .sort((a, b) => {
-                  const isA = activeTrackedIds.includes(a.id);
-                  const isB = activeTrackedIds.includes(b.id);
-                  if (isA && !isB) return -1;
-                  if (!isA && isB) return 1;
-                  return 0;
-                })
-                .map((c) => {
-                  return (
-                    <div key={c.id} className="table-row">
-                      <div>
-                        <input
-                          type="checkbox"
-                          checked={activeTrackedIds.includes(c.id)}
-                          onChange={() => handleToggle(c.id)}
-                        />
-                      </div>
-                      <div>
-                        <span className="course-code-span">{c.name.split('-')[0]}</span>
-                        <p className="course-full-p">{c.name}</p>
-                      </div>
-                      <div>
-                        <input
-                          type="text"
-                          className="nickname-input"
-                          defaultValue={getCourseDisplayName(c.id, '')}
-                          placeholder={t('nickname_placeholder')}
-                          onBlur={(e) => onUpdateCustomName && onUpdateCustomName(c.id, e.target.value)}
-                        />
-                      </div>
-                      {panoptoEnabled && (
+            ))}
+
+            {/* Administrative Umbrella Section */}
+            {hierarchicalGrouping.administrativeUmbrella &&
+              hierarchicalGrouping.administrativeUmbrella.subCourses.length > 0 && (
+                <div className="semester-group-section" style={{ marginBottom: '2rem' }}>
+                  <h4
+                    className="semester-group-title"
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.1)',
+                      paddingBottom: '0.4rem',
+                      marginBottom: '0.8rem',
+                      color: 'var(--text-primary)',
+                      textAlign: lang === 'he' ? 'right' : 'left',
+                    }}
+                  >
+                    🛡️ {lang === 'he' ? 'הדרכות בטיחות ומנהלה' : 'Safety & Administrative Tutorials'}
+                  </h4>
+                  <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+                    <div className="table-header">
+                      <div>{t('track')}</div>
+                      <div>{t('course_code_name')}</div>
+                      <div>{t('display_nickname')}</div>
+                      {panoptoEnabled && <div>{t('panopto_folder_column')}</div>}
+                      <div>{t('theme_color_label')}</div>
+                    </div>
+
+                    {hierarchicalGrouping.administrativeUmbrella.subCourses.map((sub) => (
+                      <div
+                        key={sub.courseId}
+                        className="table-row"
+                        style={{ paddingInlineStart: '1rem' }}
+                      >
+                        <div>
+                          <input
+                            type="checkbox"
+                            checked={activeTrackedIds.includes(sub.courseId)}
+                            onChange={() => handleToggle(sub.courseId)}
+                          />
+                        </div>
+                        <div>
+                          <span
+                            className="badge-secondary"
+                            style={{
+                              fontSize: '0.68rem',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              marginInlineEnd: '6px',
+                            }}
+                          >
+                            {lang === 'he' ? 'הדרכה' : 'Tutorial'}
+                          </span>
+                          <p className="course-full-p" style={{ display: 'inline' }}>
+                            {sub.fullname}
+                          </p>
+                        </div>
                         <div>
                           <input
                             type="text"
-                            className="nickname-input panopto-folder-input"
-                            value={localPanoptoMap[c.id] ?? ''}
-                            placeholder={t('panopto_folder_placeholder')}
-                            dir="ltr"
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setLocalPanoptoMap((prev) => ({ ...prev, [c.id]: val }));
-                            }}
-                            onBlur={(e) => onUpdatePanopto && onUpdatePanopto(c.id, e.target.value)}
+                            className="nickname-input"
+                            defaultValue={getCourseDisplayName(sub.courseId, '')}
+                            placeholder={t('nickname_placeholder')}
+                            onBlur={(e) => onUpdateCustomName && onUpdateCustomName(sub.courseId, e.target.value)}
                           />
                         </div>
-                      )}
+                        {panoptoEnabled && <div />}
+                        <div>
+                          <input
+                            type="color"
+                            className="color-picker"
+                            value={getCourseColor(sub.courseId)}
+                            onChange={(e) => onUpdateColor && onUpdateColor(sub.courseId, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+          </>
+        ) : (
+          /* Flat fallback view */
+          groupAndSortCourses(flatCoursesList, lang).map((group) => (
+            <div key={group.semesterKey} className="semester-group-section" style={{ marginBottom: '2rem' }}>
+              <h4
+                className="semester-group-title"
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                  paddingBottom: '0.4rem',
+                  marginBottom: '0.8rem',
+                  color: 'var(--text-primary)',
+                  textAlign: lang === 'he' ? 'right' : 'left',
+                }}
+              >
+                {group.label}
+              </h4>
+              <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+                <div className="table-header">
+                  <div>{t('track')}</div>
+                  <div>{t('course_code_name')}</div>
+                  <div>{t('display_nickname')}</div>
+                  {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
+                  <div>{t('theme_color_label')}</div>
+                </div>
+                {[...group.courses].map((c) => (
+                  <div key={c.id} className="table-row">
+                    <div>
+                      <input
+                        type="checkbox"
+                        checked={activeTrackedIds.includes(c.id)}
+                        onChange={() => handleToggle(c.id)}
+                      />
+                    </div>
+                    <div>
+                      <span className="course-code-span">{c.name.split('-')[0]}</span>
+                      <p className="course-full-p">{c.name}</p>
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        className="nickname-input"
+                        defaultValue={getCourseDisplayName(c.id, '')}
+                        placeholder={t('nickname_placeholder')}
+                        onBlur={(e) => onUpdateCustomName && onUpdateCustomName(c.id, e.target.value)}
+                      />
+                    </div>
+                    {panoptoEnabled && (
                       <div>
                         <input
-                          type="color"
-                          className="color-picker"
-                          value={getCourseColor(c.id)}
-                          onChange={(e) => onUpdateColor && onUpdateColor(c.id, e.target.value)}
+                          type="text"
+                          className="nickname-input panopto-folder-input"
+                          value={localPanoptoMap[c.id] ?? ''}
+                          placeholder={t('panopto_folder_placeholder')}
+                          dir="ltr"
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalPanoptoMap((prev) => ({ ...prev, [c.id]: val }));
+                          }}
+                          onBlur={(e) => onUpdatePanopto && onUpdatePanopto(c.id, e.target.value)}
                         />
                       </div>
+                    )}
+                    <div>
+                      <input
+                        type="color"
+                        className="color-picker"
+                        value={getCourseColor(c.id)}
+                        onChange={(e) => onUpdateColor && onUpdateColor(c.id, e.target.value)}
+                      />
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div className="action-row" style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
@@ -2779,6 +3240,7 @@ function DashboardTab({
   onSyncGoogle,
   googleSyncLoading,
   onToggleRecordingWatched,
+  groupedCoursesResult,
   hasPanoptoPermission = true,
   onRequestPanoptoPermission,
 }: {
@@ -2808,6 +3270,7 @@ function DashboardTab({
   onSyncGoogle?: () => void;
   googleSyncLoading?: boolean;
   onToggleRecordingWatched?: (recordingId: string) => void;
+  groupedCoursesResult?: GroupedCoursesResult;
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
 } & TabProps) {
@@ -2821,6 +3284,21 @@ function DashboardTab({
       return 'cards';
     }
   });
+
+  const displayCourseIds = useMemo(() => {
+    const multiPortalGroups = (groupedCoursesResult?.academicCourses || []).filter((u: any) => u.subCourses.length > 1);
+    const absorbedChildIds = new Set<number>();
+    for (const u of multiPortalGroups) {
+      if (trackedCourseIds.includes(u.id)) {
+        for (const s of u.subCourses) {
+          if (s.courseId !== u.id && trackedCourseIds.includes(s.courseId)) {
+            absorbedChildIds.add(s.courseId);
+          }
+        }
+      }
+    }
+    return trackedCourseIds.filter((id) => !absorbedChildIds.has(id));
+  }, [trackedCourseIds, groupedCoursesResult]);
 
   const handleSetCoursesViewMode = (mode: 'list' | 'cards') => {
     setCoursesViewMode(mode);
@@ -2839,12 +3317,12 @@ function DashboardTab({
     }
   }, [tourStep]);
 
-  const visibleAssignments = assignments.filter((a) => !settings?.hiddenAssignments?.includes(a.id));
+  const visibleAssignments = assignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
   const now = new Date();
 
   // Partition pending tasks to prioritize future -> no-deadline -> overdue (with deterministic tie-breakers)
   const pendingTasks = assignments
-    .filter((a) => !settings?.hiddenAssignments?.includes(a.id) && a.status !== 'Submitted')
+    .filter((a) => !isActivityHidden(a, settings?.hiddenAssignments) && a.status !== 'Submitted')
     .sort((a, b) => {
       const aHasFuture = a.deadline && new Date(a.deadline) > now;
       const bHasFuture = b.deadline && new Date(b.deadline) > now;
@@ -3011,7 +3489,7 @@ function DashboardTab({
                     task.sectionName &&
                     f.sectionName.trim().toLowerCase() === task.sectionName.trim().toLowerCase()
                 );
-                const isTaskHidden = settings?.hiddenAssignments?.includes(task.id);
+                const isTaskHidden = isActivityHidden(task, settings?.hiddenAssignments);
                 const isTaskCompleted = task.isCompleted || task.status === 'Submitted';
 
                 return (
@@ -3413,17 +3891,18 @@ function DashboardTab({
         </div>
 
         <div className={`courses-rows-container ${coursesViewMode === 'cards' ? 'courses-cards-grid' : ''} ${tourStep === 5 && activeMeetings.length === 0 ? 'tour-highlight' : ''}`}>
-          {trackedCourseIds.length === 0 ? (
+          {displayCourseIds.length === 0 ? (
             <div className="empty-state">{t('empty_state_pending')}</div>
           ) : (
-            trackedCourseIds.map((cid, idx) => {
+            displayCourseIds.map((cid, idx) => {
               const color = getCourseColor(cid);
               const courseAssigns = assignments.filter((a) => a.courseId === cid);
               const courseMeetings = meetings.filter((m) => m.courseId === cid);
 
-              // Breakdown: Assignments
-              const totalAssigns = courseAssigns.length;
-              const doneAssigns = courseAssigns.filter((a) => a.status === 'Submitted').length;
+              // Breakdown: Assignments (exclude hidden tasks from active tracking & gaps count)
+              const visibleCourseAssigns = courseAssigns.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
+              const totalAssigns = visibleCourseAssigns.length;
+              const doneAssigns = visibleCourseAssigns.filter((a) => a.status === 'Submitted').length;
               const gapAssigns = Math.max(0, totalAssigns - doneAssigns);
 
               // Breakdown: Panopto (Lectures and Recitations)
@@ -3443,22 +3922,36 @@ function DashboardTab({
               const doneItems = doneAssigns + (isPanoptoActive ? doneLectures + doneRecitations : 0);
               const overallPercent = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
 
+              const nowTs = now.getTime();
               const pendingCourseAssigns = courseAssigns
-                .filter((a) => a.status !== 'Submitted' && !settings?.hiddenAssignments?.includes(a.id))
+                .filter((a) => a.status !== 'Submitted' && !isActivityHidden(a, settings?.hiddenAssignments))
                 .sort((a, b) => {
-                  if (!a.deadline && !b.deadline) return a.id - b.id;
-                  if (!a.deadline) return 1;
-                  if (!b.deadline) return -1;
-                  const diff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-                  if (diff !== 0) return diff;
-                  return a.id - b.id;
+                  const aDue = a.deadline ? new Date(a.deadline).getTime() : null;
+                  const bDue = b.deadline ? new Date(b.deadline).getTime() : null;
+                  const aIsFuture = aDue !== null && aDue >= nowTs;
+                  const bIsFuture = bDue !== null && bDue >= nowTs;
+
+                  // 1. Future upcoming assignments come first (earliest deadline first)
+                  if (aIsFuture && !bIsFuture) return -1;
+                  if (!aIsFuture && bIsFuture) return 1;
+                  if (aIsFuture && bIsFuture) return aDue! - bDue!;
+
+                  // 2. Tasks without deadline come next
+                  if (aDue === null && bDue !== null) return -1;
+                  if (aDue !== null && bDue === null) return 1;
+                  if (aDue === null && bDue === null) return a.id - b.id;
+
+                  // 3. Past due assignments come last (most recent past-due first)
+                  return bDue! - aDue!;
                 });
 
               const nextTask = pendingCourseAssigns[0];
               const nextTaskName = nextTask ? nextTask.name : t('all_caught_up');
-              const nextTaskDue = nextTask?.deadline
-                ? getDueTextAndClass(nextTask.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextTask.status).deadlineText
-                : '';
+              const nextTaskDueInfo = nextTask?.deadline
+                ? getDueTextAndClass(nextTask.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextTask.status)
+                : null;
+              const nextTaskDue = nextTaskDueInfo ? nextTaskDueInfo.deadlineText : '';
+              const nextTaskColorClass = nextTaskDueInfo?.timeColorClass || '';
 
               const rawCourseName = courseAssigns[0]?.courseName || courseMeetings[0]?.courseName || `Course ${cid}`;
               const courseDisplayName = getCourseDisplayName(cid, rawCourseName);
@@ -3618,7 +4111,7 @@ function DashboardTab({
                       <div className="course-row-next-assign">
                         <div className="label">{t('next_assignment')}</div>
                         <div className="name">{nextTaskName}</div>
-                        {nextTaskDue && <div className="due">{nextTaskDue}</div>}
+                        {nextTaskDue && <div className={`due ${nextTaskColorClass}`}>{nextTaskDue}</div>}
                       </div>
 
                       {/* Course Actions */}
@@ -3760,6 +4253,24 @@ function AssignmentsTab({
 
   const now = new Date();
 
+  const handleToggleHiddenWithFilter = (targetAssign: EnhancedAssignment) => {
+    const isCurrentlyHidden = isActivityHidden(targetAssign, settings?.hiddenAssignments);
+    if (isCurrentlyHidden) {
+      const isCompleted = targetAssign.status === 'Submitted';
+      const hasDeadlinePassed = targetAssign.deadline ? new Date(targetAssign.deadline) < now : false;
+      if (isCompleted && !filterCompleted) {
+        setFilterCompleted(true);
+      } else if (!isCompleted) {
+        if (hasDeadlinePassed && !filterPast) {
+          setFilterPast(true);
+        } else if (!hasDeadlinePassed && !filterPending) {
+          setFilterPending(true);
+        }
+      }
+    }
+    onToggleHidden?.(targetAssign.id);
+  };
+
   // Sort assignments by due date ascending
   const sortedAssigns = [...assignments].sort((a, b) => {
     if (!a.deadline && !b.deadline) return a.id - b.id;
@@ -3780,7 +4291,7 @@ function AssignmentsTab({
       return false;
     }
 
-    const isHidden = !!settings?.hiddenAssignments?.includes(a.id);
+    const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
     const isCompleted = a.status === 'Submitted';
     const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
 
@@ -3797,7 +4308,7 @@ function AssignmentsTab({
 
   // Select an assignment from the Calendar View -> ensure its filter is enabled, expand it, and scroll to it
   const handleSelectCalendarAssignment = (a: EnhancedAssignment) => {
-    const isHidden = !!settings?.hiddenAssignments?.includes(a.id);
+    const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
     const isCompleted = a.status === 'Submitted';
     const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
 
@@ -4003,7 +4514,7 @@ function AssignmentsTab({
                 a.status
               );
               const isCompleted = a.status === 'Submitted';
-              const isHidden = !!settings?.hiddenAssignments?.includes(a.id);
+              const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
               const isExpanded = expandedAssignId === a.id;
               const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
 
@@ -4243,7 +4754,7 @@ function AssignmentsTab({
 
                         <button
                           className="secondary-btn btn-xs"
-                          onClick={() => onToggleHidden && onToggleHidden(a.id)}
+                          onClick={() => handleToggleHiddenWithFilter(a)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           {isHidden ? <EyeIcon /> : <EyeOffIcon />}
@@ -4363,16 +4874,23 @@ function AssignmentsTab({
 // 4. GRADES TAB
 function GradesTab({
   assignments,
+  gradeSummaries,
+  excludedCourseIds,
   getCourseColor,
   getCourseDisplayName,
   t,
+  lang,
   tourStep,
 }: {
   assignments: Assignment[];
+  gradeSummaries?: Record<number, CourseGradeSummary>;
+  excludedCourseIds?: Set<number>;
   tourStep?: number;
 } & TabProps) {
-  // Collect all assignments that are graded
-  const gradedAssigns = assignments.filter((a) => a.grade !== null);
+  // Collect all assignments that are graded (excluding administrative/safety tutorials from GPA)
+  const gradedAssigns = assignments.filter(
+    (a) => a.grade !== null && !excludedCourseIds?.has(a.courseId) && !/^5[89]00\d{4}/.test(a.courseName || '')
+  );
 
   // Group graded assignments by course to calculate averages
   const gradesByCourse: Record<number, { courseName: string; sum: number; count: number; list: Assignment[] }> = {};
@@ -4382,8 +4900,10 @@ function GradesTab({
       gradesByCourse[a.courseId] = { courseName: a.courseName, sum: 0, count: 0, list: [] };
     }
     const ratio = a.gradeMax ? a.grade / a.gradeMax : 0;
-    gradesByCourse[a.courseId].sum += ratio * 100;
-    gradesByCourse[a.courseId].count += 1;
+    if (!a.isBonus) {
+      gradesByCourse[a.courseId].sum += ratio * 100;
+      gradesByCourse[a.courseId].count += 1;
+    }
     gradesByCourse[a.courseId].list.push(a);
   });
 
@@ -4391,8 +4911,10 @@ function GradesTab({
   let totalCourseAverageSum = 0;
   let courseAveragesCount = 0;
   Object.values(gradesByCourse).forEach((c) => {
-    totalCourseAverageSum += c.sum / c.count;
-    courseAveragesCount++;
+    if (c.count > 0) {
+      totalCourseAverageSum += c.sum / c.count;
+      courseAveragesCount++;
+    }
   });
   const overallGpa = courseAveragesCount > 0 ? (totalCourseAverageSum / courseAveragesCount).toFixed(2) : '-';
 
@@ -4413,21 +4935,41 @@ function GradesTab({
           {Object.entries(gradesByCourse).map(([courseIdStr, group]) => {
             const courseId = Number(courseIdStr);
             const color = getCourseColor(courseId);
-            const courseAverage = (group.sum / group.count).toFixed(2);
+            const courseAverage = group.count > 0 ? (group.sum / group.count).toFixed(2) : '-';
             return (
               <div key={courseId} className="course-grades-group glass-panel" style={{ borderLeft: `4px solid ${color}` }}>
                 <div className="group-header">
                   <h4 style={{ color }}>{getCourseDisplayName(courseId, group.courseName)}</h4>
-                  <span className="course-avg-badge">{t('course_average_label')}: {courseAverage}</span>
+                  {gradeSummaries?.[courseId]?.hasCourseTotal && gradeSummaries[courseId].courseTotalFormatted ? (
+                    <span className="course-avg-badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+                      {lang === 'he' ? 'ציון סופי:' : 'Course Total:'} {gradeSummaries[courseId].courseTotalFormatted}
+                    </span>
+                  ) : (
+                    <span className="course-avg-badge">{t('course_average_label')}: {courseAverage}</span>
+                  )}
                 </div>
 
                 <div className="grades-table">
                   {group.list.map((a) => (
-                    <div key={a.id} className="grade-row">
-                      <span className="grade-assign-name">{a.name}</span>
-                      <span className="grade-value-span">
-                        {a.grade} / {a.gradeMax}
-                      </span>
+                    <div key={a.id} className="grade-row" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="grade-assign-name">
+                          {a.name}
+                          {a.isBonus && (
+                            <span className="badge" style={{ marginInlineStart: '0.4rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)', fontSize: '0.72rem', padding: '0.1rem 0.4rem' }}>
+                              ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
+                            </span>
+                          )}
+                        </span>
+                        <span className="grade-value-span">
+                          {a.grade} / {a.gradeMax}
+                        </span>
+                      </div>
+                      {a.feedback && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', paddingInlineStart: '0.5rem', borderInlineStart: '2px solid #10b981' }}>
+                          💬 {a.feedback}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -5176,6 +5718,11 @@ function CourseDetailView({
   files,
   meetings,
   recordings,
+  courseSections,
+  courseFolders,
+  courseLinks,
+  courseAnnouncements,
+  courseGradeSummaries,
   syncErrors,
   token,
   getCourseColor,
@@ -5202,6 +5749,11 @@ function CourseDetailView({
   files: CourseFile[];
   meetings: ZoomMeeting[];
   recordings?: PanoptoRecording[];
+  courseSections?: CourseSection[];
+  courseFolders?: CourseFolder[];
+  courseLinks?: CourseLink[];
+  courseAnnouncements?: CourseAnnouncement[];
+  courseGradeSummaries?: Record<number, CourseGradeSummary>;
   syncErrors?: SyncError[];
   token: string | null;
   onBack: () => void;
@@ -5231,6 +5783,62 @@ function CourseDetailView({
   const [expandedDetailAssignId, setExpandedDetailAssignId] = useState<number | null>(null);
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string> | null>(null);
+  const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
+  const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
+  const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [showEmptySections, setShowEmptySections] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('noodle_show_empty_sections') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleShowEmptySections = () => {
+    setShowEmptySections((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('noodle_show_empty_sections', String(next));
+      } catch {}
+      if (!next && activeSectionName) {
+        const activeContent = sectionsMap.get(activeSectionName);
+        if (activeContent && isSectionContentEmpty(activeContent)) {
+          setActiveSectionName(null);
+          setActiveTopSectionId(null);
+          setActiveSubSectionId(null);
+          setExpandedSections(null);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleDownloadFolderZip = async (folder: CourseFolder) => {
+    if (!token) return;
+    setDownloadingFolderId(folder.id);
+    setDownloadProgress({ current: 0, total: folder.files.length });
+    try {
+      const zipBytes = await downloadFolderAsZip(folder, token, (completed: number, total: number) => {
+        setDownloadProgress({ current: completed, total });
+      });
+      const blob = new Blob([zipBytes.buffer as ArrayBuffer], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(folder.name || 'folder').replace(/[\\/:*?"<>|]/g, '_')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('ZIP download error:', err);
+      alert(lang === 'he' ? `שגיאה בהורדת התיקייה: ${err.message}` : `Folder download failed: ${err.message}`);
+    } finally {
+      setDownloadingFolderId(null);
+      setDownloadProgress(null);
+    }
+  };
 
   useEffect(() => {
     setPanoptoInputVal(
@@ -5264,7 +5872,8 @@ function CourseDetailView({
   const courseDisplayName = getCourseDisplayName(courseId, rawCourseName);
 
   // Filter items for this course
-  const courseAssignments = assignments.filter((a) => a.courseId === courseId);
+  const allCourseAssignments = assignments.filter((a) => a.courseId === courseId);
+  const courseAssignments = allCourseAssignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
   const courseFiles = files.filter((f) => f.courseId === courseId);
   const courseRecordings = (settings?.panoptoEnabled ? (recordings || []) : []).filter((r) => r.courseId === courseId);
   const watchedSet = new Set(settings?.watchedRecordings || []);
@@ -5279,39 +5888,124 @@ function CourseDetailView({
     : courseRecordings.find((r) => r.folderUrl)?.folderUrl ||
     'https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx';
 
-  // Group files, assignments, and Panopto recordings by sectionName
+  const thisCourseFolders = (courseFolders || []).filter((f) => f.courseId === courseId);
+  const thisCourseLinks = (courseLinks || []).filter((l) => l.courseId === courseId);
+
+  // Collect section IDs and names that contain actual student items (files, assignments, folders, links)
+  // so we never hide sections that have actual contents even if Moodle's database flag was visible=0.
+  const sectionIdsWithContent = new Set<number>();
+  const sectionNamesWithContent = new Set<string>();
+  courseFiles.forEach((f) => {
+    if (f.sectionId) sectionIdsWithContent.add(f.sectionId);
+    if (f.sectionName) sectionNamesWithContent.add(f.sectionName);
+  });
+  courseAssignments.forEach((a) => {
+    if (a.sectionId) sectionIdsWithContent.add(a.sectionId);
+    if (a.sectionName) sectionNamesWithContent.add(a.sectionName);
+  });
+  thisCourseFolders.forEach((fld) => {
+    if (fld.sectionId) sectionIdsWithContent.add(fld.sectionId);
+    if (fld.sectionName) sectionNamesWithContent.add(fld.sectionName);
+  });
+  thisCourseLinks.forEach((lnk) => {
+    if (lnk.sectionId) sectionIdsWithContent.add(lnk.sectionId);
+    if (lnk.sectionName) sectionNamesWithContent.add(lnk.sectionName);
+  });
+
+  const thisCourseSections = (courseSections || []).filter(
+    (s) => s.courseId === courseId && (s.visible !== false || sectionIdsWithContent.has(s.id) || sectionNamesWithContent.has(s.name))
+  );
+
+  const sectionIdSet = new Set(thisCourseSections.map((s) => s.id));
+  const rawTopSections = thisCourseSections.filter((s) => {
+    if (!s.parentSectionId || s.parentSectionId <= 0) return true;
+    if (!sectionIdSet.has(s.parentSectionId)) return true;
+    return s.level === 0;
+  });
+  const topSections = (rawTopSections.length <= 1 && thisCourseSections.length > 1)
+    ? thisCourseSections
+    : rawTopSections;
+  const currentSubSections = activeTopSectionId !== null
+    ? thisCourseSections.filter((s) => s.parentSectionId === activeTopSectionId)
+    : [];
+
+  // Group files, assignments, folders, links, and Panopto recordings by sectionId (with fallback to sectionName)
   const sectionsMap = new Map<
     string,
     {
       displayTitle: string;
       isPanopto?: boolean;
+      sectionId?: number;
+      parentSectionId?: number | null;
+      summaryHtml?: string;
       files: CourseFile[];
       assignments: Assignment[];
       recordings: PanoptoRecording[];
+      folders: CourseFolder[];
+      links: CourseLink[];
     }
   >();
+  const sectionKeyById = new Map<number, string>();
+  const sectionKeyByName = new Map<string, string>();
 
   // Initialize section helper
-  const getSection = (key: string, displayTitle?: string, isPanopto = false) => {
-    const sKey = key || 'General';
+  const getSection = (
+    key: string,
+    displayTitle?: string,
+    isPanopto = false,
+    sectionId?: number,
+    parentSectionId?: number | null
+  ) => {
+    const title = displayTitle || key || 'General';
+    let sKey = key || 'General';
+    if (sectionId !== undefined && sectionKeyById.has(sectionId)) {
+      sKey = sectionKeyById.get(sectionId)!;
+    } else if (sectionId === undefined && sectionKeyByName.has(sKey)) {
+      sKey = sectionKeyByName.get(sKey)!;
+    } else if (sectionId !== undefined && sectionsMap.has(sKey) && sectionsMap.get(sKey)!.sectionId !== sectionId) {
+      // Disambiguate identically named subsections (e.g., two "שבוע 1" under different parent tabs)
+      sKey = `${sKey}__${sectionId}`;
+    }
+
     if (!sectionsMap.has(sKey)) {
       sectionsMap.set(sKey, {
-        displayTitle: displayTitle || sKey,
+        displayTitle: title,
         isPanopto,
+        sectionId,
+        parentSectionId,
         files: [],
         assignments: [],
         recordings: [],
+        folders: [],
+        links: [],
       });
     }
+    if (sectionId !== undefined) sectionKeyById.set(sectionId, sKey);
+    if (!sectionKeyByName.has(title)) sectionKeyByName.set(title, sKey);
     return sectionsMap.get(sKey)!;
   };
 
+  thisCourseSections.forEach((sec) => {
+    const s = getSection(sec.name, sec.name, false, sec.id, sec.parentSectionId);
+    if (sec.summaryHtml) s.summaryHtml = sec.summaryHtml;
+  });
+
   courseFiles.forEach((f) => {
-    getSection(f.sectionName).files.push(f);
+    if (!f.folderId) {
+      getSection(f.sectionName, f.sectionName, false, f.sectionId).files.push(f);
+    }
   });
 
   courseAssignments.forEach((a) => {
-    getSection(a.sectionName || 'General').assignments.push(a);
+    getSection(a.sectionName || 'General', a.sectionName || 'General', false, a.sectionId).assignments.push(a);
+  });
+
+  thisCourseFolders.forEach((fld) => {
+    getSection(fld.sectionName || 'General', fld.sectionName || 'General', false, fld.sectionId).folders.push(fld);
+  });
+
+  thisCourseLinks.forEach((lnk) => {
+    getSection(lnk.sectionName || 'General', lnk.sectionName || 'General', false, lnk.sectionId).links.push(lnk);
   });
 
   // Group Panopto recordings into hardcoded localized "Lectures" and "Recitations" sections
@@ -5325,8 +6019,62 @@ function CourseDetailView({
 
   const sectionsList = Array.from(sectionsMap.entries());
 
+  // Sections in sectionsList that aren't mapped to any section in thisCourseSections
+  const coveredSectionKeys = new Set<string>();
+  thisCourseSections.forEach((s) => {
+    const key = sectionKeyById.get(s.id);
+    if (key) coveredSectionKeys.add(key);
+    coveredSectionKeys.add(s.name);
+  });
+  const orphanContentSections = sectionsList.filter(
+    ([k]) => !k.startsWith('__panopto_') && !coveredSectionKeys.has(k)
+  );
+
+  const isSectionContentEmpty = (content: {
+    files: CourseFile[];
+    assignments: Assignment[];
+    recordings: PanoptoRecording[];
+    folders: CourseFolder[];
+    links: CourseLink[];
+    summaryHtml?: string;
+  }) => {
+    if (content.files.length > 0) return false;
+    if (content.assignments.length > 0) return false;
+    if (content.recordings.length > 0) return false;
+    if (content.folders.length > 0) return false;
+    if (content.links.length > 0) return false;
+    if (content.summaryHtml) {
+      const cleanText = content.summaryHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+      if (cleanText.length > 0) return false;
+    }
+    return true;
+  };
+
+  const sectionHasContent = (sec: CourseSection): boolean => {
+    const key = sectionKeyById.get(sec.id) || sec.name;
+    const content = sectionsMap.get(key);
+    if (content && !isSectionContentEmpty(content)) return true;
+    return thisCourseSections.some((child) => child.parentSectionId === sec.id && sectionHasContent(child));
+  };
+
+  const visibleTopSections = showEmptySections
+    ? topSections
+    : topSections.filter(sectionHasContent);
+
+  const visibleSubSections = showEmptySections
+    ? currentSubSections
+    : currentSubSections.filter(sectionHasContent);
+
+  const visibleOrphanContentSections = showEmptySections
+    ? orphanContentSections
+    : orphanContentSections.filter(([, content]) => !isSectionContentEmpty(content));
+
+  const visibleSectionsList = showEmptySections
+    ? sectionsList
+    : sectionsList.filter(([, content]) => !isSectionContentEmpty(content));
+
   // Order assignments for this course by due date (with deterministic tie-breaker)
-  const sortedCourseAssigns = [...courseAssignments].sort((a, b) => {
+  const sortedCourseAssigns = [...allCourseAssignments].sort((a, b) => {
     if (!a.deadline && !b.deadline) return a.id - b.id;
     if (!a.deadline) return 1;
     if (!b.deadline) return -1;
@@ -5356,12 +6104,54 @@ function CourseDetailView({
         <div className="detail-title-section">
           <h3 style={{ color: courseColor }}>{courseDisplayName}</h3>
           <span className="course-id-badge">{rawCourseName}</span>
+          {courseGradeSummaries?.[courseId]?.hasCourseTotal && (
+            <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+              {lang === 'he' ? 'ציון כולל:' : 'Total Grade:'} {courseGradeSummaries[courseId].courseTotalFormatted}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="detail-grid">
         {/* Left column: Section Tree */}
         <div className="detail-main-tree">
+          {(() => {
+            const courseAnns = (courseAnnouncements || []).filter(a => a.courseId === courseId);
+            if (courseAnns.length === 0) return null;
+            return (
+              <div className="course-announcements-card glass-panel" style={{
+                padding: '0.75rem 1rem',
+                marginBottom: '1.25rem',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                background: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+              }}>
+                <span style={{ fontSize: '1.2rem' }}>📢</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#60a5fa' }}>
+                    {lang === 'he' ? 'לוח מודעות והודעות' : 'Announcements & News'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                    {courseAnns.map((ann) => (
+                      <a
+                        key={ann.id}
+                        href={ann.moodleUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="action-link-btn"
+                        style={{ fontSize: '0.8rem', padding: '0.2rem 0.55rem' }}
+                      >
+                        {ann.name} ↗
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {(() => {
             const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
             const courseMeetings = collapseRecurringMeetings(rawCourseMeetings, new Date());
@@ -5869,10 +6659,268 @@ function CourseDetailView({
             );
           })()}
 
-          <h4>{t('course_sections')}</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h4 style={{ margin: 0 }}>{t('course_sections')}</h4>
+            {sectionsList.length > 0 && (
+              <button
+                type="button"
+                className="secondary-btn btn-xs toggle-empty-sections-btn"
+                onClick={handleToggleShowEmptySections}
+                title={showEmptySections ? (t('hide_empty_sections') || 'Hide empty sections') : (t('show_empty_sections') || 'Show empty sections')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '0.75rem',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  background: showEmptySections ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  borderColor: showEmptySections ? 'rgba(99, 102, 241, 0.35)' : 'rgba(255, 255, 255, 0.12)',
+                  color: showEmptySections ? '#818cf8' : 'var(--text-secondary)'
+                }}
+              >
+                {showEmptySections ? <EyeOffIcon size={12} /> : <EyeIcon size={12} />}
+                <span>
+                  {showEmptySections
+                    ? (t('hide_empty_sections') || (lang === 'he' ? 'הסתר נושאים ריקים' : 'Hide empty sections'))
+                    : (t('show_empty_sections') || (lang === 'he' ? 'הצג נושאים ריקים' : 'Show empty sections'))}
+                </span>
+              </button>
+            )}
+          </div>
 
-          {/* Subjects Navigation Tree */}
-          {sectionsList.length > 0 && (
+          {/* Subjects Navigation Tree (2-Level Hierarchy if available, otherwise flat sectionsList) */}
+          {(showEmptySections ? topSections.length : visibleTopSections.length) > 1 || (topSections.length > 1 && visibleTopSections.length > 0) ? (
+            <div className="subjects-nav-tree-container" style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div className="subjects-nav-tree glass-panel" style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
+                padding: '0.75rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '8px',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: '0.5rem' }}>
+                  {lang === 'he' ? 'נווּט נושאים:' : 'Navigate Subjects:'}
+                </span>
+                <button
+                  className="secondary-btn btn-sm"
+                  onClick={() => {
+                    setActiveTopSectionId(null);
+                    setActiveSubSectionId(null);
+                    handleSectionSelect(null);
+                  }}
+                  style={{
+                    background: activeTopSectionId === null && activeSectionName === null ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                    color: activeTopSectionId === null && activeSectionName === null ? '#fff' : 'var(--text-primary)',
+                    borderColor: activeTopSectionId === null && activeSectionName === null ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                    fontWeight: activeTopSectionId === null && activeSectionName === null ? 'bold' : 'normal',
+                    padding: '0.3rem 0.75rem',
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem'
+                  }}
+                >
+                  {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
+                </button>
+                {visibleTopSections.map((sec) => {
+                  const isActive = activeTopSectionId === sec.id;
+                  return (
+                    <button
+                      key={sec.id}
+                      className="secondary-btn btn-sm"
+                      onClick={() => {
+                        setActiveTopSectionId(sec.id);
+                        setActiveSubSectionId(null);
+                        const childSubIds = new Set(
+                          thisCourseSections
+                            .filter((s) => s.parentSectionId === sec.id)
+                            .map((s) => s.id)
+                        );
+                        if (childSubIds.size > 0) {
+                          const matchingKeys = visibleSectionsList
+                            .filter(([, c]) => c.sectionId === sec.id || (c.sectionId !== undefined && childSubIds.has(c.sectionId)))
+                            .map(([k]) => k);
+                          setActiveSectionName(matchingKeys[0] || sec.name);
+                          setExpandedSections(new Set(matchingKeys));
+                        } else {
+                          const key = sectionKeyById.get(sec.id) || sec.name;
+                          handleSectionSelect(key);
+                        }
+                      }}
+                      style={{
+                        background: isActive ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                        color: isActive ? '#fff' : 'var(--text-primary)',
+                        borderColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                        fontWeight: isActive ? 'bold' : 'normal',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      {sec.name}
+                    </button>
+                  );
+                })}
+                {visibleOrphanContentSections.map(([secName, secContent]) => {
+                  const isActive = activeSectionName === secName;
+                  return (
+                    <button
+                      key={secName}
+                      className="secondary-btn btn-sm"
+                      onClick={() => {
+                        setActiveTopSectionId(null);
+                        setActiveSubSectionId(null);
+                        handleSectionSelect(secName);
+                      }}
+                      style={{
+                        background: isActive ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                        color: isActive ? '#fff' : 'var(--text-primary)',
+                        borderColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                        fontWeight: isActive ? 'bold' : 'normal',
+                        padding: '0.3rem 0.75rem',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      {secContent.displayTitle || secName}
+                    </button>
+                  );
+                })}
+                {sectionsMap.has('__panopto_lectures__') && (
+                  <button
+                    className="secondary-btn btn-sm"
+                    onClick={() => handleSectionSelect('__panopto_lectures__')}
+                    style={{
+                      background: activeSectionName === '__panopto_lectures__' ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                      color: activeSectionName === '__panopto_lectures__' ? '#fff' : 'var(--text-primary)',
+                      borderColor: activeSectionName === '__panopto_lectures__' ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                      fontWeight: activeSectionName === '__panopto_lectures__' ? 'bold' : 'normal',
+                      padding: '0.3rem 0.75rem',
+                      borderRadius: '16px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    🎥 {t('panopto_lectures_section')}
+                  </button>
+                )}
+                {sectionsMap.has('__panopto_recitations__') && (
+                  <button
+                    className="secondary-btn btn-sm"
+                    onClick={() => handleSectionSelect('__panopto_recitations__')}
+                    style={{
+                      background: activeSectionName === '__panopto_recitations__' ? courseColor : 'rgba(255, 255, 255, 0.05)',
+                      color: activeSectionName === '__panopto_recitations__' ? '#fff' : 'var(--text-primary)',
+                      borderColor: activeSectionName === '__panopto_recitations__' ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                      fontWeight: activeSectionName === '__panopto_recitations__' ? 'bold' : 'normal',
+                      padding: '0.3rem 0.75rem',
+                      borderRadius: '16px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    🎥 {t('panopto_recitations_section')}
+                  </button>
+                )}
+                {sectionsList.length > 0 && (
+                  <button
+                    type="button"
+                    className="secondary-btn btn-xs toggle-empty-sections-nav-btn"
+                    onClick={handleToggleShowEmptySections}
+                    title={showEmptySections ? (t('hide_empty_sections') || 'Hide empty sections') : (t('show_empty_sections') || 'Show empty sections')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginInlineStart: 'auto',
+                      fontSize: '0.72rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      background: showEmptySections ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      borderColor: showEmptySections ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                      color: showEmptySections ? '#818cf8' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {showEmptySections ? <EyeOffIcon size={11} /> : <EyeIcon size={11} />}
+                    <span>{showEmptySections ? (lang === 'he' ? 'הסתר ריקים' : 'Hide empty') : (lang === 'he' ? 'הצג ריקים' : 'Show empty')}</span>
+                  </button>
+                )}
+              </div>
+
+              {activeTopSectionId !== null && visibleSubSections.length > 0 && (
+                <div className="subsections-nav-row" style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.4rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(255, 255, 255, 0.015)',
+                  borderRadius: '6px',
+                  alignItems: 'center',
+                  marginLeft: lang === 'he' ? 0 : '1rem',
+                  marginRight: lang === 'he' ? '1rem' : 0
+                }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>↳</span>
+                  <button
+                    className="secondary-btn btn-sm"
+                    onClick={() => {
+                      setActiveSubSectionId(null);
+                      const topSec = topSections.find((s) => s.id === activeTopSectionId);
+                      if (topSec) {
+                        const childSubIds = new Set(
+                          thisCourseSections
+                            .filter((s) => s.parentSectionId === topSec.id)
+                            .map((s) => s.id)
+                        );
+                        const matchingKeys = visibleSectionsList
+                          .filter(([, c]) => c.sectionId === topSec.id || (c.sectionId !== undefined && childSubIds.has(c.sectionId)))
+                          .map(([k]) => k);
+                        setActiveSectionName(matchingKeys[0] || topSec.name);
+                        setExpandedSections(new Set(matchingKeys));
+                      }
+                    }}
+                    style={{
+                      background: activeSubSectionId === null ? courseColor : 'rgba(255, 255, 255, 0.04)',
+                      color: activeSubSectionId === null ? '#fff' : 'var(--text-primary)',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    {lang === 'he' ? 'כל תתי-הנושאים' : 'All Subtopics'}
+                  </button>
+                  {visibleSubSections.map((sub) => {
+                    const isActive = activeSubSectionId === sub.id;
+                    return (
+                      <button
+                        key={sub.id}
+                        className="secondary-btn btn-sm"
+                        onClick={() => {
+                          setActiveSubSectionId(sub.id);
+                          const key = sectionKeyById.get(sub.id) || sub.name;
+                          handleSectionSelect(key);
+                        }}
+                        style={{
+                          background: isActive ? courseColor : 'rgba(255, 255, 255, 0.04)',
+                          color: isActive ? '#fff' : 'var(--text-primary)',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        {sub.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : visibleSectionsList.length > 0 ? (
             <div className="subjects-nav-tree glass-panel" style={{
               display: 'flex',
               flexWrap: 'wrap',
@@ -5902,7 +6950,7 @@ function CourseDetailView({
               >
                 {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
               </button>
-              {sectionsList.map(([secName, secContent]) => {
+              {visibleSectionsList.map(([secName, secContent]) => {
                 const isActive = activeSectionName === secName;
                 return (
                   <button
@@ -5924,14 +6972,55 @@ function CourseDetailView({
                   </button>
                 );
               })}
+              {sectionsList.length > 0 && (
+                <button
+                  type="button"
+                  className="secondary-btn btn-xs toggle-empty-sections-nav-btn"
+                  onClick={handleToggleShowEmptySections}
+                  title={showEmptySections ? (t('hide_empty_sections') || 'Hide empty sections') : (t('show_empty_sections') || 'Show empty sections')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginInlineStart: 'auto',
+                    fontSize: '0.72rem',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    background: showEmptySections ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                    borderColor: showEmptySections ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                    color: showEmptySections ? '#818cf8' : 'var(--text-secondary)'
+                  }}
+                >
+                  {showEmptySections ? <EyeOffIcon size={11} /> : <EyeIcon size={11} />}
+                  <span>{showEmptySections ? (lang === 'he' ? 'הסתר ריקים' : 'Hide empty') : (lang === 'he' ? 'הצג ריקים' : 'Show empty')}</span>
+                </button>
+              )}
             </div>
-          )}
+          ) : null}
 
-          {sectionsList.length === 0 ? (
-            <div className="empty-state">{t('empty_sections')}</div>
+          {visibleSectionsList.length === 0 ? (
+            <div className="empty-state">
+              {sectionsList.length > 0
+                ? (lang === 'he' ? 'כל הנושאים בקורס זה ריקים (מוסתרים כברירת מחדל).' : 'All sections in this course are empty (hidden by default).')
+                : t('empty_sections')}
+              {sectionsList.length > 0 && !showEmptySections && (
+                <div style={{ marginTop: '0.6rem' }}>
+                  <button
+                    type="button"
+                    className="secondary-btn btn-xs"
+                    onClick={handleToggleShowEmptySections}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <EyeIcon size={12} />
+                    <span>{t('show_empty_sections') || (lang === 'he' ? 'הצג נושאים ריקים' : 'Show empty sections')}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="sections-tree">
-              {sectionsList.map(([secName, content], sIdx) => {
+              {visibleSectionsList.map(([secName, content], sIdx) => {
                 const isCollapsed = expandedSections !== null ? !expandedSections.has(secName) : false;
                 return (
                   <div
@@ -5960,7 +7049,7 @@ function CourseDetailView({
                           setActiveSectionName(null);
                         }
                         setExpandedSections(prev => {
-                          const newSet = new Set(prev === null ? sectionsList.map(s => s[0]) : prev);
+                          const newSet = new Set(prev === null ? visibleSectionsList.map(s => s[0]) : prev);
                           if (newSet.has(secName)) {
                             newSet.delete(secName);
                           } else {
@@ -5985,7 +7074,12 @@ function CourseDetailView({
                           </a>
                         ) : (
                           <a
-                            href={getCourseMoodleUrl(courseId, courseAssignments[0]?.link)}
+                            href={(() => {
+                              const matchingSec = thisCourseSections.find(
+                                (s) => (content.sectionId !== undefined && s.id === content.sectionId) || s.name === content.displayTitle
+                              );
+                              return matchingSec?.sectionUrl || getCourseMoodleUrl(matchingSec?.courseId || courseId, courseAssignments[0]?.link);
+                            })()}
                             target="_blank"
                             rel="noreferrer"
                             className="action-icon-link"
@@ -6003,6 +7097,40 @@ function CourseDetailView({
 
                     {!isCollapsed && (
                       <div className="section-node-body" style={{ marginTop: '1rem' }}>
+                        {isSectionContentEmpty(content) && (
+                          <div
+                            className="empty-section-placeholder"
+                            style={{
+                              padding: '0.6rem 0.85rem',
+                              color: 'var(--text-secondary)',
+                              fontSize: '0.85rem',
+                              fontStyle: 'italic',
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              borderRadius: '6px',
+                              border: '1px dashed rgba(255, 255, 255, 0.08)'
+                            }}
+                          >
+                            {t('no_items_in_section')}
+                          </div>
+                        )}
+                        {content.summaryHtml && (
+                          <div
+                            className="section-summary-banner"
+                            style={{
+                              padding: '0.65rem 0.85rem',
+                              marginBottom: '0.85rem',
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              borderRadius: '6px',
+                              borderInlineStart: `3px solid ${courseColor}`,
+                              fontSize: '0.85rem',
+                              color: 'var(--text-secondary)',
+                              lineHeight: '1.45',
+                              whiteSpace: 'pre-line',
+                            }}
+                          >
+                            {content.summaryHtml}
+                          </div>
+                        )}
                         {content.assignments.length > 0 && (
                           <div className="section-assignments-list">
                             {content.assignments.map((a) => {
@@ -6018,7 +7146,24 @@ function CourseDetailView({
                               return (
                                 <div key={a.id} className="section-assignment-item">
                                   <div className="item-meta-row">
-                                    <span className="item-type-tag assign-tag">📝 {lang === 'he' ? 'מטלה' : 'Assignment'}</span>
+                                    <span className={`item-type-tag ${a.activityType === 'quiz' ? 'quiz-tag' : 'assign-tag'}`}>
+                                      {a.activityType === 'quiz' ? `❓ ${lang === 'he' ? 'בוחן' : 'Quiz'}` : `📝 ${lang === 'he' ? 'מטלה' : 'Assignment'}`}
+                                    </span>
+                                    {a.timeLimitSeconds ? (
+                                      <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}>
+                                        ⏱️ {Math.round(a.timeLimitSeconds / 60)} {lang === 'he' ? "דק'" : 'min'}
+                                      </span>
+                                    ) : null}
+                                    {a.isBonus && (
+                                      <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)' }}>
+                                        ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
+                                      </span>
+                                    )}
+                                    {a.isLateSubmissionBox && (
+                                      <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', borderColor: 'rgba(249, 115, 22, 0.3)' }}>
+                                        ⏳ {lang === 'he' ? 'הגשה באיחור' : 'Late Box'}
+                                      </span>
+                                    )}
                                     {a.status === 'Submitted' ? (
                                       <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
                                     ) : (
@@ -6027,6 +7172,11 @@ function CourseDetailView({
                                   </div>
                                   <span className="item-name">
                                     {a.name}
+                                    {a.feedback && (
+                                      <div style={{ marginTop: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.3rem 0.55rem', borderRadius: '4px', borderInlineStart: '3px solid #10b981' }}>
+                                        💬 <strong>{lang === 'he' ? 'משוב:' : 'Feedback:'}</strong> {a.feedback}
+                                      </div>
+                                    )}
                                     {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
                                       <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
                                         {t('not_submitted_tag')}
@@ -6039,9 +7189,29 @@ function CourseDetailView({
                                     )}
                                   </span>
                                   <div className="item-actions" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.45rem' }}>
-                                    <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
-                                      {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
-                                    </a>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                      <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
+                                        {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
+                                      </a>
+                                      {onToggleCompleted && (
+                                        <button
+                                          type="button"
+                                          className="secondary-btn btn-sm"
+                                          onClick={() => onToggleCompleted(a.id)}
+                                          style={{
+                                            fontSize: '0.75rem',
+                                            padding: '0.2rem 0.55rem',
+                                            borderRadius: '6px',
+                                            background: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                            color: (a as any).isCompleted ? '#10b981' : 'var(--text-primary)',
+                                            borderColor: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          {(a as any).isCompleted ? '✓ ' + (lang === 'he' ? 'בוצע' : 'Done') : (lang === 'he' ? 'סמן כבוצע' : 'Mark as done')}
+                                        </button>
+                                      )}
+                                    </div>
                                     {a.attachments && a.attachments.length > 0 && (
                                       <div className="files-column-list">
                                         {a.attachments.map((att, attIdx) => {
@@ -6106,6 +7276,121 @@ function CourseDetailView({
                           </div>
                         )}
 
+                        {content.folders && content.folders.length > 0 && (
+                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem' }}>
+                            {content.folders.map((fld) => {
+                              const isDownloading = downloadingFolderId === fld.id;
+                              return (
+                                <div
+                                  key={fld.id}
+                                  className="section-folder-card glass-panel"
+                                  style={{
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: '0.5rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '1.2rem' }}>📁</span>
+                                    <div>
+                                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                        {fld.files.length} {lang === 'he' ? 'קבצים' : 'files'}
+                                        {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <a
+                                      href={fld.moodleUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="action-link-btn"
+                                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                    >
+                                      {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                    </a>
+                                    <button
+                                      type="button"
+                                      className="secondary-btn btn-sm"
+                                      disabled={isDownloading}
+                                      onClick={() => handleDownloadFolderZip(fld)}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        fontSize: '0.75rem',
+                                        padding: '0.3rem 0.6rem',
+                                        cursor: isDownloading ? 'wait' : 'pointer'
+                                      }}
+                                    >
+                                      <span>📦</span>
+                                      <span>
+                                        {isDownloading
+                                          ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || fld.files.length})`
+                                          : lang === 'he'
+                                          ? 'הורד כ-ZIP'
+                                          : 'Download ZIP'}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {content.links && content.links.length > 0 && (
+                          <div className="section-links-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
+                            {content.links.map((lnk) => {
+                              let icon = '🔗';
+                              if (lnk.linkKind === 'drive') icon = '📁';
+                              else if (lnk.linkKind === 'github') icon = '💻';
+                              else if (lnk.linkKind === 'zoom') icon = '📹';
+                              else if (lnk.linkKind === 'panopto') icon = '🎬';
+
+                              return (
+                                <div
+                                  key={lnk.id}
+                                  className="section-link-item"
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: '6px',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    fontSize: '0.85rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                    <span>{icon}</span>
+                                    <span style={{ fontWeight: 500 }}>{lnk.name}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <a
+                                      href={lnk.targetUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="action-link-btn"
+                                      style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                    >
+                                      {lang === 'he' ? 'פתח קישור ↗' : 'Open Link ↗'}
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {content.recordings.length > 0 && (
                           <div className="section-recordings-list">
                             {content.recordings.map((rec, rIdx) => {
@@ -6154,9 +7439,6 @@ function CourseDetailView({
                           </div>
                         )}
 
-                        {content.assignments.length === 0 && content.files.length === 0 && content.recordings.length === 0 && (
-                          <p className="no-content-text">{lang === 'he' ? 'נושא ריק' : 'Empty section'}</p>
-                        )}
                       </div>
                     )}
                   </div>
@@ -6169,7 +7451,7 @@ function CourseDetailView({
         {/* Right column: Assignments Quick Overview */}
         <div className="detail-sidebar">
           {(() => {
-            const allHidden = sortedCourseAssigns.length > 0 && sortedCourseAssigns.every((a) => settings?.hiddenAssignments?.includes(a.id));
+            const allHidden = sortedCourseAssigns.length > 0 && sortedCourseAssigns.every((a) => isActivityHidden(a, settings?.hiddenAssignments));
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <h4 style={{ margin: 0 }}>{t('all_assignments_label')}</h4>
@@ -6192,7 +7474,7 @@ function CourseDetailView({
             <div className="sidebar-assignments-list">
               {sortedCourseAssigns.map((a) => {
                 const isExpanded = expandedDetailAssignId === a.id;
-                const isHidden = settings?.hiddenAssignments?.includes(a.id);
+                const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
                 const assignSubjectFiles = (files || []).filter(
                   (f) =>
                     f.courseId === courseId &&

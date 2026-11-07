@@ -98,7 +98,8 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
     *   *Rule:* `fallbackRunner.ts` intercepts `invalidtoken` and `accessexception` errors on `RestMoodleStrategy`. It immediately invokes `getMobileToken()` across strategies (`ScraperMoodleStrategy.getMobileToken()` issues a POST reset request to `/user/managetoken.php` using the browser's active SSO cookies).
     *   *Rule:* Once a new token is extracted from the `copytoclipboardtoken` element, all registered strategies receive the new token via `strategy.setToken(newToken)`, the REST circuit breaker is cleared, and the operation is retried immediately with REST. The user is never prompted to log in again if their browser SSO session remains active.
 
-### J. Direct Course-Page Assignment Scraping (D4 Fix)
+### J. Direct Course-Page Assignment Scraping (D4 Fix — Legacy Note)
+*   **Deprecation / Policy Note (`ScraperMoodleStrategy`)**: HTML scraping via `ScraperMoodleStrategy` is **very unstable** across TAU Moodle's diverse course formats (such as tabbed `onetopic` and `multitopic` courses) and theme updates, and is **not a relevant target handler**. **Do NOT design or require `ScraperMoodleStrategy` implementations for new Moodle structures or features.** Rely exclusively on structured JSON endpoints: Moodle REST Web Services (`/webservice/rest/server.php` via `wstoken`, kept alive via silent token renewal in Rule 3.I) and, when supplementary JSON state is needed, Moodle AJAX Services (`/lib/ajax/service.php` via `sesskey`).
 *   **Calendar Decoupling:** Historically, the scraper strategy parsed assignments via `/calendar/view.php?view=upcoming`. This was flawed because the calendar filters out past assignments and assignments that professors did not link to calendar events.
     *   *Rule:* `ScraperMoodleStrategy.getAssignments()` must NOT rely on the Moodle calendar. Instead, it iterates over all known courses in `this.courseYearMap`, fetches individual course pages (`/course/view.php?id=X`) across all academic instances (e.g. `2025/course/view.php?id=X`), and extracts all anchor tags matching `/mod/assign/view.php?id=(\d+)` along with `.instancename` titles.
     *   *Rule:* All courses enrolled via timeline AJAX (`extractCoursesViaAjax`) must record their course-to-year mapping in `this.courseYearMap` so they are fully included in course page assignment scraping.
@@ -157,5 +158,45 @@ When testing extension changes or verifying new features, agents must NOT ask th
    - Inspect pictures immediately using `view_file`.
 4. **Reference Guide**: Read [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md) for complete implementation patterns.
 
+---
 
+## 7. Moodle Structures & Heuristics Knowledge
 
+### A. TAU Course Code Taxonomy & Grouping Modes
+Tel Aviv University Moodle course codes adhere to specific institutional conventions:
+1. **Academic Common Lecture vs Group Portals (Mode A)**:
+   - **8-Digit Base Code** (e.g. `01022312` or containing `-99-`): The unified common lecture and general materials portal.
+   - **10-Digit Group Code** (e.g. `0102231201`): The recitation, exercise, or lab submission portal.
+   - *Heuristic:* `courseGrouping.ts` matches the first 8 digits of both portals and groups them into a single high-level course card, aggregating assignments, quizzes, and files while keeping `sourceCourseId` intact for accurate deep links.
+2. **Administrative & Compliance Tutorials (Mode B)**:
+   - Course codes starting with `5900*`, `5800*`, or categorized under `בטיחות` / `Safety` represent mandatory safety tutorials (e.g. fire safety, electrical safety, biological safety).
+   - *Heuristic:* Consolidated into a single dedicated `הדרכות בטיחות והדרכות חובה` umbrella card and strictly excluded from student GPA calculations (`excludeFromGpa: true`).
+3. **Semester Codes**:
+   - `1`: Semester A (Fall/Winter)
+   - `2`: Semester B (Spring)
+   - `3`: Summer Semester (Summer)
+
+### B. HTML Scraper Strategy Deprecation Policy
+- **Policy:** The HTML DOM scraping strategy (`ScraperMoodleStrategy`) is permanently deprecated for all newly introduced structures.
+- **Rationale:** TAU Moodle utilizes diverse and evolving page formats (`multitopic`, `onetopic`, `tiles`, `weeks`, `mod_subsection`), making regex parsing of server-rendered HTML fragile and prone to silent failures.
+- **Standard:** All new capabilities (quizzes, format hierarchy, folder PKZIPs, external links, announcements, gradebook summaries) MUST strictly consume official Moodle REST Web Services and authenticated JSON AJAX endpoints (`sesskey`).
+
+### C. Multilang Filter Protocol
+- Moodle titles frequently contain bilingual strings wrapped in `<span class="multilang" lang="he">...` and `<span class="multilang" lang="en">...`.
+- When making REST requests, always include:
+  ```
+  moodlewssettingfilter: 'true'
+  moodlewssettinglang: 'he'
+  ```
+- Always sanitize residual markup using `cleanMoodleString(str, 'he')`, which extracts the Hebrew span and strips leftover multilang HTML tags.
+
+### D. Late-Submission Box Auto-Suppression Heuristic
+- TAU courses frequently configure a second Moodle assignment box specifically for late submissions (e.g. `מטלה 1 - הגשה באיחור`).
+- If left unmanaged, students see a perpetual overdue warning even after submitting on time.
+- *Heuristic:* When a late submission box is detected, Noodle checks if the regular assignment has `status === 'Submitted'` or `isCompleted === true`. If so, the late box is automatically suppressed (`isHidden: true`). If the regular assignment is not submitted, the late box stays visible as an active submission pathway.
+
+### E. Pure-TS PKZIP Engine Constraints
+- Shared client code under `packages/moodle-client` runs inside Chrome/Firefox MV3 Service Workers and React Native's Hermes engine.
+- Neither Node.js native binary modules nor `zlib` / `Buffer` / `stream` are available.
+- `zipBuilder.ts` constructs raw PKZIP 2.0 archives using typed byte arrays (`Uint8Array`, `DataView`) and manual IEEE 802.3 CRC-32 polynomials.
+- Always set bit 11 (`0x0800`) in the general purpose bit flag to ensure cross-platform UTF-8 rendering of Hebrew folder contents.

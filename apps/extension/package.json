@@ -4,8 +4,8 @@
   "version": "4.0.2",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:firefox": "vite --mode firefox",
+    "dev": "pnpm --filter @tautracker/moodle-client run build && vite",
+    "dev:firefox": "pnpm --filter @tautracker/moodle-client run build && vite --mode firefox",
     "build": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build --mode chrome",
     "build:chrome": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build --mode chrome",
     "build:firefox": "pnpm --filter @tautracker/moodle-client run build && tsc -b && vite build --mode firefox",

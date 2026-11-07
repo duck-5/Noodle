@@ -14,10 +14,12 @@ All API requests must target the Moodle REST server:
 https://moodle.tau.ac.il/webservice/rest/server.php
 ```
 
-All requests must include the following query parameters:
+All requests must include the following parameters:
 *   `wstoken`: The user's active Web Service token.
 *   `moodlewsrestformat`: `json` (forces the response to be JSON; the default is XML).
 *   `wsfunction`: The name of the specific Web Service function.
+*   `moodlewssettingfilter`: `true` (instructs Moodle to apply text filters such as `multilang`).
+*   `moodlewssettinglang`: `he` (prefers Hebrew strings when multilang tags are present).
 
 ---
 
@@ -97,10 +99,50 @@ All requests must include the following query parameters:
     *   `gradeformatted` (string): Formatted grade representation.
     *   `gradeishidden` (boolean): Flag indicating whether the grade is hidden by the teacher.
 
-#### 7. File Upload (Submission Helper)
+#### 7. Retrieve Quizzes & Exams (mod_quiz)
+*   **Function Name:** `mod_quiz_get_quizzes_by_courses`
+*   **Method:** `POST`
+*   **Parameters:** `courseids[0]={courseid}`
+*   **Purpose:** Retrieves all Moodle quiz and online exam descriptions, availability windows, time restrictions, and allowed attempt limits.
+*   **Key Response Fields:**
+    *   `id` (number): Quiz instance ID.
+    *   `coursemodule` (number): Course module ID (`cmid`).
+    *   `name` (string): Quiz title (sanitized via `cleanMoodleString`).
+    *   `timeopen` (number): Quiz opening epoch timestamp.
+    *   `timeclose` (number): Quiz deadline epoch timestamp.
+    *   `timelimit` (number): Duration restriction in seconds (e.g. 1800 for 30 minutes).
+    *   `attempts` (number): Allowed attempt limit (0 = unlimited).
+
+#### 8. Retrieve Quiz Attempt History
+*   **Function Name:** `mod_quiz_get_user_attempts`
+*   **Method:** `POST`
+*   **Parameters:** `quizid={quizid}`, `status='all'`
+*   **Purpose:** Queries attempt records for the authenticated student to determine completion state.
+*   **Key Response Fields:**
+    *   `attempts` (array): List of user attempts with `state` (`'finished'`, `'inprogress'`, or `'abandoned'`). An attempt with `state === 'finished'` automatically marks the quiz as completed.
+
+#### 9. Update Manual Activity Completion (Two-Way Sync)
+*   **Function Name:** `core_completion_update_activity_completion_status_manually`
+*   **Method:** `POST`
+*   **Parameters:** `cmid={cmid}`, `completed={1 | 0}`
+*   **Purpose:** Dispatches user-toggled "Mark as done" (`סמן כבוצע`) states back to the Moodle server for activities configured with manual completion tracking (`completion === 1`).
+
+#### 10. Fetch Course Format AJAX State (2-Level Hierarchy)
+*   **Endpoint:** `/lib/ajax/service.php?sesskey={sesskey}&info=core_courseformat_get_state`
+*   **Method:** `POST` (JSON payload)
+*   **Purpose:** Reconstructs the 2-level hierarchical topic/subtopic tab tree:
+    *   `tabsdata` array in `multitopic` format (parent tab `sectionid` to child `subtree` items).
+    *   `parentid` and `levelsan` attributes in `onetopic` format.
+    *   Moodle 4.5 nested sub-sections (`mod_subsection` sub-components).
+
+#### 11. File Upload (Submission Helper)
 *   **Function Name:** `core_files_upload` (or standard multipart to `/webservice/upload.php`)
 *   **Method:** `POST`
 *   **Purpose:** Uploads a file to the Moodle draft file area on behalf of the user. Returns a draft item ID that must then be saved via assignment submission APIs.
+
+> [!WARNING]
+> **Deprecation Notice — HTML Scraping Strategy (`ScraperMoodleStrategy`):**
+> HTML scraping via regular expressions is fragile and prone to breakage across TAU Moodle theme and version updates. It is permanently deprecated for all newly introduced structures (quizzes, format hierarchy, folders, announcements), which strictly rely on official Web Services and AJAX endpoints.
 
 ---
 
@@ -128,8 +170,12 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
 *   **Stable Identifier (Metadata):** Google Tasks has no custom field metadata. Noodle injects a deterministic string into the `notes` (description) field of the task:
     ```
     Noodle:assignId:{moodle_assign_id}
+    # OR for quizzes:
+    Noodle:quizId:{moodle_quiz_id}
+    # OR unified composite UID:
+    Noodle:uid:{assign|quiz}:{id}
     ```
-    This allows the sync engine to identify existing tasks without relying on unstable title matching.
+    This allows the sync engine to identify existing tasks without relying on unstable title matching across both assignments and quizzes.
 *   **Hidden & Completed Task Deletion Policy (`GoogleTasksSyncOptions`):**
     *   **Hidden Tasks:** Assignments in `hiddenAssignmentIds` or marked `isHidden` **must never** be synced to Google Tasks. If an existing Google Task exists for a hidden assignment, it is immediately deleted via `DELETE`.
     *   **Marked as Done / Completed Tasks:** Assignments that are submitted in Moodle, marked in `completedAssignmentIds`, or marked completed in Google Tasks (`status: 'completed'`) are **deleted** from Google Tasks to prevent to-do clutter.
@@ -279,3 +325,16 @@ When `enablePanopto: true` (`ExtensionSettings.panoptoEnabled`) is enabled, Nood
   * Associates each recording with a Moodle course section by matching lecture/recitation/week numbers or title keyword overlap, falling back to `'הקלטות פנופטו'`.
 
 * **Progressive Backoff**: Senders (`sendMessageToBackground`) utilize a 4-stage backoff (`200, 500, 1000, 1500 ms`, ~3.2s total) to wait for dormant workers to spin up, returning structured error objects on failure.
+
+---
+
+## 7. Pure-TS PKZIP Specification (`zipBuilder.ts`)
+
+To enable instant bulk downloads of course folders (`mod_folder`) without external binary dependencies or native Node.js libraries, Noodle implements a pure TypeScript PKZIP 2.0 archive generator.
+
+### Key Capabilities
+1. **Zero Node Dependencies:** Pure typed byte array (`Uint8Array`, `DataView`) construction running seamlessly in Chrome/Firefox MV3 Service Workers and React Native Hermes.
+2. **IEEE 802.3 CRC-32:** Generates a lookup table at initialization and computes 32-bit cyclical redundancy checks for all compressed file streams.
+3. **UTF-8 Hebrew File Support:** Emits bit 11 (`0x0800`) in the General Purpose Bit Flag for both Local File Headers and Central Directory Records, ensuring Hebrew filenames render properly in Windows Explorer, macOS Archive Utility, and mobile archive handlers.
+4. **Collision Disambiguation:** Tracks file paths within the ZIP and appends sequential indicators (`filename (1).pdf`) for identical filenames within the same directory.
+5. **Bounded Concurrent Download:** Downloads folder contents in parallel (max concurrency 4) with `wstoken` authentication and JSON exception detection (`{ exception: ... }`).

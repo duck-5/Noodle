@@ -64,6 +64,16 @@ export interface RawMoodleCourse {
   idnumber: string;
   year?: string;
   instanceUrl?: string;
+  format?: string;
+  coursecategory?: string;
+  startdate?: number;
+  enddate?: number;
+  section?: number;
+  visible?: number;
+  uservisible?: boolean;
+  summary?: string;
+  summaryformat?: number;
+  component?: string;
 }
 
 export interface RawMoodleAssignment {
@@ -75,8 +85,27 @@ export interface RawMoodleAssignment {
   cutoffdate: number;
   allowsubmissionsfromdate: number;
   intro?: string;
+  visible?: number;
+  uservisible?: boolean;
+  visibleoncoursepage?: number;
+  customdata?: string;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+  dates?: Array<{
+    label: string;
+    timestamp: number;
+    dataid: string;
+  }>;
     introattachments?: Array<{
     filename: string;
+  filepath?: string;
     fileurl: string;
   }>;
 }
@@ -91,6 +120,54 @@ export interface RawMoodleAssignmentCourse {
 export interface RawMoodleAssignmentsResponse {
   courses: RawMoodleAssignmentCourse[];
 }
+
+export interface RawMoodleQuiz {
+  id: number;
+  course: number;
+  coursemodule: number;
+  name: string;
+  intro?: string;
+  introformat?: number;
+  timeopen: number;
+  timeclose: number;
+  timelimit: number;
+  attempts: number;
+  grademethod?: number;
+  grade?: number;
+  sumgrades?: number;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+}
+
+export interface RawMoodleQuizzesResponse {
+  quizzes: RawMoodleQuiz[];
+  warnings?: any[];
+}
+
+export interface RawMoodleQuizAttempt {
+  id: number;
+  quiz: number;
+  userid: number;
+  attempt: number;
+  state: 'inprogress' | 'overdue' | 'finished' | 'abandoned';
+  timestart: number;
+  timefinish: number;
+  timemodified: number;
+  sumgrades?: number;
+}
+
+export interface RawMoodleQuizAttemptsResponse {
+  attempts: RawMoodleQuizAttempt[];
+  warnings?: any[];
+}
+
 
 export interface RawSubmissionPluginFile {
   filename: string;
@@ -121,13 +198,18 @@ export interface RawSubmissionStatus {
 }
 
 export interface RawGradeItem {
+  id?: number;
+  itemname?: string;
   itemtype: string;
   itemmodule: string;
   cmid: number | null;
   gradeformatted: string;
   graderaw: number | null;
+  grademin?: number;
   grademax: number;
   gradeishidden: boolean;
+  feedback?: string;
+  feedbackformat?: number;
 }
 
 export interface RawUserGrade {
@@ -143,6 +225,7 @@ export interface RawGradeReportResponse {
 export interface RawCourseFileContent {
   type: string;
   filename: string;
+  filepath?: string;
   fileurl: string;
   filesize: number;
   mimetype: string;
@@ -157,13 +240,36 @@ export interface RawCourseModule {
   instance?: number;
   description?: string;
   intro?: string;
+  visible?: number;
+  uservisible?: boolean;
+  visibleoncoursepage?: number;
+  customdata?: string;
+  completion?: number;
+  completiondata?: {
+    state?: number;
+    timecompleted?: number;
+    hascompletion?: boolean;
+    isautomatic?: boolean;
+    isincomplete?: boolean;
+    [key: string]: any;
+  };
+  dates?: Array<{
+    label: string;
+    timestamp: number;
+    dataid: string;
+  }>;
   contents?: RawCourseFileContent[];
 }
 
 export interface RawCourseSection {
   id: number;
   name: string;
+  section?: number;
+  visible?: number;
+  uservisible?: boolean;
   summary?: string;
+  summaryformat?: number;
+  component?: string;
   modules: RawCourseModule[];
 }
 
@@ -172,6 +278,7 @@ export interface MoodleClientOptions {
   devMode?: boolean;
   strategies?: IMoodleStrategy[];
   enableScraping?: boolean;
+  lang?: 'he' | 'en';
 }
 
 export class MoodleClient {
@@ -192,6 +299,7 @@ export class MoodleClient {
       baseUrl: this.baseUrl,
       devMode: this.devMode,
       enableScraping: options?.enableScraping,
+      lang: options?.lang,
     };
 
     this.restStrategy = new RestMoodleStrategy(context);
@@ -210,6 +318,10 @@ export class MoodleClient {
       }
       this.strategies = defaultStrategies;
     }
+  }
+
+  public setLanguage(lang: 'he' | 'en'): void {
+    this.restStrategy.setLanguage(lang);
   }
 
   public static async fetchToken(
@@ -375,6 +487,33 @@ export class MoodleClient {
       'saveNoodleSettings',
       this.strategies,
       (s) => s.saveNoodleSettings(settingsJson),
+      this.devMode
+    );
+  }
+
+  public async getQuizzes(courseIds: number[]): Promise<RawMoodleQuiz[]> {
+    return executeWithFallback(
+      'getQuizzes',
+      this.strategies,
+      (s) => (s.getQuizzes ? s.getQuizzes(courseIds) : Promise.resolve([])),
+      this.devMode
+    );
+  }
+
+  public async getQuizAttempts(quizId: number): Promise<RawMoodleQuizAttempt[]> {
+    return executeWithFallback(
+      'getQuizAttempts',
+      this.strategies,
+      (s) => (s.getQuizAttempts ? s.getQuizAttempts(quizId) : Promise.resolve([])),
+      this.devMode
+    );
+  }
+
+  public async updateActivityCompletionManually(cmid: number, completed: boolean): Promise<boolean> {
+    return executeWithFallback(
+      'updateActivityCompletionManually',
+      this.strategies,
+      (s) => (s.updateActivityCompletionManually ? s.updateActivityCompletionManually(cmid, completed) : Promise.resolve(false)),
       this.devMode
     );
   }
