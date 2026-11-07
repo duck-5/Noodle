@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "postinstall": "pnpm run build:moodle-client",
     "build:moodle-client": "pnpm --filter @tautracker/moodle-client run build",
     "test": "node scripts/run-tests.mjs",
     "test:moodle-client": "pnpm --filter @tautracker/moodle-client test",

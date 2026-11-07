@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Automated Shared Client Build on Install & Dev (`package.json`, `apps/extension/package.json`)**:
+  - Added root `postinstall` script (`pnpm run build:moodle-client`) and prepended shared client compilation to extension `dev` and `dev:firefox` scripts so TypeScript declarations in `packages/moodle-client/dist` are always up to date after `git pull` or `pnpm install`.
 - **Hidden Tasks Excluded from Gaps Count & Course Statistics (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`, `e2e/dashboard.spec.ts`)**:
   - Filtered `courseAssigns` by `!isActivityHidden(a, settings?.hiddenAssignments)` when computing course breakdown stats, active task totals (`totalAssigns`), and gaps count (`gapAssigns`).
   - Guaranteed that hidden assignments (e.g. companion late boxes, optional exercises, or exercises for other groups) no longer artificially penalize the student with "gaps" / פערים or degrade the course completion progress bar.
