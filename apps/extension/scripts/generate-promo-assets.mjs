@@ -34,6 +34,9 @@ const courseDetailData = getBase64Image(path.join(screenshotsDir, 'course-9999-d
 const modalData = getBase64Image(path.join(screenshotsDir, 'dashboard-manage-modal.png'));
 const popupData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup.png'));
 const popupHeData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup-he.png'));
+const calendarData = getBase64Image(path.join(screenshotsDir, 'calendar-view.png'));
+const gradesData = getBase64Image(path.join(screenshotsDir, 'grades-page.png'));
+const settingsData = getBase64Image(path.join(screenshotsDir, 'settings-page.png'));
 
 const sharedCss = `
   @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rubik:wght@400;500;600;700;800&display=swap');
@@ -777,6 +780,270 @@ const slides = [
       </html>
     `,
   },
+
+  // Slide 6: Visual Monthly Calendar Hub
+  {
+    name: 'promo-6-calendar-hub',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          ${sharedCss}
+          .dashboard-scaled-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background: #fdfaf5;
+          }
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(0.96);
+            transform-origin: top center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="slide-container">
+          <div class="header-zone">
+            <div>
+              <div class="brand-pill">
+                <img src="${logoData}" alt="Noodle logo">
+                <span>Visual Academic Calendar</span>
+              </div>
+              <h1 class="slide-title">Plan Your Month at a <span class="highlight">Glance</span></h1>
+              <p class="slide-subtitle">A responsive split-pane workspace. Assignment deadlines mapped directly to an interactive monthly grid with color-coded date pills.</p>
+            </div>
+            <div class="pill-group">
+              <div class="feature-tag">📅 Monthly Grid View</div>
+              <div class="feature-tag">🎯 1-Click Pill Jump</div>
+              <div class="feature-tag">🎨 Pastel Urgency Tags</div>
+            </div>
+          </div>
+
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
+              </div>
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#calendar</span>
+              </div>
+            </div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${calendarData}" alt="Split-Pane Calendar Preview">
+              </div>
+            </div>
+          </div>
+
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">📅</div>
+            <div>
+              <div class="badge-text-title">Interactive Deadline Pills</div>
+              <div class="badge-text-sub">Click any pill to scroll directly to full homework details</div>
+            </div>
+          </div>
+
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #fef3c7; color: #d97706;">⚡</div>
+            <div>
+              <div class="badge-text-title">Split-Pane Workspace</div>
+              <div class="badge-text-sub">Keep your homework feed visible while planning your month</div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  },
+
+  // Slide 7: Academic Grades & GPA Performance Tracker
+  {
+    name: 'promo-7-grades-analytics',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          ${sharedCss}
+          .dashboard-scaled-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background: #fdfaf5;
+          }
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(0.96);
+            transform-origin: top center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="slide-container">
+          <div class="header-zone">
+            <div>
+              <div class="brand-pill">
+                <img src="${logoData}" alt="Noodle logo">
+                <span>Academic Grades & GPA Tracker</span>
+              </div>
+              <h1 class="slide-title">Track Your Academic <span class="highlight">Progress</span></h1>
+              <p class="slide-subtitle">Instant cumulative GPA calculations, grade distributions per course, and detailed score breakdowns for all submitted assignments.</p>
+            </div>
+            <div class="pill-group">
+              <div class="feature-tag">📊 Cumulative GPA</div>
+              <div class="feature-tag">🎯 Per-Course Distribution</div>
+              <div class="feature-tag">⚡ Instant REST Sync</div>
+            </div>
+          </div>
+
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
+              </div>
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#grades</span>
+              </div>
+            </div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${gradesData}" alt="Grades & GPA Tracker Preview">
+              </div>
+            </div>
+          </div>
+
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #ecfdf5; color: #059669;">📊</div>
+            <div>
+              <div class="badge-text-title">Automated Weighted Average</div>
+              <div class="badge-text-sub">Instant GPA calculation updated across all active courses</div>
+            </div>
+          </div>
+
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #fdf2f8; color: #db2777;">🎯</div>
+            <div>
+              <div class="badge-text-title">Transparent Score History</div>
+              <div class="badge-text-sub">Track max points, raw scores, and professor feedback</div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  },
+
+  // Slide 8: Two-Way Google Tasks & Calendar Synchronization
+  {
+    name: 'promo-8-google-tasks-sync',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          ${sharedCss}
+          .dashboard-scaled-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background: #fdfaf5;
+          }
+          .dashboard-scaled-container img {
+            width: 100%;
+            height: auto;
+            transform: scale(0.96);
+            transform-origin: top center;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="slide-container">
+          <div class="header-zone">
+            <div>
+              <div class="brand-pill">
+                <img src="${logoData}" alt="Noodle logo">
+                <span>Two-Way Cloud Synchronization</span>
+              </div>
+              <h1 class="slide-title">Sync With <span class="highlight">Google Tasks</span> & Calendar</h1>
+              <p class="slide-subtitle">Connect your Google account in seconds. Homework deadlines automatically sync to a dedicated University list and appear on Google Calendar.</p>
+            </div>
+            <div class="pill-group">
+              <div class="feature-tag">🔄 2-Way Sync</div>
+              <div class="feature-tag">📱 Phone & Calendar</div>
+              <div class="feature-tag">🔒 Zero Cloud Storage</div>
+            </div>
+          </div>
+
+          <div class="browser-frame">
+            <div class="browser-topbar">
+              <div class="traffic-lights">
+                <span class="traffic-light tl-red"></span>
+                <span class="traffic-light tl-yellow"></span>
+                <span class="traffic-light tl-green"></span>
+              </div>
+              <div class="browser-address">
+                <span>🔒 chrome-extension://noodle/options.html#settings</span>
+              </div>
+            </div>
+            <div class="browser-content">
+              <div class="dashboard-scaled-container">
+                <img src="${settingsData}" alt="Google Tasks Settings Preview">
+              </div>
+            </div>
+          </div>
+
+          <!-- Callout 1 -->
+          <div class="badge-callout" style="bottom: 45px; left: 40px;">
+            <div class="badge-icon-box" style="background: #eef2ff; color: #4338ca;">🔄</div>
+            <div>
+              <div class="badge-text-title">Automated Two-Way Sync</div>
+              <div class="badge-text-sub">Mark tasks completed in Noodle or Google Tasks seamlessly</div>
+            </div>
+          </div>
+
+          <!-- Callout 2 -->
+          <div class="badge-callout" style="top: 140px; right: 40px;">
+            <div class="badge-icon-box" style="background: #fff7ed; color: #ea580c;">📱</div>
+            <div>
+              <div class="badge-text-title">Everywhere You Study</div>
+              <div class="badge-text-sub">Deadlines on your phone, watch, and Google Calendar</div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  },
 ];
 
 // Marquee Banner: 1400x560 (No TAU specification)
@@ -880,7 +1147,7 @@ const marqueeBanner = {
   `,
 };
 
-// Small Promo Tile: 440x280 (No TAU specification, perfectly framed avatar Option B)
+// Small Promo Tile: 440x280 (Clean, modern, warm & inviting: Title, Tagline, and Mascot Logo)
 const smallTile = {
   name: 'promo-small-tile',
   width: 440,
@@ -896,46 +1163,84 @@ const smallTile = {
           width: 440px;
           height: 280px;
           display: flex;
-          flex-direction: column;
+          align-items: center;
           justify-content: space-between;
-          padding: 24px 28px;
-          background: radial-gradient(circle at 90% 15%, rgba(245, 158, 11, 0.22) 0%, transparent 50%),
-                      radial-gradient(circle at 10% 90%, rgba(224, 122, 95, 0.14) 0%, transparent 45%),
+          padding: 30px 36px;
+          background: radial-gradient(circle at 82% 45%, rgba(245, 158, 11, 0.22) 0%, transparent 60%),
+                      radial-gradient(circle at 18% 85%, rgba(224, 122, 95, 0.16) 0%, transparent 55%),
                       #fdfaf5;
           position: relative;
           overflow: hidden;
+        }
+        .tile-container::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(#d6c7b2 1.2px, transparent 1.2px);
+          background-size: 20px 20px;
+          opacity: 0.25;
+          pointer-events: none;
+        }
+        .tile-left {
+          position: relative;
+          z-index: 10;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          max-width: 215px;
+        }
+        .brand-heading {
+          font-size: 52px;
+          font-weight: 800;
+          color: #0f172a;
+          line-height: 1.0;
+          letter-spacing: -1.4px;
+          margin-bottom: 10px;
+        }
+        .brand-subheading {
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1.3;
+          color: #ea580c;
+          letter-spacing: -0.3px;
+        }
+        .tile-right {
+          position: relative;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 155px;
+          height: 155px;
+          flex-shrink: 0;
+        }
+        .mascot-glow {
+          position: absolute;
+          inset: -4px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(254, 215, 170, 0.6) 0%, transparent 72%);
+          filter: blur(8px);
+          pointer-events: none;
+        }
+        .mascot-img {
+          width: 145px;
+          height: 145px;
+          object-fit: contain;
+          filter: drop-shadow(0 14px 22px rgba(224, 122, 95, 0.3));
+          position: relative;
+          z-index: 2;
         }
       </style>
     </head>
     <body>
       <div class="tile-container">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; z-index: 10;">
-          <div>
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-              <span style="font-size: 32px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Noodle</span>
-            </div>
-            <div style="font-size: 15px; font-weight: 700; color: #ea580c;">Smart Study Companion</div>
-          </div>
-          <div style="width: 76px; height: 76px; overflow: hidden; border-radius: 50%; background: #ffffff; border: 2.5px solid #fed7aa; box-shadow: 0 6px 16px rgba(224, 138, 60, 0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-            <img src="${logoData}" style="width: 105px; height: 105px; object-fit: cover; transform: translateY(-25px) scale(1.35);" alt="Logo">
-          </div>
+        <div class="tile-left">
+          <div class="brand-heading">Noodle</div>
+          <div class="brand-subheading">Free Modern<br>Moodle Client.</div>
         </div>
-
-        <div style="z-index: 10; display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #334155;">
-            <span style="color: #10b981; font-weight: 800;">✓</span> Real-Time Deadlines & Countdowns
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #334155;">
-            <span style="color: #2563eb; font-weight: 800;">✓</span> 1-Click Live Zoom Lectures
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #8b5cf6;">
-            <span style="color: #a0613e; font-weight: 800;">✓</span> 100% Private & Client-Only
-          </div>
-        </div>
-
-        <div style="z-index: 10; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-          <span style="font-size: 11px; font-weight: 600; color: #64748b;">Free & Open Source</span>
-          <span style="font-size: 11px; font-weight: 700; color: #c2410c;">Modern Moodle Client</span>
+        <div class="tile-right">
+          <div class="mascot-glow"></div>
+          <img src="${logoData}" alt="Noodle Logo" class="mascot-img">
         </div>
       </div>
     </body>
