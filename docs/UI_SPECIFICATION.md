@@ -62,7 +62,7 @@ Presented immediately after successful authentication or when manually triggered
     - (Mobile only) Clicking anywhere not on the sidebar collapses it
     - *Collapsed state styling*: Hides text labels, scales the logo to `44px` circular bounds, and formats navigation items as centered square buttons.
 *   **Footer**:
-    - **Disconnect Button**: Shorthand power plug icon (`🔌`) that triggers log out.
+    - **Disconnect Button**: Exit door with arrow vector icon (`ExitIcon`) that triggers log out.
     - (Mobile only) The disconnect logo will appear only when the sidebar is expended
 
 ### B. Resizable Dashboard Container & Edge Dividers
@@ -82,45 +82,34 @@ Presented immediately after successful authentication or when manually triggered
 * **Header Strip**: Minimal SVG sync icon with smooth spinning animation during synchronization (`.spinning-sync-icon`). Theme controls are centralized in Settings for a clutter-free header.
 
 ### A. Hero Action Strip
-The top of the dashboard features a split horizontal action strip designed for rapid orientation and zero-anxiety productivity:
-1. **Hero Spotlight Card ("המטלה הקרובה" / Next Task)**:
-   - High-contrast card spotlighting the single nearest pending deadline, dynamically tinted with the course accent color (`rgba(courseColor, 0.08)` surface & glow border).
-   - Category badge with course name and color indicator dot.
-   - Section / Topic metadata strip providing immediate academic context.
-   - **Expandable Files Drawer (`isHeroExpanded`)**: Clicking the Hero Spotlight card expands/collapses its files drawer (`.queue-item-expanded`), keeping course subject files (`קבצי הנושא`), assignment attachments, and submitted files hidden by default until expanded.
-   - Course Subject Files (`קבצי הנושא`): Dynamically resolves and displays course files matching the assignment's topic section, equipped with squircle green "פתח ↗" link (`#10b981`) and squircle arrow-only SVG Download button (`<DownloadIcon size={12} />`).
-   - Action toolbar with direct 1-click controls:
-     - "סמן כבוצע" / "סמן כלא הושלם" (`CheckIcon`)
-     - "הגש במודל ↗" primary action
-     - "עבור לקורס" (`BookOpenIcon`)
-     - "הסתר" / "בטל הסתרה" (`EyeIcon` / `EyeOffIcon`)
-   - Attachment and submission chips with squircle "פתח ↗" link (`#10b981`) and squircle arrow-only SVG Download button (`<DownloadIcon size={12} />`).
-2. **Upcoming To-Do Queue ("תור משימות קרובות")**:
-   - Secondary vertical card listing imminent tasks.
+The top of the dashboard features a focused action strip designed for rapid orientation and zero-anxiety productivity:
+1. **Upcoming To-Do Queue ("תור משימות קרובות")**:
+   - Primary card listing imminent tasks with smooth internal scrollbar.
+   - **Closest Task Metallic Horizontal Glow Wave**: The single nearest pending deadline features a calm, continuous 5-second metallic horizontal glow wave (`.closest-metallic-wave`) gliding smoothly across the card without visual distraction or intrusive tags. Tasks remain collapsed by default for maximum density and clutter-free scanning.
    - **Exclusion & Sorting Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
    - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue with stable deterministic ordering.
-   - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer (`.queue-item-expanded`) containing:
+   - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer (`.queue-drawer`) containing:
      - Assignment prompt attachments with squircle open and arrow-only download buttons.
      - Course Subject Files (`קבצי הנושא`) matching the task's course and topic section with squircle open and arrow-only download buttons.
      - Submitted files chips when coursework was previously submitted.
-     - Action toolbar: "עבור לקורס" (`go_to_course`), "סמן כבוצע / כלא הושלם" (`mark_done`), "הסתר / בטל הסתרה" (`hide_assignment`), and "הגש במודל ↗" (`submit_assignment`).
+     - Action toolbar: "עבור לקורס" (`go_to_course`), "סמן כבוצע / כלא הושלם" (`mark_done`), "הסתר / בטל הסתרה" (`hide_assignment`), and prominent "הגש במודל ↗" (`submit_assignment`).
+2. **Catch-Up Recordings Queue ("השלמת שיעורים")**: When Panopto integration is active, renders alongside the upcoming tasks queue in a balanced 2-column grid with synchronized height and scrollable unwatched lecture/recitation queue.
 
 ### B. Live Session & Progress Bar
 * **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, strictly filtering out hidden or uninterested meetings.
 * **Semester Progress**: Visual progress bar tracking overall completion percentage across all assignments in tracked courses (`X/Y (Z%)`).
 
 ### C. My Tracked Courses ("הקורסים שלי")
-* **Deterministic Course Order**: Manual reordering arrows are removed for a predictable, clean list.
+* **Deterministic Course Order**: Predictable, clean list of tracked courses.
 * **View Options Toggle**: Segmented switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") allows toggling between a vertical rows list and a responsive card grid (`.courses-cards-grid`), persisted in local storage.
 * **Manage Courses Modal Trigger**: "⚙️ ניהול קורסים" button opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
 * **Dual View Modes (List & Cards)**:
-   - **List Mode**: Single horizontal flex row with course info, progress bar, next task, and actions toolbar.
-   - **Cards Mode**: Responsive grid (`repeat(auto-fill, minmax(360px, 1fr))`) where each card is partitioned into two horizontal sections:
-     - **Left Section**: Stacked column featuring course title/code with color dot, per-course progress bar, and next upcoming assignment details.
-     - **Right Section**: Vertically stacked action buttons ("Assignments", "Go to Course") and centered rotating expansion chevron (`▼`).
-* **Interactive Smooth Expansion**: Clicking anywhere on the row/card (or on the rotating chevron) smoothly opens the inline drawer (`.course-expanded-panel`) in both view modes, revealing:
-   - **Zoom Links with Re-visibility**: All meetings configured for this course, displaying `<EyeIcon />` for visible and `<EyeOffIcon />` for hidden so hidden meetings can be unhidden at any time.
-   - **Next 5 Assignments**: Up to 5 upcoming unhidden assignments, start-aligned (not centered) with clean column structure, squircle open links, and squircle arrow-only download buttons. Hidden assignments are excluded. Compact `.btn-xs` action buttons allow marking done or unhiding.
+   - **List Mode**: Single horizontal flex row with course info, breakdown statistics, progress bar, next task, and 1-click navigation buttons ("Assignments", "Go to Course").
+   - **Cards Mode**: Clean 3-row layout partitioned into maximum 3 cards per row (`repeat(3, minmax(0, 1fr))` on desktop, adapting to 2 and 1 on narrower viewports):
+     - **1st Row**: Course display title + real title/code with color indicator on the start side, paired with the primary "Go to Course" button (`.course-card-goto-btn`) on the end side.
+     - **2nd Row**: Next task preview with due date (`.course-card-next-task`) and secondary "Assignments" button (`.course-card-assignments-btn`).
+     - **3rd Row**: Gaps summary with "פערים:" label (`.course-gaps-label`), gap pills for assignments, lectures, and recitations (`.course-card-gaps`), and an integrated overall course progress bar with percentage (`.course-card-progress-box`).
+* **Direct Navigation**: Course cards and list rows are clean, focused overview cards with no clutter or collapse/expand accordion. Clicking anywhere on a card smoothly navigates directly to the comprehensive course detail page.
 
 ---
 

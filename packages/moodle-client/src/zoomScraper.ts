@@ -438,6 +438,38 @@ export async function scrapeZoomMeetings(
 }
 
 /**
+ * Parses a Zoom meeting date-time string into a UTC Date.
+ *
+ * Crucial Zoom LTI API Detail:
+ * Zoom's LTI API (`applications.zoom.us/api/v1/lti/rich/meeting/...`) ALWAYS returns
+ * `startTime` in UTC as a SQL-formatted string (e.g. "2026-11-17 10:00:00").
+ * Even when the JSON payload includes `"timezone": "Asia/Jerusalem"` or another zone,
+ * that field only reflects the host's display preference. The actual timestamp in
+ * `startTime` is already UTC.
+ *
+ * In standard JavaScript, passing "YYYY-MM-DD HH:mm:ss" without 'Z' to `new Date()`
+ * parses the string in the client's local timezone (e.g. UTC+2 in Israel), which shifts
+ * the time by the local offset.
+ *
+ * By ensuring the datetime string ends with 'Z' (or handling explicit offsets),
+ * the timestamp is accurately treated as UTC, allowing the browser's standard
+ * `.toLocaleString()` / `.toLocaleTimeString()` to format it correctly in the
+ * user's local timezone.
+ */
+export function parseDateTimeInZone(dateStr: string): Date {
+  const cleanStr = dateStr.trim().replace(' ', 'T');
+
+  // If cleanStr already has an explicit offset or UTC indicator ('Z' or '+02:00' or '-05:00')
+  if (/[zZ]$|[+-]\d{2}(?::?\d{2})?$/.test(cleanStr)) {
+    return new Date(cleanStr);
+  }
+
+  // Zoom LTI API always outputs startTime in UTC. Append 'Z' to prevent JavaScript
+  // from parsing it as a local device timestamp.
+  return new Date(cleanStr.endsWith('Z') ? cleanStr : cleanStr + 'Z');
+}
+
+/**
  * Normalizes and validates a Zoom meeting startTime from the LTI Rich API.
  *
  * Why weird/unrelated hours happen:
@@ -446,15 +478,22 @@ export async function scrapeZoomMeetings(
  *    created/saved the room in Moodle (e.g. `02:37:41` or `23:14:52`), which is completely unrelated to class hours.
  * 2. Scheduled Zoom meetings (`type === 2` or `type === 8`) can only be scheduled on 5-minute intervals with `:00` seconds.
  *    Any timestamp with non-zero seconds or non-5-minute granularity is a creation/instant-launch artifact.
- * 3. Meetings from the `/previous/` endpoint that ended more than 3 hours ago should not display their old
- *    timestamp as if it were an active or upcoming class time.
+ * 3. Zoom LTI Rich API returns UTC date-time strings (e.g. "YYYY-MM-DD HH:mm:ss") without a 'Z' suffix.
+ *    They are normalized to UTC ISO strings so the browser can format them in the user's local timezone.
  */
 export function normalizeZoomStartTime(
   m: any,
   isUpcoming = true,
   referenceDate: Date = new Date()
 ): string | undefined {
-  if (!m || m.startTime === undefined || m.startTime === null || m.startTime === '') {
+  if (!m) return undefined;
+
+  const raw =
+    m.startTime !== undefined && m.startTime !== null && m.startTime !== ''
+      ? m.startTime
+      : m.start_time;
+
+  if (raw === undefined || raw === null || raw === '') {
     return undefined;
   }
 
@@ -467,7 +506,6 @@ export function normalizeZoomStartTime(
     return undefined;
   }
 
-  const raw = m.startTime;
   let date: Date;
 
   if (typeof raw === 'number') {
@@ -481,8 +519,10 @@ export function normalizeZoomStartTime(
       const num = Number(trimmed);
       date = new Date(num < 1e11 ? num * 1000 : num);
     } else {
-      date = new Date(trimmed);
+      date = parseDateTimeInZone(trimmed);
     }
+  } else if (raw instanceof Date) {
+    date = raw;
   } else {
     return undefined;
   }
@@ -597,11 +637,16 @@ export async function scrapeZoomMeetingsWithToken(
         continue;
       }
 
+      const normalizedStartTime = normalizeZoomStartTime(m, isUpcoming);
+      console.log(
+        `[ZoomScraper] Parsed meeting "${m.topic}": raw="${m.startTime || m.start_time}", tz="${m.timezone || m.timeZone}", normalized="${normalizedStartTime}"`
+      );
+
       meetings.push({
         topic: m.topic || '',
         meetingId: m.meetingId || '',
         meetingNumber,
-        startTime: normalizeZoomStartTime(m, isUpcoming),
+        startTime: normalizedStartTime,
         joinUrl: directUrl,
         password: password || undefined,
         isUpcoming
@@ -620,19 +665,8 @@ export async function scrapeZoomMeetingsWithToken(
     if (upcomingData.result && upcomingData.result.list) {
       parseAndAddMeetings(upcomingData.result.list, true);
     }
-  }
-
-  // 6. Fetch previous meetings (fallback for rooms only listed under previous)
-  const previousUrl = 'https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0';
-  const previousRes = await mfetch(zoomJar, previousUrl, {
-    method: 'GET',
-    headers: ajaxHeaders
-  });
-  if (previousRes.ok) {
-    const previousData = await previousRes.json();
-    if (previousData.result && previousData.result.list) {
-      parseAndAddMeetings(previousData.result.list, false);
-    }
+  } else {
+    console.warn(`[ZoomScraper] Upcoming meetings fetch failed with status ${upcomingRes.status}`);
   }
 
   return meetings;

@@ -623,13 +623,13 @@ graph LR
 #### TC-DASH-REHAUL-08: Tracked Courses Cards Grid View & Two-Section Horizontal Card Layout
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the "My Tracked Courses" section supports toggling between List and Cards views via the segmented header buttons (`.view-mode-toggle-group`). In Cards mode, courses render in a responsive CSS grid (`.courses-cards-grid`) where each card is divided into two horizontal sections: a left column (course title/code, per-course progress bar, and next upcoming assignment details) and a right column (action buttons and rotating chevron). Clicking the card or rotating chevron smoothly expands the course drawer (`.course-expanded-panel`).
+* **Description**: Verifies that the "My Tracked Courses" section supports toggling between List and Cards views via the segmented header buttons (`.view-mode-toggle-group`). In Cards mode, courses render in a responsive CSS grid (`.courses-cards-grid`) capped at max 3 cards per row: Row 1 features the course title + real title and primary "Go to Course" button, Row 2 displays the next task preview and secondary "Assignments" button, and Row 3 shows the "פערים:" gaps summary alongside an overall course progress bar. Clicking the card navigates directly to the comprehensive course details view without accordion clutter.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-08"`
 * **Browser Agent Prompt / Action**:
   1. In the Dashboard "My Tracked Courses" header, click the "Cards" button (`.view-mode-btn`).
-  2. Verify `.courses-rows-container` receives `.courses-cards-grid`.
-  3. Verify each course card displays the 2-section horizontal layout (`.course-card-left-section` and `.course-card-right-section`).
-  4. Click a course card; verify it smoothly expands downward displaying Zoom links and assignments while rotating the chevron `▼` by 180 degrees.
+  2. Verify `.courses-rows-container` receives `.courses-cards-grid` with a maximum of 3 cards per row.
+  3. Verify each course card displays the 3-row layout: Row 1 (`.course-card-row-top`) with title, real title, and "Go to Course" button; Row 2 (`.course-card-row-middle`) with next task (`.course-card-next-task`) and "Assignments" button (`.course-card-assignments-btn`); Row 3 (`.course-card-row-bottom`) with gaps (`.course-card-gaps-container`) and progress bar (`.course-card-progress-box`).
+  4. Click a course card; verify it navigates directly to the course details view (`CourseDetailView`).
   5. Click the "List" button; verify layout switches back to top-down row list.
 
 #### TC-ASN-12: Assignments Split-Pane Calendar View & Deep Item Selection
@@ -724,11 +724,14 @@ graph LR
 #### TC-ZM-02: Active Meeting Detection (`● פעיל כעת`)
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Compares current time against meeting schedule. If current time is within meeting start and end window, marks status as `'active'` with a pulsing green indicator (`● פעיל כעת` / `Live Now`).
+* **Description**: Compares current time against meeting schedule. If current time is within meeting start and end window, marks status as `'active'` with a pulsing green indicator (`● פעיל כעת` / `Live Now`). Future meetings prior to the scheduled start time are marked `'upcoming'` (`קרוב` / `Upcoming`) and past meetings are marked `'inactive'` (`הסתיים` / `Finished`). Normalizes Zoom LTI start times with respect to meeting timezones (`m.timezone` / UTC / `Asia/Jerusalem`) to prevent premature live activation caused by UTC vs local timezone mismatches (Issue #35).
 * **Automated Test Flow**:
   1. Mock `Date.now()` to Monday 10:30.
   2. Test meeting scheduled for Monday 10:00 - 12:00 -> returns `'active'`.
-  3. Test meeting scheduled for Monday 14:00 - 16:00 -> returns `'inactive'`.
+  3. Test meeting scheduled for Monday 14:00 - 16:00 -> returns `'inactive'` or `'upcoming'`.
+  4. Test Zoom LTI meeting returned with `startTime: "2026-11-03 10:00:00", timezone: "UTC"`:
+     - At 08:00:00 UTC (10:00:00 Israel local time, 2 hours prior to class), verify meeting is NOT marked active.
+     - At 10:00:00 UTC (12:00:00 Israel local time, on schedule), verify meeting is marked active.
 * **Browser Agent Prompt / Action**:
   1. Navigate to dashboard or course with a live meeting.
   2. Verify the live meeting banner is displayed with prominent green highlight and "Join Now" button.
@@ -1171,10 +1174,10 @@ graph LR
 * **Description**: For a fresh installation without `hasSeenTour` (or when relaunched from the About tab), renders the v4 glassmorphic 10-step interactive walkthrough in both Chrome and Firefox:
   1. **Step 0 (Cockpit Overview)**: Centered modal introducing Noodle's decentralized local-first architecture, complete privacy, and student cockpit.
   2. **Step 1 (Real-Time Sync Button)**: Highlights `.header-sync-btn` on Dashboard, explaining instant direct Moodle fetching and background synchronization to Google Tasks without intermediate servers.
-  3. **Step 2 (Next Task Spotlight)**: Docks to bottom viewport; highlights `.hero-spotlight-card` with live countdown, 1-click submission link, prompt attachments, and relevant course topic files.
-  4. **Step 3 (Task Actions: Done & Hidden)**: Highlights `.hero-actions-row` & `.queue-card`, demonstrating 1-click completion (`✓`) and hiding tasks (`👁`), with dynamic removal from the active to-do queue.
+  3. **Step 2 (Next Task Spotlight & Upcoming Queue)**: Docks to bottom viewport; highlights `.queue-card` with the closest urgent task expanded by default with urgent flare styling, live countdown, 1-click Moodle submission link, prompt attachments, and relevant course topic files.
+  4. **Step 3 (Task Actions: Done & Hidden)**: Highlights `.queue-card`, demonstrating 1-click completion (`✓`) and hiding tasks (`👁`), with dynamic removal from the active to-do queue.
   5. **Step 4 (Manage Courses Modal)**: Automatically opens the "Manage Courses" modal (`isManageModalOpen: true`), highlighting `.modal-content` with top viewport alignment to prevent obscuring by the tour card. Explains setting custom course nicknames, assigning theme colors, tracking checkboxes, and semester grouping.
-  6. **Step 5 (Live Zoom & Link Filtering)**: Closes modal and automatically expands the first tracked course row (`expandedCourseId`), highlighting `.course-row-card`. Explains using the eye icon (`👁`) to filter out recitations the student does not attend, the "Active Now" banner with 1-click join, and viewing hidden sessions.
+  6. **Step 5 (Course Tracking & 1-Click Navigation)**: Closes modal and highlights the first tracked course card (`.course-row-card`), explaining course progress bars, breakdown statistics, and 1-click navigation to the course detail view (`onGoToCourse`) and assignments.
   7. **Step 6 (Assignments Hub & Feed)**: Automatically switches to the `assignments` tab, highlighting `.filter-bar`. Explains global search, 4 status filters (To Do, Past, Completed, Hidden), and expandable materials drawers.
   8. **Step 7 (Grades & GPA Tracker)**: Automatically switches to the `grades` tab, highlighting `.stat-card`. Explains cumulative GPA tracking, course grade components, and automatic Moodle grade synchronization.
   9. **Step 8 (Settings & Google Tasks Sync)**: Automatically switches to the `settings` tab, highlighting `.google-tasks-section`. Explains 2-way sync with Google Tasks and Calendar, theme selection (Dark, Noodle, Coffee), and urgency notification thresholds.
@@ -1189,7 +1192,7 @@ graph LR
   3. Advance using `ArrowLeft` (in RTL Hebrew) or click "Next".
   4. Assert Step 1 highlights `.header-sync-btn`.
   5. Assert Step 4 automatically opens the Manage Courses modal and highlights the modal content with top padding.
-  6. Assert Step 5 closes the modal and automatically expands the course row drawer showing Zoom meetings.
+  6. Assert Step 5 closes the modal and highlights the course card showcasing course progress and navigation buttons.
   7. Assert Steps 6, 7, 8, and 9 automatically switch tabs (`assignments`, `grades`, `settings`, `about`) and highlight respective sections.
   8. Test exiting via `Escape` key or clicking "Finish" on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
 

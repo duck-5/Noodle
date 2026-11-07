@@ -7,6 +7,7 @@ import {
   collapseRecurringMeetings,
   parseAppConf,
   normalizeZoomStartTime,
+  parseDateTimeInZone,
 } from '../src/zoomScraper.js';
 
 describe('Category 5: Zoom Meetings & Live Sessions', () => {
@@ -479,6 +480,62 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(
         normalizeZoomStartTime({ type: 2, startTime: '2026-10-01T10:00:00Z', duration: 90 }, false, refDate)
       ).toBeUndefined();
+    });
+
+    it('should correctly treat Zoom LTI API start time as UTC and fix Issue #35 (2-hour shift)', () => {
+      // 1. Zoom LTI API returns standard SQL datetime string with "timezone": "UTC"
+      const zoomLtiUtcMeeting = {
+        type: 2,
+        startTime: '2026-11-03 10:00:00',
+        timezone: 'UTC',
+        duration: 120,
+      };
+      const normalizedUtc = normalizeZoomStartTime(zoomLtiUtcMeeting, true);
+      expect(normalizedUtc).toBe('2026-11-03T10:00:00.000Z');
+
+      // 2. Real-world scenario from user log:
+      // Zoom LTI API returns raw="2026-11-17 10:00:00" and tz="Asia/Jerusalem".
+      // The startTime is already in UTC (representing 12:00 PM Jerusalem class time).
+      const zoomLtiJerusalemMeeting = {
+        type: 2,
+        startTime: '2026-11-17 10:00:00',
+        timezone: 'Asia/Jerusalem',
+        duration: 120,
+      };
+      expect(normalizeZoomStartTime(zoomLtiJerusalemMeeting, true)).toBe('2026-11-17T10:00:00.000Z');
+
+      // 3. Fallback to start_time property
+      const snakeCaseMeeting = {
+        type: 2,
+        start_time: '2026-11-03 10:00:00',
+        timeZone: 'UTC',
+      };
+      expect(normalizeZoomStartTime(snakeCaseMeeting, true)).toBe('2026-11-03T10:00:00.000Z');
+
+      // 4. Verification of Issue #35 bug condition:
+      // Lecture is scheduled for 10:00:00 UTC (which is 12:00:00 local Israel time).
+      const scheduledUtcIso = normalizedUtc!;
+      const scheduledStartTimeMs = new Date(scheduledUtcIso).getTime();
+      const endTimeMs = scheduledStartTimeMs + 2 * 60 * 60 * 1000;
+
+      // At 10:00:00 local Israel time (08:00:00 UTC) - 2 hours BEFORE class starts:
+      const twoHoursEarlyMs = new Date('2026-11-03T08:00:00.000Z').getTime();
+      const isLiveEarly = twoHoursEarlyMs >= scheduledStartTimeMs && twoHoursEarlyMs <= endTimeMs;
+      expect(isLiveEarly).toBe(false); // MUST NOT be live 2 hours early!
+
+      // At 12:00:00 local Israel time (10:00:00 UTC) - ON TIME when class starts:
+      const onTimeMs = new Date('2026-11-03T10:00:00.000Z').getTime();
+      const isLiveOnTime = onTimeMs >= scheduledStartTimeMs && onTimeMs <= endTimeMs;
+      expect(isLiveOnTime).toBe(true); // MUST be live when class starts!
+    });
+
+    it('should parse datetime strings into UTC Date via parseDateTimeInZone', () => {
+      // Explicit Z
+      expect(parseDateTimeInZone('2026-11-03T10:00:00Z').toISOString()).toBe('2026-11-03T10:00:00.000Z');
+      // Explicit numeric offset (+02:00 Israel time)
+      expect(parseDateTimeInZone('2026-11-03T12:00:00+02:00').toISOString()).toBe('2026-11-03T10:00:00.000Z');
+      // Space-separated SQL timestamp without offset -> treated as UTC as per Zoom LTI API
+      expect(parseDateTimeInZone('2026-11-03 10:00:00').toISOString()).toBe('2026-11-03T10:00:00.000Z');
     });
   });
 });

@@ -7,7 +7,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Added
+- **Subtle Metallic Horizontal Glow Wave for Nearest Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Added an elegant, non-intrusive metallic horizontal glow wave animation (`.closest-metallic-wave`) across the single nearest pending deadline in the Upcoming To-Do queue.
+  - Implemented as a continuous, smooth 5-second linear loop that steadily traverses the card without cooldown pauses, using semi-transparent platinum/silver shimmer in Dark theme, warm bronze in Noodle theme, and champagne/crema in Coffee theme.
+- **Theme-Adaptive Vector SVG Sidebar Navigation Icons (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Replaced hardcoded colored bitmap SVG assets (`dashboard.svg`, `settings.svg`, `about.svg`) and unicode emojis (🎓 for Grades, ▶ / ◀ for Collapse) with modern, scalable inline SVG vector components (`DashboardIcon`, `AssignmentsIcon`, `GradesIcon`, `SettingsIcon`, `AboutIcon`, `CollapseSidebarIcon`, `ExitIcon`).
+  - Implemented dynamic `currentColor` inheritance that adapts seamlessly across all themes: default Dark mode (silver/indigo), Coffee mode (warm oat milk/crema), and Noodle Light mode (deep mocha/terracotta).
+  - Added dedicated theme overrides for hover, active tabs, and focus borders across light, dark, and coffee themes.
+
+### Changed
+- **Equal-Width Hero Action Strip Layout (`apps/extension/src/options/App.css`)**:
+  - Adjusted `.hero-action-strip.with-catchup` to `repeat(2, minmax(0, 1fr))` so the Upcoming Tasks Queue and Catch-Up Recordings Queue share balanced, equal 50/50 weights.
+- **Course Cards Redesign & 3-Column Maximum Grid (`apps/extension/src/options/App.tsx`, `App.css`, `docs/UI_SPECIFICATION.md`, `docs/TEST_CASES.md`)**:
+  - Capped maximum cards per row to 3 (`.courses-cards-grid`, `repeat(3, minmax(0, 1fr))`), responsively adjusting to 2 columns on tablets and 1 on mobile screens.
+  - Redesigned card interiors into a clean, intuitive 3-row layout:
+    - **1st Row**: Course display title + real title/code with color dot on the start side, and primary "Go to Course" button (`.course-card-goto-btn`) on the end side.
+    - **2nd Row**: Next upcoming task preview with due badge (`.course-card-next-task`) and secondary "Assignments" button (`.course-card-assignments-btn`).
+    - **3rd Row**: Gaps summary with "פערים:" label (`.course-gaps-label`), gap pills for assignments, lectures, and recitations (`.course-card-gaps`), and an integrated overall course progress bar with percentage (`.course-card-progress-box`).
+- **Direct Navigation for Dashboard Tracked Course Cards (`apps/extension/src/options/App.tsx`, `docs/UI_SPECIFICATION.md`, `docs/TEST_CASES.md`)**:
+  - Clicking anywhere on a course card or list item smoothly navigates directly to that course's comprehensive detail page (`CourseDetailView`).
+
+### Removed
+- **Auto-Expansion & Urgent Badge on Closest Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed auto-expanding drawer behavior on mount for the nearest assignment so the queue remains compact and non-intrusive.
+  - Removed the urgent task badge tag (`⚡ דחוף · המטלה הקרובה` / `⚡ Urgent · Closest Task`) and rapid pulsing badge animation.
+- **Redundant Hero Spotlight Card & Course Accordion Drawers (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed the standalone leftmost hero card (`.hero-spotlight-card`) from the hero action strip, simplifying the layout into a balanced single- or two-column queue grid (Upcoming To-Do + Catch-Up Recordings).
+  - Removed the inline expandable drawers (`.course-expanded-panel`) and chevron dropdown toggles (`▼`) from tracked course cards and list items on the dashboard, eliminating redundant secondary UI and reducing the extension bundle size by ~19.6 kB.
+
 ### Fixed
+- **Zoom Meeting Start Time Normalization & Premature Live Indicator Fix (`packages/moodle-client/src/zoomScraper.ts`, `apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`, `apps/mobile/src/app/index.tsx`, #35)**:
+  - Resolved GitHub Issue #35 ("Zoom times displayed incorrectly") where scheduled Zoom meetings were marked active 2 hours prematurely (e.g. at 10:00 AM instead of 12:00 PM).
+  - Identified that Zoom's LTI Pro API (`applications.zoom.us/api/v1/lti/rich/meeting/upComing/...`) serializes `startTime` in UTC as a SQL datetime string (e.g. `"2026-11-17 10:00:00"` for a 12:00 PM Israel meeting) accompanied by host display metadata `"timezone": "Asia/Jerusalem"`.
+  - Added `parseDateTimeInZone` in `packages/moodle-client/src/zoomScraper.ts` to append `'Z'` and ensure `startTime` is parsed purely as UTC without double-offset subtraction, allowing the browser's native `toLocaleString()` to accurately render the class time in the student's local timezone.
+  - Completely removed redundant `/meeting/previous/COURSE/all` endpoint requests which are restricted to instructors in Zoom LTI Pro and caused 403 Forbidden errors and Cloudflare cookie warnings for student sessions.
+  - Updated `getMeetingStatus` in both the extension and mobile app to introduce an `'upcoming'` status for scheduled future sessions (`now < startTime`), displaying `קרוב` / `Upcoming` instead of misleadingly labeling future meetings as `הסתיים / לא פעיל` (`Finished / Inactive`).
 - **Firefox/Zen MV3 Host Permissions & CORS Rejection for Panopto (`apps/extension/src/options/App.tsx`, `background/serviceWorker.ts`, `shared/i18n.ts`)**:
   - Resolved CORS rejection (`Reason: CORS header 'Access-Control-Allow-Origin' does not match`) and 25-second hidden-tab timeout on release builds installed from AMO/Firefox. In Firefox Manifest V3, newly introduced host permissions (e.g. `*.panopto.eu`) are treated as user-controllable and left disabled by default on extension updates.
   - Added proactive runtime permission checks via `browser.permissions.contains` and prompt triggers via `browser.permissions.request` when enabling Panopto in Settings.

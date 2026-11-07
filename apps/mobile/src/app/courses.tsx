@@ -484,6 +484,8 @@ export default function CoursesScreen({
       const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
       if (now >= startTime && now <= endTime) {
         return 'active';
+      } else if (now < startTime) {
+        return 'upcoming';
       } else {
         return 'inactive';
       }
@@ -788,8 +790,11 @@ export default function CoursesScreen({
                         if (isActive) {
                           statusLabel = isRtl ? '● פעיל כעת' : '● Active Now';
                           statusColor = theme.secondary;
+                        } else if (status === 'upcoming') {
+                          statusLabel = isRtl ? 'קרוב' : 'Upcoming';
+                          statusColor = theme.textSecondary;
                         } else if (isInactive && m.start_time) {
-                          statusLabel = isRtl ? 'הסתיים / לא פעיל' : 'Finished / Inactive';
+                          statusLabel = isRtl ? 'הסתיים' : 'Finished';
                         }
 
                         return (

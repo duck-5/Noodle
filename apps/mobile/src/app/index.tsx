@@ -1667,6 +1667,8 @@ export default function DashboardScreen() {
               const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
               if (now >= startTime && now <= endTime) {
                 return 'active';
+              } else if (now < startTime) {
+                return 'upcoming';
               } else {
                 return 'inactive';
               }
@@ -1771,8 +1773,11 @@ export default function DashboardScreen() {
                           if (status === 'active') {
                             statusLabel = isRtl ? '● פעיל כעת' : '● Active Now';
                             statusColor = theme.secondary || '#10b981';
+                          } else if (status === 'upcoming') {
+                            statusLabel = isRtl ? 'קרוב' : 'Upcoming';
+                            statusColor = theme.textSecondary;
                           } else if (status === 'inactive') {
-                            statusLabel = m.start_time ? (isRtl ? 'הסתיים / לא פעיל' : 'Finished / Inactive') : '';
+                            statusLabel = m.start_time ? (isRtl ? 'הסתיים' : 'Finished') : '';
                             statusColor = theme.textSecondary;
                             opacity = 0.5;
                           }

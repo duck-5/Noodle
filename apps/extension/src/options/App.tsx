@@ -37,9 +37,6 @@ import { translations } from '../shared/i18n';
 
 import './App.css';
 import logoImg from '../assets/logo.png';
-import aboutIcon from '../assets/about.svg';
-import settingsIcon from '../assets/settings.svg';
-import dashboardIcon from '../assets/dashboard.svg';
 
 interface GroupedCourses {
   semesterKey: string;
@@ -1867,7 +1864,7 @@ export default function App() {
             className={`nav-item ${activeTab === 'dashboard' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
           >
-            <img src={dashboardIcon} alt="" className="nav-icon" /> <span>{t('dashboard')}</span>
+            <DashboardIcon size={18} /> <span>{t('dashboard')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'assignments' && selectedCourseId === null ? 'active' : ''}`}
@@ -1879,19 +1876,19 @@ export default function App() {
             className={`nav-item ${activeTab === 'grades' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
           >
-            <span className="nav-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🎓</span> <span>{t('grades')}</span>
+            <GradesIcon size={18} /> <span>{t('grades')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'settings' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('settings'); setSelectedCourseId(null); }}
           >
-            <img src={settingsIcon} alt="" className="nav-icon" /> <span>{t('settings')}</span>
+            <SettingsIcon size={18} /> <span>{t('settings')}</span>
           </button>
           <button
             className={`nav-item ${activeTab === 'about' && selectedCourseId === null ? 'active' : ''}`}
             onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
           >
-            <img src={aboutIcon} alt="" className="nav-icon" /> <span>{t('about')}</span>
+            <AboutIcon size={18} /> <span>{t('about')}</span>
           </button>
 
           <button
@@ -1899,9 +1896,7 @@ export default function App() {
             onClick={toggleSidebarCollapse}
             style={{ marginTop: 'auto' }}
           >
-            <span className="toggle-arrow" style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', display: 'inline-block' }}>
-              {currentLang === 'he' ? '▶' : '◀'}
-            </span>
+            <CollapseSidebarIcon size={16} isCollapsed={sidebarCollapsed} isRtl={currentLang === 'he'} />
             <span>{t('collapse_sidebar')}</span>
           </button>
         </nav>
@@ -1915,10 +1910,11 @@ export default function App() {
             title="noodle.mantin.dev"
           >
             <span>noodle.mantin.dev</span>
-            <span>↗</span>
+            <ExternalLinkIcon size={12} />
           </a>
-          <button className="text-btn danger-text" onClick={handleDisconnectClick}>
-            {t('disconnect_account')}
+          <button className="text-btn danger-text disconnect-btn" onClick={handleDisconnectClick}>
+            <ExitIcon size={16} />
+            <span>{t('disconnect_account')}</span>
           </button>
         </div>
       </aside>
@@ -2343,7 +2339,7 @@ export default function App() {
 // TAB COMPONENTS
 // -------------------------------------------------------------------
 
-type MeetingStatus = 'active' | 'unknown' | 'inactive';
+type MeetingStatus = 'active' | 'upcoming' | 'unknown' | 'inactive';
 
 function getMeetingStatus(startTimeStr?: string): MeetingStatus {
   if (!startTimeStr) return 'unknown';
@@ -2353,6 +2349,8 @@ function getMeetingStatus(startTimeStr?: string): MeetingStatus {
   const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2h duration
   if (now >= startTime && now <= endTime) {
     return 'active';
+  } else if (now < startTime) {
+    return 'upcoming';
   } else {
     return 'inactive';
   }
@@ -2425,11 +2423,134 @@ const DownloadIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const DashboardIcon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="nav-icon"
+  >
+    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+  </svg>
+);
+
 const AssignmentsIcon = ({ size = 18 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-icon" style={{ verticalAlign: 'middle' }}>
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="nav-icon"
+  >
     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
     <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
     <path d="M9 14l2 2 4-4" />
+  </svg>
+);
+
+const GradesIcon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="nav-icon"
+  >
+    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+    <path d="M6 12v5c3 3 9 3 12 0v-5" />
+  </svg>
+);
+
+const SettingsIcon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="nav-icon"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const AboutIcon = ({ size = 18 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="nav-icon"
+  >
+    <circle cx="12" cy="10" r="8" />
+    <line x1="12" y1="14" x2="12" y2="10" />
+    <line x1="12" y1="7" x2="12.01" y2="7" />
+  </svg>
+);
+
+const CollapseSidebarIcon = ({ size = 16, isCollapsed = false, isRtl = false }: { size?: number; isCollapsed?: boolean; isRtl?: boolean }) => {
+  const pointLeft = isRtl ? isCollapsed : !isCollapsed;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="nav-icon toggle-arrow-svg"
+      style={{ verticalAlign: 'middle', transition: 'transform 0.25s ease' }}
+    >
+      {pointLeft ? (
+        <polyline points="15 18 9 12 15 6" />
+      ) : (
+        <polyline points="9 18 15 12 9 6" />
+      )}
+    </svg>
+  );
+};
+
+const ExitIcon = ({ size = 16 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0 }}
+  >
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
   </svg>
 );
 
@@ -2637,10 +2758,10 @@ function DashboardTab({
   t,
   lang,
   tourStep,
-  onToggleMeetingInterest,
-  onSetCourseMeetingsVisibility,
-  showHiddenZoomCourseIds,
-  onToggleShowHiddenZoom,
+  onToggleMeetingInterest: _onToggleMeetingInterest,
+  onSetCourseMeetingsVisibility: _onSetCourseMeetingsVisibility,
+  showHiddenZoomCourseIds: _showHiddenZoomCourseIds,
+  onToggleShowHiddenZoom: _onToggleShowHiddenZoom,
   trackedCourseIds,
   enrolledCourses,
   onUpdateColor,
@@ -2690,17 +2811,14 @@ function DashboardTab({
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
 } & TabProps) {
-  const [isHeroExpanded, setIsHeroExpanded] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
-  const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
-  const [expandedCourseAssignId, setExpandedCourseAssignId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
   const [coursesViewMode, setCoursesViewMode] = useState<'list' | 'cards'>(() => {
     try {
       const saved = localStorage.getItem('noodle_courses_view_mode');
       return saved === 'cards' ? 'cards' : 'list';
     } catch {
-      return 'list';
+      return 'cards';
     }
   });
 
@@ -2716,19 +2834,10 @@ function DashboardTab({
   useEffect(() => {
     if (tourStep === 4) {
       setIsManageModalOpen(true);
-      setExpandedCourseId(null);
-    } else if (tourStep === 5) {
-      setIsManageModalOpen(false);
-      if (trackedCourseIds && trackedCourseIds.length > 0) {
-        setExpandedCourseId(trackedCourseIds[0]);
-      }
     } else if (tourStep !== undefined && tourStep >= 0) {
       setIsManageModalOpen(false);
-      if (tourStep !== 5) {
-        setExpandedCourseId(null);
-      }
     }
-  }, [tourStep, trackedCourseIds]);
+  }, [tourStep]);
 
   const visibleAssignments = assignments.filter((a) => !settings?.hiddenAssignments?.includes(a.id));
   const now = new Date();
@@ -2753,20 +2862,8 @@ function DashboardTab({
       return a.id - b.id;
     });
 
-  // Closest actionable assignment (Hero spotlight)
-  const nextAssignment = pendingTasks[0] || null;
-
-  // Subject files matching Next Task course & section
-  const nextSubjectFiles = (syncResult?.files || []).filter(
-    (f) =>
-      f.courseId === nextAssignment?.courseId &&
-      f.sectionName &&
-      nextAssignment?.sectionName &&
-      f.sectionName.trim().toLowerCase() === nextAssignment.sectionName.trim().toLowerCase()
-  );
-
-  // Top actionable upcoming tasks (excluding hero)
-  const upcomingTasks = pendingTasks.slice(1, 4);
+  // All actionable upcoming tasks (excluding hero)
+  const upcomingTasks = pendingTasks;
 
   // Active Zoom meetings right now (excluding hidden meetings)
   const isMeetingVisible = (m: ZoomMeeting) => {
@@ -2781,7 +2878,7 @@ function DashboardTab({
   const completedAssignCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
   const semProgressPercent = totalAssignCount > 0 ? Math.round((completedAssignCount / totalAssignCount) * 100) : 0;
 
-  // Panopto catch-up recordings (unwatched recordings for tracked courses, oldest first, up to 5)
+  // Panopto catch-up recordings (unwatched recordings for tracked courses, oldest first)
   const isPanoptoActive = !!settings?.panoptoEnabled;
   const watchedRecordingsSet = new Set(settings?.watchedRecordings || []);
   const trackedSet = new Set(trackedCourseIds);
@@ -2794,7 +2891,6 @@ function DashboardTab({
       if (!b.publishedDate) return -1;
       return a.publishedDate.localeCompare(b.publishedDate);
     });
-  const next5CatchUp = unwatchedCatchUpRecordings.slice(0, 5);
 
   return (
     <div className="tab-dashboard">
@@ -2876,236 +2972,10 @@ function DashboardTab({
         </div>
       )}
 
-      {/* 1. Hero Action Strip: Hero Spotlight + Upcoming To-Do Queue + Catch-Up Queue */}
+      {/* 1. Hero Action Strip: Upcoming To-Do Queue + Catch-Up Queue */}
       <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''}`}>
-        {/* Left: Hero Spotlight Card */}
-        {nextAssignment ? (
-          <div
-            className={`hero-spotlight-card next-assignment-banner glass-panel ${tourStep === 2 ? 'tour-highlight' : ''}`}
-            style={{
-              borderInlineStartColor: getCourseColor(nextAssignment.courseId),
-              cursor: 'pointer'
-            }}
-            onClick={(e) => {
-              if ((e.target as HTMLElement).closest('a, button, input')) return;
-              setIsHeroExpanded((prev) => !prev);
-            }}
-          >
-            <div>
-              <div className="spotlight-badge-row">
-                <span className="spotlight-label" style={{ color: getCourseColor(nextAssignment.courseId) }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                  {t('next_assignment')}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {nextAssignment.deadline && (
-                    <span className={`badge ${getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).badgeClass}`}>
-                      {getDueTextAndClass(nextAssignment.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextAssignment.status).deadlineText}
-                    </span>
-                  )}
-                  <ChevronDownIcon size={15} expanded={isHeroExpanded} />
-                </div>
-              </div>
-
-              <h3 className="hero-task-title">{nextAssignment.name}</h3>
-
-              <div className="hero-meta-strip">
-                <div className="hero-course-tag" style={{ color: getCourseColor(nextAssignment.courseId), borderColor: `${getCourseColor(nextAssignment.courseId)}44` }}>
-                  <span className="course-color-dot" style={{ backgroundColor: getCourseColor(nextAssignment.courseId) }} />
-                  <span>{getCourseDisplayName(nextAssignment.courseId, nextAssignment.courseName)}</span>
-                </div>
-                {nextAssignment.sectionName && (
-                  <span className="subject-pill">
-                    <FolderIcon size={12} />
-                    <span style={{ fontSize: '0.78rem' }}>{nextAssignment.sectionName}</span>
-                  </span>
-                )}
-              </div>
-
-              <div className={`queue-item-expanded ${isHeroExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
-                {nextAssignment.attachments && nextAssignment.attachments.length > 0 && (
-                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                    <span className="files-column-label">
-                      {t('attachments')}:
-                    </span>
-                    <div className="files-column-list">
-                      {nextAssignment.attachments.map((att, attIdx) => {
-                        const downloadUrl = buildFileDownloadUrl(att.url, token);
-                        const openUrl = buildFileOpenUrl(att.url, token);
-                        return (
-                          <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                            <span style={{ fontSize: '0.8rem' }}>📄 {att.name}</span>
-                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                              <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                {t('open_file')}
-                              </a>
-                              <a
-                                href={downloadUrl}
-                                download={att.name}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="file-action-btn file-download-btn"
-                                title={t('download_file')}
-                                aria-label={t('download_file')}
-                                onClick={(ev) => ev.stopPropagation()}
-                              >
-                                <DownloadIcon size={13} />
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Subject Files */}
-                {nextSubjectFiles.length > 0 && (
-                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                    <span className="files-column-label">
-                      {t('subject_files')}:
-                    </span>
-                    <div className="files-column-list">
-                      {nextSubjectFiles.map((sf, sfIdx) => {
-                        const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                        const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                        return (
-                          <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                            <span style={{ fontSize: '0.8rem' }}>📂 {sf.fileName}</span>
-                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                              <a
-                                href={openUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="file-action-btn"
-                                style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                                onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
-                              >
-                                {t('open_file')}
-                              </a>
-                              <a
-                                href={downloadUrl}
-                                download={sf.fileName}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="file-action-btn file-download-btn"
-                                title={t('download_file')}
-                                aria-label={t('download_file')}
-                                onClick={(ev) => ev.stopPropagation()}
-                              >
-                                <DownloadIcon size={12} />
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Submitted Files */}
-                {nextAssignment.submittedFiles && nextAssignment.submittedFiles.length > 0 && (
-                  <div className="files-column-group" style={{ marginBottom: '0.85rem' }}>
-                    <span className="files-column-label">
-                      {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                    </span>
-                    <div className="files-column-list">
-                      {nextAssignment.submittedFiles.map((att, attIdx) => {
-                        const downloadUrl = buildFileDownloadUrl(att.url, token);
-                        const openUrl = buildFileOpenUrl(att.url, token);
-                        return (
-                          <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--border)' }}>
-                            <CheckIcon size={12} />
-                            <span style={{ fontSize: '0.8rem' }}>{att.name}</span>
-                            <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                              <a
-                                href={openUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="file-action-btn"
-                                style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                                onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
-                              >
-                                {t('open_file')}
-                              </a>
-                              <a
-                                href={downloadUrl}
-                                download={att.name}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="file-action-btn file-download-btn"
-                                title={t('download_file')}
-                                aria-label={t('download_file')}
-                                onClick={(ev) => ev.stopPropagation()}
-                              >
-                                <DownloadIcon size={12} />
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div className={`hero-actions-row ${tourStep === 3 ? 'tour-highlight' : ''}`}>
-                {nextAssignment.link && (
-                  <a
-                    href={nextAssignment.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="primary-btn btn-sm"
-                    onClick={(ev) => ev.stopPropagation()}
-                    data-moodle-link="true"
-                  >
-                    <span>{t('submit_assignment')}</span>
-                  </a>
-                )}
-                <button
-                  className="secondary-btn btn-sm"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    onToggleCompleted && onToggleCompleted(nextAssignment.id);
-                  }}
-                >
-                  <CheckIcon size={13} />
-                  <span>{nextAssignment.isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                </button>
-                <button
-                  className="secondary-btn btn-sm"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    onGoToCourse(nextAssignment.courseId);
-                  }}
-                >
-                  <BookOpenIcon size={13} />
-                  <span>{t('go_to_course')}</span>
-                </button>
-                <button
-                  className="secondary-btn btn-sm"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    onToggleHidden && onToggleHidden(nextAssignment.id);
-                  }}
-                  title={settings?.hiddenAssignments?.includes(nextAssignment.id) ? t('unhide_assignment') : t('hide_assignment')}
-                >
-                  {settings?.hiddenAssignments?.includes(nextAssignment.id) ? <EyeIcon size={13} /> : <EyeOffIcon size={13} />}
-                  <span>{settings?.hiddenAssignments?.includes(nextAssignment.id) ? t('unhide_assignment') : t('hide_assignment')}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="hero-spotlight-card next-assignment-banner glass-panel" style={{ justifyContent: 'center', alignItems: 'center', minHeight: '160px' }}>
-            <span style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>🎉 {t('all_caught_up')}</span>
-          </div>
-        )}
-
-        {/* Right: Upcoming To-Do Queue */}
-        <div className={`queue-card glass-panel ${tourStep === 3 ? 'tour-highlight' : ''}`}>
+        {/* Upcoming To-Do Queue (Closest task expanded by default with urgent flare) */}
+        <div className={`queue-card glass-panel ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
           <div className="queue-header">
             <div className="queue-title">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
@@ -3124,6 +2994,7 @@ function DashboardTab({
                 const color = getCourseColor(task.courseId);
                 const courseName = getCourseDisplayName(task.courseId, task.courseName);
                 const isExpanded = expandedUpcomingId === task.id;
+                const isClosestTask = pendingTasks.length > 0 && task.id === pendingTasks[0].id;
                 const { badgeClass, deadlineText } = getDueTextAndClass(
                   task.deadline || null,
                   lang,
@@ -3146,7 +3017,7 @@ function DashboardTab({
                 return (
                   <div
                     key={task.id}
-                    className="queue-item"
+                    className={`queue-item ${isClosestTask ? 'closest-metallic-wave' : ''} ${isExpanded ? 'is-expanded' : ''}`}
                     onClick={() => setExpandedUpcomingId(isExpanded ? null : task.id)}
                   >
                     <div className="queue-item-main-row">
@@ -3371,16 +3242,16 @@ function DashboardTab({
                 </svg>
                 <span>{t('catch_up_title')}</span>
               </div>
-              <span className="queue-count">{next5CatchUp.length} {t('tasks_count')}</span>
+              <span className="queue-count">{unwatchedCatchUpRecordings.length} {t('tasks_count')}</span>
             </div>
 
             <div className="queue-list">
-              {next5CatchUp.length === 0 ? (
+              {unwatchedCatchUpRecordings.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
                   🎉 {t('all_recordings_watched')}
                 </div>
               ) : (
-                next5CatchUp.map((rec) => {
+                unwatchedCatchUpRecordings.map((rec) => {
                   const color = getCourseColor(rec.courseId);
                   const courseName = getCourseDisplayName(rec.courseId, rec.courseName || `Course ${rec.courseId}`);
                   const isRecitation = rec.type === 'Recitation';
@@ -3457,7 +3328,7 @@ function DashboardTab({
                       <span style={{ color: courseColor }}>{courseDisplayName}</span> — {m.title}
                     </div>
                     <div className="live-session-time">
-                      {m.startTime ? `${t('starts_at')} ${new Date(m.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ` : ''}
+                      {m.startTime ? `${t('starts_at')} ${new Date(m.startTime).toLocaleTimeString(lang === 'he' ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' })} · ` : ''}
                       <span style={{ color: '#10b981', fontWeight: 700 }}>● {t('active_now')}</span>
                     </div>
                   </div>
@@ -3500,6 +3371,21 @@ function DashboardTab({
             <div className="view-mode-toggle-group" role="group" aria-label={lang === 'he' ? 'אופן תצוגה' : 'View mode'}>
               <button
                 type="button"
+                className={`view-mode-btn ${coursesViewMode === 'cards' ? 'active' : ''}`}
+                onClick={() => handleSetCoursesViewMode('cards')}
+                title={t('view_mode_cards')}
+                aria-label={t('view_mode_cards')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span>{t('view_mode_cards')}</span>
+              </button>
+              <button
+                type="button"
                 className={`view-mode-btn ${coursesViewMode === 'list' ? 'active' : ''}`}
                 onClick={() => handleSetCoursesViewMode('list')}
                 title={t('view_mode_list')}
@@ -3514,21 +3400,6 @@ function DashboardTab({
                   <line x1="3" y1="18" x2="3.01" y2="18"></line>
                 </svg>
                 <span>{t('view_mode_list')}</span>
-              </button>
-              <button
-                type="button"
-                className={`view-mode-btn ${coursesViewMode === 'cards' ? 'active' : ''}`}
-                onClick={() => handleSetCoursesViewMode('cards')}
-                title={t('view_mode_cards')}
-                aria-label={t('view_mode_cards')}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
-                </svg>
-                <span>{t('view_mode_cards')}</span>
               </button>
             </div>
 
@@ -3545,7 +3416,7 @@ function DashboardTab({
           {trackedCourseIds.length === 0 ? (
             <div className="empty-state">{t('empty_state_pending')}</div>
           ) : (
-            trackedCourseIds.map((cid) => {
+            trackedCourseIds.map((cid, idx) => {
               const color = getCourseColor(cid);
               const courseAssigns = assignments.filter((a) => a.courseId === cid);
               const courseMeetings = meetings.filter((m) => m.courseId === cid);
@@ -3589,56 +3460,26 @@ function DashboardTab({
                 ? getDueTextAndClass(nextTask.deadline, lang, settings?.assignmentGreenDaysThreshold, settings?.assignmentYellowDaysThreshold, false, nextTask.status).deadlineText
                 : '';
 
-              const isMarked = (m: ZoomMeeting) => {
-                if (!settings?.interestedMeetings || settings.interestedMeetings.length === 0) return true;
-                const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
-                return settings.interestedMeetings.includes(id);
-              };
-
-              // Collapse recurring meetings to closest upcoming (or latest past)
-              const collapsedCourseMeetings = collapseRecurringMeetings(courseMeetings, now);
-              const visibleMeetings = collapsedCourseMeetings.filter(isMarked);
-              const hiddenMeetings = collapsedCourseMeetings.filter((m) => !isMarked(m));
-              const isHiddenSectionOpen = showHiddenZoomCourseIds?.has(cid) ?? false;
-              const isExpanded = expandedCourseId === cid;
-
-              const next5Assignments = [...courseAssigns]
-                .filter((a) => !settings?.hiddenAssignments?.includes(a.id))
-                .sort((a, b) => {
-                  if ((a.status === 'Submitted') !== (b.status === 'Submitted')) {
-                    return a.status === 'Submitted' ? 1 : -1;
-                  }
-                  if (!a.deadline && !b.deadline) return a.id - b.id;
-                  if (!a.deadline) return 1;
-                  if (!b.deadline) return -1;
-                  const diff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-                  if (diff !== 0) return diff;
-                  return a.id - b.id;
-                })
-                .slice(0, 5);
-
               const rawCourseName = courseAssigns[0]?.courseName || courseMeetings[0]?.courseName || `Course ${cid}`;
               const courseDisplayName = getCourseDisplayName(cid, rawCourseName);
-              const allMeetingIds = meetings.map((m) => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
 
               return (
                 <div
                   key={cid}
-                  className={`course-row-card glass-panel ${coursesViewMode === 'cards' ? 'course-grid-card' : ''} ${tourStep === 5 && expandedCourseId === cid ? 'tour-highlight' : ''}`}
-                  style={{ borderInlineStartColor: color }}
+                  className={`course-row-card glass-panel ${coursesViewMode === 'cards' ? 'course-grid-card' : ''} ${tourStep === 5 && (trackedCourseIds?.[0] === cid || idx === 0) ? 'tour-highlight' : ''}`}
+                  style={{ borderInlineStartColor: color, cursor: 'pointer' }}
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a, button, input')) return;
-                    setExpandedCourseId(isExpanded ? null : cid);
+                    onGoToCourse(cid);
                   }}
                 >
                   {coursesViewMode === 'cards' ? (
-                    <div className="course-card-main">
-                      {/* Left section: Title, Breakdown stats, Progress bar, Next task */}
-                      <div className="course-card-left-section">
-                        {/* Course Title & Code */}
-                        <div className="course-row-info">
+                    <div className="course-card-content">
+                      {/* 1st row - title (+ real title) and Go To course button */}
+                      <div className="course-card-row-top">
+                        <div className="course-card-title-group">
                           <span className="course-color-dot" style={{ backgroundColor: color }} />
-                          <div style={{ minWidth: 0 }}>
+                          <div className="course-card-titles">
                             <h4 className="course-row-title" style={{ color }} title={courseDisplayName}>
                               {courseDisplayName}
                             </h4>
@@ -3648,70 +3489,9 @@ function DashboardTab({
                           </div>
                         </div>
 
-                        {/* Breakdown: Assignments (x/y) [z gaps], Lectures (x/y) [z gaps], Recitations (x/y) [z gaps] */}
-                        <div className="course-breakdown-row">
-                          <div className="course-breakdown-stat" title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns} ${gapAssigns === 1 ? t('gap_label') : t('gaps_label')})`}>
-                            <span className="stat-name">{t('assignments')}</span>
-                            <span className="stat-count">({doneAssigns}/{totalAssigns})</span>
-                            <span className={`course-stat-gap ${gapAssigns > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                              {gapAssigns} {gapAssigns === 1 ? t('gap_label') : t('gaps_label')}
-                            </span>
-                          </div>
-
-                          {isPanoptoActive && (
-                            <>
-                              <div className="course-breakdown-stat" title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures} ${gapLectures === 1 ? t('gap_label') : t('gaps_label')})`}>
-                                <span className="stat-name">{t('lectures')}</span>
-                                <span className="stat-count">({doneLectures}/{totalLectures})</span>
-                                <span className={`course-stat-gap ${gapLectures > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                                  {gapLectures} {gapLectures === 1 ? t('gap_label') : t('gaps_label')}
-                                </span>
-                              </div>
-
-                              <div className="course-breakdown-stat" title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations} ${gapRecitations === 1 ? t('gap_label') : t('gaps_label')})`}>
-                                <span className="stat-name">{t('recitations')}</span>
-                                <span className="stat-count">({doneRecitations}/{totalRecitations})</span>
-                                <span className={`course-stat-gap ${gapRecitations > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                                  {gapRecitations} {gapRecitations === 1 ? t('gap_label') : t('gaps_label')}
-                                </span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Overall Course Progress Bar */}
-                        <div className="course-row-progress-box">
-                          <div className="course-prog-meta">
-                            <span>{t('overall_progress')}</span>
-                            <span className="course-prog-percent">{doneItems}/{totalItems} ({overallPercent}%)</span>
-                          </div>
-                          <div className="course-prog-bar-bg">
-                            <div className="course-prog-bar-fill" style={{ width: `${overallPercent}%`, backgroundColor: color }} />
-                          </div>
-                        </div>
-
-                        {/* Next Assignment */}
-                        <div className="course-row-next-assign">
-                          <div className="label">{t('next_assignment')}</div>
-                          <div className="name" title={nextTaskName}>{nextTaskName}</div>
-                          {nextTaskDue && <div className="due">{nextTaskDue}</div>}
-                        </div>
-                      </div>
-
-                      {/* Right section: Buttons & Chevron */}
-                      <div className="course-card-right-section">
                         <button
-                          className="secondary-btn btn-sm"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            onViewCourseAssignments(cid);
-                          }}
-                        >
-                          <span>{t('view_assignments')}</span>
-                        </button>
-
-                        <button
-                          className="primary-btn btn-sm"
+                          type="button"
+                          className="primary-btn btn-sm course-card-goto-btn"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             onGoToCourse(cid);
@@ -3719,19 +3499,65 @@ function DashboardTab({
                         >
                           <span>{t('go_to_course')}</span>
                         </button>
+                      </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'auto', paddingTop: '0.25rem' }}>
-                          <span
-                            style={{
-                              fontSize: '0.75rem',
-                              color: 'var(--text-muted)',
-                              transform: isExpanded ? 'rotate(180deg)' : 'none',
-                              transition: 'transform 0.2s',
-                              display: 'inline-block'
-                            }}
-                          >
-                            ▼
-                          </span>
+                      {/* 2nd row - Next Task + Assignments button */}
+                      <div className="course-card-row-middle">
+                        <div className="course-card-next-task" title={nextTask ? `${nextTaskName}${nextTaskDue ? ` (${nextTaskDue})` : ''}` : t('all_caught_up')}>
+                          <span className="next-task-label">{t('next_assignment')}:</span>
+                          <span className="next-task-name">{nextTaskName}</span>
+                          {nextTaskDue && <span className="next-task-due">{nextTaskDue}</span>}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="secondary-btn btn-sm course-card-assignments-btn"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onViewCourseAssignments(cid);
+                          }}
+                        >
+                          <span>{t('view_assignments')}</span>
+                        </button>
+                      </div>
+
+                      {/* 3rd row - Gaps (פערים) label + assignments, lecs, recs + overall progress bar */}
+                      <div className="course-card-row-bottom">
+                        <div className="course-card-gaps-container">
+                          <span className="course-gaps-label">{lang === 'he' ? 'פערים:' : 'Gaps:'}</span>
+                          <div className="course-card-gaps">
+                            <span
+                              className={`course-stat-gap ${gapAssigns > 0 ? 'gap-pending' : 'gap-clear'}`}
+                              title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns} ${gapAssigns === 1 ? t('gap_label') : t('gaps_label')})`}
+                            >
+                              {t('assignments')}: {gapAssigns}
+                            </span>
+                            {isPanoptoActive && (
+                              <>
+                                <span
+                                  className={`course-stat-gap ${gapLectures > 0 ? 'gap-pending' : 'gap-clear'}`}
+                                  title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures} ${gapLectures === 1 ? t('gap_label') : t('gaps_label')})`}
+                                >
+                                  {t('lectures')}: {gapLectures}
+                                </span>
+                                <span
+                                  className={`course-stat-gap ${gapRecitations > 0 ? 'gap-pending' : 'gap-clear'}`}
+                                  title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations} ${gapRecitations === 1 ? t('gap_label') : t('gaps_label')})`}
+                                >
+                                  {t('recitations')}: {gapRecitations}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="course-card-progress-box" title={`${t('overall_progress')}: ${doneItems}/${totalItems} (${overallPercent}%)`}>
+                          <div className="course-prog-meta">
+                            <span className="course-prog-percent">{doneItems}/{totalItems} ({overallPercent}%)</span>
+                          </div>
+                          <div className="course-prog-bar-bg">
+                            <div className="course-prog-bar-fill" style={{ width: `${overallPercent}%`, backgroundColor: color }} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3816,473 +3642,10 @@ function DashboardTab({
                         >
                           <span>{t('go_to_course')}</span>
                         </button>
-
-                        <span
-                          style={{
-                            fontSize: '0.75rem',
-                            color: 'var(--text-muted)',
-                            transform: isExpanded ? 'rotate(180deg)' : 'none',
-                            transition: 'transform 0.2s',
-                            display: 'inline-block'
-                          }}
-                        >
-                          ▼
-                        </span>
                       </div>
                     </div>
                   )}
 
-                  {/* Expandable Course Panel (Visible Zoom Links + 5 Next Assignments) */}
-                  <div className={`course-expanded-panel ${isExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
-                    {/* Zoom Links Sub-Section */}
-                    <div className={`course-expanded-section ${tourStep === 5 ? 'tour-highlight' : ''}`}>
-                      <div className="course-expanded-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
-                          <span>{t('visible_zoom_links')} ({visibleMeetings.length}/{collapsedCourseMeetings.length})</span>
-                        </div>
-                        {collapsedCourseMeetings.length > 0 && onSetCourseMeetingsVisibility && (
-                          <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            <button
-                              type="button"
-                              className="btn-ghost"
-                              style={{ fontSize: '0.72rem', padding: '0.15rem 0.4rem', borderRadius: '4px', cursor: 'pointer' }}
-                              onClick={() => onSetCourseMeetingsVisibility(collapsedCourseMeetings, true)}
-                              title={t('show_all_course_zoom')}
-                            >
-                              {t('show_all_course_zoom')}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-ghost"
-                              style={{ fontSize: '0.72rem', padding: '0.15rem 0.4rem', borderRadius: '4px', cursor: 'pointer' }}
-                              onClick={() => onSetCourseMeetingsVisibility(collapsedCourseMeetings, false)}
-                              title={t('hide_all_course_zoom')}
-                            >
-                              {t('hide_all_course_zoom')}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {collapsedCourseMeetings.length === 0 ? (
-                        <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', padding: '0.4rem 0' }}>
-                          {t('no_zoom')}
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {visibleMeetings.length === 0 ? (
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.35rem 0' }}>
-                              {t('all_zoom_hidden_for_course')}
-                            </div>
-                          ) : (
-                            visibleMeetings.map((m, mIdx) => {
-                              const isActive = getMeetingStatus(m.startTime) === 'active';
-                              const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
-                              return (
-                                <div key={mIdx} className="zoom-meeting-row">
-                                  <div className="zoom-meeting-info">
-                                    <span className="zoom-meeting-title">
-                                      {m.title}
-                                      {isActive && (
-                                        <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 700, marginInlineStart: '0.5rem' }}>
-                                          ● {t('active_now')}
-                                        </span>
-                                      )}
-                                    </span>
-                                    {m.startTime && (
-                                      <span className="zoom-meeting-time">
-                                        {new Date(m.startTime).toLocaleString()}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="zoom-meeting-actions">
-                                    <button
-                                      onClick={() => {
-                                        if (keyId) onToggleMeetingInterest(keyId, allMeetingIds);
-                                      }}
-                                      style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        padding: 4,
-                                        color: 'var(--primary)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                      }}
-                                      title={t('hide_from_dashboard')}
-                                    >
-                                      <EyeIcon />
-                                    </button>
-                                    <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981' }}>
-                                      {t('join_zoom')}
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-
-                          {/* Hidden Meetings Toggle and Collapsible List */}
-                          {hiddenMeetings.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.25rem' }}>
-                              <button
-                                type="button"
-                                className="btn-ghost zoom-toggle-hidden-btn"
-                                onClick={() => onToggleShowHiddenZoom && onToggleShowHiddenZoom(cid)}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem',
-                                  fontSize: '0.75rem',
-                                  color: 'var(--text-secondary)',
-                                  padding: '0.25rem 0.5rem',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  alignSelf: 'flex-start',
-                                  background: isHiddenSectionOpen ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                                  border: '1px solid rgba(255, 255, 255, 0.08)'
-                                }}
-                              >
-                                {isHiddenSectionOpen ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
-                                <span>
-                                  {isHiddenSectionOpen
-                                    ? `${t('hide_hidden_zoom')} (${hiddenMeetings.length})`
-                                    : `${t('show_hidden_zoom')} (${hiddenMeetings.length})`}
-                                </span>
-                              </button>
-
-                              {isHiddenSectionOpen && (
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '0.4rem',
-                                    padding: '0.5rem',
-                                    background: 'rgba(255, 255, 255, 0.02)',
-                                    borderRadius: '6px',
-                                    border: '1px dashed rgba(255, 255, 255, 0.1)'
-                                  }}
-                                >
-                                  {hiddenMeetings.map((m, hIdx) => {
-                                    const isActive = getMeetingStatus(m.startTime) === 'active';
-                                    const keyId = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
-                                    return (
-                                      <div key={hIdx} className="zoom-meeting-row" style={{ opacity: 0.75 }}>
-                                        <div className="zoom-meeting-info">
-                                          <span className="zoom-meeting-title">
-                                            {m.title}
-                                            {isActive && (
-                                              <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 700, marginInlineStart: '0.5rem' }}>
-                                                ● {t('active_now')}
-                                              </span>
-                                            )}
-                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginInlineStart: '0.5rem' }}>
-                                              ({t('hidden_tag')})
-                                            </span>
-                                          </span>
-                                          {m.startTime && (
-                                            <span className="zoom-meeting-time">
-                                              {new Date(m.startTime).toLocaleString()}
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div className="zoom-meeting-actions">
-                                          <button
-                                            onClick={() => {
-                                              if (keyId) onToggleMeetingInterest(keyId, allMeetingIds);
-                                            }}
-                                            style={{
-                                              background: 'none',
-                                              border: 'none',
-                                              cursor: 'pointer',
-                                              padding: 4,
-                                              color: 'var(--text-muted)',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center'
-                                            }}
-                                            title={t('show_on_dashboard')}
-                                          >
-                                            <EyeOffIcon />
-                                          </button>
-                                          <a href={m.meetingUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981' }}>
-                                            {t('join_zoom')}
-                                          </a>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 5 Next Assignments Sub-Section */}
-                    <div className="course-expanded-section">
-                      <div className="course-expanded-section-title">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /><path d="M9 14l2 2 4-4" /></svg>
-                        <span>{t('next_5_assignments')}</span>
-                      </div>
-
-                      {next5Assignments.length === 0 ? (
-                        <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', padding: '0.4rem 0' }}>
-                          {t('no_pending_assignments')}
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {next5Assignments.map((a) => {
-                            const isAssignExpanded = expandedCourseAssignId === a.id;
-                            const isHidden = settings?.hiddenAssignments?.includes(a.id);
-                            const isCompleted = a.isCompleted;
-                            const { badgeClass, deadlineText } = getDueTextAndClass(
-                              a.deadline || null,
-                              lang,
-                              settings?.assignmentGreenDaysThreshold,
-                              settings?.assignmentYellowDaysThreshold,
-                              false,
-                              a.status
-                            );
-
-                            const assignSubjectFiles = (syncResult?.files || []).filter(
-                              (f) =>
-                                f.courseId === cid &&
-                                f.sectionName &&
-                                a.sectionName &&
-                                f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
-                            );
-
-                            return (
-                              <div
-                                key={a.id}
-                                className={`assignment-card course-mini-assign-item glass-panel ${isCompleted ? 'assignment-completed' : ''}`}
-                                style={{
-                                  padding: '0.65rem 0.85rem',
-                                  borderRadius: 'var(--radius-sm)',
-                                  borderInlineStartColor: color,
-                                  cursor: 'pointer'
-                                }}
-                                onClick={() => setExpandedCourseAssignId(isAssignExpanded ? null : a.id)}
-                              >
-                                <div className="assignment-card-compact-row">
-                                  <div className="assign-left-info">
-                                    <span style={{ fontSize: '0.85rem', color: isCompleted ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
-                                      {isCompleted ? '✓' : '○'}
-                                    </span>
-                                    <span className="assign-title-span" style={{ fontSize: '0.85rem' }} title={a.name}>
-                                      {a.name}
-                                    </span>
-                                    {isHidden && <span className="badge-hidden-tag">{t('hidden_tag')}</span>}
-                                    {a.isCompleted && !a.isMoodleSubmitted && (
-                                      <span
-                                        className="assignment-tag"
-                                        style={{
-                                          background: 'rgba(16, 185, 129, 0.15)',
-                                          color: 'var(--secondary)',
-                                          border: '1px solid rgba(16, 185, 129, 0.3)',
-                                          padding: '0.1rem 0.35rem',
-                                          borderRadius: '4px',
-                                          fontSize: '0.7rem'
-                                        }}
-                                      >
-                                        {t('marked_as_done')}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="assign-right-meta">
-                                    <span className={`badge ${badgeClass}`} style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>
-                                      {deadlineText}
-                                    </span>
-                                    <button
-                                      className="card-chevron-btn btn-ghost"
-                                      onClick={(ev) => {
-                                        ev.stopPropagation();
-                                        setExpandedCourseAssignId(isAssignExpanded ? null : a.id);
-                                      }}
-                                    >
-                                      <ChevronDownIcon size={12} expanded={isAssignExpanded} />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Expanded Assignment Details */}
-                                <div
-                                  className={`assignment-card-expanded-body expanded-subject-container ${isAssignExpanded ? 'open' : ''}`}
-                                  style={{
-                                    maxHeight: isAssignExpanded ? '600px' : '0px',
-                                    opacity: isAssignExpanded ? 1 : 0,
-                                    overflow: 'hidden',
-                                    transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin 0.2s ease, padding 0.2s ease',
-                                    marginTop: isAssignExpanded ? '0.5rem' : '0px',
-                                    paddingTop: isAssignExpanded ? '0.5rem' : '0px',
-                                    borderTop: isAssignExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {/* Attachments */}
-                                  {a.attachments && a.attachments.length > 0 && (
-                                    <div className="files-column-group" style={{ marginBottom: '0.4rem' }}>
-                                      <span className="files-column-label">
-                                        {t('attachments')}:
-                                      </span>
-                                      <div className="files-column-list">
-                                        {a.attachments.map((att, attIdx) => {
-                                          const downloadUrl = buildFileDownloadUrl(att.url, token);
-                                          const openUrl = buildFileOpenUrl(att.url, token);
-                                          return (
-                                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                              <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                                  {t('open_file')}
-                                                </a>
-                                                <a
-                                                  href={downloadUrl}
-                                                  download={att.name}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="file-action-btn file-download-btn"
-                                                  title={t('download_file')}
-                                                  aria-label={t('download_file')}
-                                                >
-                                                  <DownloadIcon size={12} />
-                                                </a>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Subject Files */}
-                                  {assignSubjectFiles.length > 0 && (
-                                    <div className="files-column-group" style={{ marginBottom: '0.4rem' }}>
-                                      <span className="files-column-label">
-                                        {t('subject_files')}:
-                                      </span>
-                                      <div className="files-column-list">
-                                        {assignSubjectFiles.map((sf, sfIdx) => {
-                                          const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                                          const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                                          return (
-                                            <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                              <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
-                                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
-                                                  {t('open_file')}
-                                                </a>
-                                                <a
-                                                  href={downloadUrl}
-                                                  download={sf.fileName}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="file-action-btn file-download-btn"
-                                                  title={t('download_file')}
-                                                  aria-label={t('download_file')}
-                                                >
-                                                  <DownloadIcon size={12} />
-                                                </a>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Submitted Files */}
-                                  {a.submittedFiles && a.submittedFiles.length > 0 && (
-                                    <div className="files-column-group" style={{ marginBottom: '0.4rem' }}>
-                                      <span className="files-column-label">
-                                        {t('submitted_files')}:
-                                      </span>
-                                      <div className="files-column-list">
-                                        {a.submittedFiles.map((sub, sIdx) => {
-                                          const downloadUrl = buildFileDownloadUrl(sub.url, token);
-                                          const openUrl = buildFileOpenUrl(sub.url, token);
-                                          return (
-                                            <div key={sIdx} className="submitted-file-chip file-column-item">
-                                              <CheckIcon size={11} />
-                                              <span style={{ fontSize: '0.75rem' }}>{sub.name}</span>
-                                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                                <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sub.url, token, sub.name)}>
-                                                  {t('open_file')}
-                                                </a>
-                                                <a
-                                                  href={downloadUrl}
-                                                  download={sub.name}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="file-action-btn file-download-btn"
-                                                  title={t('download_file')}
-                                                  aria-label={t('download_file')}
-                                                >
-                                                  <DownloadIcon size={12} />
-                                                </a>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Toolbar */}
-                                  <div className="card-expanded-toolbar" style={{ marginTop: '0.35rem' }}>
-                                    <span className="subject-pill">
-                                      <FolderIcon size={12} />
-                                      <span className="subject-label" style={{ fontSize: '0.72rem' }}>{t('subject_label')}:</span>
-                                      <span className="subject-val" style={{ fontSize: '0.72rem' }}>{a.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
-                                    </span>
-
-                                    <div className="toolbar-buttons-group">
-                                      <button
-                                        className="secondary-btn btn-xs"
-                                        onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                                      >
-                                        <CheckIcon size={11} />
-                                        <span>{isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                                      </button>
-
-                                      <button
-                                        className="secondary-btn btn-xs"
-                                        onClick={() => onToggleHidden && onToggleHidden(a.id)}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                                      >
-                                        {isHidden ? <EyeIcon /> : <EyeOffIcon />}
-                                        <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
-                                      </button>
-
-                                      {a.link && (
-                                        <a
-                                          href={a.link}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="secondary-btn btn-xs"
-                                          data-moodle-link="true"
-                                        >
-                                          <span>{t('open_in_moodle')}</span>
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
               );
             })
@@ -4389,7 +3752,7 @@ function AssignmentsTab({
   const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
   const [filterHidden, setFilterHidden] = useState<boolean>(false);
   const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
-  const [showCalendarView, setShowCalendarView] = useState<boolean>(false);
+  const [showCalendarView, setShowCalendarView] = useState<boolean>(true);
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -6148,11 +5511,14 @@ function CourseDetailView({
                         itemStyle.borderRight = lang === 'he' ? `3px solid #28a745` : 'none';
                         statusLabel = lang === 'he' ? '● פעיל כעת' : '● Active Now';
                         statusColor = '#28a745';
+                      } else if (status === 'upcoming') {
+                        statusLabel = lang === 'he' ? 'קרוב' : 'Upcoming';
+                        statusColor = 'var(--text-muted)';
                       } else if (status === 'inactive') {
                         itemStyle.opacity = isMarkedRow ? 0.75 : 0.6;
                         itemStyle.borderLeft = lang === 'he' ? 'none' : `3px solid #888888`;
                         itemStyle.borderRight = lang === 'he' ? `3px solid #888888` : 'none';
-                        statusLabel = m.startTime ? (lang === 'he' ? `הסתיים / לא פעיל` : `Finished / Inactive`) : '';
+                        statusLabel = m.startTime ? (lang === 'he' ? `הסתיים` : `Finished`) : '';
                         statusColor = '#888888';
                       }
 
