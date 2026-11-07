@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- **Redesigned Clean Small Promo Tile (`apps/extension/scripts/generate-promo-assets.mjs`, `promo/promo-small-tile.png`, `website/assets/promo-small-tile.png`)**:
+  - Redesigned the Chrome Web Store small promo tile (440×280) to eliminate industrial dividers and checklist bullet points.
+  - Features clean, bold typography (`Noodle`, `Free Modern Moodle Client.`) on the left and the full, smiling mascot noodle bowl with a warm ambient aura and soft drop-shadow on the right over a warm cream pastel canvas.
+- **Extended Website Showcase Gallery & High-Res App Mockups (`website/index.html`, `website/styles.css`, `website/assets/`, `scripts/generate-promo-assets.mjs`)**:
+  - Added 3 new high-resolution promotional slides to the generation suite: Slide 6 (Visual Monthly Calendar Hub), Slide 7 (Academic Grades & GPA Tracker), and Slide 8 (Two-Way Google Tasks & Calendar Sync).
+  - Expanded the Hero Mockup switcher on `noodle.mantin.dev` to 6 live interactive tabs (`Dashboard`, `Calendar`, `Grades & GPA`, `Coffee Theme`, `Zoom & Panopto`, and `Google Tasks`).
+  - Added a dedicated responsive "Visual Tour & App Gallery" section (`#showcase`) with 6 feature showcase cards on the official landing website.
 ### Added
 - **Subtle Metallic Horizontal Glow Wave for Nearest Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
   - Added an elegant, non-intrusive metallic horizontal glow wave animation (`.closest-metallic-wave`) across the single nearest pending deadline in the Upcoming To-Do queue.

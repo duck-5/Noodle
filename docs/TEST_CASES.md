@@ -1301,10 +1301,10 @@ graph LR
 * **Description**: Validates the complete end-to-end sync lifecycle under DevTools inspection. Simulates valid Moodle REST API responses (`core_webservice_get_site_info`, `mod_assign_get_assignments`, `core_course_get_contents`, `gradereport_user_get_grade_items`), triggers sync via the Options UI button, streams all Service Worker execution milestones, and verifies that assignment cards immediately render in the Options dashboard DOM and persist in local storage.
 * **Automated Runner Command**: `pnpm test:devtools`
 
-#### TC-EXT-PROMO-01: High-Resolution Webstore Promotional Asset Suite Generation
-* **Platform Target**: `Extension (Chrome & Webstore)`
+#### TC-EXT-PROMO-01: High-Resolution Webstore & Website Promotional Asset Suite Generation
+* **Platform Target**: `Extension (Chrome & Webstore) & Website`
 * **Modality**: `Automated`
-* **Description**: Renders and exports 7 pixel-perfect, high-DPI marketing assets for the Chrome Web Store at Retina 2× resolution (2560×1600 slides, 2800×1120 marquee banner, and 880×560 small promo tile). Validates that all fonts load cleanly via `document.fonts.ready`, UI elements use student-first branding ("Smart Moodle Companion") with no official university affiliation claims, BiDi text alignment displays properly for bilingual strings, and all critical product features (deadlines, grades, Zoom hub, course file downloads, dark theme, toolbar popup) are showcased.
+* **Description**: Renders and exports 10 pixel-perfect, high-DPI marketing and web showcase assets at Retina 2× resolution (8 full 2560×1600 carousel slides, 2800×1120 marquee banner, and 880×560 redesigned non-industrial small promo tile). Validates clean, modern branding with no cramped checkmark dividers, authentic pastel color coding (#E07A5F and #A0613E), rich mock assignments dataset, and showcases across the Cockpit Dashboard, Assignments Hub, Course Materials & Zoom Hub, Manage Courses, Late-Night Themes, Split Calendar, Academic GPA Tracker, and Two-Way Google Tasks Sync.
 * **Automated Runner Command**: `node apps/extension/scripts/generate-promo-assets.mjs`
 
 ---

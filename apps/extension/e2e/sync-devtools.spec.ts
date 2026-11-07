@@ -998,7 +998,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
     await syncButton.click();
 
     // Verify assignment cards appear in UI after sync
-    const firstAssignmentCard = optionsPage.locator('.assignment-card').filter({ hasText: 'מטלה 1 - רקורסיה ויעילות' });
+    const firstAssignmentCard = optionsPage.locator('.hero-spotlight-card, .queue-item').filter({ hasText: 'מטלה 1 - רקורסיה ויעילות' }).first();
     await expect(firstAssignmentCard).toBeVisible({ timeout: 10000 });
     console.log('[DevTools UI] Confirmed: 2 courses synced and rendered in Options Dashboard!');
 
