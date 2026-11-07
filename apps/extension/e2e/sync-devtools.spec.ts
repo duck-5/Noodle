@@ -713,6 +713,16 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                         grademax: 100,
                         gradeishidden: false,
                       },
+                      {
+                        id: 1003,
+                        itemname: 'מטלה 2 - אלגוריתמי חיפוש ומיון מתקדמים',
+                        itemtype: 'mod',
+                        itemmodule: 'assign',
+                        cmid: 774,
+                        graderaw: 95,
+                        grademax: 100,
+                        gradeishidden: false,
+                      },
                     ],
                   },
                 ],
@@ -731,6 +741,16 @@ test.describe('DevTools & Sync Feedback Loop', () => {
                         itemmodule: 'assign',
                         cmid: 786,
                         graderaw: 96,
+                        grademax: 100,
+                        gradeishidden: false,
+                      },
+                      {
+                        id: 1004,
+                        itemname: 'תרגיל בית 2 - עצי חיפוש בינאריים ועצי AVL',
+                        itemtype: 'mod',
+                        itemmodule: 'assign',
+                        cmid: 778,
+                        graderaw: 92,
                         grademax: 100,
                         gradeishidden: false,
                       },
@@ -1037,6 +1057,39 @@ test.describe('DevTools & Sync Feedback Loop', () => {
         await optionsPage.screenshot({ path: assignsExpandedScreenshot, fullPage: true });
         console.log(`[DevTools UI] Captured Expanded Assignments screenshot: ${assignsExpandedScreenshot}`);
       }
+
+      // Toggle Calendar View and capture calendar-view.png!
+      const calendarToggleBtn = optionsPage.locator('.calendar-toggle-btn');
+      if (await calendarToggleBtn.isVisible()) {
+        await calendarToggleBtn.click();
+        await optionsPage.waitForTimeout(600);
+        const calendarScreenshot = path.join(screenshotsDir, 'calendar-view.png');
+        await optionsPage.screenshot({ path: calendarScreenshot, fullPage: true });
+        console.log(`[DevTools UI] Captured Calendar View screenshot: ${calendarScreenshot}`);
+        // Toggle calendar view back off
+        await calendarToggleBtn.click();
+        await optionsPage.waitForTimeout(300);
+      }
+    }
+
+    // 3b. Navigate to "Grades" tab and capture grades-page.png
+    const gradesNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /ציונים|Grades/ });
+    if (await gradesNavBtn.isVisible()) {
+      await gradesNavBtn.click();
+      await optionsPage.waitForTimeout(500);
+      const gradesScreenshot = path.join(screenshotsDir, 'grades-page.png');
+      await optionsPage.screenshot({ path: gradesScreenshot, fullPage: true });
+      console.log(`[DevTools UI] Captured Grades Tab screenshot: ${gradesScreenshot}`);
+    }
+
+    // 3c. Navigate to "Settings" tab and capture settings-page.png
+    const settingsNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /הגדרות|Settings/ });
+    if (await settingsNavBtn.isVisible()) {
+      await settingsNavBtn.click();
+      await optionsPage.waitForTimeout(500);
+      const settingsScreenshot = path.join(screenshotsDir, 'settings-page.png');
+      await optionsPage.screenshot({ path: settingsScreenshot, fullPage: true });
+      console.log(`[DevTools UI] Captured Settings Tab screenshot: ${settingsScreenshot}`);
     }
 
     // 4. Return to Dashboard and navigate to Course Detail Views

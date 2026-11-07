@@ -75,10 +75,10 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
   });
 
   test('TC-ASN-10: Should spotlight the closest deadline in the "Next Up" banner', async ({ optionsPage }) => {
-    // Next Up banner should be visible and spotlight Assignment 101
-    const nextBanner = optionsPage.locator('.next-assignment-banner');
-    await expect(nextBanner).toBeVisible();
-    await expect(nextBanner).toContainText('תרגיל בית 1 - עצי חיפוש');
+    // Closest task should be highlighted with metallic wave in the upcoming queue
+    const closestTask = optionsPage.locator('.queue-item.closest-metallic-wave');
+    await expect(closestTask).toBeVisible();
+    await expect(closestTask).toContainText('תרגיל בית 1 - עצי חיפוש');
   });
 
   test('TC-ASN-07: Should filter assignments in real-time by search query', async ({ optionsPage }) => {
@@ -168,22 +168,18 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await expect(optionsPage.locator('.assignment-card')).toHaveCount(2);
   });
 
-  test('TC-DASH-REHAUL-01: Should expand course row on click and show Zoom links & next assignments', async ({ optionsPage }) => {
+  test('TC-DASH-REHAUL-01: Should navigate to course detail on course card click', async ({ optionsPage }) => {
     // 1. Locate the first course row card
     const firstCourseCard = optionsPage.locator('.course-row-card').first();
     await expect(firstCourseCard).toBeVisible();
 
-    // 2. Click the card to expand
+    // 2. Click the card to navigate to detail view
     await firstCourseCard.click();
 
-    // 3. Expanded panel should be visible
-    const expandedPanel = firstCourseCard.locator('.course-expanded-panel');
-    await expect(expandedPanel).toBeVisible();
+    // 3. Course detail view should be visible
+    await expect(optionsPage.locator('.course-detail-view')).toBeVisible();
 
-    // 4. Check for next assignments section inside expanded panel
-    await expect(expandedPanel.locator('.course-mini-assign-item').first()).toBeVisible();
-
-    // Take screenshot of expanded course
+    // Take screenshot of detail view
     await optionsPage.screenshot({ path: 'screenshots/dashboard-course-expanded.png' });
   });
 
@@ -284,16 +280,17 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     const coursesContainer = optionsPage.locator('.courses-rows-container');
     await expect(coursesContainer).toHaveClass(/courses-cards-grid/);
 
-    // 4. Course card should have the 2-section layout
+    // 4. Course card should have the 3-row layout
     const firstCard = coursesContainer.locator('.course-grid-card').first();
     await expect(firstCard).toBeVisible();
-    await expect(firstCard.locator('.course-card-left-section')).toBeVisible();
-    await expect(firstCard.locator('.course-card-right-section')).toBeVisible();
+    await expect(firstCard.locator('.course-card-row-top')).toBeVisible();
+    await expect(firstCard.locator('.course-card-row-middle')).toBeVisible();
+    await expect(firstCard.locator('.course-card-row-bottom')).toBeVisible();
 
-    // 5. Card expansion in cards view should work
+    // 5. Card click navigates directly to course detail view
     await firstCard.click();
-    const expandedPanel = firstCard.locator('.course-expanded-panel');
-    await expect(expandedPanel).toBeVisible();
+    await expect(optionsPage.locator('.course-detail-view')).toBeVisible();
+    await optionsPage.locator('.back-btn').click();
 
     // 6. Switch back to list view
     const listBtn = viewModeGroup.locator('.view-mode-btn').filter({ hasText: /רשימה|List/ });

@@ -1778,7 +1778,7 @@ export default function DashboardScreen() {
 
                           const statusA = getMeetingStatusText(a.start_time);
                           const statusB = getMeetingStatusText(b.start_time);
-                          const priority = { active: 1, unknown: 2, inactive: 3 };
+                          const priority = { active: 1, upcoming: 2, unknown: 3, inactive: 4 };
                           if (priority[statusA] !== priority[statusB]) {
                             return priority[statusA] - priority[statusB];
                           }
