@@ -8,12 +8,31 @@ import {
   isActivityHidden,
   isActivityCompleted,
   matchesActivityIdentifier,
+  hasGracePeriod,
 } from '@tautracker/moodle-client';
 import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
-import { getDueTextAndClass } from '../shared/dateUtils.js';
+import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import logoImg from '../assets/logo.png';
 import './Popup.css';
+
+const ClockIcon = ({ size = 11, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    style={style}
+  >
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
 
 export default function Popup() {
   const [token, setToken] = useState<string | null>(null);
@@ -279,6 +298,15 @@ export default function Popup() {
                   </div>
                   <div className="popup-assign-actions">
                     <span className="popup-due-tag">{dueText}</span>
+                    {a.cutoffDate && hasGracePeriod(a) && (
+                      <span
+                        className="grace-period-clock-icon"
+                        title={formatGracePeriodTooltip(a.cutoffDate, isHe ? 'he' : 'en')}
+                        style={{ marginInlineStart: '0.2rem', color: '#f59e0b', verticalAlign: 'middle', display: 'inline-flex' }}
+                      >
+                        <ClockIcon size={11} />
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="popup-done-btn"

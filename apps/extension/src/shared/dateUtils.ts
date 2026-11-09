@@ -85,3 +85,21 @@ export function getDueTextAndClass(
 
   return { deadlineText, badgeClass, timeColorClass };
 }
+
+/**
+ * Formats the tooltip text for an assignment's late submission cut-off / grace period.
+ */
+export function formatGracePeriodTooltip(cutoffDateString: string, lang: 'he' | 'en'): string {
+  const date = new Date(cutoffDateString);
+  const formattedDate = date.toLocaleString(lang === 'he' ? 'he-IL' : 'en-US', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  if (lang === 'he') {
+    return `מטלות באיחור יתקבלו עד ${formattedDate}`;
+  }
+  return `Late assignment accepted til ${formattedDate}`;
+}

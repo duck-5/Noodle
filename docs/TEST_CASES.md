@@ -128,6 +128,7 @@ graph LR
 | **TC-ASN-10** | "Next Up" Urgent Deadline Banner | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-11** | Pull-to-Refresh Gesture | Mobile Only | Browser Agent | Dashboard |
 | **TC-ASN-12** | Assignments Split-Pane Calendar View & Deep Item Selection | Extension (Chrome & Firefox) | Automated & Browser Agent | Assignments |
+| **TC-ASN-13** | True Deadline & Late Submission Grace Period Clock Indicator | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard & Assignments |
 | **TC-DASH-REHAUL-01** | Tracked Course Card Row Expansion (Zoom & 5 Assignments) | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-02** | Upcoming To-Do Queue Item Filtering & Drawer Expansion | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-DASH-REHAUL-03** | Manage Courses Modal Dialog & Semester Partitioning | Extension (Chrome & Firefox) | Automated & Browser Agent | Dashboard |
@@ -656,6 +657,17 @@ graph LR
   3. Verify `.assignments-workspace` receives `.calendar-open` and `.assignments-calendar-pane` is visible alongside the feed.
   4. Click an assignment pill (`.calendar-assign-pill`) on the calendar.
   5. Verify the corresponding `#assign-card-{id}` in the feed expands (`expandedAssignId === id`) and scrolls into view.
+
+#### TC-ASN-13: True Deadline & Late Submission Grace Period Clock Indicator
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that the official submission due date (`duedate`) is prioritized as the assignment deadline rather than being overridden by the late submission cut-off date (`cutoffdate`). When `cutoffdate` extends beyond `duedate` (grace period), a subtle clock icon (`.grace-period-clock-icon`) appears adjacent to the deadline badge across assignment cards, queue items, and calendar pills. Hovering over the clock icon displays a localized tooltip: `"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"`. When an individual extension (`extensionduedate`) is present, it takes absolute precedence over both nominal due date and cut-off date.
+* **Automated Test Command**: `pnpm --filter @tautracker/moodle-client test -t "TC-DEADLINE-01"`
+* **Browser Agent Prompt / Action**:
+  1. Navigate to Dashboard or Assignments Tab where an assignment with a late-submission cut-off is displayed.
+  2. Verify the primary deadline badge reflects `duedate` (e.g. 9 November 23:59).
+  3. Locate the clock icon (`.grace-period-clock-icon`) next to the deadline badge.
+  4. Hover over the clock icon; verify the tooltip explicitly displays `"Late assignment accepted til [Date]"` in English or `"מטלות באיחור יתקבלו עד [תאריך]"` in Hebrew.
 
 #### TC-DASH-REHAUL-08: Deterministic Sync Order & Undated Task Stability
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`

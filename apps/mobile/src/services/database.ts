@@ -36,6 +36,7 @@ function initDb(db: SQLite.SQLiteDatabase) {
       name TEXT NOT NULL,
       status TEXT DEFAULT 'Assigned',
       deadline TEXT,
+      cutoff_date TEXT,
       opened TEXT,
       link TEXT,
       grade REAL,
@@ -180,6 +181,7 @@ function initDb(db: SQLite.SQLiteDatabase) {
           name TEXT NOT NULL,
           status TEXT DEFAULT 'Assigned',
           deadline TEXT,
+          cutoff_date TEXT,
           opened TEXT,
           link TEXT,
           grade REAL,
@@ -247,6 +249,7 @@ function initDb(db: SQLite.SQLiteDatabase) {
   try { db.execSync('ALTER TABLE assignments ADD COLUMN feedback TEXT;'); } catch (e) {}
   try { db.execSync('ALTER TABLE assignments ADD COLUMN is_bonus INTEGER DEFAULT 0;'); } catch (e) {}
   try { db.execSync('ALTER TABLE assignments ADD COLUMN is_late_submission_box INTEGER DEFAULT 0;'); } catch (e) {}
+  try { db.execSync('ALTER TABLE assignments ADD COLUMN cutoff_date TEXT;'); } catch (e) {}
   try { db.execSync('ALTER TABLE assignments ADD COLUMN is_hidden INTEGER DEFAULT 0;'); } catch (e) {}
 }
 
@@ -335,8 +338,8 @@ export function saveSyncResultToDatabase(result: any): void {
         const uid = a.uid || `${a.activityType || 'assign'}:${a.id}`;
         db.runSync(
           `INSERT OR REPLACE INTO assignments 
-          (uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, opened, link, grade, grade_max, last_synced, attachments, submitted_files, time_limit_seconds, requires_manual_completion, is_manual_completion_done, section_id, section_name, feedback, is_bonus, is_late_submission_box, is_hidden)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (uid, moodle_assign_id, activity_type, cmid, course_moodle_id, course_name, name, status, deadline, cutoff_date, opened, link, grade, grade_max, last_synced, attachments, submitted_files, time_limit_seconds, requires_manual_completion, is_manual_completion_done, section_id, section_name, feedback, is_bonus, is_late_submission_box, is_hidden)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             uid,
             a.id,
@@ -347,6 +350,7 @@ export function saveSyncResultToDatabase(result: any): void {
             a.name,
             a.status,
             a.deadline,
+            a.cutoffDate || null,
             a.opened,
             a.link,
             a.grade,

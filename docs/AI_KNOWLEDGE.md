@@ -51,10 +51,16 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   **Token Invalidation:** If a user resets their password, Moodle invalidates all tokens. Detect `{"errorcode": "invalidtoken"}` and immediately prompt the user to re-authenticate.
 
 ### C. True Deadline Computation Formula
-*   Port the deadline logic from `legacy/clients/moodle_client.py` exactly:
-    $$\text{True Deadline} = \max(\text{duedate}, \text{cutoffdate}, \text{extensionduedate})$$
-    *   *Rule:* These values are represented as epoch timestamps in seconds.
-    *   *Rule:* A value of `0` indicates the field is not set. **Never** include `0` in the maximum evaluation. If all values are `0`, the assignment has no deadline.
+*   Deadline resolution prioritizes the actual nominal due date (`duedate`) while supporting personal extensions and late submission cut-off dates:
+    $$\text{True Deadline} = \begin{cases} 
+    \text{extensionduedate} & \text{if } \text{extensionduedate} > 0 \\
+    \text{duedate} & \text{else if } \text{duedate} > 0 \\
+    \text{cutoffdate} & \text{else if } \text{cutoffdate} > 0 \\
+    \text{null} & \text{otherwise}
+    \end{cases}$$
+    *   *Rule:* These values are represented as epoch timestamps in seconds. A value of `0` indicates the field is not set.
+    *   *Rule:* `duedate` is the official nominal deadline. When `cutoffdate > duedate`, Moodle permits late submissions (flagged as late). Noodle preserves `duedate` as the deadline and exposes `cutoffDate` for the grace period, displaying a clock icon with tooltip `"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"`.
+    *   *Rule:* `extensionduedate` takes absolute precedence over all other deadline fields.
 *   **Status Classification:**
     *   `Submitted`: If the submission status equals `submitted`.
     *   `Not submitted`: If status is not submitted and the True Deadline is in the past.

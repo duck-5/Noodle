@@ -30,6 +30,7 @@ import {
   isActivityHidden,
   isActivityCompleted,
   matchesActivityIdentifier,
+  hasGracePeriod,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -54,7 +55,7 @@ import {
   loginTauSsoOnBackground,
   logoutOnBackground,
 } from '../shared/messaging.js';
-import { getDueTextAndClass } from '../shared/dateUtils.js';
+import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import { translations } from '../shared/i18n';
 
 import './App.css';
@@ -2588,6 +2589,25 @@ const DownloadIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const ClockIcon = ({ size = 13, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className={className}
+    style={style}
+  >
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
 const DashboardIcon = ({ size = 18 }: { size?: number }) => (
   <svg
     width={size}
@@ -3521,6 +3541,15 @@ function DashboardTab({
                         <span className={`badge ${badgeClass}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
                           {deadlineText}
                         </span>
+                        {task.cutoffDate && hasGracePeriod(task) && (
+                          <span
+                            className="grace-period-clock-icon"
+                            title={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                            aria-label={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                          >
+                            <ClockIcon size={12} />
+                          </span>
+                        )}
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>
                           ▼
                         </span>
@@ -4572,6 +4601,15 @@ function AssignmentsTab({
 
                     <div className="assign-right-meta">
                       <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                      {a.cutoffDate && hasGracePeriod(a) && (
+                        <span
+                          className="grace-period-clock-icon"
+                          title={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                          aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                        >
+                          <ClockIcon size={13} />
+                        </span>
+                      )}
                       {!isCompleted && a.link && (
                         <a
                           href={a.link}
@@ -4839,6 +4877,9 @@ function AssignmentsTab({
                       const dueTimeStr = item.deadline
                         ? new Date(item.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : '';
+                      const graceTooltip = item.cutoffDate && hasGracePeriod(item)
+                        ? formatGracePeriodTooltip(item.cutoffDate, lang)
+                        : null;
                       return (
                         <button
                           type="button"
@@ -4849,10 +4890,15 @@ function AssignmentsTab({
                             backgroundColor: isSelected ? `${color}33` : `${color}1a`,
                           }}
                           onClick={() => handleSelectCalendarAssignment(item)}
-                          title={`${courseName} — ${item.name}${dueTimeStr ? ` (${dueTimeStr})` : ''}`}
+                          title={`${courseName} — ${item.name}${dueTimeStr ? ` (${dueTimeStr})` : ''}${graceTooltip ? ` • ${graceTooltip}` : ''}`}
                         >
                           <span className="calendar-pill-dot" style={{ backgroundColor: color }} />
                           <span className="calendar-pill-text">{item.name}</span>
+                          {graceTooltip && (
+                            <span className="calendar-pill-clock" title={graceTooltip}>
+                              <ClockIcon size={10} style={{ marginInlineStart: '3px', verticalAlign: '-1px', opacity: 0.85 }} />
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -7169,6 +7215,15 @@ function CourseDetailView({
                                     ) : (
                                       <span className={`badge ${badgeClass}`}>{deadlineText}</span>
                                     )}
+                                    {a.cutoffDate && hasGracePeriod(a) && (
+                                      <span
+                                        className="grace-period-clock-icon"
+                                        title={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                                        aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                                      >
+                                        <ClockIcon size={12} />
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="item-name">
                                     {a.name}
@@ -7545,8 +7600,17 @@ function CourseDetailView({
                         a.status
                       );
                       return (
-                        <p className={`assign-deadline ${timeColorClass}`} style={{ margin: 0 }}>
-                          {lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}
+                        <p className={`assign-deadline ${timeColorClass}`} style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>{lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}</span>
+                          {a.cutoffDate && hasGracePeriod(a) && (
+                            <span
+                              className="grace-period-clock-icon"
+                              title={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                              aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                            >
+                              <ClockIcon size={13} />
+                            </span>
+                          )}
                         </p>
                       );
                     })()}

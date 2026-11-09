@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Fixed
+- **True Deadline Calculation & Late Submission Cutoff Separation (`packages/moodle-client/src/syncEngine.ts`, `types.ts`, `apps/mobile/src/services/database.ts`)**:
+  - Fixed an issue where assignments with a late submission grace period (`cutoffdate > duedate`) had their deadline erroneously pushed to the cut-off date (e.g. November 12 instead of November 9 in "תרגיל בית 1").
+  - Corrected the True Deadline computation formula: individual student extensions (`extensionduedate`) take top priority, followed by nominal deadlines (`duedate`), only falling back to `cutoffdate` when no nominal deadline is configured (`duedate === 0`).
+  - Added optional `cutoffDate` (ISO 8601 string) to the shared `Assignment` interface and persisted it in SQLite database tables (`assignments`, `assignments_v2`) with self-healing migration.
+
+### Added
+- **Late Submission Grace Period Vector Clock Indicator (`apps/extension/src/options/App.tsx`, `App.css`, `apps/extension/src/popup/Popup.tsx`, `apps/extension/src/shared/i18n.ts`, `dateUtils.ts`)**:
+  - Added a sleek vector SVG clock icon (`ClockIcon`, strictly avoiding emojis) rendered alongside assignment due dates whenever a late submission grace period is active (`hasGracePeriod(assignment) === true`).
+  - Hovering over the clock icon displays an informative, localized tooltip: `"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"`.
+  - Rendered across the Dashboard Upcoming To-Do Queue, Assignments Feed compact cards, Split-Pane Monthly Calendar pills, Course Detail View assignment sections, and the Extension Popup.
+  - Added automated test suite `TC-DEADLINE-01` in `packages/moodle-client/__tests__/assignments.test.ts` and cataloged test case `TC-ASN-13` in `docs/TEST_CASES.md`.
+
 ### Changed
 - **Unified Feature Explorer & High-Resolution Real App Mockup Showcase (`website/index.html`, `website/app.js`, `website/styles.css`, `CHANGELOG.md`)**:
   - Replaced promotional marketing slides inside the desktop window mockup frame (`.mockup-frame`) with real 2880×1900 high-resolution application screenshots (`main-dashboard.png`, `calendar-view.png`, `grades-page.png`, `course-9999-detail.png`, `dashboard-coffee-theme.png`, `settings-page.png`), giving visitors an authentic, interactive preview of the running extension.

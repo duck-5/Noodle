@@ -71,7 +71,7 @@ All requests must include the following parameters:
     *   `cmid` (number): Course-module ID (used for linking and grades).
     *   `name` (string): Title of the assignment.
     *   `duedate` (number): Nominal deadline epoch timestamp.
-    *   `cutoffdate` (number): Absolute deadline epoch timestamp.
+    *   `cutoffdate` (number): Late submission cut-off epoch timestamp (grace period).
     *   `allowsubmissionsfromdate` (number): Opening epoch timestamp.
 
 #### 5. Retrieve Assignment Submission Status
@@ -84,6 +84,17 @@ All requests must include the following parameters:
     *   `lastattempt.submission.status` (string): Typically `submitted` or `new` / `draft`.
     *   `feedback.grade` (object): Contains grading status.
     *   `extensionduedate` (number): Personal deadline extension epoch timestamp.
+
+#### 5.1 True Deadline & Late Submission Grace Period Mapping
+*   **True Deadline Calculation (`syncEngine.ts`)**:
+    The official due date displayed in calendars and deadline countdowns strictly prioritizes individual extensions and nominal due dates over late submission cutoffs:
+    $$\text{deadline} = \begin{cases} \text{extensionduedate} & \text{if } \text{extensionduedate} > 0 \\ \text{duedate} & \text{else if } \text{duedate} > 0 \\ \text{cutoffdate} & \text{else} \end{cases}$$
+*   **Grace Period Exposure (`cutoffDate`)**:
+    When a professor configures a late submission cut-off date beyond the official due date ($\text{cutoffdate} > \text{deadline}$), Noodle sets:
+    $$\text{cutoffDate} = \text{new Date}(\text{cutoffdate} \times 1000)\text{.toISOString()}$$
+    When $\text{cutoffdate} \le \text{deadline}$, `cutoffDate` is `null`.
+*   **Client Grace Period Helper (`hasGracePeriod(assignment)`)**:
+    Returns `true` when `assignment.cutoffDate` is present and non-null. The client renders an inline SVG clock icon (`ClockIcon`) with a localized tooltip (`"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"`) next to the nominal deadline across the Dashboard, Assignments Feed, Monthly Calendar, and Popup.
 
 #### 6. Retrieve Grades
 *   **Function Name:** `gradereport_user_get_grade_items`

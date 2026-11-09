@@ -1126,6 +1126,33 @@ body.theme-noodle .card-action-btn-ghost:hover {
   color: var(--danger);
 }
 
+.grace-period-clock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: 0.35rem;
+  color: var(--warning, #f59e0b);
+  cursor: help;
+  vertical-align: middle;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.grace-period-clock-icon:hover {
+  transform: scale(1.15);
+  filter: brightness(1.2);
+}
+
+.calendar-pill-clock {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.25rem;
+  color: inherit;
+  opacity: 0.85;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 .action-icon-link {
   font-size: 0.875rem;
   color: var(--primary);

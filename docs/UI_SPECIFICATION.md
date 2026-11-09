@@ -88,6 +88,7 @@ The top of the dashboard features a focused action strip designed for rapid orie
    - **Closest Task Metallic Horizontal Glow Wave**: The single nearest pending deadline features a calm, continuous 5-second metallic horizontal glow wave (`.closest-metallic-wave`) gliding smoothly across the card without visual distraction or intrusive tags. Tasks remain collapsed by default for maximum density and clutter-free scanning.
    - **Exclusion & Sorting Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
    - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue with stable deterministic ordering.
+   - **Late Submission Grace Period Clock Indicator**: If an assignment has an extended cutoff date (`hasGracePeriod(assignment) === true`), a delicate vector SVG clock icon (`.grace-period-clock-icon`) is rendered alongside the due date. Hovering reveals a localized tooltip: `"מטלות באיחור יתקבלו עד {date}"` / `"Late assignment accepted til {date}"`. (No emojis used).
    - Each item is an interactive card with a quick checkmark button to mark complete, due badge, and expand drawer (`.queue-drawer`) containing:
      - Assignment prompt attachments with squircle open and arrow-only download buttons.
      - Course Subject Files (`קבצי הנושא`) matching the task's course and topic section with squircle open and arrow-only download buttons.
@@ -123,13 +124,14 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 * **Split-Pane Calendar View (`.assignments-workspace.calendar-open`)**:
   - Shrinking the width of the assignments feed (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`), a sticky monthly calendar pane appears on the side.
   - Displays month navigation (`◀`, `היום` / `Today`, `▶`) and color-coded assignment pills on their due dates.
+  - When an assignment has a late submission grace period, the calendar pill features an inline `.calendar-pill-clock` vector SVG icon and extends the pill tooltip to include: ` · [Late assignment accepted til {date} / מטלות באיחור יתקבלו עד {date}]`.
   - Clicking any assignment pill in the calendar automatically enables its status filter if currently unchecked, expands that assignment card in the feed, and smoothly scrolls it into view.
 * **Course Filter Banner**:
   - Appears when navigating from a course row's "מטלות" button: `מסנן לפי קורס: [Course Name]`.
   - Includes an inline "הצג את כל הקורסים ✕" button to easily clear the filter and return to the complete assignments feed.
 * **Compact / Minimized Cards**:
   - Collapsed by default to maximize visible density.
-  - Shows course dot, course display name, task title, manual completion tag ("סומן כהושלם") or submission tag ("הוגש"), proximity deadline badge, direct Moodle submission link, and expansion chevron.
+  - Shows course dot, course display name, task title, manual completion tag ("סומן כהושלם") or submission tag ("הוגש"), proximity deadline badge, grace period vector SVG clock indicator (`.grace-period-clock-icon` with `"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"` tooltip), direct Moodle submission link, and expansion chevron.
 * **Smooth Accordion Drawer & Vertical File Columns**:
   - All file lists across the application (Hero Spotlight, Upcoming To-Do Queue, Tracked Course Rows, Assignments Feed, and Course Detail View) are ordered in a clean vertical column (`.files-column-group` / `.files-column-list` / `.file-column-item`).
   - **Subject Files ("קבצי הנושא")**: Section files matching the assignment's course ID and topic section, stacked vertically in a column with green "פתח ↗" link and SVG "הורדה ↓" button.

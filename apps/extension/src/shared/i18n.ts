@@ -281,6 +281,7 @@ export const translations = {
     sync_interval_30m: "30 דקות",
     sync_interval_60m: "שעה אחת (60 דקות)",
     sync_interval_120m: "שעתיים (120 דקות)",
+    late_assignment_accepted_until: "מטלות באיחור יתקבלו עד {date}",
   },
   en: {
     dashboard: "Dashboard",
@@ -564,5 +565,6 @@ export const translations = {
     sync_interval_30m: "30 minutes",
     sync_interval_60m: "1 hour (60 minutes)",
     sync_interval_120m: "2 hours (120 minutes)",
+    late_assignment_accepted_until: "Late assignment accepted til {date}",
   }
 };

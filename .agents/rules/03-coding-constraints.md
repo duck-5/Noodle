@@ -31,12 +31,18 @@ The core client library (`packages/moodle-client`) is shared across two radicall
 
 Assignments in Moodle may have multiple deadline fields: `duedate`, `cutoffdate`, and `extensionduedate`. All timestamps are stored in epoch seconds.
 
-$$\text{True Deadline} = \max(\text{duedate}, \text{cutoffdate}, \text{extensionduedate})$$
+$$\text{True Deadline} = \begin{cases} 
+\text{extensionduedate} & \text{if } \text{extensionduedate} > 0 \\
+\text{duedate} & \text{else if } \text{duedate} > 0 \\
+\text{cutoffdate} & \text{else if } \text{cutoffdate} > 0 \\
+\text{null} & \text{otherwise}
+\end{cases}$$
 
 **Rules:**
 - A value of `0` signifies that the field is unset.
-- **Never include `0` in the maximum calculation.**
-- If all three values are `0`, the assignment has no deadline (`null`).
+- **`duedate` is the nominal official deadline**: It must never be superseded by a later `cutoffdate`.
+- **Late submission grace periods (`cutoffdate > duedate`)**: When `cutoffdate` extends beyond `duedate`, Moodle permits late submissions (flagged as late). Noodle preserves `duedate` as the primary deadline and sets `cutoffDate` to indicate the grace period. The UI renders a dedicated clock icon (`ClockIcon`, NOT emoji) with tooltip `"Late assignment accepted til {date}"` / `"מטלות באיחור יתקבלו עד {date}"`.
+- **Personal extensions**: If `extensionduedate > 0`, it takes absolute precedence over all other dates.
 - Status Classification:
   - `Submitted`: Submission status is `submitted`.
   - `Not submitted`: Status is not `submitted` AND the True Deadline is in the past.

@@ -72,6 +72,14 @@ async function batchPromises<T, R>(
   return results;
 }
 
+/**
+ * Checks whether an assignment has an active grace period (cutoffDate strictly after deadline).
+ */
+export function hasGracePeriod(assignment: { deadline: string | null; cutoffDate?: string | null }): boolean {
+  if (!assignment.deadline || !assignment.cutoffDate) return false;
+  return new Date(assignment.cutoffDate).getTime() > new Date(assignment.deadline).getTime();
+}
+
 export interface RunSyncOptions {
   enableScraping?: boolean;
   enablePanopto?: boolean;
@@ -404,7 +412,14 @@ export async function runSync(
     const cutoffTs = assign.cutoffdate || 0;
     const extTs = extensionDueDate || 0;
 
-    const finalDeadlineTs = Math.max(dueTs, cutoffTs, extTs);
+    // True Deadline resolution:
+    // 1. Personal extension (extensionduedate) takes absolute precedence
+    // 2. Otherwise, official nominal due date (duedate) is the deadline
+    // 3. Cutoff date is only used as a fallback if no duedate was set
+    const finalDeadlineTs = extTs > 0
+      ? extTs
+      : (dueTs > 0 ? dueTs : cutoffTs);
+
     let deadlineIso: string | null = null;
 
     if (finalDeadlineTs > 0) {
@@ -414,6 +429,12 @@ export async function runSync(
         status = 'Not submitted';
       }
     }
+
+    // Grace period / late submission cutoff date:
+    // Set if cutoffdate is present and later than the effective deadline
+    const cutoffDateIso = (cutoffTs > 0 && cutoffTs > finalDeadlineTs)
+      ? new Date(cutoffTs * 1000).toISOString()
+      : null;
 
     const openedIso = assign.allowsubmissionsfromdate > 0
       ? new Date(assign.allowsubmissionsfromdate * 1000).toISOString()
@@ -467,6 +488,7 @@ export async function runSync(
       status,
       submittedFiles,
       deadline: deadlineIso,
+      cutoffDate: cutoffDateIso,
       opened: openedIso,
       link: `${assignBaseUrl}/mod/assign/view.php?id=${assign.cmid}`,
       grade,
@@ -563,6 +585,7 @@ export async function runSync(
       name: cleanMoodleString(quiz.name || ''),
       status,
       deadline: deadlineIso,
+      cutoffDate: null,
       opened: openedIso,
       link: `${quizBaseUrl}/mod/quiz/view.php?id=${quiz.coursemodule}`,
       grade,

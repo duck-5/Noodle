@@ -19,11 +19,14 @@
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "^11.6.0",
-      "onFail": "download"
+      "version": "^11.6.0 || ^12.0.0",
+      "onFail": "ignore"
     }
   },
   "type": "module",
+  "pnpm": {
+    "verifyDepsBeforeRun": false
+  },
   "dependencies": {
     "tough-cookie": "^6.0.2"
   }

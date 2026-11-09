@@ -84,6 +84,7 @@ export interface Assignment {
   name: string;
   status: 'Assigned' | 'Submitted' | 'Not submitted';
   deadline: string | null;  // ISO 8601 string or null
+  cutoffDate?: string | null; // ISO 8601 string for late submission cutoff / grace period or null
   opened: string | null;
   link: string;             // https://moodle.tau.ac.il/mod/assign/view.php?id={cmid} or .../mod/quiz/view.php?id={cmid}
   grade: number | null;

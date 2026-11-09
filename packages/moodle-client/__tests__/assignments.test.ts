@@ -1,4 +1,5 @@
 import { Assignment } from '../src/types.js';
+import { hasGracePeriod } from '../src/syncEngine.js';
 
 // Helper matching dateUtils / UI sorting & status logic
 function sortAssignments(assignments: Assignment[]): Assignment[] {
@@ -242,6 +243,83 @@ describe('Category 3: Unified Assignments Dashboard', () => {
 
       // With custom yellow=5: 4 days is now danger (< 5 days)
       expect(getDueTextAndClass(dueIn4Days, 'en', 14, 5).badgeClass).toBe('badge-danger');
+    });
+  });
+
+  describe('TC-DEADLINE-01: True Deadline & Late Submission Cutoff / Grace Period Computation', () => {
+    it('should prioritize duedate as official deadline and set cutoffDate when cutoffdate > duedate (grace period)', () => {
+      const dueTs = 1794261540; // Monday, 09 Nov 2026, 23:59
+      const cutoffTs = 1794520740; // Thursday, 12 Nov 2026, 23:59
+      const extTs = 0;
+
+      const finalDeadlineTs = extTs > 0 ? extTs : (dueTs > 0 ? dueTs : cutoffTs);
+      const cutoffDateIso = (cutoffTs > 0 && cutoffTs > finalDeadlineTs)
+        ? new Date(cutoffTs * 1000).toISOString()
+        : null;
+
+      expect(finalDeadlineTs).toBe(dueTs);
+      expect(cutoffDateIso).toBe(new Date(cutoffTs * 1000).toISOString());
+
+      const assignment: Assignment = {
+        id: 6577,
+        cmid: 161364,
+        courseId: 368215899,
+        courseName: 'מבני נתונים',
+        name: 'תרגיל בית 1',
+        status: 'Submitted',
+        deadline: new Date(finalDeadlineTs * 1000).toISOString(),
+        cutoffDate: cutoffDateIso,
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=161364',
+        grade: null,
+        gradeMax: 100,
+      };
+
+      expect(new Date(assignment.deadline!).toISOString()).toBe('2026-11-09T21:59:00.000Z');
+      expect(assignment.cutoffDate).toBe('2026-11-12T21:59:00.000Z');
+      expect(hasGracePeriod(assignment)).toBe(true);
+    });
+
+    it('should prioritize individual extensionduedate over both duedate and cutoffdate', () => {
+      const dueTs = 1794261540;
+      const cutoffTs = 1794520740;
+      const extTs = 1794780000; // Personal extension beyond cutoff
+
+      const finalDeadlineTs = extTs > 0 ? extTs : (dueTs > 0 ? dueTs : cutoffTs);
+      const cutoffDateIso = (cutoffTs > 0 && cutoffTs > finalDeadlineTs)
+        ? new Date(cutoffTs * 1000).toISOString()
+        : null;
+
+      expect(finalDeadlineTs).toBe(extTs);
+      expect(cutoffDateIso).toBeNull(); // Cutoff is earlier than personal extension, no extra grace period
+    });
+
+    it('should fallback to cutoffdate when duedate is 0/unset', () => {
+      const dueTs = 0;
+      const cutoffTs = 1794520740;
+      const extTs = 0;
+
+      const finalDeadlineTs = extTs > 0 ? extTs : (dueTs > 0 ? dueTs : cutoffTs);
+      const cutoffDateIso = (cutoffTs > 0 && cutoffTs > finalDeadlineTs)
+        ? new Date(cutoffTs * 1000).toISOString()
+        : null;
+
+      expect(finalDeadlineTs).toBe(cutoffTs);
+      expect(cutoffDateIso).toBeNull(); // Cutoff is the deadline itself, not an extra grace period
+    });
+
+    it('should produce null deadline and cutoffDate when both are 0/unset', () => {
+      const dueTs = 0;
+      const cutoffTs = 0;
+      const extTs = 0;
+
+      const finalDeadlineTs = extTs > 0 ? extTs : (dueTs > 0 ? dueTs : cutoffTs);
+      const cutoffDateIso = (cutoffTs > 0 && cutoffTs > finalDeadlineTs)
+        ? new Date(cutoffTs * 1000).toISOString()
+        : null;
+
+      expect(finalDeadlineTs).toBe(0);
+      expect(cutoffDateIso).toBeNull();
     });
   });
 });
