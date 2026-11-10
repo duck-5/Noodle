@@ -300,7 +300,12 @@ Communication between the UI frontends (Options Page, Popup) and the background 
 * **`LOGIN_TAU_SSO`**: Programmatically executes TAU SSO SAML flow with student credentials. Returns `{ success: true, token: string }` or `{ success: false, error: string }`.
 * **`VALIDATE_TOKEN`**: Validates a Moodle `wstoken` via `getSiteInfo()`. Returns `{ success: true, info: SiteInfo }` or `{ success: false, error: string }`.
 * **`FETCH_ENROLLED_COURSES`**: Retrieves course list for onboarding. Returns `{ success: true, courses: Course[] }` or `{ success: false, error: string, errorcode?: string }`.
-* **`LOGOUT`**: Clears cookies, local storage keys, and sync cache (`clearUserSession()`). Returns `{ success: true }` or `{ success: false, error: string }`.
+* **`LOGOUT`**: Clears cookies, local storage keys (including `localFs*` metadata and Chromium IndexedDB handles), and sync cache (`clearUserSession()`). Returns `{ success: true }` or `{ success: false, error: string }`.
+* **`LOCAL_FS_START_SYNC`**: Enqueues planned/missing Local FS downloads (`forceRescan?: boolean`) and starts background queue execution. Returns `{ success: true, status: LocalFsStatus }`.
+* **`LOCAL_FS_PAUSE`**: Aborts active Local FS downloads cleanly after the current file and sets `paused` state. Returns `{ success: true, status: LocalFsStatus }`.
+* **`LOCAL_FS_RESUME`**: Clears pause/cooldown markers and resumes queued Local FS downloads. Returns `{ success: true, status: LocalFsStatus }`.
+* **`LOCAL_FS_RETRY_FAILED`**: Re-enqueues failed/missing Local FS files via `forceRescan` (`autoResyncMissingFiles` respected). Returns `{ success: true, status: LocalFsStatus }`.
+* **`LOCAL_FS_RESET_FOLDER`**: Clears Local FS queue and manifest when switching target folders (without deleting files on disk). Returns `{ success: true }`.
 
 ### MV3 Service Worker Protocol
 * **Synchronous Registration**: The listener is registered unconditionally at the top level of `serviceWorker.ts` before alarms or async operations.
@@ -349,3 +354,20 @@ To enable instant bulk downloads of course folders (`mod_folder`) without extern
 3. **UTF-8 Hebrew File Support:** Emits bit 11 (`0x0800`) in the General Purpose Bit Flag for both Local File Headers and Central Directory Records, ensuring Hebrew filenames render properly in Windows Explorer, macOS Archive Utility, and mobile archive handlers.
 4. **Collision Disambiguation:** Tracks file paths within the ZIP and appends sequential indicators (`filename (1).pdf`) for identical filenames within the same directory.
 5. **Bounded Concurrent Download:** Downloads folder contents in parallel (max concurrency 4) with `wstoken` authentication and JSON exception detection (`{ exception: ... }`).
+
+---
+
+## 10. Local Filesystem Sync Engine & Provider Contracts
+
+### A. Pure-TS Planner & Diff API (`packages/moodle-client/src/localFsPlanner.ts`)
+* **`sanitizePathSegment(segment: string, maxLength?: number): string`**: Strips/replaces invalid OS characters (`< > : " / \ | ? *`, control chars), normalizes whitespace, guards Windows reserved names (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`), and truncates cleanly while preserving extensions.
+* **`sanitizeRelativePath(relPath: string, maxTotalLength?: number): string`**: Sanitizes multi-segment paths against `..` traversal and compacts directory segments to keep mirrored paths within `210` chars.
+* **`getCanonicalFileUrlPath(rawUrl: string): string`**: Normalizes file URLs (`origin + pathname`) excluding transient query params (`?token=`, `?forcedownload=1`) for fast local manifest lookups.
+* **`buildLocalFsTreePlan(syncResult, options)`**: Builds deterministic course trees across `mod_resource` (`!f.folderId`), `mod_folder` (preserving internal `relativePath`), and optional `mod_assign` attachments & student submissions (`includeAssignments`, `includeSubmissions`), anchoring course folder names and unifying Mode A parent/recitation portals.
+* **`planLocalFsDiff(plan, existingManifest, { maxFileSizeMb })`**: Emits `toDownload`, `unchanged`, and `skippedTooLarge` sets by comparing `timeModified`, metadata baseline `size`, and `canonicalUrlPath`.
+
+### B. Browser Strategy Interface (`apps/extension/src/services/fs/FileSystemProvider.ts`)
+* **`FileSystemProvider`**: Unified contract (`isReady()`, `selectRootDirectory()`, `fileExists(record)`, `writeFile(record, source)`, `openLocalFile(record)`, optional `revealInFileManager(record)`).
+* **`ChromiumFsaProvider`**: Stores `FileSystemDirectoryHandle` in IndexedDB (`NoodleLocalFsDB` -> `handles` -> `rootDirHandle`) and streams blobs to disk via `createWritable()`. Opens local files as inline `blob:` tabs via `browser.tabs.create()`.
+* **`FirefoxDownloadsProvider`**: Mirrors files via `browser.downloads.download({ url, filename: '<rootSubfolder>/<relativePath>', conflictAction: 'overwrite', saveAs: false })`, awaits completion via `browser.downloads.onChanged`, checks on-disk presence via `browser.downloads.search({ id })`, and opens local files via `browser.downloads.open(downloadId)` with zero OPFS duplication.
+* **`browser.storage.local` Machine-Local Keys**: `localFsConfig` (off by default, `autoResyncMissingFiles: false` by default), `localFsManifest` (`moodleFileId -> SyncedFileRecord`), `localFsQueue`, and `localFsStatus` (all excluded from `NOODLE_SYNC_DATA` / `browser.storage.sync`).

@@ -265,6 +265,21 @@ A dedicated full-page assignment feed providing comprehensive management of all 
     - Bilingual Description: "Automatically discover and display course lecture and recitation recordings from Panopto inside each course page, with watched status tracking and manual folder override." / "איתור והצגה אוטומטית של הקלטות הרצאות ותרגולים מפנופטו בתוך עמודי הקורסים, כולל סימון הרצאות שנצפו ואפשרות להזנת קישור תיקייה ידני בניהול קורסים."
     - When enabled, the **Manage Courses** modal (`CoursesConfigTable`) also displays a **Panopto Folder (Optional)** column allowing users to paste a custom Panopto Folder URL or Folder UUID override (`coursesPanoptoMap[courseId]`) for any course.
 
+### G. Local Filesystem Sync Configuration (`LocalFsSettingsSection`)
+*   **Master Switch (`#local-fs-enabled-toggle`)**: Opt-in toggle (default: **OFF**) with live status pill (`Off` / `Connected` / `Syncing files...` / `Paused` / `Cooldown` / `Permission needed` / `Re-login needed`).
+*   **Browser-Adaptive Folder Setup**:
+    - **Chromium (`ChromiumFsaProvider`)**: Displays selected root folder badge (`.local-fs-path-chip`), **Choose Folder / Change Folder** button (`#local-fs-choose-folder-btn`), and **Reconnect Folder** button (`#local-fs-reconnect-btn`) if permission returns to `prompt`.
+    - **Firefox (`FirefoxDownloadsProvider`)**: Displays target Downloads subfolder input (`#local-fs-firefox-subfolder-input`, default `Noodle`) + **Save** (`#local-fs-firefox-save-btn`), live preview `Downloads/<subfolder>/`, and a collapsible **"Want to sync outside Downloads?"** `<details>` panel with 1-click copy buttons for Linux/macOS (`ln -s`) and Windows (`mklink /J`) commands.
+*   **Queue Telemetry & Controls** (visible when enabled): Synchronized file counters, failed/skipped counters, live animated linear progress bar (`.local-fs-progress-fill`) with current relative file path, `Sync Now` (`#local-fs-sync-now-btn`), `Pause` (`#local-fs-pause-btn`), `Resume` (`#local-fs-resume-btn`), `Retry Failed` (`#local-fs-retry-btn`), and collapsible skipped/failed logs drawer.
+*   **Machine-Local Sub-Toggles & Selectors**:
+    - **Automatically re-sync missing files (`#local-fs-auto-resync-toggle`)**: Default **OFF** (manual deletions remain deleted unless enabled).
+    - **Include assignment prompt attachments (`#local-fs-include-assignments-toggle`)**: Default **ON**.
+    - **Include my submitted assignment files (`#local-fs-include-submissions-toggle`)**: Default **OFF**.
+    - **Use custom course nicknames (`#local-fs-use-nicknames-toggle`)**: Default **OFF**.
+    - **Max single file size (`#local-fs-max-size-select`)**: `50 MB`, `100 MB` (default), `250 MB`, `500 MB`, or `Unlimited`.
+    - **Initial sync throughput profile (`#local-fs-speed-profile-select`)**: `Safe & polite` (default) or `Moderate`.
+*   **Permission Prompts**: If folder permissions reset (`needs_permission`), both the Dashboard (`.local-fs-perm-warning-banner`) and Popup surface a non-blocking banner linking directly to reconnect.
+
 
 ---
 
@@ -436,3 +451,9 @@ Renders a blue accent noticeboard card at the top of the course detail page for 
    - Displayed with golden trophy badge: `🏆 ציון כולל: 92.50` / `Course Total: 92.50`.
 2. **Bonus Badges**: Assignments and grade items flagged as bonus (`grademax <= 5` or `בונוס` in title) carry a yellow `✨ בונוס` / `✨ Bonus` badge.
 3. **Instructor Feedback**: Assignment and grade rows display feedback notes in an indented green callout: `💬 משוב: כל הכבוד, עבודה מצוינת!`.
+
+### F. Local-First File Opening & PC vs Web Visual Indicators
+* **Visual Status Differentiation (`FileOpenAction`)**: Every file row across Dashboard, Assignments Tab, and Course Detail renders an immediately distinguishable action button:
+  - **Locally Synced Files (`.file-action-local`)**: Displays an emerald **PC/Monitor icon** (`<PcIcon />`) + **`Open` / `פתח`** as a `<button>` (suppressing the browser's bottom-left Moodle URL status preview on hover and instead displaying a local relative-path tooltip).
+  - **Remote / Unsynced Files (`.file-action-web`)**: Displays a blue **Globe icon** (`<GlobeIcon />`) + **`Open ↗` / `פתח ↗`** as an `<a href={openUrl}>` linking to Moodle.
+* **Synchronous Local Dispatch & Fallback**: Clicking a locally synced file reads `LocalFilesContext` synchronously in the click handler (`handleOpenFileInNewTab`) so Firefox preserves click activation for `browser.downloads.open(downloadId)` without losing user gesture across storage awaits, and Chromium opens a `blob:` preview tab from the `FileSystemFileHandle`. If the local copy is missing on disk, it flips cleanly to the Web icon and falls back seamlessly to Moodle HTTPS.

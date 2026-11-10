@@ -103,10 +103,12 @@ export interface RawMoodleAssignment {
     timestamp: number;
     dataid: string;
   }>;
-    introattachments?: Array<{
+  introattachments?: Array<{
     filename: string;
-  filepath?: string;
+    filepath?: string;
     fileurl: string;
+    filesize?: number;
+    timemodified?: number;
   }>;
 }
 
@@ -173,11 +175,12 @@ export interface RawSubmissionPluginFile {
   filename: string;
   fileurl: string;
   filesize: number;
+  timemodified?: number;
   mimetype?: string;
 }
 
 export interface RawSubmissionStatus {
-  _scraperIntroAttachments?: { filename: string, fileurl: string }[];
+  _scraperIntroAttachments?: { filename: string; fileurl: string; filesize?: number; timemodified?: number }[];
   lastattempt?: {
     canedit?: boolean;
     cansubmit?: boolean;

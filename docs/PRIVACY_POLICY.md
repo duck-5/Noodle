@@ -11,6 +11,7 @@ At Noodle, we believe your data is exactly that: yours. We have built Noodle fro
 Because Noodle is a decentralized, client-side application:
 - **Authentication Credentials:** Your Moodle session information and Google OAuth tokens are stored securely in your browser's local, encrypted storage (`chrome.storage.local`) or your mobile device's secure enclave (`expo-secure-store`).
 - **Application Data:** All synced courses, assignments, and grades are stored locally on your device.
+- **Optional Local Course Mirroring (Local FS Sync):** If you opt in to Local Filesystem Sync in Settings (disabled by default), course resources are downloaded directly from Tel Aviv University Moodle to the local folder you choose on your computer (`Downloads/<subfolder>` in Firefox or your picked directory in Chromium). Local sync settings and manifests remain strictly on that device and are never uploaded to cloud/Moodle sync storage.
 
 ## 3. How We Use Your Data
 Your data never leaves your device except to communicate directly with the services you authorize:

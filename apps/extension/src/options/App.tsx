@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment, createContext, useContext } from 'react';
 import type {
   SyncResult,
   SyncError,
@@ -31,6 +31,7 @@ import {
   isActivityCompleted,
   matchesActivityIdentifier,
   hasGracePeriod,
+  getCanonicalFileUrlPath,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -46,16 +47,33 @@ import {
   setMoodleCredentials,
   DEFAULT_SETTINGS,
   getGoogleOAuthRedirectUrl,
+  getLocalFsConfig,
+  getLocalFsManifest,
+  getLocalFsStatus,
+  DEFAULT_LOCAL_FS_CONFIG,
+  DEFAULT_LOCAL_FS_STATUS,
 } from '../shared/storage.js';
-import type { ExtensionSettings } from '../shared/storage.js';
+import type {
+  ExtensionSettings,
+  LocalFsConfig,
+  LocalFsManifestRecord,
+  LocalFsManifestStore,
+  LocalFsStatus,
+} from '../shared/storage.js';
 import {
   fetchEnrolledCoursesOnBackground,
   syncNowOnBackground,
   syncGoogleTasksOnBackground,
   loginTauSsoOnBackground,
   logoutOnBackground,
+  resumeLocalFsSyncOnBackground,
 } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
+import { getInlineMimeType } from '../shared/mimeUtils.js';
+import { createFileSystemProvider, isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
+import { ChromiumFsaProvider } from '../services/fs/ChromiumFsaProvider.js';
+import { FirefoxDownloadsProvider } from '../services/fs/FirefoxDownloadsProvider.js';
+import { LocalFsSettingsSection } from './LocalFsSettingsSection.js';
 import { translations } from '../shared/i18n';
 
 import './App.css';
@@ -96,71 +114,92 @@ export function buildFileOpenUrl(rawUrl: string, token: string | null): string {
   }
 }
 
-function getInlineMimeType(fileName: string): string | null {
-  const ext = (fileName.split('.').pop() || '').toLowerCase();
-  switch (ext) {
-    case 'pdf':
-      return 'application/pdf';
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    case 'txt':
-    case 'log':
-    case 'py':
-    case 'c':
-    case 'cpp':
-    case 'h':
-    case 'hpp':
-    case 'java':
-    case 'js':
-    case 'ts':
-    case 'tsx':
-    case 'jsx':
-    case 'cs':
-    case 'go':
-    case 'rs':
-    case 'rb':
-    case 'php':
-    case 'sh':
-    case 'sql':
-    case 'md':
-    case 'csv':
-    case 'yml':
-    case 'yaml':
-    case 'ini':
-    case 'cfg':
-    case 'tex':
-    case 'r':
-    case 'm':
-      return 'text/plain;charset=utf-8';
-    case 'json':
-      return 'application/json;charset=utf-8';
-    case 'html':
-    case 'htm':
-      return 'text/html;charset=utf-8';
-    case 'xml':
-      return 'text/xml;charset=utf-8';
-    default:
-      return null;
+function normalizeLocalFileLookupKey(rawUrl: string): string {
+  const canonical = getCanonicalFileUrlPath(rawUrl);
+  if (!canonical) return '';
+  return canonical.replace(
+    /\/webservice\/pluginfile\.php(?=\/|$)/,
+    '/pluginfile.php'
+  );
+}
+
+interface LocalFilesContextValue {
+  enabled: boolean;
+  findRecord: (rawUrl: string) => LocalFsManifestRecord | null;
+  markLocalMissing: (moodleFileId: string) => void;
+}
+
+const LocalFilesContext = createContext<LocalFilesContextValue>({
+  enabled: false,
+  findRecord: () => null,
+  markLocalMissing: () => {},
+});
+
+let cachedLocalLookup: {
+  initialized: boolean;
+  enabled: boolean;
+  byUrl: Map<string, LocalFsManifestRecord>;
+} = {
+  initialized: false,
+  enabled: false,
+  byUrl: new Map(),
+};
+
+function buildLocalFileLookupMap(manifest: LocalFsManifestStore): Map<string, LocalFsManifestRecord> {
+  const byUrl = new Map<string, LocalFsManifestRecord>();
+  for (const rec of Object.values(manifest.files || {})) {
+    if (rec?.canonicalUrlPath) {
+      byUrl.set(normalizeLocalFileLookupKey(rec.canonicalUrlPath), rec);
+    }
   }
+  return byUrl;
 }
 
 export async function handleOpenFileInNewTab(
-  e: React.MouseEvent<HTMLAnchorElement>,
+  e: React.MouseEvent<HTMLElement>,
   rawUrl: string,
   token: string | null,
-  fileName: string
+  fileName: string,
+  preResolvedLocalRecord?: LocalFsManifestRecord | null,
+  onLocalOpenMissing?: (moodleFileId: string) => void
 ): Promise<void> {
   e.preventDefault();
   e.stopPropagation();
+
+  // #5: Prefer locally synced filesystem copy for instantaneous opening when available.
+  // Resolve synchronously before any await so Firefox retains click activation for downloads.open().
+  try {
+    let localEnabled = Boolean(preResolvedLocalRecord) || cachedLocalLookup.enabled;
+    let matchedRecord: LocalFsManifestRecord | undefined = preResolvedLocalRecord ?? undefined;
+
+    if (!matchedRecord && rawUrl) {
+      if (cachedLocalLookup.initialized) {
+        if (localEnabled) {
+          matchedRecord = cachedLocalLookup.byUrl.get(normalizeLocalFileLookupKey(rawUrl));
+        }
+      } else if (!isFirefoxExtensionRuntime()) {
+        // Only perform async storage fallback in non-Firefox runtimes where user activation isn't required for downloads.open
+        const fsConfig = await getLocalFsConfig();
+        localEnabled = fsConfig.enabled;
+        if (localEnabled) {
+          const manifest = await getLocalFsManifest();
+          matchedRecord = buildLocalFileLookupMap(manifest).get(normalizeLocalFileLookupKey(rawUrl));
+        }
+      }
+    }
+
+    if (localEnabled && matchedRecord) {
+      const provider = createFileSystemProvider();
+      const openedLocally = await provider.openLocalFile(matchedRecord);
+      if (openedLocally) {
+        return;
+      }
+      onLocalOpenMissing?.(matchedRecord.moodleFileId);
+    }
+  } catch (err) {
+    console.warn('[LocalFS] Local file open check failed, falling back to Moodle URL:', err);
+  }
+
   const openUrl = buildFileOpenUrl(rawUrl, token);
   if (!openUrl) return;
 
@@ -188,6 +227,83 @@ export async function handleOpenFileInNewTab(
   }
 
   await browser.tabs.create({ url: openUrl });
+}
+
+const PcIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+    <line x1="8" y1="21" x2="16" y2="21" />
+    <line x1="12" y1="17" x2="12" y2="21" />
+  </svg>
+);
+
+const GlobeIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </svg>
+);
+
+function FileOpenAction({
+  rawUrl,
+  openUrl,
+  fileName,
+  token,
+  t,
+  lang,
+  style,
+}: {
+  rawUrl: string;
+  openUrl: string;
+  fileName: string;
+  token: string | null;
+  t: (key: keyof (typeof translations)['en']) => string;
+  lang: 'he' | 'en';
+  style?: React.CSSProperties;
+}) {
+  const localCtx = useContext(LocalFilesContext);
+  const localRec = localCtx.enabled ? localCtx.findRecord(rawUrl) : null;
+
+  if (localRec) {
+    const localLabel = lang === 'he' ? 'פתח' : 'Open';
+    const localTooltip =
+      lang === 'he'
+        ? `עותק מקומי במחשב (${localRec.relativePath}) — לחץ לפתיחה`
+        : `Local copy on PC (${localRec.relativePath}) — Click to open`;
+    return (
+      <button
+        type="button"
+        className="file-action-btn file-action-local"
+        style={style}
+        title={localTooltip}
+        aria-label={localTooltip}
+        onClick={(ev) =>
+          handleOpenFileInNewTab(ev, rawUrl, token, fileName, localRec, localCtx.markLocalMissing)
+        }
+      >
+        <PcIcon size={12} />
+        <span>{localLabel}</span>
+      </button>
+    );
+  }
+
+  const webTooltip =
+    lang === 'he' ? 'פתח מ-Moodle (לא מסונכרן מקומית)' : 'Open from Moodle (not synced locally)';
+  return (
+    <a
+      href={openUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="file-action-btn file-action-web"
+      style={style}
+      title={webTooltip}
+      onClick={(ev) => handleOpenFileInNewTab(ev, rawUrl, token, fileName)}
+    >
+      <GlobeIcon size={12} />
+      <span>{t('open_file')}</span>
+    </a>
+  );
 }
 
 function SyncCountdown({
@@ -488,6 +604,13 @@ export default function App() {
   const [googleSyncLoading, setGoogleSyncLoading] = useState<boolean>(false);
   const [hasGoogleTasksToken, setHasGoogleTasksToken] = useState<boolean>(false);
   const [googleTasksAuthError, setGoogleTasksAuthError] = useState<string | null>(null);
+  const [localFsConfig, setLocalFsConfigState] = useState<LocalFsConfig>(DEFAULT_LOCAL_FS_CONFIG);
+  const [localFsStatus, setLocalFsStatusState] = useState<LocalFsStatus>(DEFAULT_LOCAL_FS_STATUS);
+  const [localFsManifest, setLocalFsManifestState] = useState<LocalFsManifestStore>({
+    files: {},
+    courseFolderNames: {},
+  });
+  const [missingLocalFileIds, setMissingLocalFileIds] = useState<Set<string>>(() => new Set());
 
   // Panopto Host Permissions State
   const PANOPTO_ORIGINS = ['https://*.panopto.eu/*', '*://*.panopto.tau.ac.il/*'];
@@ -717,11 +840,56 @@ export default function App() {
         if (changes.cachedSyncResult?.newValue) {
           setSyncResult(changes.cachedSyncResult.newValue);
         }
+        if (changes.localFsConfig?.newValue) {
+          setLocalFsConfigState({ ...DEFAULT_LOCAL_FS_CONFIG, ...changes.localFsConfig.newValue });
+        }
+        if (changes.localFsStatus?.newValue) {
+          setLocalFsStatusState({ ...DEFAULT_LOCAL_FS_STATUS, ...changes.localFsStatus.newValue });
+        }
+        if (changes.localFsManifest?.newValue) {
+          setLocalFsManifestState({
+            files: {},
+            courseFolderNames: {},
+            ...changes.localFsManifest.newValue,
+          });
+          setMissingLocalFileIds(new Set());
+        } else if ('localFsManifest' in changes && !changes.localFsManifest?.newValue) {
+          setLocalFsManifestState({ files: {}, courseFolderNames: {} });
+          setMissingLocalFileIds(new Set());
+        }
       }
     };
     browser.storage.onChanged.addListener(handleStorageChange);
     return () => browser.storage.onChanged.removeListener(handleStorageChange);
   }, [token, onboardingStep]);
+
+  const localFilesByUrl = useMemo(() => buildLocalFileLookupMap(localFsManifest), [localFsManifest]);
+
+  useEffect(() => {
+    cachedLocalLookup = {
+      initialized: true,
+      enabled: localFsConfig.enabled,
+      byUrl: localFilesByUrl,
+    };
+  }, [localFsConfig.enabled, localFilesByUrl]);
+
+  const localFilesCtxValue = useMemo<LocalFilesContextValue>(() => ({
+    enabled: localFsConfig.enabled,
+    findRecord: (rawUrl: string) => {
+      if (!localFsConfig.enabled || !rawUrl) return null;
+      const rec = localFilesByUrl.get(normalizeLocalFileLookupKey(rawUrl));
+      if (!rec || missingLocalFileIds.has(rec.moodleFileId)) return null;
+      return rec;
+    },
+    markLocalMissing: (moodleFileId: string) => {
+      setMissingLocalFileIds((prev) => {
+        if (prev.has(moodleFileId)) return prev;
+        const next = new Set(prev);
+        next.add(moodleFileId);
+        return next;
+      });
+    },
+  }), [localFsConfig.enabled, localFilesByUrl, missingLocalFileIds]);
 
   useEffect(() => {
     if (settings?.theme) {
@@ -888,6 +1056,20 @@ export default function App() {
       setToken(storedToken);
       setTrackedCourseIdsState(ids);
       setSettingsState(extensionSettings);
+
+      const [fsCfg, fsStat, fsManifest] = await Promise.all([
+        getLocalFsConfig(),
+        getLocalFsStatus(),
+        getLocalFsManifest(),
+      ]);
+      setLocalFsConfigState(fsCfg);
+      setLocalFsStatusState(fsStat);
+      setLocalFsManifestState(fsManifest);
+
+      if (fsCfg.enabled && isFirefoxExtensionRuntime()) {
+        // Reconcile stale Firefox downloadIds after browser restarts/reloads before user clicks Open
+        void new FirefoxDownloadsProvider().reconcileManifest();
+      }
 
       const cached = await getCachedSyncResult();
       setSyncResult(cached);
@@ -1205,6 +1387,10 @@ export default function App() {
       setMoodleUsername('');
       setMoodleId('');
       setMoodlePassword('');
+      setLocalFsConfigState(DEFAULT_LOCAL_FS_CONFIG);
+      setLocalFsStatusState(DEFAULT_LOCAL_FS_STATUS);
+      setLocalFsManifestState({ files: {}, courseFolderNames: {} });
+      setMissingLocalFileIds(new Set());
       setOnboardingStep(1);
     } catch (e) {
       console.error(e);
@@ -2008,7 +2194,8 @@ export default function App() {
   }
 
   return (
-    <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+    <LocalFilesContext.Provider value={localFilesCtxValue}>
+      <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
       {/* Sidebar Navigation */}
       <aside className={`sidebar glass-panel ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-logo" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center', marginBottom: '2rem' }}>
@@ -2236,6 +2423,22 @@ export default function App() {
                   groupedCoursesResult={groupedCoursesResult}
                   hasPanoptoPermission={hasPanoptoPermission}
                   onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                  localFsConfig={localFsConfig}
+                  localFsStatus={localFsStatus}
+                  onReconnectLocalFs={async () => {
+                    const provider = createFileSystemProvider();
+                    if (provider instanceof ChromiumFsaProvider) {
+                      const granted = await provider.requestStoredPermission();
+                      if (granted) {
+                        await resumeLocalFsSyncOnBackground();
+                        showToast(t('local_fs_status_idle'), 'success');
+                      } else {
+                        setActiveTab('settings');
+                      }
+                    } else {
+                      setActiveTab('settings');
+                    }
+                  }}
                 />
               ) : activeTab === 'assignments' ? (
                 <AssignmentsTab
@@ -2368,6 +2571,10 @@ export default function App() {
                   }}
                   hasPanoptoPermission={hasPanoptoPermission}
                   onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                  localFsConfig={localFsConfig}
+                  localFsStatus={localFsStatus}
+                  onLocalFsConfigChanged={setLocalFsConfigState}
+                  onShowToast={showToast}
                 />
               )}
 
@@ -2491,13 +2698,14 @@ export default function App() {
         </div>
       )}
 
-      {toast && (
-        <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
-          <span className="toast-message">{toast.message}</span>
-          <button className="toast-close" onClick={() => setToast(null)}>×</button>
-        </div>
-      )}
-    </div>
+        {toast && (
+          <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToast(null)}>×</button>
+          </div>
+        )}
+      </div>
+    </LocalFilesContext.Provider>
   );
 }
 
@@ -3263,6 +3471,9 @@ function DashboardTab({
   groupedCoursesResult,
   hasPanoptoPermission = true,
   onRequestPanoptoPermission,
+  localFsConfig,
+  localFsStatus,
+  onReconnectLocalFs,
 }: {
   assignments: EnhancedAssignment[];
   meetings: ZoomMeeting[];
@@ -3293,6 +3504,9 @@ function DashboardTab({
   groupedCoursesResult?: GroupedCoursesResult;
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
+  localFsConfig?: LocalFsConfig;
+  localFsStatus?: LocalFsStatus;
+  onReconnectLocalFs?: () => void;
 } & TabProps) {
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
@@ -3470,6 +3684,46 @@ function DashboardTab({
         </div>
       )}
 
+      {/* Local Filesystem Sync missing folder permission warning */}
+      {localFsConfig?.enabled && localFsStatus?.state === 'needs_permission' && (
+        <div
+          className="local-fs-perm-warning-banner glass-panel"
+          style={{
+            marginBottom: '1rem',
+            padding: '0.85rem 1.25rem',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            background: 'rgba(245, 158, 11, 0.1)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '1.4rem' }}>📁</span>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)' }}>
+                {t('local_fs_perm_banner_title')}
+              </div>
+              <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
+                {t('local_fs_perm_banner_desc')}
+              </div>
+            </div>
+          </div>
+          {onReconnectLocalFs && (
+            <button
+              type="button"
+              className="primary-btn btn-sm"
+              onClick={onReconnectLocalFs}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {t('local_fs_reconnect_btn')}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 1. Hero Action Strip: Upcoming To-Do Queue + Catch-Up Queue */}
       <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''}`}>
         {/* Upcoming To-Do Queue (Closest task expanded by default with urgent flare) */}
@@ -3571,16 +3825,14 @@ function DashboardTab({
                                 <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <a
-                                      href={openUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn"
-                                      style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                                      onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
-                                    >
-                                      {t('open_file')}
-                                    </a>
+                                    <FileOpenAction
+                                      rawUrl={att.url}
+                                      openUrl={openUrl}
+                                      fileName={att.name}
+                                      token={token}
+                                      t={t}
+                                      lang={lang}
+                                    />
                                     <a
                                       href={downloadUrl}
                                       download={att.name}
@@ -3614,16 +3866,14 @@ function DashboardTab({
                                 <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <a
-                                      href={openUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn"
-                                      style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                                      onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}
-                                    >
-                                      {t('open_file')}
-                                    </a>
+                                    <FileOpenAction
+                                      rawUrl={sf.fileUrl}
+                                      openUrl={openUrl}
+                                      fileName={sf.fileName}
+                                      token={token}
+                                      t={t}
+                                      lang={lang}
+                                    />
                                     <a
                                       href={downloadUrl}
                                       download={sf.fileName}
@@ -3658,16 +3908,14 @@ function DashboardTab({
                                   <CheckIcon size={11} />
                                   <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
                                   <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <a
-                                      href={openUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn"
-                                      style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                                      onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}
-                                    >
-                                      {t('open_file')}
-                                    </a>
+                                    <FileOpenAction
+                                      rawUrl={att.url}
+                                      openUrl={openUrl}
+                                      fileName={att.name}
+                                      token={token}
+                                      t={t}
+                                      lang={lang}
+                                    />
                                     <a
                                       href={downloadUrl}
                                       download={att.name}
@@ -4666,9 +4914,14 @@ function AssignmentsTab({
                               <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                 <span className="file-name">📄 {att.name}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={att.url}
+                                    openUrl={openUrl}
+                                    fileName={att.name}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a
                                     href={downloadUrl}
                                     download={att.name}
@@ -4702,9 +4955,14 @@ function AssignmentsTab({
                               <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
                                 <span className="file-name">📂 {sf.fileName}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={sf.fileUrl}
+                                    openUrl={openUrl}
+                                    fileName={sf.fileName}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a
                                     href={downloadUrl}
                                     download={sf.fileName}
@@ -4741,9 +4999,14 @@ function AssignmentsTab({
                                 </span>
                                 <span className="file-name">{sub.name}</span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sub.url, token, sub.name)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={sub.url}
+                                    openUrl={openUrl}
+                                    fileName={sub.name}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a
                                     href={downloadUrl}
                                     download={sub.name}
@@ -5060,6 +5323,10 @@ function SettingsTab({
   onUpdateSyncInterval,
   hasPanoptoPermission = true,
   onRequestPanoptoPermission,
+  localFsConfig,
+  localFsStatus,
+  onLocalFsConfigChanged,
+  onShowToast,
 }: {
   settings: ExtensionSettings | null;
   onToggleGoogle: (e: boolean) => void;
@@ -5091,6 +5358,10 @@ function SettingsTab({
   onUpdateSyncInterval?: (val: number) => void;
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
+  localFsConfig?: LocalFsConfig;
+  localFsStatus?: LocalFsStatus;
+  onLocalFsConfigChanged?: (cfg: LocalFsConfig) => void;
+  onShowToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }) {
   if (!settings) return null;
 
@@ -5574,6 +5845,21 @@ function SettingsTab({
       </div>
 
       <hr className="settings-divider" />
+
+      {/* Local Filesystem Sync Section */}
+      {localFsConfig && localFsStatus && onLocalFsConfigChanged && (
+        <>
+          <LocalFsSettingsSection
+            config={localFsConfig}
+            status={localFsStatus}
+            onConfigChanged={onLocalFsConfigChanged}
+            onShowToast={onShowToast}
+            t={t}
+            lang={lang}
+          />
+          <hr className="settings-divider" />
+        </>
+      )}
 
       {/* Threshold configuration section */}
       <div className="settings-section">
@@ -7273,46 +7559,49 @@ function CourseDetailView({
                                           const downloadUrl = buildFileDownloadUrl(att.url, token);
                                           const openUrl = buildFileOpenUrl(att.url, token);
                                           return (
-                                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                              <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                              <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                                {t('open_file')}
-                                              </a>
-                                              <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                                <DownloadIcon size={12} />
-                                              </a>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
+                                              <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                                <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
+                                                <FileOpenAction
+                                                  rawUrl={att.url}
+                                                  openUrl={openUrl}
+                                                  fileName={att.name}
+                                                  token={token}
+                                                  t={t}
+                                                  lang={lang}
+                                                />
+                                                <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                                  <DownloadIcon size={12} />
+                                                </a>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          )}
 
-                        {content.files.length > 0 && (
-                          <div className="section-files-list">
-                            {content.files.map((f, fIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
-                              const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                              return (
-                                <div key={fIdx} className="section-file-item">
-                                  <span className="item-name">📄 {f.fileName}</span>
-                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                    {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
-                                    <a
-                                      href={openUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn"
-                                      style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', fontWeight: 600 }}
-                                      onClick={(ev) => handleOpenFileInNewTab(ev, f.fileUrl, token, f.fileName)}
-                                    >
-                                      {t('open_file')}
-                                    </a>
+                          {content.files.length > 0 && (
+                            <div className="section-files-list">
+                              {content.files.map((f, fIdx) => {
+                                const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                                const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                                return (
+                                  <div key={fIdx} className="section-file-item">
+                                    <span className="item-name">📄 {f.fileName}</span>
+                                    <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                      {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
+                                      <FileOpenAction
+                                        rawUrl={f.fileUrl}
+                                        openUrl={openUrl}
+                                        fileName={f.fileName}
+                                        token={token}
+                                        t={t}
+                                        lang={lang}
+                                      />
                                     <a
                                       href={downloadUrl}
                                       download={f.fileName}
@@ -7637,9 +7926,14 @@ function CourseDetailView({
                               return (
                                 <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={att.url}
+                                    openUrl={openUrl}
+                                    fileName={att.name}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
                                     <DownloadIcon size={12} />
                                   </a>
@@ -7663,9 +7957,14 @@ function CourseDetailView({
                               return (
                                 <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
                                   <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, sf.fileUrl, token, sf.fileName)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={sf.fileUrl}
+                                    openUrl={openUrl}
+                                    fileName={sf.fileName}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
                                     <DownloadIcon size={12} />
                                   </a>
@@ -7689,9 +7988,14 @@ function CourseDetailView({
                                 <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item">
                                   <CheckIcon size={11} />
                                   <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <a href={openUrl} target="_blank" rel="noreferrer" className="file-action-btn" style={{ color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }} onClick={(ev) => handleOpenFileInNewTab(ev, att.url, token, att.name)}>
-                                    {t('open_file')}
-                                  </a>
+                                  <FileOpenAction
+                                    rawUrl={att.url}
+                                    openUrl={openUrl}
+                                    fileName={att.name}
+                                    token={token}
+                                    t={t}
+                                    lang={lang}
+                                  />
                                   <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
                                     <DownloadIcon size={12} />
                                   </a>

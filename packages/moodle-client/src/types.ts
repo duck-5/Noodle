@@ -73,6 +73,8 @@ export interface CourseLink {
 export interface Attachment {
   name: string;
   url: string;
+  fileSize?: number;
+  timeModified?: number;
 }
 
 export interface Assignment {

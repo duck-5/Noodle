@@ -242,6 +242,12 @@ graph LR
 | **TC-EXT-017** | Hierarchical Course Management, Assignment Deduplication, Card Urgency Thresholds & Unhide Filter Activation | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Sync Engine |
 | **TC-EXT-018** | Empty Course Sections Suppression by Default & Interactive Visibility Toggle | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI |
 | **TC-DASH-REHAUL-09** | Hidden Tasks Excluded from Gaps Count & Course Card Breakdown | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Dashboard |
+| **TC-LFS-01** | Local FS Sync Defaults OFF & Strict Cloud Settings Exclusion | Extension (Chrome & Firefox) | Automated & Browser Agent | Storage & Settings |
+| **TC-LFS-02** | Cross-Browser Mirrored Hierarchy, Sanitization, Folder Dedup & Permission Parity | Extension (Chrome & Firefox) | Automated & Browser Agent | Planner, FSA, Downloads & Build Parity |
+| **TC-LFS-03** | Incremental Diff Sync & Adaptive Initial Throttling | Extension (Chrome & Firefox) | Automated & Browser Agent | Diff Engine & Queue |
+| **TC-LFS-04** | Manual Deletion Policy, `autoResyncMissingFiles` Toggle & HTML SSO Trap Guard | Extension (Chrome & Firefox) | Automated & Browser Agent | Service Worker & Disk Verification |
+| **TC-LFS-05** | Instant Local-First File Opening (`Open ↗`) with Moodle Fallback | Extension (Chrome & Firefox) | Automated & Browser Agent | Options UI & Providers |
+| **TC-LFS-06** | Logout Session Teardown Preserving User Files on Disk | Extension (Chrome & Firefox) | Automated & Browser Agent | Service Worker & IndexedDB |
 
 
 ---
@@ -1752,3 +1758,59 @@ graph LR
   4. Unhiding an overdue assignment in the assignments tab automatically enables `filterPast` so the assignment stays visible instead of vanishing into a disabled filter.
   5. Emoji visual cleanup: total grade badge is clean without 🏆 emoji, and sync timer countdown uses minimalistic `<SyncClockIcon />` SVG glyph.
 * **Verification**: Headless Chromium & Firefox build verification (`pnpm --filter extension run build`).
+
+#### TC-LFS-01: Local FS Sync Defaults OFF & Strict Cloud Settings Exclusion
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/shared/storage.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/LocalFsSettingsSection.tsx`
+* **Description**:
+  1. `DEFAULT_LOCAL_FS_CONFIG.enabled` is `false` and `#local-fs-enabled-toggle` is unchecked with sub-settings hidden until opted in.
+  2. All `localFs*` configuration, manifest, queue, and status records live exclusively in `browser.storage.local` and Chromium IndexedDB (`NoodleLocalFsDB`) and are never included in `browser.storage.sync` or `NOODLE_SYNC_DATA`.
+* **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-02: Cross-Browser Mirrored Hierarchy, Sanitization, Folder Dedup & Permission Parity
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/localFsPlanner.ts`, `apps/extension/vite.config.ts`, `scripts/test-build-parity.mjs`, `apps/extension/src/services/fs/`
+* **Description**:
+  1. Sanitizes invalid OS path characters (`< > : " / \ | ? *`), guards Windows reserved names (`CON`, `NUL`, etc.), compacts deep paths within 210 characters, and disambiguates collisions.
+  2. Mirrors `mod_resource` (`!folderId` excluding `mod_folder` duplicates per `CR-09`), `mod_folder` nested `relativePath` subfolders, and optional `mod_assign` attachments/submissions across 2-level sections and Mode A unified portals.
+  3. Chrome build (`dist/`) excludes `downloads` and `downloads.open` permissions while Firefox build (`dist-firefox/`) injects both permissions cleanly without duplicating files in OPFS.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test`, `pnpm test:parity`, and `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-03: Incremental Diff Sync & Adaptive Initial Throttling
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/localFsPlanner.ts`, `apps/extension/src/background/localFsSync.ts`
+* **Description**:
+  1. Subsequent syncs run `planLocalFsDiff` comparing against persisted Moodle metadata (`lastModified`, `size`, `canonicalUrlPath`) and fetch strictly newly added or modified files (even if raw HTTP transfer byte length differs slightly from Moodle metadata `fileSize`).
+  2. Initial bulk runs throttle sequentially with jitter, size cooldown, batch breathers, exponential backoff, and a 15-minute cooldown circuit breaker on repeated HTTP `401/403/429/502/503`.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test` and `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-04: Manual Deletion Policy, `autoResyncMissingFiles` Toggle & HTML SSO Trap Guard
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/options/LocalFsSettingsSection.tsx`
+* **Description**:
+  1. HTML SSO login redirects or JSON exception responses during file fetch never overwrite disk files and transition status to `needs_auth`.
+  2. When `#local-fs-auto-resync-toggle` is OFF (default), manually deleted files stay deleted across subsequent syncs; when toggled ON, missing files are detected on disk and automatically re-downloaded.
+* **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-05: Instant Local-First File Opening & PC vs Web Visual Indicators
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/options/App.tsx`, `apps/extension/src/services/fs/ChromiumFsaProvider.ts`, `apps/extension/src/services/fs/FirefoxDownloadsProvider.ts`
+* **Description**:
+  1. Locally synced files render as `<button className="file-action-local">` with `<PcIcon />`, local path tooltip, and no `href` Moodle URL preview; unsynced files render as `<a className="file-action-web">` with `<GlobeIcon />` and Moodle URL.
+  2. Clicking a synced file resolves `localFsManifest` synchronously from `LocalFilesContext` in the click handler (`browser.downloads.open(downloadId)` in Firefox before any awaits; `blob:` tab in Chromium) with zero Moodle network fetches.
+  3. Falls back cleanly to opening the authenticated Moodle HTTPS URL and flips to the Web icon if the local file is missing on disk.
+* **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-06: Logout Session Teardown Preserving User Files on Disk
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/background/localFsSync.ts`
+* **Description**:
+  1. Executing `LOGOUT` clears `localFsConfig`, `localFsManifest`, `localFsQueue`, `localFsStatus`, the `localFsResume` alarm, and Chromium's IndexedDB `NoodleLocalFsDB` directory handle (`rootDirHandle`).
+  2. User files already mirrored on the local filesystem remain untouched on disk.
+* **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.

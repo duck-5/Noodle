@@ -395,6 +395,8 @@ export async function runSync(
             submittedFiles = submissionArea.files.map(f => ({
               name: f.filename,
               url: f.fileurl,
+              ...(typeof f.filesize === 'number' ? { fileSize: f.filesize } : {}),
+              ...(typeof f.timemodified === 'number' ? { timeModified: f.timemodified } : {}),
             }));
           }
         }
@@ -455,10 +457,12 @@ export async function runSync(
       }
     }
 
-    let attachments = assign.introattachments
+    let attachments: Attachment[] = assign.introattachments
       ? assign.introattachments.map((att) => ({
           name: att.filename,
           url: att.fileurl,
+          ...(typeof att.filesize === 'number' ? { fileSize: att.filesize } : {}),
+          ...(typeof att.timemodified === 'number' ? { timeModified: att.timemodified } : {}),
         }))
       : [];
 

@@ -23,7 +23,26 @@ import {
   getCachedSyncResult,
   getMoodleCredentials,
   getGoogleOAuthRedirectUrl,
+  getLocalFsStatus,
 } from '../shared/storage.js';
+import {
+  LOCAL_FS_RESUME_ALARM,
+  enqueueLocalFsSync,
+  pauseLocalFsSync,
+  processLocalFsQueue,
+  recoverStaleLocalFsStateOnBoot,
+  resetLocalFsState,
+  resumeLocalFsSync,
+  teardownLocalFsOnLogout,
+} from './localFsSync.js';
+
+async function reauthenticateForLocalFs(): Promise<string | null> {
+  const creds = await getMoodleCredentials();
+  if (!creds?.username || !creds?.idNumber || !creds?.password) {
+    return null;
+  }
+  return await loginTauSso(creds.username, creds.idNumber, creds.password, false);
+}
 
 
 // --------------------------------------------------------------------------
@@ -77,6 +96,36 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
       });
   } else if (message.type === 'LOGOUT') {
     promise = clearUserSession()
+      .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_GET_STATE') {
+    promise = getLocalFsStatus()
+      .then((status) => ({ success: true, status }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_START_SYNC') {
+    promise = enqueueLocalFsSync({
+      forceRescan: Boolean(message.forceRescan),
+      reauthenticate: reauthenticateForLocalFs,
+    })
+      .then((status) => ({ success: true, status }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_PAUSE') {
+    promise = pauseLocalFsSync()
+      .then((status) => ({ success: true, status }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_RESUME') {
+    promise = resumeLocalFsSync(reauthenticateForLocalFs)
+      .then((status) => ({ success: true, status }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_RETRY_FAILED') {
+    promise = enqueueLocalFsSync({
+      retryFailed: true,
+      reauthenticate: reauthenticateForLocalFs,
+    })
+      .then((status) => ({ success: true, status }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_RESET_FOLDER') {
+    promise = resetLocalFsState(false)
       .then(() => ({ success: true }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
@@ -172,6 +221,7 @@ updateActionBadge().catch(() => {});
 // `isSyncing: true` left behind by an extension reload or worker termination mid-sync,
 // otherwise the dashboard shows "Syncing..." forever with a disabled Sync button.
 browser.storage.local.set({ isSyncing: false }).catch(() => {});
+recoverStaleLocalFsStateOnBoot(reauthenticateForLocalFs).catch(() => {});
 
 async function updateActionBadge() {
   try {
@@ -244,6 +294,12 @@ browser.alarms.onAlarm.addListener(async (alarm: any) => {
       await performBackgroundSync();
     } catch (e) {
       console.error('Error during periodic sync:', e);
+    }
+  } else if (alarm.name === LOCAL_FS_RESUME_ALARM) {
+    try {
+      await processLocalFsQueue(reauthenticateForLocalFs);
+    } catch (e) {
+      console.error('[LocalFS] Error during resume alarm:', e);
     }
   }
 });
@@ -330,8 +386,9 @@ async function clearUserSession(): Promise<void> {
     await browser.storage.local.remove(notificationKeys);
   }
 
-  // 3. Wipe user-specific sync storage keys
+  // 3. Wipe user-specific sync storage keys and machine-local FS state
   await browser.storage.sync.remove('trackedCourseIds');
+  await teardownLocalFsOnLogout();
   await updateActionBadge();
 }
 
@@ -428,8 +485,9 @@ async function performSettingsSync() {
 
   const localShared: Record<string, any> = {};
 
-  // Package settings
+  // Package settings (strictly skip machine-local localFs keys)
   for (const [key, value] of Object.entries(settings)) {
+    if (key.startsWith('localFs')) continue;
     if (value !== undefined) {
       const ts = timestamps[key] || 0;
       // Only send default values if they were explicitly set (ts > 0)
@@ -462,9 +520,8 @@ async function performSettingsSync() {
 
   for (const [key, tracked] of Object.entries(merged)) {
     if (!tracked) continue;
-    // Preserve local Google Tasks integration toggle/config so cross-device Moodle sync
-    // or failed calendar writes never unexpectedly turn off Google Tasks locally.
-    if (key === 'googleTasksEnabled' || key === 'googleClientId') {
+    // Preserve local Google Tasks and machine-local FS integration toggles/config
+    if (key === 'googleTasksEnabled' || key === 'googleClientId' || key.startsWith('localFs')) {
       continue;
     }
     newTimestamps[key] = tracked.updatedAt;
@@ -626,6 +683,11 @@ async function performBackgroundSync(): Promise<SyncResult> {
     // Save results to storage
     await setCachedSyncResult(result);
     await updateActionBadge();
+
+    // Enqueue newly added or updated files for local FS mirroring (non-blocking)
+    enqueueLocalFsSync({ reauthenticate: reauthenticateForLocalFs }).catch((e) => {
+      console.warn('[LocalFS] Non-fatal error queueing files after sync:', e);
+    });
 
     // Check and fire notifications for new or upcoming assignments
     if (settings.notificationsEnabled) {

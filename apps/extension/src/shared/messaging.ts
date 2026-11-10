@@ -89,3 +89,23 @@ export async function loginTauSsoOnBackground(
 export async function logoutOnBackground(): Promise<{ success: boolean; error?: string }> {
   return sendMessageToBackground({ type: 'LOGOUT' });
 }
+
+export async function startLocalFsSyncOnBackground(forceRescan = false): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_START_SYNC', forceRescan });
+}
+
+export async function pauseLocalFsSyncOnBackground(): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_PAUSE' });
+}
+
+export async function resumeLocalFsSyncOnBackground(): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_RESUME' });
+}
+
+export async function retryFailedLocalFsOnBackground(): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_RETRY_FAILED' });
+}
+
+export async function resetLocalFsFolderOnBackground(): Promise<{ success: boolean; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_RESET_FOLDER' });
+}

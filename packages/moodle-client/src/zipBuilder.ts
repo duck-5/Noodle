@@ -190,6 +190,7 @@ export function buildZipArchive(entries: ZipEntryInput[]): Uint8Array {
 
 export function buildAuthenticatedFileUrl(fileUrl: string, token: string): string {
   if (!fileUrl) return '';
+  if (!token || token.startsWith('web_session_')) return fileUrl;
   if (fileUrl.includes('token=')) return fileUrl;
   const separator = fileUrl.includes('?') ? '&' : '?';
   return `${fileUrl}${separator}token=${encodeURIComponent(token)}`;

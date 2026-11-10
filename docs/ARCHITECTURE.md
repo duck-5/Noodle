@@ -326,3 +326,36 @@ Moodle courses in TAU utilize advanced course formats (`multitopic` and `onetopi
 ### 4. Heuristics: Late-Submission Box Auto-Suppression & Bonus Heuristic
 * **Late-Submission Box Pairing**: TAU professors routinely maintain a second submission box labeled `הגשה באיחור` or `תיבת הגשה באיחור`. Noodle's sync engine pairs late boxes with their base assignments; if the student has already submitted the regular assignment, the late box is automatically suppressed (`isHidden: true`) to keep the dashboard uncluttered.
 * **Bonus Identification**: Grade items and assignments with `grademax <= 5` or carrying the keyword `בונוס` / `bonus` are automatically flagged with `isBonus: true`.
+
+---
+
+## 12. Local Filesystem Sync Architecture (`Issue #18`)
+
+Noodle optionally mirrors Moodle course materials, folders, and assignments directly onto the student's computer while remaining cross-browser compatible and immune to redundant disk usage or Moodle rate-limiting:
+
+```mermaid
+flowchart LR
+    SyncResult["SyncResult + Tracked Courses"] --> Planner["localFsPlanner.ts (Pure TS)"]
+    Planner --> Diff["planLocalFsDiff (Manifest & Size Diff)"]
+    Diff --> Queue["localFsSync.ts (Throttled MV3 Worker Queue)"]
+    Queue --> Strategy{"FileSystemProvider"}
+    Strategy -->|Chromium| FSA["ChromiumFsaProvider (File System Access API + IndexedDB Handle)"]
+    Strategy -->|Firefox| Downloads["FirefoxDownloadsProvider (browser.downloads + local manifest, zero OPFS dup)"]
+    ClickOpen["UI Click: Open ↗"] --> Canonical["Match canonicalUrlPath in localFsManifest"]
+    Canonical -->|Found locally| Strategy
+    Canonical -->|Missing / disabled| Remote["Moodle HTTPS Fallback"]
+```
+
+### Key Architectural Guarantees
+1. **Browser-Agnostic `FileSystemProvider` Strategy (`apps/extension/src/services/fs/`)**:
+   - **Chromium (`ChromiumFsaProvider`)**: Uses the File System Access API (`window.showDirectoryPicker({ mode: 'readwrite' })`), persists the `FileSystemDirectoryHandle` across sessions in IndexedDB (`NoodleLocalFsDB`), streams blobs into nested directory handles (`getDirectoryHandle(..., { create: true })`), and opens local files instantaneously via `URL.createObjectURL(file)` (`blob:` tabs). Zero extra Chrome permissions required.
+   - **Firefox (`FirefoxDownloadsProvider`)**: Writes strictly via `browser.downloads.download({ url, filename: '<rootSubfolder>/<relativePath>', conflictAction: 'overwrite', saveAs: false })` using the preflight-verified Moodle HTTPS URL (never ephemeral `blob:` URLs), tracking `downloadId` in `browser.storage.local` without duplicating gigabytes of PDFs in OPFS. Reconciles stale session `downloadId`s automatically across browser restarts/extension reloads (`reconcileManifest` / `healDownloadId` by normalized relative filename suffix via `browser.downloads.search`) and opens local files synchronously via `browser.downloads.open(downloadId)`. Firefox-only permissions (`"downloads"`, `"downloads.open"`) are injected exclusively during `vite build --mode firefox`.
+2. **Deterministic Pure-TS Planning & Sanitization (`packages/moodle-client/src/localFsPlanner.ts`)**:
+   - Excludes `mod_folder` child items from `files[]` (`!f.folderId`, matching `CR-09`) so folder files download exclusively under `<Course>/<Section>/<FolderName>/<relativePath>`.
+   - Merges parent/recitation sub-courses (Mode A) cleanly into unified course directories, sanitizes forbidden OS characters, guards Windows reserved filenames (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`), compacts oversized paths within `210` chars, and disambiguates collisions (`file (2).pdf`).
+3. **Resilient Adaptive Initial Throttling & Auth Guards (`apps/extension/src/background/localFsSync.ts`)**:
+   - Sequential queue (`concurrency = 1`) with `safe` (1.5–2.8s jitter + payload cooldown + batch breathers every 20 files) and `moderate` profiles, exponential backoff, 15-minute cooldown circuit breaker on repeated HTTP `401/403/429/502/503` responses, HTML Shibboleth SSO redirect & Moodle JSON API exception detection, and MV3 `localFsResume` alarm recovery.
+4. **Opt-In Deletion Respect & Strict Machine-Local State**:
+   - Off by default (`enabled: false`) and excluded from `NOODLE_SYNC_DATA` cloud settings sync.
+   - When `autoResyncMissingFiles` is off (default), files deleted locally stay deleted; turning it on re-checks disk presence and re-downloads removed items.
+   - `LOGOUT` clears `localFsConfig`, `localFsManifest`, `localFsQueue`, `localFsStatus`, and IndexedDB directory handle without erasing files already stored on the user's filesystem.

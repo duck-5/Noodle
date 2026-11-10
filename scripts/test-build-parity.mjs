@@ -32,7 +32,13 @@ try {
   if (!chromeManifest.key) {
     throw new Error('Chrome unpacked dist manifest should contain developer key for static OAuth redirect URI');
   }
-  console.log('   ✓ Chrome MV3 service worker properly configured in dist/ (static developer key preserved)');
+  if (chromeManifest.key) {
+    // Expected static key
+  }
+  if ((chromeManifest.permissions || []).includes('downloads') || (chromeManifest.permissions || []).includes('downloads.open')) {
+    throw new Error('Chrome manifest should not include Firefox-only downloads permissions');
+  }
+  console.log('   ✓ Chrome MV3 service worker properly configured in dist/ (static developer key preserved, no unused downloads perms)');
 
   // 2. Test Firefox Build
   console.log('2. Testing Firefox Extension Build (TC-EXT-BRW-01)...');
@@ -54,7 +60,10 @@ try {
   if (firefoxManifest.key) {
     throw new Error('Firefox manifest should not contain developer key');
   }
-  console.log('   ✓ Firefox MV3 background.scripts and gecko.id properly configured (developer key stripped)');
+  if (!(firefoxManifest.permissions || []).includes('downloads') || !(firefoxManifest.permissions || []).includes('downloads.open')) {
+    throw new Error('Firefox manifest missing required downloads / downloads.open permissions for Local FS Sync');
+  }
+  console.log('   ✓ Firefox MV3 background.scripts, gecko.id, and downloads/downloads.open permissions properly configured');
 
   // 3. Test OAuth Redirect Resolution Parity (TC-EXT-BRW-02)
   console.log('3. Testing OAuth Redirect URL Parity (TC-EXT-BRW-02)...');
