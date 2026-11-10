@@ -10,7 +10,19 @@ import {
   matchesActivityIdentifier,
   hasGracePeriod,
 } from '@tautracker/moodle-client';
-import { getStoredToken, getCachedSyncResult, getSettings, setSettings as saveSettings, getMoodleCredentials } from '../shared/storage.js';
+import {
+  getStoredToken,
+  getCachedSyncResult,
+  getSettings,
+  setSettings as saveSettings,
+  getMoodleCredentials,
+  getLocalFsConfig,
+  getLocalFsStatus,
+  DEFAULT_LOCAL_FS_CONFIG,
+  DEFAULT_LOCAL_FS_STATUS,
+  type LocalFsConfig,
+  type LocalFsStatus,
+} from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import logoImg from '../assets/logo.png';
@@ -40,6 +52,8 @@ export default function Popup() {
   const [loading, setLoading] = useState<boolean>(true);
   const [settings, setSettingsState] = useState<any>(null);
   const [signingInMoodle, setSigningInMoodle] = useState<boolean>(false);
+  const [localFsConfig, setLocalFsConfig] = useState<LocalFsConfig>(DEFAULT_LOCAL_FS_CONFIG);
+  const [localFsStatus, setLocalFsStatus] = useState<LocalFsStatus>(DEFAULT_LOCAL_FS_STATUS);
 
   async function loadData() {
     try {
@@ -49,6 +63,9 @@ export default function Popup() {
       setSyncResult(cached);
       const s = await getSettings();
       setSettingsState(s);
+      const [fsCfg, fsStat] = await Promise.all([getLocalFsConfig(), getLocalFsStatus()]);
+      setLocalFsConfig(fsCfg);
+      setLocalFsStatus(fsStat);
     } catch (e) {
       console.error('Error loading popup data:', e);
     } finally {
@@ -208,6 +225,31 @@ export default function Popup() {
       </header>
 
       <main className="popup-main-content">
+        {localFsConfig.enabled && localFsStatus.state === 'needs_permission' && (
+          <div
+            onClick={handleOpenDashboard}
+            style={{
+              padding: '0.5rem 0.7rem',
+              marginBottom: '0.6rem',
+              borderRadius: '6px',
+              background: 'rgba(245, 158, 11, 0.14)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <span>📁 {isHe ? 'נדרשת הרשאה לתיקיית הסנכרון המקומית' : 'Local folder permission needed'}</span>
+            <span style={{ textDecoration: 'underline', flexShrink: 0 }}>
+              {isHe ? 'פתח הגדרות' : 'Reconnect'}
+            </span>
+          </div>
+        )}
         {signingInMoodle && (
           <div style={{ padding: '0.45rem 0.7rem', marginBottom: '0.6rem', borderRadius: '6px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center' }}>
             ⏳ {isHe ? 'מתחבר למודל...' : 'Signing in to Moodle...'}

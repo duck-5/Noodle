@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
           
           if (targetBrowser === 'firefox') {
             delete manifest.key;
+            const perms = new Set<string>(Array.isArray(manifest.permissions) ? manifest.permissions : []);
+            perms.add('downloads');
+            perms.add('downloads.open');
+            manifest.permissions = Array.from(perms);
             manifest.browser_specific_settings = {
               gecko: {
                 id: 'noodle@tau',

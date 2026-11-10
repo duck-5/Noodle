@@ -10,3 +10,4 @@ export * from './zipBuilder.js';
 export * from './courseFormatState.js';
 export * from './courseGrouping.js';
 export * from './activityState.js';
+export * from './localFsPlanner.js';

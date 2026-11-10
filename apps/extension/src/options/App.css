@@ -3904,6 +3904,54 @@ body.theme-coffee .course-card-progress-box .course-prog-bar-bg {
   transform: translateY(-1px);
 }
 
+.file-action-btn.file-action-local {
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+  font-weight: 600;
+}
+
+.file-action-btn.file-action-local:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.65);
+  color: #6ee7b7;
+}
+
+.file-action-btn.file-action-web {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+  font-weight: 600;
+}
+
+.file-action-btn.file-action-web:hover {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #bfdbfe;
+}
+
+body.theme-noodle .file-action-btn.file-action-local {
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+body.theme-noodle .file-action-btn.file-action-local:hover {
+  background: rgba(16, 185, 129, 0.22);
+  color: #065f46;
+}
+
+body.theme-noodle .file-action-btn.file-action-web {
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+body.theme-noodle .file-action-btn.file-action-web:hover {
+  background: rgba(59, 130, 246, 0.16);
+  color: #1e40af;
+}
+
 /* Squircle Icon-only Download Button */
 .file-action-btn.file-download-btn,
 .file-action-btn.icon-only {
@@ -4549,4 +4597,246 @@ body.theme-noodle .calendar-assign-pill {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+/* ==========================================
+   Local Filesystem Sync (Settings & Banners)
+   ========================================== */
+.local-fs-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.local-fs-status-pill.tone-ok {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.local-fs-status-pill.tone-info {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+}
+
+.local-fs-status-pill.tone-warn {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.38);
+  color: #fbbf24;
+}
+
+.local-fs-status-pill.tone-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.local-fs-root-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  margin-top: 0.65rem;
+}
+
+.local-fs-path-chip {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.local-fs-symlink-details {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.local-fs-symlink-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--primary);
+  user-select: none;
+}
+
+.local-fs-symlink-body {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.local-fs-cmd-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.local-fs-cmd-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.local-fs-cmd-code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  color: var(--text-primary);
+}
+
+.local-fs-status-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+}
+
+.local-fs-mode-tag {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.16rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.local-fs-progress-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.local-fs-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.local-fs-logs-list {
+  margin-top: 0.5rem;
+  max-height: 170px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.local-fs-log-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 0.25rem;
+}
+
+.local-fs-log-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.local-fs-perm-warning-banner {
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1.2rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.12);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+body.theme-noodle .local-fs-status-pill {
+  background: rgba(194, 112, 68, 0.08);
+  border-color: rgba(194, 112, 68, 0.22);
+  color: #5c4033;
+}
+
+body.theme-noodle .local-fs-status-pill.tone-ok {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #047857;
+}
+
+body.theme-noodle .local-fs-status-pill.tone-info {
+  background: rgba(194, 112, 68, 0.14);
+  border-color: rgba(194, 112, 68, 0.35);
+  color: #9a3412;
+}
+
+body.theme-noodle .local-fs-status-pill.tone-warn {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(217, 119, 6, 0.35);
+  color: #92400e;
+}
+
+body.theme-noodle .local-fs-status-pill.tone-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #b91c1c;
+}
+
+body.theme-noodle .local-fs-root-box,
+body.theme-noodle .local-fs-status-panel {
+  background: rgba(253, 246, 240, 0.65);
+  border-color: rgba(194, 112, 68, 0.2);
+}
+
+body.theme-noodle .local-fs-path-chip,
+body.theme-noodle .local-fs-cmd-code,
+body.theme-noodle .local-fs-logs-list {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(194, 112, 68, 0.22);
+  color: #3e2723;
+}
+
+body.theme-noodle .local-fs-progress-track {
+  background: rgba(194, 112, 68, 0.14);
+}
+
+body.theme-noodle .local-fs-mode-tag {
+  background: rgba(194, 112, 68, 0.14);
+  color: #9a3412;
+}
+
+body.theme-noodle .local-fs-section .settings-text-input {
+  background: rgba(255, 255, 255, 0.85);
+  color: #3e2723;
+  border-color: rgba(194, 112, 68, 0.25);
+}
+
+body.theme-noodle .local-fs-perm-warning-banner {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(217, 119, 6, 0.38);
 }

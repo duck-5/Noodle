@@ -219,3 +219,171 @@ export function getGoogleOAuthRedirectUrl(): string {
 
   return redirectUrl;
 }
+
+// --------------------------------------------------------------------------
+// Machine-Local Filesystem Sync Storage (NEVER synced via storage.sync or Moodle)
+// --------------------------------------------------------------------------
+
+export interface LocalFsConfig {
+  enabled: boolean;
+  rootLabel: string | null;
+  includeAssignments: boolean;
+  includeSubmissions: boolean;
+  autoResyncMissingFiles: boolean;
+  useCourseNicknames: boolean;
+  maxFileSizeMb: number;
+  speedProfile: 'safe' | 'moderate';
+}
+
+export const DEFAULT_LOCAL_FS_CONFIG: LocalFsConfig = {
+  enabled: false,
+  rootLabel: null,
+  includeAssignments: true,
+  includeSubmissions: false,
+  autoResyncMissingFiles: false,
+  useCourseNicknames: true,
+  maxFileSizeMb: 100,
+  speedProfile: 'safe',
+};
+
+export interface LocalFsManifestRecord {
+  moodleFileId: string;
+  relativePath: string;
+  lastModified: number;
+  size?: number;
+  canonicalUrlPath?: string;
+  syncedAt?: number;
+  downloadId?: number;
+}
+
+export interface LocalFsManifestStore {
+  files: Record<string, LocalFsManifestRecord>;
+  courseFolderNames: Record<number, string>;
+}
+
+export interface LocalFsQueueItem {
+  moodleFileId: string;
+  courseId: number;
+  sourceCourseId: number;
+  relativePath: string;
+  fileName: string;
+  fileUrl: string;
+  canonicalUrlPath: string;
+  fileSize: number;
+  timeModified: number;
+  reason: 'new' | 'updated' | 'missing';
+  attempts: number;
+  nextRetryAt?: number;
+  lastError?: string;
+}
+
+export interface LocalFsLogEntry {
+  moodleFileId: string;
+  fileName: string;
+  relativePath: string;
+  status: 'failed' | 'skipped_too_large';
+  message: string;
+  timestamp: number;
+}
+
+export type LocalFsStateKind =
+  | 'idle'
+  | 'syncing'
+  | 'paused'
+  | 'cooldown'
+  | 'needs_permission'
+  | 'needs_auth'
+  | 'error';
+
+export interface LocalFsStatus {
+  state: LocalFsStateKind;
+  backendType: 'fsa' | 'downloads';
+  isInitialBulkMode: boolean;
+  totalQueued: number;
+  completedInCycle: number;
+  failedCount: number;
+  skippedTooLargeCount: number;
+  syncedCountTotal: number;
+  currentFilePath?: string | null;
+  pausedUntil?: number | null;
+  lastSyncAt?: number | null;
+  lastError?: string | null;
+  logs: LocalFsLogEntry[];
+}
+
+export const DEFAULT_LOCAL_FS_STATUS: LocalFsStatus = {
+  state: 'idle',
+  backendType: 'fsa',
+  isInitialBulkMode: false,
+  totalQueued: 0,
+  completedInCycle: 0,
+  failedCount: 0,
+  skippedTooLargeCount: 0,
+  syncedCountTotal: 0,
+  currentFilePath: null,
+  pausedUntil: null,
+  lastSyncAt: null,
+  lastError: null,
+  logs: [],
+};
+
+export async function getLocalFsConfig(): Promise<LocalFsConfig> {
+  const res = (await browser.storage.local.get('localFsConfig').catch(() => ({}))) as {
+    localFsConfig?: Partial<LocalFsConfig>;
+  };
+  return { ...DEFAULT_LOCAL_FS_CONFIG, ...res.localFsConfig };
+}
+
+export async function setLocalFsConfig(patch: Partial<LocalFsConfig>): Promise<LocalFsConfig> {
+  const current = await getLocalFsConfig();
+  const merged = { ...current, ...patch };
+  await browser.storage.local.set({ localFsConfig: merged });
+  return merged;
+}
+
+export async function getLocalFsManifest(): Promise<LocalFsManifestStore> {
+  const res = (await browser.storage.local.get('localFsManifest').catch(() => ({}))) as {
+    localFsManifest?: Partial<LocalFsManifestStore>;
+  };
+  return {
+    files: res.localFsManifest?.files || {},
+    courseFolderNames: res.localFsManifest?.courseFolderNames || {},
+  };
+}
+
+export async function setLocalFsManifest(manifest: LocalFsManifestStore): Promise<void> {
+  await browser.storage.local.set({ localFsManifest: manifest });
+}
+
+export async function getLocalFsQueue(): Promise<LocalFsQueueItem[]> {
+  const res = (await browser.storage.local.get('localFsQueue').catch(() => ({}))) as {
+    localFsQueue?: LocalFsQueueItem[];
+  };
+  return Array.isArray(res.localFsQueue) ? res.localFsQueue : [];
+}
+
+export async function setLocalFsQueue(queue: LocalFsQueueItem[]): Promise<void> {
+  await browser.storage.local.set({ localFsQueue: queue });
+}
+
+export async function getLocalFsStatus(): Promise<LocalFsStatus> {
+  const res = (await browser.storage.local.get('localFsStatus').catch(() => ({}))) as {
+    localFsStatus?: Partial<LocalFsStatus>;
+  };
+  return {
+    ...DEFAULT_LOCAL_FS_STATUS,
+    ...res.localFsStatus,
+    logs: Array.isArray(res.localFsStatus?.logs) ? res.localFsStatus!.logs : [],
+  };
+}
+
+export async function setLocalFsStatus(patch: Partial<LocalFsStatus>): Promise<LocalFsStatus> {
+  const current = await getLocalFsStatus();
+  const merged: LocalFsStatus = {
+    ...current,
+    ...patch,
+    logs: patch.logs !== undefined ? patch.logs : current.logs,
+  };
+  await browser.storage.local.set({ localFsStatus: merged });
+  return merged;
+}
