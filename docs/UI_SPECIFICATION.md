@@ -432,12 +432,18 @@ Course Detail views in the desktop extension and mobile apps render a format-awa
    - Clicking toggles state locally and synchronously dispatches completion back to Moodle server via `core_completion_update_activity_completion_status_manually`.
    - Visual state changes to green `✓ בוצע` / `✓ Done`.
 
-### C. Folder Cards & Pure-TS ZIP Downloader
-1. **Folder Container**: Renders a dedicated card for Moodle folders (`mod_folder`) displaying folder title, description, and file count.
-2. **Bulk ZIP Download Button**:
+### C. Folder Cards, Interactive Directory Browser & Pure-TS ZIP Downloader
+1. **Folder Container**: Renders a dedicated card for Moodle folders (`mod_folder`) displaying folder title, description, file count, and total size.
+2. **Interactive Directory Tree & Single-File Access**:
+   - Folders are expandable and collapsible via header click or toggle chevron (`▼`/`▲`), defaulting to expanded so students can immediately see and access files.
+   - Files inside the folder are rendered with extension-specific emoji icons (e.g. 📕 PDF, 📦 ZIP, 📘 DOC, 💻 Code, 🖼️ Images), file sizes, 1-click in-browser/local PC opening via `FileOpenAction`, and direct single-file download buttons.
+   - Preserves nested directory paths (`relativePath`), visually grouping files under styled subfolder headers (`📁 <subfolder>/`).
+   - Empty folders display an empty state note (`No files in this folder` / `אין קבצים בתיקייה זו`) and disable ZIP downloading.
+3. **Bulk ZIP Download Button**:
    - Prominent action button labeled `📦 הורד תיקייה כ-ZIP` / `Download ZIP`.
    - On click, triggers pure TypeScript in-memory ZIP assembly with live progress bar (`מוריד 2/5 קבצים...`).
    - Automatically prompts native browser or mobile OS save dialog with UTF-8 Hebrew filename preservation.
+4. **Direct Moodle Deep Link**: Provides a secondary link button (`פתח תיקייה במודל ↗` / `Open in Moodle ↗`) pointing directly to `/mod/folder/view.php?id={cmid}`.
 
 ### D. Course Announcements Noticeboard Card
 Renders a blue accent noticeboard card at the top of the course detail page for courses with active announcement forums (`mod_forum`):

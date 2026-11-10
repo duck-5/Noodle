@@ -1686,7 +1686,7 @@ graph LR
 * **Target Components**: `apps/extension/src/options/App.tsx`
 * **Description**:
   1. Course Detail view displays 2-level topic chips (top-level topics and nested subtopics) with smooth scrolling to matching section cards.
-  2. Displays folder cards with `📦 הורד תיקייה כ-ZIP` button, triggering bounded parallel file downloads with live progress bar and direct browser download.
+  2. Displays folder cards with interactive directory browser, file count, total size, expand/collapse toggles, subfolder groupings, individual file open/download actions, and `📦 הורד כ-ZIP` button triggering bounded parallel file downloads with live progress bar.
   3. Displays course announcements banner (`📢`) linking directly to Moodle forum notices.
   4. Grades Tab and Course Detail view prioritize authoritative course totals (`🏆 ציון כולל`) from gradebook summaries, bonus badges (`✨ בונוס`), and instructor feedback notes (`💬`).
 * **Verification**: Headless Chromium & Firefox build verification (`pnpm --filter extension run build`).

@@ -7,6 +7,7 @@ import type {
   CourseFile,
   CourseSection,
   CourseFolder,
+  CourseFolderFile,
   CourseLink,
   CourseAnnouncement,
   CourseGradeSummary,
@@ -69,7 +70,7 @@ import {
   resumeLocalFsSyncOnBackground,
 } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
-import { getInlineMimeType } from '../shared/mimeUtils.js';
+import { getInlineMimeType, getFileEmoji } from '../shared/mimeUtils.js';
 import { createFileSystemProvider, isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
 import { ChromiumFsaProvider } from '../services/fs/ChromiumFsaProvider.js';
 import { FirefoxDownloadsProvider } from '../services/fs/FirefoxDownloadsProvider.js';
@@ -6119,6 +6120,19 @@ function CourseDetailView({
   const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
   const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<number>>(new Set());
+
+  const toggleFolderCollapsed = (folderId: number) => {
+    setCollapsedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
   const [showEmptySections, setShowEmptySections] = useState<boolean>(() => {
     try {
       return localStorage.getItem('noodle_show_empty_sections') === 'true';
@@ -7621,69 +7635,282 @@ function CourseDetailView({
                         )}
 
                         {content.folders && content.folders.length > 0 && (
-                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem' }}>
+                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
                             {content.folders.map((fld) => {
                               const isDownloading = downloadingFolderId === fld.id;
+                              const isExpanded = !collapsedFolderIds.has(fld.id);
+                              const files = fld.files || [];
+                              const rootFiles = files.filter((f) => !f.relativePath || f.relativePath === '' || f.relativePath === '/');
+                              const subfolderMap = new Map<string, CourseFolderFile[]>();
+                              files.forEach((f) => {
+                                const cleanRel = (f.relativePath || '').replace(/^\/+|\/+$/g, '');
+                                if (cleanRel) {
+                                  if (!subfolderMap.has(cleanRel)) subfolderMap.set(cleanRel, []);
+                                  subfolderMap.get(cleanRel)!.push(f);
+                                }
+                              });
+                              const subfolders = Array.from(subfolderMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+
                               return (
                                 <div
                                   key={fld.id}
                                   className="section-folder-card glass-panel"
                                   style={{
-                                    padding: '0.75rem 1rem',
                                     borderRadius: '8px',
                                     border: '1px solid rgba(255, 255, 255, 0.1)',
                                     background: 'rgba(255, 255, 255, 0.02)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    flexWrap: 'wrap',
-                                    gap: '0.5rem'
+                                    overflow: 'hidden',
+                                    transition: 'all 0.2s ease',
                                   }}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span style={{ fontSize: '1.2rem' }}>📁</span>
-                                    <div>
-                                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                        {fld.files.length} {lang === 'he' ? 'קבצים' : 'files'}
-                                        {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                  {/* Folder Header Row */}
+                                  <div
+                                    className="folder-header-row"
+                                    style={{
+                                      padding: '0.75rem 1rem',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: '0.5rem',
+                                      cursor: files.length > 0 ? 'pointer' : 'default',
+                                      background: isExpanded && files.length > 0 ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
+                                      borderBottom: isExpanded && files.length > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
+                                    }}
+                                    onClick={() => {
+                                      if (files.length > 0) {
+                                        toggleFolderCollapsed(fld.id);
+                                      }
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                      <span style={{ fontSize: '1.25rem' }}>
+                                        {isExpanded && files.length > 0 ? '📂' : '📁'}
+                                      </span>
+                                      <div>
+                                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                          <span>
+                                            {files.length} {lang === 'he' ? 'קבצים' : 'files'}
+                                            {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                          </span>
+                                          {files.length > 0 && (
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--accent, #6366f1)', marginInlineStart: '0.2rem' }}>
+                                              {isExpanded ? '▲' : '▼'}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <a
-                                      href={fld.moodleUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="action-link-btn"
-                                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                    <div
+                                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                      onClick={(e) => e.stopPropagation()}
                                     >
-                                      {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
-                                    </a>
-                                    <button
-                                      type="button"
-                                      className="secondary-btn btn-sm"
-                                      disabled={isDownloading}
-                                      onClick={() => handleDownloadFolderZip(fld)}
+                                      <a
+                                        href={fld.moodleUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="action-link-btn"
+                                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                      >
+                                        {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                      </a>
+                                      <button
+                                        type="button"
+                                        className="secondary-btn btn-sm"
+                                        disabled={isDownloading || files.length === 0}
+                                        onClick={() => handleDownloadFolderZip(fld)}
+                                        title={files.length === 0 ? (lang === 'he' ? 'אין קבצים בתיקייה' : 'Folder is empty') : undefined}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem',
+                                          fontSize: '0.75rem',
+                                          padding: '0.3rem 0.6rem',
+                                          cursor: isDownloading ? 'wait' : files.length === 0 ? 'not-allowed' : 'pointer',
+                                          opacity: files.length === 0 ? 0.6 : 1,
+                                        }}
+                                      >
+                                        <span>📦</span>
+                                        <span>
+                                          {isDownloading
+                                            ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
+                                            : lang === 'he'
+                                            ? 'הורד כ-ZIP'
+                                            : 'Download ZIP'}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Expanded Folder Files List */}
+                                  {isExpanded && files.length > 0 && (
+                                    <div
+                                      className="folder-files-container"
                                       style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
+                                        padding: '0.5rem 0.75rem 0.75rem',
+                                        display: 'flex',
+                                        flexDirection: 'column',
                                         gap: '0.35rem',
-                                        fontSize: '0.75rem',
-                                        padding: '0.3rem 0.6rem',
-                                        cursor: isDownloading ? 'wait' : 'pointer'
+                                        background: 'rgba(0, 0, 0, 0.08)',
                                       }}
                                     >
-                                      <span>📦</span>
-                                      <span>
-                                        {isDownloading
-                                          ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || fld.files.length})`
-                                          : lang === 'he'
-                                          ? 'הורד כ-ZIP'
-                                          : 'Download ZIP'}
-                                      </span>
-                                    </button>
-                                  </div>
+                                      {/* Root files */}
+                                      {rootFiles.map((f, fIdx) => {
+                                        const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                                        const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                                        const emoji = getFileEmoji(f.fileName);
+                                        return (
+                                          <div
+                                            key={`root_${fIdx}`}
+                                            className="section-file-item folder-file-item"
+                                            style={{
+                                              padding: '0.5rem 0.75rem',
+                                              borderRadius: '6px',
+                                              background: 'rgba(255, 255, 255, 0.025)',
+                                              border: '1px solid rgba(255, 255, 255, 0.06)',
+                                              display: 'flex',
+                                              justifyContent: 'space-between',
+                                              alignItems: 'center',
+                                              gap: '0.5rem',
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                              <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{emoji}</span>
+                                              <span
+                                                className="item-name"
+                                                style={{
+                                                  fontSize: '0.85rem',
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                title={f.fileName}
+                                              >
+                                                {f.fileName}
+                                              </span>
+                                            </div>
+                                            <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                              {f.fileSize > 0 && (
+                                                <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                              )}
+                                              <FileOpenAction
+                                                rawUrl={f.fileUrl}
+                                                openUrl={openUrl}
+                                                fileName={f.fileName}
+                                                token={token}
+                                                t={t}
+                                                lang={lang}
+                                              />
+                                              <a
+                                                href={downloadUrl}
+                                                download={f.fileName}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="file-action-btn file-download-btn"
+                                                title={t('download_file')}
+                                                aria-label={t('download_file')}
+                                              >
+                                                <DownloadIcon size={12} />
+                                              </a>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+
+                                      {/* Subfolders */}
+                                      {subfolders.map(([subPath, subFiles]) => (
+                                        <div
+                                          key={subPath}
+                                          className="folder-subgroup"
+                                          style={{
+                                            marginBlockStart: '0.4rem',
+                                            paddingInlineStart: '0.5rem',
+                                            borderInlineStart: '2px solid rgba(255, 255, 255, 0.12)',
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontSize: '0.78rem',
+                                              fontWeight: 600,
+                                              color: 'var(--text-secondary)',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '0.35rem',
+                                              padding: '0.2rem 0',
+                                            }}
+                                          >
+                                            <span>📁</span>
+                                            <span>{subPath}/</span>
+                                            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({subFiles.length})</span>
+                                          </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.2rem' }}>
+                                            {subFiles.map((subFile, sfIdx) => {
+                                              const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
+                                              const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
+                                              const emoji = getFileEmoji(subFile.fileName);
+                                              return (
+                                                <div
+                                                  key={`${subPath}_${sfIdx}`}
+                                                  className="section-file-item folder-file-item"
+                                                  style={{
+                                                    padding: '0.5rem 0.75rem',
+                                                    borderRadius: '6px',
+                                                    background: 'rgba(255, 255, 255, 0.025)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    gap: '0.5rem',
+                                                  }}
+                                                >
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                                    <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{emoji}</span>
+                                                    <span
+                                                      className="item-name"
+                                                      style={{
+                                                        fontSize: '0.85rem',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                      }}
+                                                      title={subFile.fileName}
+                                                    >
+                                                      {subFile.fileName}
+                                                    </span>
+                                                  </div>
+                                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                    {subFile.fileSize > 0 && (
+                                                      <span className="file-size">{(subFile.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                                    )}
+                                                    <FileOpenAction
+                                                      rawUrl={subFile.fileUrl}
+                                                      openUrl={openUrl}
+                                                      fileName={subFile.fileName}
+                                                      token={token}
+                                                      t={t}
+                                                      lang={lang}
+                                                    />
+                                                    <a
+                                                      href={downloadUrl}
+                                                      download={subFile.fileName}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="file-action-btn file-download-btn"
+                                                      title={t('download_file')}
+                                                      aria-label={t('download_file')}
+                                                    >
+                                                      <DownloadIcon size={12} />
+                                                    </a>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

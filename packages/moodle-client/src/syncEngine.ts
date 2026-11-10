@@ -907,10 +907,11 @@ export async function runSync(
             }
 
             // --- FOLDER DETECTION (mod_folder) ---
-            if (modname === 'folder' && module.contents) {
+            if (modname === 'folder') {
               const folderFiles: CourseFolderFile[] = [];
               let totalFolderSize = 0;
-              for (const c of module.contents) {
+              if (Array.isArray(module.contents)) {
+                for (const c of module.contents) {
                 if (c.type === 'file') {
                   const fileSize = c.filesize || 0;
                   totalFolderSize += fileSize;
@@ -942,6 +943,7 @@ export async function runSync(
                     courseName,
                   });
                 }
+              }
               }
 
               const newFolder: CourseFolder = {

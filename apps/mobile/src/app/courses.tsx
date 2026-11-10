@@ -182,6 +182,14 @@ export default function CoursesScreen({
   const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
   const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
   const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Record<number, boolean>>({});
+
+  const toggleFolderCollapsed = (folderId: number) => {
+    setCollapsedFolderIds((prev) => ({
+      ...prev,
+      [folderId]: !prev[folderId],
+    }));
+  };
 
   // Editing Course Modal State
   const [editingCourse, setEditingCourse] = useState<EditingCourseState | null>(null);
@@ -1473,54 +1481,159 @@ export default function CoursesScreen({
                           {/* Section Folders */}
                           {content.folders && content.folders.map((fld: any) => {
                             const isDownloading = downloadingFolderId === fld.id;
+                            const isExpanded = !collapsedFolderIds[fld.id];
+                            const filesList = Array.isArray(fld.files) ? fld.files : [];
                             return (
-                              <Pressable
+                              <View
                                 key={fld.id}
-                                style={[
-                                  styles.fileRow,
-                                  {
-                                    backgroundColor: theme.background,
-                                    borderColor: theme.border,
-                                    flexDirection: isRtl ? 'row-reverse' : 'row',
-                                  },
-                                ]}
-                                onPress={() => handleDownloadFolderZip(fld)}
-                                disabled={isDownloading}
+                                style={{
+                                  backgroundColor: theme.backgroundElement,
+                                  borderColor: theme.border,
+                                  borderWidth: 1,
+                                  borderRadius: 10,
+                                  marginBottom: 8,
+                                  overflow: 'hidden',
+                                }}
                               >
-                                <Text style={{ fontSize: 16 }}>📁</Text>
-                                <View style={{ flex: 1, marginHorizontal: 8 }}>
-                                  <Text
-                                    style={{
-                                      color: theme.text,
-                                      fontSize: 13,
-                                      fontWeight: '600',
-                                      textAlign: isRtl ? 'right' : 'left',
-                                    }}
-                                    numberOfLines={1}
-                                  >
-                                    {fld.name}
-                                  </Text>
-                                  <Text
-                                    style={{
-                                      color: theme.textSecondary,
-                                      fontSize: 11,
-                                      textAlign: isRtl ? 'right' : 'left',
-                                    }}
-                                  >
-                                    {fld.files ? fld.files.length : 0} {isRtl ? 'קבצים' : 'files'}
-                                  </Text>
-                                </View>
-                                <View
-                                  style={[
-                                    styles.smallActionBtn,
-                                    { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
-                                  ]}
+                                {/* Folder Header */}
+                                <Pressable
+                                  style={{
+                                    padding: 12,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    backgroundColor: isExpanded && filesList.length > 0 ? theme.background : theme.backgroundElement,
+                                  }}
+                                  onPress={() => {
+                                    if (filesList.length > 0) {
+                                      toggleFolderCollapsed(fld.id);
+                                    }
+                                  }}
                                 >
-                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
-                                    {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
-                                  </Text>
-                                </View>
-                              </Pressable>
+                                  <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ fontSize: 18 }}>{isExpanded && filesList.length > 0 ? '📂' : '📁'}</Text>
+                                    <View style={{ marginHorizontal: 8, flex: 1 }}>
+                                      <Text
+                                        style={{
+                                          color: theme.text,
+                                          fontSize: 13,
+                                          fontWeight: '600',
+                                          textAlign: isRtl ? 'right' : 'left',
+                                        }}
+                                        numberOfLines={1}
+                                      >
+                                        {fld.name}
+                                      </Text>
+                                      <Text
+                                        style={{
+                                          color: theme.textSecondary,
+                                          fontSize: 11,
+                                          textAlign: isRtl ? 'right' : 'left',
+                                        }}
+                                      >
+                                        {filesList.length} {isRtl ? 'קבצים' : 'files'}
+                                        {fld.total_size > 0 || fld.totalSize > 0
+                                          ? ` (${(((fld.total_size || fld.totalSize || 0) / 1024 / 1024)).toFixed(2)} MB)`
+                                          : ''}
+                                        {filesList.length > 0 ? (isExpanded ? '  ▲' : '  ▼') : ''}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {/* Download ZIP Button */}
+                                  <Pressable
+                                    style={[
+                                      styles.smallActionBtn,
+                                      {
+                                        backgroundColor: theme.primary + '15',
+                                        borderColor: theme.primary + '40',
+                                        opacity: filesList.length === 0 ? 0.5 : 1,
+                                      },
+                                    ]}
+                                    disabled={isDownloading || filesList.length === 0}
+                                    onPress={() => handleDownloadFolderZip(fld)}
+                                  >
+                                    <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                      {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
+                                    </Text>
+                                  </Pressable>
+                                </Pressable>
+
+                                {/* Expanded Files List */}
+                                {isExpanded && filesList.length > 0 && (
+                                  <View style={{ paddingHorizontal: 12, paddingBottom: 10, paddingTop: 4 }}>
+                                    {filesList.map((file: any, fIdx: number) => {
+                                      const fileName = file.fileName || file.file_name || 'file';
+                                      const fileSize = file.fileSize || file.file_size || 0;
+                                      const relPath = (file.relativePath || file.relative_path || '').replace(/^\/+|\/+$/g, '');
+                                      return (
+                                        <Pressable
+                                          key={fIdx}
+                                          style={{
+                                            paddingVertical: 8,
+                                            paddingHorizontal: 10,
+                                            borderTopWidth: 1,
+                                            borderTopColor: theme.border + '40',
+                                            flexDirection: isRtl ? 'row-reverse' : 'row',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                          }}
+                                          onPress={() => handleDownloadFile({
+                                            file_name: fileName,
+                                            file_url: file.fileUrl || file.file_url,
+                                            file_size: fileSize,
+                                            mime_type: file.mimeType || file.mime_type,
+                                          })}
+                                        >
+                                          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1, marginEnd: 8 }}>
+                                            <Text style={{ fontSize: 14 }}>📄</Text>
+                                            <View style={{ marginHorizontal: 8, flex: 1 }}>
+                                              <Text
+                                                style={{
+                                                  color: theme.text,
+                                                  fontSize: 12,
+                                                  fontWeight: '500',
+                                                  textAlign: isRtl ? 'right' : 'left',
+                                                }}
+                                                numberOfLines={1}
+                                              >
+                                                {fileName}
+                                              </Text>
+                                              {relPath ? (
+                                                <Text style={{ color: theme.textSecondary, fontSize: 10, textAlign: isRtl ? 'right' : 'left' }}>
+                                                  📁 {relPath}/
+                                                </Text>
+                                              ) : null}
+                                            </View>
+                                          </View>
+
+                                          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 6 }}>
+                                            {fileSize > 0 && (
+                                              <Text style={{ color: theme.textSecondary, fontSize: 11 }}>
+                                                {(fileSize / 1024 / 1024).toFixed(2)} MB
+                                              </Text>
+                                            )}
+                                            <View
+                                              style={{
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 4,
+                                                borderRadius: 4,
+                                                backgroundColor: theme.primary + '10',
+                                                borderWidth: 1,
+                                                borderColor: theme.primary + '30',
+                                              }}
+                                            >
+                                              <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '600' }}>
+                                                {isRtl ? 'פתח / הורד' : 'Open / Save'}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </View>
                             );
                           })}
 

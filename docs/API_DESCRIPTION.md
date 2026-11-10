@@ -54,6 +54,7 @@ All requests must include the following parameters:
 *   **Purpose:** Fetches the full section-by-section breakdown of a course page, listing files, quizzes, assignments, and external URL resources.
 *   **Parsing Logic:**
     *   **Files:** Identify modules where `modname === 'resource'`. Retrieve `fileurl` and `filename` from the `contents` array.
+    *   **Folders (`mod_folder`):** Moodle's `core_course_get_contents` invokes `folder_export_contents($cm, $baseurl)` in `mod/folder/lib.php` to export the full list of files inside the folder module. Noodle extracts each file into `CourseFolderFile` preserving `fileName`, `fileSize`, `fileUrl`, `downloadUrl`, `timeModified`, `mimeType`, and internal nested directory paths (`relativePath`), allowing direct file exploration and single-file downloads without HTML scraping.
     *   **Zoom Meetings:** Multi-modal extraction detects Zoom sessions across all common Moodle configurations:
         *   **URL Modules (`modname === 'url'`):** Modules pointing directly to Zoom domains (`*.zoom.us`, `*.zoom.com`, `zoomgov.com`) or containing English/Hebrew meeting keywords in their title (e.g. "קישור לזום", "מפגש מקוון", "שיעור זום", "הרצאה מקוונת", "Zoom").
         *   **Zoom Activities (`modname === 'zoom'`):** Dedicated Moodle `mod_zoom` integration activities.
