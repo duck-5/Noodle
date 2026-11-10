@@ -9,6 +9,7 @@ import {
   isActivityCompleted,
   matchesActivityIdentifier,
   hasGracePeriod,
+  isZoomUrl,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -22,6 +23,7 @@ import {
   DEFAULT_LOCAL_FS_STATUS,
   type LocalFsConfig,
   type LocalFsStatus,
+  getEffectiveTheme,
 } from '../shared/storage.js';
 import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
@@ -78,12 +80,16 @@ export default function Popup() {
   }, []);
 
   useEffect(() => {
-    if (settings?.theme) {
-      document.body.className = `theme-${settings.theme}`;
-    } else {
-      document.body.className = 'theme-noodle';
+    const applyTheme = () => {
+      const eff = getEffectiveTheme(settings);
+      document.body.className = `theme-${eff}`;
+    };
+    applyTheme();
+    if (settings?.theme === 'time') {
+      const interval = setInterval(applyTheme, 30000);
+      return () => clearInterval(interval);
     }
-  }, [settings]);
+  }, [settings?.theme, settings?.themeTimeDayStart, settings?.themeTimeDayEnd]);
 
   const handleOpenDashboard = () => {
     browser.runtime.openOptionsPage();
@@ -203,7 +209,7 @@ export default function Popup() {
   // Check for currently active Zoom sessions (within 15 min before start up to 2 hours after start)
   const interestedList = settings?.interestedMeetings || [];
   const activeMeetings = (syncResult?.meetings || []).filter((m: any) => {
-    if (!m.startTime) return false;
+    if (!m.startTime || !isZoomUrl(m.meetingUrl)) return false;
     const key = m.meetingNumber || m.meetingUrl;
     if (interestedList.includes(`hidden_${key}`)) return false;
     const startMs = new Date(m.startTime).getTime();

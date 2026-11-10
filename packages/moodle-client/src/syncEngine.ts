@@ -686,6 +686,8 @@ export async function runSync(
       };
 
       const addMeeting = (m: ZoomMeeting) => {
+        // Strictly guarantee only real Zoom URLs are registered as Zoom meetings
+        if (!m.meetingUrl || !isZoomUrl(m.meetingUrl)) return;
         const key = m.startTime
           ? `${courseId}:${m.meetingNumber || m.meetingUrl}:${m.startTime}`
           : `${courseId}:${m.meetingNumber || m.meetingUrl}`;
@@ -1012,12 +1014,25 @@ export async function runSync(
             // --- ZOOM MEETING DETECTION ---
             // A. LTI Module (e.g. Zoom LTI Pro activity)
             if (modname === 'lti' && isZoomOrMeetingName(name)) {
-              let scrapedSuccessfully = false;
+              // Always register the Moodle LTI activity as a CourseLink so it can be opened from course pages/links
+              const ltiUrl = module.url || `${courseBaseUrl}/mod/lti/view.php?id=${module.id}`;
+              links.push({
+                id: module.id,
+                courseId,
+                courseName,
+                sectionId: section.id,
+                sectionName,
+                name: cleanMoodleString(name),
+                targetUrl: ltiUrl,
+                moodleUrl: `${courseBaseUrl}/mod/lti/view.php?id=${module.id}`,
+                linkKind: 'zoom',
+              });
+              if (onPartialSync) onPartialSync({ links: [...links] });
+
               if (module.instance !== undefined) {
                 try {
                   const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, courseBaseUrl);
                   if (ltiMeetings.length > 0) {
-                    scrapedSuccessfully = true;
                     for (const lm of ltiMeetings) {
                       addMeeting({
                         title: lm.topic || name,
@@ -1039,18 +1054,8 @@ export async function runSync(
                   });
                 }
               }
-
-              // Fallback if scraping is disabled, returns 0 meetings, or fails:
-              if (!scrapedSuccessfully) {
-                const fallbackUrl = module.url || `${courseBaseUrl}/mod/lti/view.php?id=${module.id}`;
-                addMeeting({
-                  title: name,
-                  meetingUrl: fallbackUrl,
-                  sectionName,
-                  courseId,
-                  courseName,
-                });
-              }
+              // Notice: Do NOT create a fake ZoomMeeting fallback with Moodle's /mod/lti/view.php URL.
+              // Meeting entries are strictly real Zoom meetings (https://*.zoom.us/*).
             }
 
             // B. Official Zoom Module (mod_zoom)
@@ -1060,22 +1065,21 @@ export async function runSync(
                 const direct = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
                 if (direct?.fileurl) zoomUrl = direct.fileurl;
               }
-              if (!zoomUrl && module.url) {
+              if (!zoomUrl && module.url && isZoomUrl(module.url)) {
                 zoomUrl = module.url;
               }
-              if (!zoomUrl) {
-                zoomUrl = `${courseBaseUrl}/mod/zoom/view.php?id=${module.id}`;
+              if (zoomUrl && isZoomUrl(zoomUrl)) {
+                const parsed = parseZoomUrl(zoomUrl);
+                addMeeting({
+                  title: name,
+                  meetingUrl: parsed.meetingUrl,
+                  sectionName,
+                  courseId,
+                  courseName,
+                  meetingNumber: parsed.meetingNumber,
+                  password: parsed.password,
+                });
               }
-              const parsed = parseZoomUrl(zoomUrl);
-              addMeeting({
-                title: name,
-                meetingUrl: parsed.meetingUrl,
-                sectionName,
-                courseId,
-                courseName,
-                meetingNumber: parsed.meetingNumber,
-                password: parsed.password,
-              });
             }
 
             // C. URL Module (mod_url)
@@ -1086,16 +1090,16 @@ export async function runSync(
                 if (zoomContent?.fileurl) {
                   directUrl = zoomContent.fileurl;
                 } else if (isZoomOrMeetingName(name)) {
-                  const firstUrl = module.contents.find(c => c.fileurl);
-                  if (firstUrl?.fileurl) directUrl = firstUrl.fileurl;
+                  const firstZoom = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
+                  if (firstZoom?.fileurl) directUrl = firstZoom.fileurl;
                 }
               }
 
-              if (!directUrl && (isZoomUrl(module.url || '') || isZoomOrMeetingName(name))) {
-                directUrl = module.url || `${courseBaseUrl}/mod/url/view.php?id=${module.id}`;
+              if (!directUrl && isZoomUrl(module.url || '')) {
+                directUrl = module.url!;
               }
 
-              if (directUrl) {
+              if (directUrl && isZoomUrl(directUrl)) {
                 const parsed = parseZoomUrl(directUrl);
                 addMeeting({
                   title: name,
@@ -1109,17 +1113,20 @@ export async function runSync(
               }
             }
 
-            // D. Labels, Pages, or Module Descriptions/Intros with embedded Zoom links
+            // D. Labels, Pages, Resources, or Module Descriptions/Intros with embedded Zoom links
             else {
               const htmlSources: string[] = [];
               if (module.description) htmlSources.push(module.description);
               if (module.intro) htmlSources.push(module.intro);
-              if (modname === 'label' || modname === 'page') {
+              if (modname === 'label' || modname === 'page' || modname === 'resource') {
                 if (name && isZoomUrl(name)) htmlSources.push(name);
                 if (module.contents) {
                   for (const c of module.contents) {
                     if (c.fileurl && isZoomUrl(c.fileurl)) {
                       htmlSources.push(c.fileurl);
+                    }
+                    if (c.content) {
+                      htmlSources.push(c.content);
                     }
                   }
                 }

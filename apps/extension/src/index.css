@@ -98,59 +98,64 @@ body {
   background: var(--text-muted);
 }
 
-/* Coffee Theme - Refined dark espresso roast with silky golden crema and oat milk tones */
+/* Coffee Theme - Refined dark espresso roast with silky golden crema, crisp colorful accents, and high-contrast froth */
 body.theme-coffee {
   --bg-dark: #14100d;
   --bg-card: rgba(29, 23, 19, 0.94);
   --bg-card-hover: rgba(40, 32, 26, 0.98);
 
-  --primary: #c4996c;   /* warm golden crema */
-  --primary-glow: rgba(196, 153, 108, 0.2);
-  --secondary: #8da882; /* matcha sage green */
-  --secondary-glow: rgba(141, 168, 130, 0.16);
-  --warning: #d8a45b;   /* honey caramel */
-  --danger: #c76b5d;    /* subdued roasted berry */
+  --primary: #d4a373;   /* rich luminous golden crema */
+  --primary-glow: rgba(212, 163, 115, 0.25);
+  --secondary: #10b981; /* crisp emerald green */
+  --secondary-glow: rgba(16, 185, 129, 0.2);
+  --warning: #f59e0b;   /* vibrant warm amber */
+  --danger: #ef4444;    /* vibrant clear ruby red */
 
   --text-primary: #fbf6f0;   /* velvety steamed milk froth */
   --text-secondary: #d0c3b6; /* warm oat milk latte */
-  --text-muted: #928377;     /* ground coffee beans */
+  --text-muted: #9c8e82;     /* ground coffee beans */
 
-  --border: rgba(196, 153, 108, 0.18);
-  --border-focus: rgba(196, 153, 108, 0.45);
+  --border: rgba(196, 153, 108, 0.22);
+  --border-focus: rgba(212, 163, 115, 0.5);
 
   --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 20px rgba(196, 153, 108, 0.18);
+  --shadow-glow: 0 0 20px rgba(212, 163, 115, 0.22);
 
   background-image:
-    radial-gradient(at 0% 0%, rgba(196, 153, 108, 0.10) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(141, 168, 130, 0.08) 0px, transparent 50%) !important;
+    radial-gradient(at 0% 0%, rgba(212, 163, 115, 0.12) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%) !important;
 }
 
 /* Coffee theme sidebar and card overrides */
 body.theme-coffee .glass-panel {
   background: var(--bg-card);
-  border-color: rgba(196, 153, 108, 0.16);
+  border-color: rgba(196, 153, 108, 0.2);
 }
 
 body.theme-coffee .glass-panel:hover {
-  border-color: rgba(196, 153, 108, 0.32);
+  border-color: rgba(212, 163, 115, 0.38);
 }
 
 body.theme-coffee .item-name,
 body.theme-coffee .file-name-span,
 body.theme-coffee .settings-section h4,
-body.theme-coffee .stat-val,
 body.theme-coffee h1,
 body.theme-coffee h2,
 body.theme-coffee h3,
-body.theme-coffee h4,
 body.theme-coffee h5,
 body.theme-coffee h6 {
-  color: var(--text-primary) !important;
+  color: var(--text-primary);
+}
+
+/* Preserve custom student course colors across course cards, rows, and queue */
+body.theme-coffee .course-card-title,
+body.theme-coffee .course-row-title,
+body.theme-coffee .queue-item-course {
+  /* Inherit dynamic inline color */
 }
 
 body.theme-coffee .logo-section h1 {
-  background: linear-gradient(to right, #cca47c, #f5ebd9);
+  background: linear-gradient(to right, #e0b589, #fbf6f0);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -174,30 +179,36 @@ body.theme-coffee .search-input::placeholder {
 }
 
 body.theme-coffee .badge-muted {
-  background: rgba(196, 153, 108, 0.12) !important;
+  background: rgba(196, 153, 108, 0.14) !important;
   color: var(--text-secondary) !important;
+  border: 1px solid rgba(196, 153, 108, 0.25) !important;
 }
 
 body.theme-coffee .badge-success {
-  background: rgba(141, 168, 130, 0.18) !important;
-  color: var(--secondary) !important;
+  background: rgba(16, 185, 129, 0.18) !important;
+  color: #10b981 !important;
+  border: 1px solid rgba(16, 185, 129, 0.35) !important;
 }
 
 body.theme-coffee .badge-warning {
-  background: rgba(216, 164, 91, 0.18) !important;
-  color: var(--warning) !important;
+  background: rgba(245, 158, 11, 0.18) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.35) !important;
 }
 
 body.theme-coffee .badge-danger {
-  background: rgba(199, 107, 93, 0.18) !important;
-  color: var(--danger) !important;
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
 }
 
-body.theme-coffee .primary-btn {
-  background: linear-gradient(135deg, #c4996c, #a87d52) !important;
+body.theme-coffee .primary-btn,
+body.theme-coffee .action-submit-btn {
+  background: linear-gradient(135deg, #d4a373, #b88656) !important;
   color: #14100d !important;
   font-weight: 700 !important;
   border: none !important;
+  box-shadow: 0 4px 12px rgba(212, 163, 115, 0.25);
 }
 
 body.theme-coffee .secondary-btn,

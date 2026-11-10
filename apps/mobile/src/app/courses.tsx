@@ -12,7 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl } from '@tautracker/moodle-client';
 import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
 import { getMoodleToken } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
@@ -405,19 +405,35 @@ export default function CoursesScreen({
 
     const courseAssignments = courseAssignmentsRaw.map(a => {
       let mod = { ...a };
-      const rawMoodleSubmitted = a.status === 'Submitted';
+      const rawMoodleSubmitted = isMoodleActivitySubmitted({
+        status: a.status,
+        grade: a.grade,
+        isCompleted: Boolean(a.is_completed),
+        isManualCompletionDone: Boolean(a.is_manual_completion_done),
+        requiresManualCompletion: Boolean(a.requires_manual_completion),
+      });
       mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-      if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
-        mod.isHidden = true;
-      }
+      const isHidden = isActivityHidden(
+        { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid, isHidden: Boolean(a.is_hidden) },
+        hiddenIds
+      );
+      mod.isHidden = isHidden;
 
-      let isCompleted = rawMoodleSubmitted;
-      if (rawMoodleSubmitted && uncompletedIds.includes(a.moodle_assign_id)) {
-        isCompleted = false;
-      } else if (!rawMoodleSubmitted && completedIds.includes(a.moodle_assign_id)) {
-        isCompleted = true;
-      }
+      const isCompleted = isActivityCompleted(
+        {
+          id: a.moodle_assign_id,
+          activityType: a.activity_type,
+          uid: a.uid,
+          status: a.status,
+          grade: a.grade,
+          isCompleted: Boolean(a.is_completed),
+          isManualCompletionDone: Boolean(a.is_manual_completion_done),
+          requiresManualCompletion: Boolean(a.requires_manual_completion),
+        },
+        completedIds,
+        uncompletedIds
+      );
 
       mod.isCompleted = isCompleted;
       mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
@@ -435,6 +451,7 @@ export default function CoursesScreen({
     const courseSections = rawCourseSections.filter((s: any) => s.visible !== 0 && s.visible !== false);
     const courseFolders = getCourseFolders(course.moodle_id);
     const courseLinks = getCourseLinks(course.moodle_id);
+    const moodleZoomLink = (courseLinks || []).find((l: any) => l.link_kind === 'zoom');
 
     const topSections = courseSections.filter((s: any) => s.level === 0 || s.parent_section_id === null);
     const currentSubSections = activeTopSectionId !== null
@@ -526,7 +543,7 @@ export default function CoursesScreen({
     // Zoom deduplication
     const now = new Date();
     const groups = new Map<string, typeof courseMeetings>();
-    courseMeetings.forEach((m) => {
+    courseMeetings.filter((m: any) => m.meeting_url && isZoomUrl(m.meeting_url)).forEach((m) => {
       const key = m.meeting_number || m.meeting_url;
       if (!key) return;
       if (!groups.has(key)) groups.set(key, []);
@@ -860,6 +877,16 @@ export default function CoursesScreen({
                         <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
                           {isRtl ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
                         </Text>
+                        {moodleZoomLink && (
+                          <Pressable
+                            onPress={() => (moodleZoomLink.target_url || moodleZoomLink.moodle_url) && Linking.openURL(moodleZoomLink.target_url || moodleZoomLink.moodle_url)}
+                            style={{ marginTop: 8 }}
+                          >
+                            <Text style={{ color: courseColor, fontSize: 13, textDecorationLine: 'underline' }}>
+                              {isRtl ? 'פתח את עמוד הזום במודל ↗' : 'Open Zoom Page in Moodle ↗'}
+                            </Text>
+                          </Pressable>
+                        )}
                       </View>
                     ) : (
                       dedupedMeetings.map((m) => {
@@ -1980,34 +2007,56 @@ export default function CoursesScreen({
                             { backgroundColor: theme.background, borderColor: theme.border },
                           ]}
                           onPress={async () => {
-                            const rawMoodleSubmitted = Boolean(a.rawMoodleSubmitted);
-                            const completedStr = getPreference('completed_assignments');
-                            let completedList: number[] = completedStr ? JSON.parse(completedStr) : [];
-                            const uncompletedStr = getPreference('uncompleted_assignments');
-                            let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+                            const targetKey = a.uid || (a.activity_type ? `${a.activity_type}:${a.moodle_assign_id}` : `assign:${a.moodle_assign_id}`);
+                            const isMoodleSubmitted = isMoodleActivitySubmitted({
+                              status: a.status,
+                              grade: a.grade,
+                              isCompleted: Boolean(a.is_completed),
+                              isManualCompletionDone: Boolean(a.is_manual_completion_done),
+                              requiresManualCompletion: Boolean(a.requires_manual_completion),
+                            });
 
-                            let willBeCompleted = false;
-                            if (rawMoodleSubmitted) {
-                              if (uncompletedList.includes(a.moodle_assign_id)) {
-                                uncompletedList = uncompletedList.filter((id: number) => id !== a.moodle_assign_id);
-                                willBeCompleted = true;
-                              } else {
-                                uncompletedList.push(a.moodle_assign_id);
-                                willBeCompleted = false;
+                            const completedStr = getPreference('completed_assignments');
+                            let completedList: Array<string | number> = completedStr ? JSON.parse(completedStr) : [];
+                            const uncompletedStr = getPreference('uncompleted_assignments');
+                            let uncompletedList: Array<string | number> = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
+                            const isCurrentlyCompleted = isActivityCompleted(
+                              {
+                                id: a.moodle_assign_id,
+                                activityType: a.activity_type,
+                                uid: a.uid,
+                                status: a.status,
+                                grade: a.grade,
+                                isCompleted: Boolean(a.is_completed),
+                                isManualCompletionDone: Boolean(a.is_manual_completion_done),
+                                requiresManualCompletion: Boolean(a.requires_manual_completion),
+                              },
+                              completedList,
+                              uncompletedList
+                            );
+
+                            completedList = completedList.filter(
+                              (id) => !matchesActivityIdentifier(id, { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid })
+                            );
+                            uncompletedList = uncompletedList.filter(
+                              (id) => !matchesActivityIdentifier(id, { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid })
+                            );
+
+                            const willBeCompleted = !isCurrentlyCompleted;
+                            if (willBeCompleted) {
+                              if (!isMoodleSubmitted) {
+                                completedList.push(targetKey);
                               }
-                              setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
-                              markSettingUpdatedAndSync(['uncompletedAssignments']);
                             } else {
-                              if (completedList.includes(a.moodle_assign_id)) {
-                                completedList = completedList.filter((id: number) => id !== a.moodle_assign_id);
-                                willBeCompleted = false;
-                              } else {
-                                completedList.push(a.moodle_assign_id);
-                                willBeCompleted = true;
+                              if (isMoodleSubmitted) {
+                                uncompletedList.push(targetKey);
                               }
-                              setPreference('completed_assignments', JSON.stringify(completedList));
-                              markSettingUpdatedAndSync(['completedAssignments']);
                             }
+
+                            setPreference('completed_assignments', JSON.stringify(completedList));
+                            setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
+                            markSettingUpdatedAndSync(['completedAssignments', 'uncompletedAssignments']);
 
                             if (a.requires_manual_completion && a.cmid) {
                               getMoodleToken().then((tok) => {
@@ -2022,7 +2071,7 @@ export default function CoursesScreen({
                           }}
                         >
                            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                             {a.status === 'Submitted' ? (isRtl ? 'סמן לביצוע ↺' : 'Mark as To Do ↺') : (isRtl ? 'סמן כבוצע ✅' : 'Mark Done ✅')}
+                             {a.status === 'Submitted' ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do') : (isRtl ? 'סמן כבוצע' : 'Mark Done')}
                            </Text>
                         </Pressable>
                         <Pressable

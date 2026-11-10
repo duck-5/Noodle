@@ -58,6 +58,28 @@ export function isActivityHidden(
 }
 
 /**
+ * Determines whether an activity is considered submitted or completed by Moodle.
+ * Evaluates nominal status ('Submitted'), explicit completion flag, manual completion,
+ * finished quiz attempts, and recorded gradebook grades.
+ */
+export function isMoodleActivitySubmitted(activity: {
+  status: string;
+  isManualCompletionDone?: boolean;
+  requiresManualCompletion?: boolean;
+  grade?: number | null;
+  isCompleted?: boolean;
+  hasFinishedAttempt?: boolean;
+}): boolean {
+  return (
+    activity.status === 'Submitted' ||
+    Boolean(activity.isCompleted) ||
+    Boolean(activity.isManualCompletionDone) ||
+    Boolean(activity.hasFinishedAttempt) ||
+    (activity.grade !== null && activity.grade !== undefined)
+  );
+}
+
+/**
  * Returns true if an activity is completed — considering Moodle submission status,
  * manual completion overrides, and user completed/uncompleted settings.
  */
@@ -76,20 +98,16 @@ export function isActivityCompleted(
   completedIdentifiers?: Array<string | number> | null,
   uncompletedIdentifiers?: Array<string | number> | null
 ): boolean {
-  const isMoodleSubmitted =
-    activity.status === 'Submitted' ||
-    Boolean(activity.isCompleted) ||
-    Boolean(activity.isManualCompletionDone) ||
-    Boolean(activity.hasFinishedAttempt) ||
-    (activity.grade !== null && activity.grade !== undefined);
-  const isExplicitlyCompleted = (completedIdentifiers || []).some((id) =>
-    matchesActivityIdentifier(id, activity)
-  );
+  const isMoodleSubmitted = isMoodleActivitySubmitted(activity);
   const isExplicitlyUncompleted = (uncompletedIdentifiers || []).some((id) =>
     matchesActivityIdentifier(id, activity)
   );
-
-  if (isExplicitlyCompleted) return true;
   if (isExplicitlyUncompleted) return false;
+
+  const isExplicitlyCompleted = (completedIdentifiers || []).some((id) =>
+    matchesActivityIdentifier(id, activity)
+  );
+  if (isExplicitlyCompleted) return true;
+
   return isMoodleSubmitted;
 }

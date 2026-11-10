@@ -196,17 +196,43 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 
 ## 6. Settings Tab
 
-### A. Personalization Settings
-*   **Theme Selection**: Centralized theme selector with radio buttons for `Dark Mode` (`dark`), `Noodle Theme` (`noodle`), and `Coffee Theme` (`coffee`).
-*   **Language Selection**: Radio buttons/toggle for `עברית` (Hebrew) and `English` (English).
+The Settings tab is organized in a clear, prioritized hierarchy ensuring quick access to appearance, thresholds, course tracking, and configuration backups:
 
-### B. Sandbox & Testing Data
-*   **Mock Course Generator ("➕ הוסף קורס לדוגמה")**:
+### A. Appearance & Personalization
+*   **Language Selection**: Toggle between `עברית` (Hebrew) and `English` (English).
+*   **Theme Selection**:
+    - Centralized dropdown supporting:
+        - `Noodle Theme` (`noodle`): Warm paper terracotta aesthetic.
+        - `Coffee Theme` (`coffee`): Refined dark espresso roast with golden crema accents and high-contrast status colors.
+        - `Dark Mode` (`dark`): Deep slate dark theme.
+        - `Theme by Time` (`time`): Automatically transitions to Noodle theme during day hours and switches to Coffee theme in the evening/night.
+    - **Time Threshold Configuration** (when `time` is selected):
+        - Noodle (Day) start hour: default 7:00 (configurable 0–23).
+        - Coffee (Night) start hour: default 17:00 (configurable 0–23).
+        - Dynamic background timer updates effective body classes every 30 seconds.
+*   **Dashboard Width Adjustment**:
+    - Slider (760px to 2560px, default 1200px) with one-click reset to default width.
+
+### B. Due Date Colors (Urgency Thresholds)
+*   Configurable day thresholds for deadline urgency status badges and next assignment highlights:
+    - **Green Threshold** (default: > 7 days remaining).
+    - **Yellow Threshold** (default: > 3 days remaining).
+    - Anything equal to or below the yellow threshold triggers red urgency alerts.
+
+### C. Manage Tracked Courses
+*   Dedicated management section with a clean, vector-icon button (`<BookOpenIcon />`) to trigger the Course Configuration modal directly from Settings without navigating away.
+
+### D. Configuration Backup & Restore
+*   **Export Configuration**: One-click JSON export of all settings, course nicknames, custom colors, and authentication tokens (`<DownloadIcon />`).
+*   **Import Configuration**: One-click file picker restoring saved preferences (`<UploadIcon />`), strictly avoiding unicode file emojis.
+
+### E. Sandbox & Testing Data
+*   **Mock Course Generator ("הוסף קורס לדוגמה")**:
     - One-click button in Settings that instantly injects Course 9999 ("0368-9999-01 קורס לדוגמה - מבני נתונים ואלגוריתמים") into local storage.
     - Includes active live Zoom meeting, upcoming meeting, assignments in all states (with attachments, submitted files, and no-deadline assignments), and course materials.
     - Enables instantaneous UI testing, screenshot generation, and feature verification without requiring live student credentials.
 
-### C. Synchronization Integrations
+### F. Synchronization Integrations
 *   **Google Tasks Sync**:
     - Toggle switch to enable/disable.
     - **Connection Status Indicator**:
@@ -358,10 +384,17 @@ The extension and companion platforms support three distinct, high-contrast visu
    - Background: `#14100d` (pure dark espresso bean).
    - Card panels: `rgba(29, 23, 19, 0.94)` (dark roast glassmorphism).
    - Card borders: `rgba(196, 153, 108, 0.22)` (silky golden crema stroke).
-   - Primary: `#c4996c` (golden crema) / Hover: `#d8b18a`.
-   - Secondary: `#8da882` (matcha herbal accent).
+   - Primary: `#d4a373` (rich luminous golden crema).
+   - Secondary: `#10b981` (emerald green accent).
+   - Warning: `#f59e0b` (vibrant warm amber).
+   - Danger: `#ef4444` (vibrant clear ruby red).
    - Text Primary: `#fbf6f0` (froth cream, 100% sharp contrast).
-   - Text Secondary: `#d1c3b7` (steamed milk foam).
+   - Text Secondary: `#d0c3b6` (steamed milk foam).
+   - Student Custom Course Colors: Preserved across course cards, rows, and queue items (preventing blanket header color resets).
+
+4. **Theme by Time (`time`)**:
+   - Automatic dynamic schedule cycling between Warm Cream Noodle during daytime hours (default 7:00–17:00) and Dark Noodle "Coffee" during nighttime hours (default 17:00–7:00).
+   - Monitored on a 30-second runtime interval in both popup and full options views.
 
 ---
 

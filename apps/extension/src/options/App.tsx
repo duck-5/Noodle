@@ -19,6 +19,7 @@ import {
   parseTauCourseMetadata,
   MoodleClient,
   isValidIsraeliId,
+  isZoomUrl,
   collapseRecurringMeetings,
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
@@ -30,6 +31,7 @@ import {
   getActivityUid,
   isActivityHidden,
   isActivityCompleted,
+  isMoodleActivitySubmitted,
   matchesActivityIdentifier,
   hasGracePeriod,
   getCanonicalFileUrlPath,
@@ -53,6 +55,7 @@ import {
   getLocalFsStatus,
   DEFAULT_LOCAL_FS_CONFIG,
   DEFAULT_LOCAL_FS_STATUS,
+  getEffectiveTheme,
 } from '../shared/storage.js';
 import type {
   ExtensionSettings,
@@ -655,6 +658,9 @@ export default function App() {
   // Backup and custom disconnect states
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
   const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
+  const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
+
+
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
@@ -893,12 +899,16 @@ export default function App() {
   }), [localFsConfig.enabled, localFilesByUrl, missingLocalFileIds]);
 
   useEffect(() => {
-    if (settings?.theme) {
-      document.body.className = `theme-${settings.theme}`;
-    } else {
-      document.body.className = 'theme-noodle';
+    const applyTheme = () => {
+      const eff = getEffectiveTheme(settings);
+      document.body.className = `theme-${eff}`;
+    };
+    applyTheme();
+    if (settings?.theme === 'time') {
+      const interval = setInterval(applyTheme, 30000);
+      return () => clearInterval(interval);
     }
-  }, [settings]);
+  }, [settings?.theme, settings?.themeTimeDayStart, settings?.themeTimeDayEnd]);
 
   useEffect(() => {
     if (token && trackedCourseIds && trackedCourseIds.length > 0 && settings) {
@@ -993,19 +1003,13 @@ export default function App() {
 
   const assignmentsList = useMemo(() => {
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
-    const completedSet = new Set(settings?.completedAssignments || []);
-    const uncompletedSet = new Set(settings?.uncompletedAssignments || []);
     return rawAssignments.map((a) => {
-      const isMoodleSubmitted = a.status === 'Submitted';
-      const isManuallyCompleted = completedSet.has(a.id);
-      const isManuallyToDo = uncompletedSet.has(a.id);
-
-      let isCompleted = isMoodleSubmitted;
-      if (isMoodleSubmitted && isManuallyToDo) {
-        isCompleted = false;
-      } else if (!isMoodleSubmitted && isManuallyCompleted) {
-        isCompleted = true;
-      }
+      const isMoodleSubmitted = isMoodleActivitySubmitted(a);
+      const isCompleted = isActivityCompleted(
+        a,
+        settings?.completedAssignments,
+        settings?.uncompletedAssignments
+      );
 
       return {
         ...a,
@@ -1595,10 +1599,10 @@ export default function App() {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const assign = rawAssignments.find(
-      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+      (x) => matchesActivityIdentifier(assignmentId, x) || x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId || x.id === Number(assignmentId)
     );
     const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
-    const isMoodleSubmitted = assign ? assign.status === 'Submitted' || Boolean(assign.isManualCompletionDone) : false;
+    const isMoodleSubmitted = assign ? isMoodleActivitySubmitted(assign) : false;
 
     const currentCompleted = settings.completedAssignments || [];
     const currentUncompleted = settings.uncompletedAssignments || [];
@@ -1651,7 +1655,7 @@ export default function App() {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const assign = rawAssignments.find(
-      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+      (x) => matchesActivityIdentifier(assignmentId, x) || x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId || x.id === Number(assignmentId)
     );
     const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
     const currentHidden = settings.hiddenAssignments || [];
@@ -2156,8 +2160,9 @@ export default function App() {
                 >
                   {t('start_tracking')} ({trackedCourseIds.length} {currentLang === 'he' ? 'קורסים' : 'Courses'})
                 </button>
-                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
-                  📁 {t('import_config_btn')}
+                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <UploadIcon size={13} />
+                  <span>{t('import_config_btn')}</span>
                   <input
                     type="file"
                     accept=".json"
@@ -2193,6 +2198,24 @@ export default function App() {
       </div>
     );
   }
+
+  const handleSaveTrackedCourses = async (newIds: number[], panoptoOverrides?: Record<number, string>) => {
+    const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
+    setTrackedCourseIdsState(expandedIds);
+    await setTrackedCourseIds(expandedIds);
+    if (panoptoOverrides && settings) {
+      const cleanedMap: Record<number, string> = {};
+      for (const [k, v] of Object.entries(panoptoOverrides)) {
+        if (v && String(v).trim()) {
+          cleanedMap[Number(k)] = String(v).trim();
+        }
+      }
+      const updated = { ...settings, coursesPanoptoMap: cleanedMap };
+      setSettingsState(updated);
+      await setSettings(updated);
+    }
+    handleManualSync();
+  };
 
   return (
     <LocalFilesContext.Provider value={localFilesCtxValue}>
@@ -2388,23 +2411,8 @@ export default function App() {
                   onUpdateColor={handleUpdateCourseColor}
                   onUpdateCustomName={handleUpdateCourseCustomName}
                   onUpdatePanopto={handleUpdateCoursePanopto}
-                  onSaveTrackedCourses={async (newIds, panoptoOverrides) => {
-                    const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
-                    setTrackedCourseIdsState(expandedIds);
-                    await setTrackedCourseIds(expandedIds);
-                    if (panoptoOverrides && settings) {
-                      const cleanedMap: Record<number, string> = {};
-                      for (const [k, v] of Object.entries(panoptoOverrides)) {
-                        if (v && String(v).trim()) {
-                          cleanedMap[Number(k)] = String(v).trim();
-                        }
-                      }
-                      const updated = { ...settings, coursesPanoptoMap: cleanedMap };
-                      setSettingsState(updated);
-                      await setSettings(updated);
-                    }
-                    handleManualSync();
-                  }}
+                  onSaveTrackedCourses={handleSaveTrackedCourses}
+                  onOpenManageCourses={() => setIsManageModalOpen(true)}
                   onGoToCourse={(courseId) => {
                     setSelectedCourseId(courseId);
                   }}
@@ -2510,12 +2518,19 @@ export default function App() {
                     setSettingsState(updated);
                     await setSettings(updated);
                   }}
-                  onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee') => {
+                  onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee' | 'time') => {
                     if (!settings) return;
                     const updated = { ...settings, theme };
                     setSettingsState(updated);
                     await setSettings(updated);
                   }}
+                  onUpdateTimeThemeHours={async (start: number, end: number) => {
+                    if (!settings) return;
+                    const updated = { ...settings, themeTimeDayStart: start, themeTimeDayEnd: end };
+                    setSettingsState(updated);
+                    await setSettings(updated);
+                  }}
+                  onOpenManageCourses={() => setIsManageModalOpen(true)}
                   onUpdateThresholds={async (green: number, yellow: number) => {
                     if (!settings) return;
                     const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
@@ -2608,6 +2623,68 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Manage Courses Modal */}
+      {isManageModalOpen && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: tourStep === 4 ? 'flex-start' : 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            backdropFilter: 'blur(4px)',
+            padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
+          }}
+          onClick={() => setIsManageModalOpen(false)}
+        >
+          <div
+            className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
+            style={{
+              maxWidth: '850px',
+              width: '100%',
+              maxHeight: tourStep === 4 ? '62vh' : '85vh',
+              overflowY: 'auto',
+              padding: '1.75rem',
+              borderRadius: 'var(--radius-md)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
+              <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
+                ✕
+              </button>
+            </div>
+
+            <CoursesConfigTable
+              trackedCourseIds={trackedCourseIds}
+              syncResult={syncResult}
+              enrolledCourses={availableCourses || []}
+              getCourseColor={getCourseColor}
+              getCourseDisplayName={getCourseDisplayName}
+              coursesPanoptoMap={settings?.coursesPanoptoMap}
+              panoptoEnabled={settings?.panoptoEnabled ?? false}
+              onUpdateColor={handleUpdateCourseColor}
+              onUpdateCustomName={handleUpdateCourseCustomName}
+              onUpdatePanopto={handleUpdateCoursePanopto}
+              onSaveTrackedCourses={(newIds, panoptoOverrides) => {
+                setIsManageModalOpen(false);
+                handleSaveTrackedCourses(newIds, panoptoOverrides);
+              }}
+              onLabDetected={(id, name) => setLabModalCourse({ id, name })}
+              t={t}
+              lang={currentLang}
+            />
+          </div>
+        </div>
+      )}
 
       {showDisconnectModal && (
         <div className="modal-overlay">
@@ -2795,6 +2872,13 @@ const DownloadIcon = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
     <line x1="12" y1="5" x2="12" y2="19" />
     <polyline points="19 12 12 19 5 12" />
+  </svg>
+);
+
+const UploadIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5 12 12 5 19 12" />
   </svg>
 );
 
@@ -3461,17 +3545,18 @@ function DashboardTab({
   showHiddenZoomCourseIds: _showHiddenZoomCourseIds,
   onToggleShowHiddenZoom: _onToggleShowHiddenZoom,
   trackedCourseIds,
-  enrolledCourses,
-  onUpdateColor,
-  onUpdateCustomName,
-  onUpdatePanopto,
-  onSaveTrackedCourses,
+  enrolledCourses: _enrolledCourses,
+  onUpdateColor: _onUpdateColor,
+  onUpdateCustomName: _onUpdateCustomName,
+  onUpdatePanopto: _onUpdatePanopto,
+  onSaveTrackedCourses: _onSaveTrackedCourses,
+  onOpenManageCourses,
   onGoToCourse,
   onViewCourseAssignments,
   syncResult,
   onToggleCompleted,
   onToggleHidden,
-  onLabDetected,
+  onLabDetected: _onLabDetected,
   hasGoogleTasksToken,
   googleTasksAuthError,
   onSyncGoogle,
@@ -3499,10 +3584,11 @@ function DashboardTab({
   onUpdateCustomName?: (id: number, name: string) => void;
   onUpdatePanopto?: (id: number, panoptoVal: string) => void;
   onSaveTrackedCourses?: (newIds: number[], panoptoOverrides?: Record<number, string>) => void;
+  onOpenManageCourses?: () => void;
   onGoToCourse: (courseId: number) => void;
   onViewCourseAssignments: (courseId: number) => void;
   syncResult: SyncResult | null;
-  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number) => void;
   onLabDetected?: (id: number, name: string) => void;
   hasGoogleTasksToken?: boolean;
@@ -3518,11 +3604,10 @@ function DashboardTab({
   onReconnectLocalFs?: () => void;
 } & TabProps) {
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
-  const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
   const [coursesViewMode, setCoursesViewMode] = useState<'list' | 'cards'>(() => {
     try {
       const saved = localStorage.getItem('noodle_courses_view_mode');
-      return saved === 'cards' ? 'cards' : 'list';
+      return saved === 'list' ? 'list' : 'cards';
     } catch {
       return 'cards';
     }
@@ -3552,13 +3637,7 @@ function DashboardTab({
     }
   };
 
-  useEffect(() => {
-    if (tourStep === 4) {
-      setIsManageModalOpen(true);
-    } else if (tourStep !== undefined && tourStep >= 0) {
-      setIsManageModalOpen(false);
-    }
-  }, [tourStep]);
+
 
   const visibleAssignments = assignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
   const now = new Date();
@@ -3592,7 +3671,7 @@ function DashboardTab({
     const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
     return settings.interestedMeetings.includes(id);
   };
-  const activeMeetings = meetings.filter((m) => getMeetingStatus(m.startTime) === 'active' && isMeetingVisible(m));
+  const activeMeetings = meetings.filter((m) => isZoomUrl(m.meetingUrl) && getMeetingStatus(m.startTime) === 'active' && isMeetingVisible(m));
 
   // Semester progress calculation
   const totalAssignCount = visibleAssignments.length;
@@ -3980,7 +4059,7 @@ function DashboardTab({
                               href={task.link}
                               target="_blank"
                               rel="noreferrer"
-                              className="primary-btn btn-xs"
+                              className="primary-btn btn-xs action-submit-btn"
                               data-moodle-link="true"
                             >
                               <span>{t('submit_assignment')}</span>
@@ -4169,9 +4248,9 @@ function DashboardTab({
 
             <button
               className={`secondary-btn btn-sm manage-courses-trigger-btn ${tourStep === 4 ? 'pulse-btn' : ''}`}
-              onClick={() => setIsManageModalOpen(true)}
+              onClick={() => onOpenManageCourses?.()}
             >
-              ⚙️ {t('manage_courses')}
+              {t('manage_courses')}
             </button>
           </div>
         </div>
@@ -4183,7 +4262,7 @@ function DashboardTab({
             displayCourseIds.map((cid, idx) => {
               const color = getCourseColor(cid);
               const courseAssigns = assignments.filter((a) => a.courseId === cid);
-              const courseMeetings = meetings.filter((m) => m.courseId === cid);
+              const courseMeetings = meetings.filter((m) => m.courseId === cid && isZoomUrl(m.meetingUrl));
 
               // Breakdown: Assignments (exclude hidden tasks from active tracking & gaps count)
               const visibleCourseAssigns = courseAssigns.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
@@ -4270,12 +4349,14 @@ function DashboardTab({
 
                         <button
                           type="button"
-                          className="primary-btn btn-sm course-card-goto-btn"
+                          className="secondary-btn btn-sm course-card-goto-btn"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             onGoToCourse(cid);
                           }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
+                          <BookOpenIcon size={12} />
                           <span>{t('go_to_course')}</span>
                         </button>
                       </div>
@@ -4413,12 +4494,14 @@ function DashboardTab({
                         </button>
 
                         <button
-                          className="primary-btn btn-sm"
+                          className="secondary-btn btn-sm"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             onGoToCourse(cid);
                           }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
+                          <BookOpenIcon size={12} />
                           <span>{t('go_to_course')}</span>
                         </button>
                       </div>
@@ -4432,67 +4515,7 @@ function DashboardTab({
         </div>
       </div>
 
-      {/* 5. Manage Courses Modal */}
-      {isManageModalOpen && (
-        <div
-          className="modal-backdrop"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: tourStep === 4 ? 'flex-start' : 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            backdropFilter: 'blur(4px)',
-            padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
-          }}
-          onClick={() => setIsManageModalOpen(false)}
-        >
-          <div
-            className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
-            style={{
-              maxWidth: '850px',
-              width: '100%',
-              maxHeight: tourStep === 4 ? '62vh' : '85vh',
-              overflowY: 'auto',
-              padding: '1.75rem',
-              borderRadius: 'var(--radius-md)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>⚙️ {t('tracked_courses_config')}</h3>
-              <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
 
-            <CoursesConfigTable
-              trackedCourseIds={trackedCourseIds}
-              syncResult={syncResult}
-              enrolledCourses={enrolledCourses || []}
-              getCourseColor={getCourseColor}
-              getCourseDisplayName={getCourseDisplayName}
-              coursesPanoptoMap={settings?.coursesPanoptoMap}
-              panoptoEnabled={settings?.panoptoEnabled ?? false}
-              onUpdateColor={onUpdateColor}
-              onUpdateCustomName={onUpdateCustomName}
-              onUpdatePanopto={onUpdatePanopto}
-              onSaveTrackedCourses={(newIds, panoptoOverrides) => {
-                setIsManageModalOpen(false);
-                onSaveTrackedCourses?.(newIds, panoptoOverrides);
-              }}
-              onLabDetected={onLabDetected}
-              t={t}
-              lang={lang}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -4522,7 +4545,7 @@ function AssignmentsTab({
   onGoToCourse: (courseId: number) => void;
   settings: ExtensionSettings | null;
   tourStep?: number;
-  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number) => void;
 } & TabProps) {
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -4531,7 +4554,14 @@ function AssignmentsTab({
   const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
   const [filterHidden, setFilterHidden] = useState<boolean>(false);
   const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
-  const [showCalendarView, setShowCalendarView] = useState<boolean>(true);
+  const [showCalendarView, setShowCalendarView] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('noodle_show_calendar_view');
+      return saved === 'false' ? false : true;
+    } catch {
+      return true;
+    }
+  });
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -4745,7 +4775,17 @@ function AssignmentsTab({
           <button
             type="button"
             className={`calendar-toggle-btn ${showCalendarView ? 'active' : ''}`}
-            onClick={() => setShowCalendarView((prev) => !prev)}
+            onClick={() => {
+              setShowCalendarView((prev) => {
+                const next = !prev;
+                try {
+                  localStorage.setItem('noodle_show_calendar_view', String(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }}
             title={showCalendarView ? t('hide_calendar_view') : t('calendar_view')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4872,11 +4912,11 @@ function AssignmentsTab({
                           href={a.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="file-action-btn"
+                          className="primary-btn btn-xs action-submit-btn"
                           onClick={(ev) => ev.stopPropagation()}
                           data-moodle-link="true"
                         >
-                          {t('submit_in_moodle')}
+                          <span>{t('submit_in_moodle')}</span>
                         </a>
                       )}
                       {isCompleted && (
@@ -5320,6 +5360,8 @@ function SettingsTab({
   lang,
   onUpdateLanguage,
   onUpdateTheme,
+  onUpdateTimeThemeHours,
+  onOpenManageCourses,
   onUpdateThresholds,
   onToggleScraping,
   onTogglePanopto,
@@ -5352,7 +5394,9 @@ function SettingsTab({
   onToggleSyncWithoutDeadline?: (enabled: boolean) => void;
   onUpdateGoogleClientId?: (id: string) => void;
   onUpdateLanguage: (l: 'he' | 'en') => void;
-  onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee') => void;
+  onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee' | 'time') => void;
+  onUpdateTimeThemeHours?: (start: number, end: number) => void;
+  onOpenManageCourses?: () => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
   onToggleScraping?: (enabled: boolean) => void;
   onTogglePanopto?: (enabled: boolean) => void;
@@ -5417,15 +5461,67 @@ function SettingsTab({
         <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
           <select
             className="settings-text-input"
-            value={settings.theme || 'dark'}
-            onChange={(e) => onUpdateTheme(e.target.value as 'dark' | 'noodle' | 'coffee')}
-            style={{ maxWidth: '200px', cursor: 'pointer' }}
+            value={settings.theme || 'noodle'}
+            onChange={(e) => onUpdateTheme(e.target.value as 'dark' | 'noodle' | 'coffee' | 'time')}
+            style={{ maxWidth: '280px', cursor: 'pointer' }}
           >
+            <option value="noodle">{lang === 'he' ? 'נודל (Noodle)' : 'Noodle'}</option>
+            <option value="coffee">{lang === 'he' ? 'קפה (Coffee)' : 'Coffee'}</option>
             <option value="dark">{lang === 'he' ? 'כהה (Dark)' : 'Dark'}</option>
-            <option value="noodle">{lang === 'he' ? 'נודל 🍜 (Noodle)' : 'Noodle 🍜'}</option>
-            <option value="coffee">{lang === 'he' ? 'קפה ☕ (Coffee)' : 'Coffee ☕'}</option>
+            <option value="time">{t('theme_time')}</option>
           </select>
         </div>
+        {settings.theme === 'time' && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+            <p className="subtitle" style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem' }}>
+              {t('theme_time_desc')}
+            </p>
+            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+              <div>
+                <label htmlFor="theme-time-start" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.82rem' }}>
+                  {t('theme_time_noodle_start')}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <input
+                    type="number"
+                    id="theme-time-start"
+                    min={0}
+                    max={23}
+                    className="settings-text-input"
+                    style={{ width: '70px' }}
+                    value={settings.themeTimeDayStart ?? 7}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(23, parseInt(e.target.value) || 0));
+                      onUpdateTimeThemeHours?.(val, settings.themeTimeDayEnd ?? 17);
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>:00</span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="theme-time-end" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.82rem' }}>
+                  {t('theme_time_coffee_start')}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <input
+                    type="number"
+                    id="theme-time-end"
+                    min={0}
+                    max={23}
+                    className="settings-text-input"
+                    style={{ width: '70px' }}
+                    value={settings.themeTimeDayEnd ?? 17}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(23, parseInt(e.target.value) || 0));
+                      onUpdateTimeThemeHours?.(settings.themeTimeDayStart ?? 7, val);
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>:00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dashboard Width Section */}
@@ -5468,6 +5564,101 @@ function SettingsTab({
               {t('reset_to_default_width')}
             </button>
           )}
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Due Date Colors Thresholds Section */}
+      <div className="settings-section">
+        <h4>{t('due_dates_colors_title')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('due_dates_colors_desc')}
+        </p>
+        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+          <div>
+            <label htmlFor="green-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {t('green_threshold_label')}
+            </label>
+            <input
+              type="number"
+              id="green-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentGreenDaysThreshold ?? 7}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(val, settings.assignmentYellowDaysThreshold ?? 3);
+              }}
+            />
+          </div>
+          <div>
+            <label htmlFor="yellow-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {t('yellow_threshold_label')}
+            </label>
+            <input
+              type="number"
+              id="yellow-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentYellowDaysThreshold ?? 3}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(settings.assignmentGreenDaysThreshold ?? 7, val);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Manage Tracked Courses Section */}
+      <div className="settings-section">
+        <h4>{t('manage_courses')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('manage_courses_desc')}
+        </p>
+        <div>
+          <button
+            type="button"
+            className="secondary-btn btn-sm"
+            onClick={onOpenManageCourses}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <BookOpenIcon size={13} />
+            <span>{t('manage_courses')}</span>
+          </button>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Configuration Backup Section */}
+      <div className="settings-section">
+        <h4>{t('config_backup_title')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('config_backup_desc')}
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="primary-btn btn-sm" onClick={onExportConfig} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <DownloadIcon size={13} />
+            <span>{t('export_config_btn')}</span>
+          </button>
+          <label className="secondary-btn btn-sm" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+            <UploadIcon size={13} />
+            <span>{t('import_config_btn')}</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  onImportConfig(e.target.files[0]);
+                }
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
         </div>
       </div>
 
@@ -5589,7 +5780,7 @@ function SettingsTab({
                   transition: 'transform 0.2s',
                   display: 'inline-block'
                 }}>▼</span>
-                <span>⚙️ {t('advanced_google_settings')}</span>
+                <span>{t('advanced_google_settings')}</span>
               </button>
 
               {showAdvancedGoogle && (
@@ -5870,91 +6061,11 @@ function SettingsTab({
         </>
       )}
 
-      {/* Threshold configuration section */}
-      <div className="settings-section">
-        <h4>{lang === 'he' ? 'צבעי מועדי הגשה (מטלה הבאה)' : 'Due Date Colors (Next Assignment)'}</h4>
-        <p className="subtitle" style={{ marginBottom: '1rem' }}>
-          {lang === 'he'
-            ? 'הגדר את סף הימים לשינוי צבעי ההתראה של המטלה הבאה.'
-            : 'Configure the day thresholds for the next assignment due date alerts.'}
-        </p>
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-          <div>
-            <label htmlFor="green-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
-              {lang === 'he' ? 'ירוק - יותר מ-X ימים (X):' : 'Green - more than X days (X):'}
-            </label>
-            <input
-              type="number"
-              id="green-threshold"
-              className="settings-text-input"
-              style={{ width: '80px' }}
-              value={settings.assignmentGreenDaysThreshold ?? 7}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0;
-                onUpdateThresholds(val, settings.assignmentYellowDaysThreshold ?? 3);
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="yellow-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
-              {lang === 'he' ? 'צהוב - יותר מ-Y ימים (Y):' : 'Yellow - more than Y days (Y):'}
-            </label>
-            <input
-              type="number"
-              id="yellow-threshold"
-              className="settings-text-input"
-              style={{ width: '80px' }}
-              value={settings.assignmentYellowDaysThreshold ?? 3}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0;
-                onUpdateThresholds(settings.assignmentGreenDaysThreshold ?? 7, val);
-              }}
-            />
-          </div>
-        </div>
 
-      </div>
-
-      <hr className="settings-divider" />
-
-
-
-
-
-      {/* Configuration Backup Section */}
-      <div className="settings-section">
-        <h4>{lang === 'he' ? 'גיבוי ושחזור הגדרות' : 'Configuration Backup'}</h4>
-        <p className="subtitle" style={{ marginBottom: '1rem' }}>
-          {lang === 'he'
-            ? 'ייצא את כל הגדרות התוסף, הצבעים והאסימונים לקובץ JSON במחשב שלך, כדי שתוכל לשחזר אותם מאוחר יותר.'
-            : 'Export all extension settings, course colors, nicknames, and tokens to a JSON file on your computer to restore them later.'}
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button className="primary-btn btn-sm" onClick={onExportConfig} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <DownloadIcon size={13} />
-            <span>{t('export_config_btn')}</span>
-          </button>
-          <label className="secondary-btn btn-sm" style={{ cursor: 'pointer', display: 'inline-block', margin: 0 }}>
-            📁 {t('import_config_btn')}
-            <input
-              type="file"
-              accept=".json"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  onImportConfig(e.target.files[0]);
-                }
-              }}
-              style={{ display: 'none' }}
-            />
-          </label>
-        </div>
-      </div>
-
-      <hr className="settings-divider" />
 
       {/* Account & Development Section */}
       <div className="settings-section">
-        <h4>👤 {t('account_section_title')}</h4>
+        <h4>{t('account_section_title')}</h4>
         <p className="subtitle" style={{ marginBottom: '1rem' }}>
           {t('account_section_desc')}
         </p>
@@ -6105,7 +6216,7 @@ function CourseDetailView({
   onSetCourseMeetingsVisibility?: (courseMeetings: ZoomMeeting[], makeVisible: boolean) => void;
   showHiddenZoomCourseIds?: Set<number>;
   onToggleShowHiddenZoom?: (courseId: number) => void;
-  onToggleCompleted?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number) => void;
   onToggleHideAllCourse?: (courseAssignIds: number[], shouldHideAll: boolean) => void;
   onToggleRecordingWatched?: (recordingId: string) => void;
@@ -6507,8 +6618,9 @@ function CourseDetailView({
             );
           })()}
           {(() => {
-            const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
+            const rawCourseMeetings = meetings.filter(m => m.courseId === courseId && isZoomUrl(m.meetingUrl));
             const courseMeetings = collapseRecurringMeetings(rawCourseMeetings, new Date());
+            const moodleZoomLink = (courseLinks || []).find((l: CourseLink) => l.courseId === courseId && l.linkKind === 'zoom');
 
             const isMarked = (m: ZoomMeeting) => {
               if (!settings?.interestedMeetings || settings.interestedMeetings.length === 0) return true;
@@ -6628,8 +6740,33 @@ function CourseDetailView({
                   {(() => {
                     if (courseMeetings.length === 0) {
                       return (
-                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
-                          {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '10px 0' }}>
+                          <div>{lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}</div>
+                          {moodleZoomLink && (
+                            <div style={{ marginTop: '0.65rem' }}>
+                              <a
+                                href={moodleZoomLink.targetUrl || moodleZoomLink.moodleUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                data-moodle-link="true"
+                                className="btn-ghost"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '5px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  border: '1px solid rgba(255,255,255,0.15)',
+                                  color: 'var(--primary)',
+                                  textDecoration: 'none'
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
+                                <span>{lang === 'he' ? 'פתח עמוד זום במודל ↗' : 'Open Zoom Page in Moodle ↗'}</span>
+                              </a>
+                            </div>
+                          )}
                         </div>
                       );
                     }
@@ -8244,7 +8381,7 @@ function CourseDetailView({
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           <CheckIcon size={12} />
-                          <span>{a.status === 'Submitted' ? t('mark_incomplete') : t('mark_done')}</span>
+                          <span>{a.status === 'Submitted' || (a as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
                         </button>
                         <button
                           className="secondary-btn btn-xs"
@@ -8259,7 +8396,7 @@ function CourseDetailView({
                             href={a.link}
                             target="_blank"
                             rel="noreferrer"
-                            className="secondary-btn btn-xs"
+                            className="primary-btn btn-xs action-submit-btn"
                             data-moodle-link="true"
                           >
                             <span>{t('submit_assignment')}</span>

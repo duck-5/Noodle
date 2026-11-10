@@ -190,6 +190,9 @@ graph LR
 | **TC-UI-03** | Reactive Theme/Language Update (No Reload) | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
 | **TC-UI-04** | Custom Urgency Days Thresholds | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Localization & Theme |
 | **TC-UI-05** | Account Section Links & Elaborated About Page Experience | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
+| **TC-UI-06** | Theme-by-Time Auto Switching (Noodle Day, Coffee Night) | Extension (Chrome & Firefox) | Automated & Browser Agent | Localization & Theme |
+| **TC-UI-07** | Prioritized Settings Hierarchy & Direct Manage Courses Access | Extension (Chrome & Firefox) | Browser Agent | Settings & Course Management |
+| **TC-UI-08** | Button Action Consistency & Default Cards and Calendar Views | Extension (Chrome & Firefox) | Automated & Browser Agent | Layout & Visual Hierarchy |
 | **TC-BG-01** | Recurring Background Sync Alarm / Task | All (Mobile + Chrome + Firefox) | Automated | Background Sync |
 | **TC-BG-02** | New Assignment Discovery Notification | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
 | **TC-BG-03** | 24-Hour and 1-Hour Deadline Alerts | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
@@ -682,6 +685,17 @@ graph LR
 * **Description**: Verifies that assignments returned by `SyncEngine` preserve the exact discovery order from Moodle REST/Scraper APIs regardless of asynchronous network completion timings, and that UI sort algorithms use stable tie-breakers (`a.id - b.id`) preventing undated assignments from jumping positions upon sync.
 * **Automated Playwright Command**: `pnpm --filter @tautracker/moodle-client test -t "syncEngine"`
 
+#### TC-ASN-14: Two-Way Mark Done & Mark as To Do State Synchronization
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that clicking "Mark Done" (סמן כבוצע) or "Mark as To Do" (סמן לביצוע) reliably updates assignment completion status across the Upcoming Tasks queue, Assignments feed, Course Detail view, toolbar badge counter, and mobile app. Ensures canonical UID strings (`assign:<id>`, `quiz:<id>`) and numeric identifiers match seamlessly via `matchesActivityIdentifier` without type mismatches (`Set.has(a.id)`), that gradebook grades and automatic completion flags are properly respected, and that completed tasks can be smoothly toggled back to to-do and vice versa.
+* **Automated Test Command**: `pnpm --filter @tautracker/moodle-client test -t "TC-ACT-02"`
+* **Browser Agent Prompt / Action**:
+  1. In the Dashboard Upcoming Queue, click the checkmark button ("Mark Done") on a pending assignment.
+  2. Verify the task immediately drops out of the pending queue.
+  3. Navigate to the Assignments tab; verify the task card displays `Submitted` / `הוגש` and the button label reads "Mark as To Do" (`סמן לביצוע`).
+  4. Click "Mark as To Do"; verify the task returns to `Assigned` status and reappears in the Dashboard Upcoming Queue.
+
 #### TC-DASH-REHAUL-09: Course Page Grid Containment & No Frame Overflow
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
@@ -1148,6 +1162,30 @@ graph LR
     3. Privacy & Architecture (100% client-side, zero analytics, direct REST/AJAX)
 * **Browser Agent Prompt / Action**:
   1. Navigate to Settings and locate the Account card. Verify all links (GitHub, Issues, Email, Chrome Web Store) and credits for Yuval Mantin & Michael Kushnir are rendered and clickable.
+
+#### TC-UI-06: Theme-by-Time Auto Switching (Noodle Day, Coffee Night)
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Confirms that configuring `theme: 'time'` switches dynamically between Noodle theme (daytime hours, e.g. 7:00–17:00) and Coffee theme (nighttime hours, e.g. 17:00–7:00).
+* **Automated Test Flow**:
+  1. Call `getEffectiveTheme({ theme: 'time', themeTimeDayStart: 7, themeTimeDayEnd: 17 })` at 12:00 -> returns `'noodle'`.
+  2. Call `getEffectiveTheme({ theme: 'time', themeTimeDayStart: 7, themeTimeDayEnd: 17 })` at 21:00 -> returns `'coffee'`.
+  3. Verify dynamic interval updates body classes in both Options dashboard and Extension Popup.
+
+#### TC-UI-07: Prioritized Settings Hierarchy & Direct Manage Courses Access
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Browser Agent`
+* **Description**: Validates that critical user configuration sections (General/Theme, Due Date Colors, Manage Courses, and Config Backup) are rendered at the top of the Settings page. Verifies clicking "Manage Courses" opens the modal dialog over Settings and saves preferences cleanly.
+* **Browser Agent Action**:
+  1. Navigate to Settings Tab.
+  2. Verify Appearance, Due Date thresholds, Manage Tracked Courses, and Backup are the first sections visible.
+  3. Click "Manage Courses" button; verify modal opens without navigating away from Settings.
+  4. Edit custom course color and click "Save Tracking Options". Verify modal closes and stays on Settings.
+
+#### TC-UI-08: Button Action Consistency & Default Cards and Calendar Views
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies consistent visual styling across buttons: all "Go to Course" buttons use secondary action styling with `<BookOpenIcon />` (avoiding purple), and all "Submit" actions use primary CTA styling (`.action-submit-btn`). Verifies default courses view is `cards` and default calendar view is open (`true`).
   2. Navigate to the About tab.
   3. Verify the 5 action link cards render.
   4. Click each of the 3 accordion sections to verify they expand and collapse smoothly with localized content.

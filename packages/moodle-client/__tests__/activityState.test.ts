@@ -2,6 +2,7 @@ import {
   getActivityUid,
   isActivityHidden,
   isActivityCompleted,
+  isMoodleActivitySubmitted,
   matchesActivityIdentifier,
 } from '../src/activityState';
 
@@ -70,4 +71,60 @@ describe('activityState helpers', () => {
     // Explicit uncompleted override still wins over grade
     expect(isActivityCompleted(gradedQuiz, [], ['quiz:45'])).toBe(false);
   });
+  describe('TC-ACT-02: Two-way Mark Done and Mark as To Do state transitions', () => {
+    it('isMoodleActivitySubmitted correctly identifies Moodle-submitted states', () => {
+      expect(isMoodleActivitySubmitted({ status: 'Submitted' })).toBe(true);
+      expect(isMoodleActivitySubmitted({ status: 'Assigned', isCompleted: true })).toBe(true);
+      expect(isMoodleActivitySubmitted({ status: 'Not submitted', grade: 95 })).toBe(true);
+      expect(isMoodleActivitySubmitted({ status: 'Not submitted', isManualCompletionDone: true })).toBe(true);
+      expect(isMoodleActivitySubmitted({ status: 'Not submitted', hasFinishedAttempt: true })).toBe(true);
+
+      expect(isMoodleActivitySubmitted({ status: 'Assigned' })).toBe(false);
+      expect(isMoodleActivitySubmitted({ status: 'Not submitted', grade: null })).toBe(false);
+      expect(isMoodleActivitySubmitted({ status: 'Not submitted', isManualCompletionDone: false })).toBe(false);
+    });
+
+    it('seamlessly transitions unsubmitted item to completed and back via string/number identifiers', () => {
+      const task = { id: 101, activityType: 'assign' as const, status: 'Assigned' };
+      let completedList: Array<string | number> = [];
+      let uncompletedList: Array<string | number> = [];
+
+      // Initial state: not completed
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(false);
+
+      // User clicks "Mark Done" -> saves canonical targetKey "assign:101"
+      completedList.push('assign:101');
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(true);
+
+      // User clicks "Mark as To Do" -> toggles off
+      completedList = completedList.filter((id) => !matchesActivityIdentifier(id, task));
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(false);
+
+      // Works even if stored as legacy numeric ID 101
+      completedList.push(101);
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(true);
+    });
+
+    it('seamlessly transitions Moodle-submitted item to uncompleted and back via string/number identifiers', () => {
+      const task = { id: 202, activityType: 'assign' as const, status: 'Submitted' };
+      let completedList: Array<string | number> = [];
+      let uncompletedList: Array<string | number> = [];
+
+      // Initial state: submitted in Moodle
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(true);
+
+      // User clicks "Mark as To Do" -> saves "assign:202" into uncompletedList
+      uncompletedList.push('assign:202');
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(false);
+
+      // User clicks "Mark Done" -> removes from uncompletedList
+      uncompletedList = uncompletedList.filter((id) => !matchesActivityIdentifier(id, task));
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(true);
+
+      // Works even if stored as legacy numeric ID 202
+      uncompletedList.push(202);
+      expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(false);
+    });
+  });
 });
+

@@ -236,20 +236,10 @@ async function updateActionBadge() {
     }
 
     const settings = await getSettings();
-    const hiddenSet = new Set(settings.hiddenAssignments || []);
-    const completedSet = new Set(settings.completedAssignments || []);
-    const uncompletedSet = new Set(settings.uncompletedAssignments || []);
-
-    const isDone = (a: any) => {
-      if (uncompletedSet.has(a.id)) return false;
-      if (completedSet.has(a.id) || a.isCompleted === true) return true;
-      return a.status === 'Submitted';
-    };
-
     const now = Date.now();
     const activeAssigns = cached.assignments.filter((a: any) => {
-      if (hiddenSet.has(a.id) || a.isHidden) return false;
-      if (isDone(a)) return false;
+      if (isActivityHidden(a, settings.hiddenAssignments)) return false;
+      if (isActivityCompleted(a, settings.completedAssignments, settings.uncompletedAssignments)) return false;
       if (!a.deadline) return true;
       // Only count upcoming/active deadlines or recently due within 24h
       return new Date(a.deadline).getTime() >= now;

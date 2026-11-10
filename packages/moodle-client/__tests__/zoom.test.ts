@@ -48,9 +48,19 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(isZoomOrMeetingName('שיעורי Zoom והקלטות')).toBe(true);
       expect(isZoomOrMeetingName('קישור לזום')).toBe(true);
       expect(isZoomOrMeetingName('מפגש מקוון')).toBe(true);
+      expect(isZoomOrMeetingName('מפגשים מקוונים')).toBe(true);
       expect(isZoomOrMeetingName('שיעור מקוון')).toBe(true);
       expect(isZoomOrMeetingName('הרצאה מקוונת')).toBe(true);
+      expect(isZoomOrMeetingName('תרגולים מקוונים')).toBe(true);
       expect(isZoomOrMeetingName('חדר זום לתרגול')).toBe(true);
+      expect(isZoomOrMeetingName('חדר הרצאות')).toBe(true);
+      expect(isZoomOrMeetingName('חדר תרגולים')).toBe(true);
+      expect(isZoomOrMeetingName('קישור לתרגול')).toBe(true);
+      expect(isZoomOrMeetingName('קישורים לתרגולים')).toBe(true);
+      expect(isZoomOrMeetingName('קישורים להרצאות')).toBe(true);
+      expect(isZoomOrMeetingName('live lecture')).toBe(true);
+      expect(isZoomOrMeetingName('online session')).toBe(true);
+      expect(isZoomOrMeetingName('virtual classroom')).toBe(true);
 
       expect(isZoomOrMeetingName('סילבוס הקורס')).toBe(false);
       expect(isZoomOrMeetingName('מטלה 1 - תרגיל בית')).toBe(false);
@@ -125,7 +135,7 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       global.fetch = originalFetch;
     });
 
-    it('should extract Zoom meetings from URL modules, Hebrew titles, LTI fallbacks, labels, and summaries', async () => {
+    it('should extract Zoom meetings from URL modules, Hebrew titles, labels, summaries, and pages without fake LTI meeting rows', async () => {
       global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
         const urlStr = String(url);
         const bodyStr = init?.body ? String(init.body) : '';
@@ -188,7 +198,7 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
                       },
                     ],
                   },
-                  // 2. URL module with Hebrew keyword and module.url fallback
+                  // 2. URL module with Hebrew keyword and module.url fallback (not a direct zoom url)
                   {
                     id: 202,
                     name: 'מפגש מקוון עם המרצה',
@@ -196,7 +206,7 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
                     url: 'https://moodle.tau.ac.il/mod/url/view.php?id=202',
                     contents: [],
                   },
-                  // 3. LTI module with scraping disabled (should produce fallback meeting link)
+                  // 3. LTI module with scraping disabled (should be registered as course link, NOT as a fake Zoom meeting)
                   {
                     id: 203,
                     name: 'שיעורי Zoom והקלטות',
@@ -210,6 +220,23 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
                     name: 'קישור קבוע להרצאות',
                     modname: 'label',
                     description: '<p>הצטרפו דרך: <a href="https://tau-ac-il.zoom.us/j/555666777?pwd=labelPwd">כניסה לזום</a></p>',
+                  },
+                  // 5. Page module with embedded Zoom link in contents[0].content
+                  {
+                    id: 206,
+                    name: 'דף קישורי זום לתרגולים',
+                    modname: 'page',
+                    contents: [
+                      {
+                        type: 'file',
+                        filename: 'index.html',
+                        fileurl: 'https://moodle.tau.ac.il/webservice/pluginfile.php/123/page/content/index.html',
+                        content: '<p>קישור לזום תרגול: <a href="https://tau-ac-il.zoom.us/j/777888999?pwd=pagePwd">זום תרגול בדף</a></p>',
+                        filesize: 100,
+                        mimetype: 'text/html',
+                        timemodified: 1729000000,
+                      },
+                    ],
                   },
                 ],
               },
@@ -257,7 +284,11 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
         { enableScraping: false }
       );
 
-      expect(result.meetings.length).toBeGreaterThanOrEqual(4);
+      // Verify that every meeting in result.meetings is a genuine Zoom URL
+      expect(result.meetings.length).toBeGreaterThan(0);
+      for (const m of result.meetings) {
+        expect(isZoomUrl(m.meetingUrl)).toBe(true);
+      }
 
       // Verify URL module was extracted
       const urlMeeting = result.meetings.find((m) => m.meetingNumber === '123456789');
@@ -265,20 +296,29 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(urlMeeting?.password).toBe('secretPwd');
       expect(urlMeeting?.meetingUrl).toBe('https://tau-ac-il.zoom.us/j/123456789?pwd=secretPwd');
 
-      // Verify Hebrew keyword URL module was extracted
+      // Verify non-Zoom URL module is NOT in meetings
       const hebrewUrlMeeting = result.meetings.find((m) => m.title === 'מפגש מקוון עם המרצה');
-      expect(hebrewUrlMeeting).toBeDefined();
-      expect(hebrewUrlMeeting?.meetingUrl).toBe('https://moodle.tau.ac.il/mod/url/view.php?id=202');
+      expect(hebrewUrlMeeting).toBeUndefined();
 
-      // Verify LTI fallback meeting was extracted even with enableScraping: false
+      // Verify LTI module is NOT added as a fake meeting in meetings
       const ltiMeeting = result.meetings.find((m) => m.title === 'שיעורי Zoom והקלטות');
-      expect(ltiMeeting).toBeDefined();
-      expect(ltiMeeting?.meetingUrl).toBe('https://moodle.tau.ac.il/mod/lti/view.php?id=203');
+      expect(ltiMeeting).toBeUndefined();
+
+      // But verify LTI module IS registered under links with linkKind 'zoom'
+      const ltiLink = result.links?.find((l) => l.id === 203);
+      expect(ltiLink).toBeDefined();
+      expect(ltiLink?.linkKind).toBe('zoom');
+      expect(ltiLink?.targetUrl).toBe('https://moodle.tau.ac.il/mod/lti/view.php?id=203');
 
       // Verify Label embedded HTML link was extracted
       const labelMeeting = result.meetings.find((m) => m.meetingNumber === '555666777');
       expect(labelMeeting).toBeDefined();
       expect(labelMeeting?.password).toBe('labelPwd');
+
+      // Verify Page module embedded HTML link from contents[0].content was extracted
+      const pageMeeting = result.meetings.find((m) => m.meetingNumber === '777888999');
+      expect(pageMeeting).toBeDefined();
+      expect(pageMeeting?.password).toBe('pagePwd');
 
       // Verify Section Summary link was extracted
       const summaryMeeting = result.meetings.find((m) => m.meetingNumber === '999111222');

@@ -24,7 +24,7 @@ import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } 
 import { performSettingsSync, markSettingUpdatedAndSync } from '../services/settingsSyncService';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { setGoogleAccessToken } from '../services/googleTasks';
-import { MoodleClient, parseTauCourseMetadata } from '@tautracker/moodle-client';
+import { MoodleClient, parseTauCourseMetadata, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl } from '@tautracker/moodle-client';
 import { t } from '../services/i18n';
 import { openMoodleLink } from '../services/moodleLink';
 import { usePreferences } from '../hooks/use-preferences';
@@ -231,36 +231,57 @@ export default function DashboardScreen() {
 
   async function handleToggleCompleted(assignMoodleId: number) {
     const target = assignments.find((x: any) => x.moodle_assign_id === assignMoodleId);
-    const rawMoodleSubmitted = target ? Boolean(target.rawMoodleSubmitted) : false;
+    const targetKey = target?.uid || (target?.activity_type ? `${target.activity_type}:${assignMoodleId}` : `assign:${assignMoodleId}`);
+    const isMoodleSubmitted = target ? isMoodleActivitySubmitted({
+      status: target.status,
+      grade: target.grade,
+      isCompleted: Boolean(target.is_completed),
+      isManualCompletionDone: Boolean(target.is_manual_completion_done),
+      requiresManualCompletion: Boolean(target.requires_manual_completion),
+    }) : false;
 
     const completedStr = getPreference('completed_assignments');
-    let completedList: number[] = completedStr ? JSON.parse(completedStr) : [];
+    let completedList: Array<string | number> = completedStr ? JSON.parse(completedStr) : [];
 
     const uncompletedStr = getPreference('uncompleted_assignments');
-    let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+    let uncompletedList: Array<string | number> = uncompletedStr ? JSON.parse(uncompletedStr) : [];
 
-    let willBeCompleted = false;
-    if (rawMoodleSubmitted) {
-      if (uncompletedList.includes(assignMoodleId)) {
-        uncompletedList = uncompletedList.filter((id: number) => id !== assignMoodleId);
-        willBeCompleted = true;
-      } else {
-        uncompletedList.push(assignMoodleId);
-        willBeCompleted = false;
+    const isCurrentlyCompleted = isActivityCompleted(
+      {
+        id: assignMoodleId,
+        activityType: target?.activity_type,
+        uid: target?.uid,
+        status: target?.status || 'Not submitted',
+        grade: target?.grade,
+        isCompleted: Boolean(target?.is_completed),
+        isManualCompletionDone: Boolean(target?.is_manual_completion_done),
+        requiresManualCompletion: Boolean(target?.requires_manual_completion),
+      },
+      completedList,
+      uncompletedList
+    );
+
+    completedList = completedList.filter(
+      (id) => !matchesActivityIdentifier(id, { id: assignMoodleId, activityType: target?.activity_type, uid: target?.uid })
+    );
+    uncompletedList = uncompletedList.filter(
+      (id) => !matchesActivityIdentifier(id, { id: assignMoodleId, activityType: target?.activity_type, uid: target?.uid })
+    );
+
+    const willBeCompleted = !isCurrentlyCompleted;
+    if (willBeCompleted) {
+      if (!isMoodleSubmitted) {
+        completedList.push(targetKey);
       }
-      setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
-      markSettingUpdatedAndSync(['uncompletedAssignments']);
     } else {
-      if (completedList.includes(assignMoodleId)) {
-        completedList = completedList.filter((id: number) => id !== assignMoodleId);
-        willBeCompleted = false;
-      } else {
-        completedList.push(assignMoodleId);
-        willBeCompleted = true;
+      if (isMoodleSubmitted) {
+        uncompletedList.push(targetKey);
       }
-      setPreference('completed_assignments', JSON.stringify(completedList));
-      markSettingUpdatedAndSync(['completedAssignments']);
     }
+
+    setPreference('completed_assignments', JSON.stringify(completedList));
+    setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
+    markSettingUpdatedAndSync(['completedAssignments', 'uncompletedAssignments']);
 
     if (target?.requires_manual_completion && target?.cmid) {
       getMoodleToken().then((tok) => {
@@ -275,12 +296,19 @@ export default function DashboardScreen() {
   }
 
   async function handleToggleHidden(assignMoodleId: number) {
+    const target = assignments.find((x: any) => x.moodle_assign_id === assignMoodleId);
+    const targetKey = target?.uid || (target?.activity_type ? `${target.activity_type}:${assignMoodleId}` : `assign:${assignMoodleId}`);
     const hiddenStr = getPreference('hidden_assignments');
-    let current = hiddenStr ? JSON.parse(hiddenStr) : [];
-    if (current.includes(assignMoodleId)) {
-      current = current.filter((id: number) => id !== assignMoodleId);
-    } else {
-      current.push(assignMoodleId);
+    let current: Array<string | number> = hiddenStr ? JSON.parse(hiddenStr) : [];
+    const isHidden = isActivityHidden(
+      { id: assignMoodleId, activityType: target?.activity_type, uid: target?.uid },
+      current
+    );
+    current = current.filter(
+      (id) => !matchesActivityIdentifier(id, { id: assignMoodleId, activityType: target?.activity_type, uid: target?.uid })
+    );
+    if (!isHidden) {
+      current.push(targetKey);
     }
     setPreference('hidden_assignments', JSON.stringify(current));
     markSettingUpdatedAndSync(['hiddenAssignments']);
@@ -465,9 +493,9 @@ export default function DashboardScreen() {
       const hiddenStr = getPreference('hidden_assignments');
       const completedStr = getPreference('completed_assignments');
       const uncompletedStr = getPreference('uncompleted_assignments');
-      const hiddenIds: number[] = hiddenStr ? JSON.parse(hiddenStr) : [];
-      const completedIds: number[] = completedStr ? JSON.parse(completedStr) : [];
-      const uncompletedIds: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+      const hiddenIds: Array<string | number> = hiddenStr ? JSON.parse(hiddenStr) : [];
+      const completedIds: Array<string | number> = completedStr ? JSON.parse(completedStr) : [];
+      const uncompletedIds: Array<string | number> = uncompletedStr ? JSON.parse(uncompletedStr) : [];
 
       // Load all assignments of active courses
       const cachedAssigns = db.getAllSync<any>(
@@ -478,19 +506,35 @@ export default function DashboardScreen() {
          ORDER BY CASE WHEN a.deadline IS NULL OR a.deadline = '' THEN 1 ELSE 0 END, a.deadline ASC`
       ).map(a => {
         let mod = { ...a };
-        const rawMoodleSubmitted = a.status === 'Submitted';
+        const rawMoodleSubmitted = isMoodleActivitySubmitted({
+          status: a.status,
+          grade: a.grade,
+          isCompleted: Boolean(a.is_completed),
+          isManualCompletionDone: Boolean(a.is_manual_completion_done),
+          requiresManualCompletion: Boolean(a.requires_manual_completion),
+        });
         mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-        if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
-          mod.isHidden = true;
-        }
+        const isHidden = isActivityHidden(
+          { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid, isHidden: Boolean(a.is_hidden) },
+          hiddenIds
+        );
+        mod.isHidden = isHidden;
 
-        let isCompleted = rawMoodleSubmitted;
-        if (rawMoodleSubmitted && uncompletedIds.includes(a.moodle_assign_id)) {
-          isCompleted = false;
-        } else if (!rawMoodleSubmitted && completedIds.includes(a.moodle_assign_id)) {
-          isCompleted = true;
-        }
+        const isCompleted = isActivityCompleted(
+          {
+            id: a.moodle_assign_id,
+            activityType: a.activity_type,
+            uid: a.uid,
+            status: a.status,
+            grade: a.grade,
+            isCompleted: Boolean(a.is_completed),
+            isManualCompletionDone: Boolean(a.is_manual_completion_done),
+            requiresManualCompletion: Boolean(a.requires_manual_completion),
+          },
+          completedIds,
+          uncompletedIds
+        );
 
         mod.isCompleted = isCompleted;
         mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
@@ -1598,7 +1642,7 @@ export default function DashboardScreen() {
 
           {(() => {
             const activeMeeting = meetings.find(m => {
-              if (!m.start_time) return false;
+              if (!m.start_time || !m.meeting_url || !isZoomUrl(m.meeting_url)) return false;
               const startTime = new Date(m.start_time);
               if (isNaN(startTime.getTime())) return false;
               const now = new Date();
@@ -1628,7 +1672,7 @@ export default function DashboardScreen() {
 
           {(() => {
             const coursesWithMeetings = trackedCourses.map((c) => {
-              const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id);
+              const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id && m.meeting_url && isZoomUrl(m.meeting_url));
 
               // Deduplicate recurring meetings by meeting_number or meeting_url
               const now = new Date();

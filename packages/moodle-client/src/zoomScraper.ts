@@ -40,8 +40,12 @@ export function isZoomOrMeetingName(name: string): boolean {
   if (!name) return false;
   const lower = name.toLowerCase();
   if (lower.includes('zoom')) return true;
+  // English meeting keywords
+  if (/\b(?:meeting|meetings|online\s+lecture|online\s+class|online\s+session|virtual\s+classroom|live\s+lecture|live\s+class|live\s+session)\b/i.test(name)) {
+    return true;
+  }
   // Hebrew keywords commonly used in Israeli Moodle courses
-  if (/זום|מפגש מקוון|מפגשי זום|מפגש זום|שיעור זום|שיעורי זום|חדר זום|הרצאה מקוונת|הרצאות מקוונות|שיעור מקוון|שיעורים מקוונים|קישור לשיעור|קישור להרצאה|קישור למפגש|קישור לזום|היוועדות חזותית|כיתה וירטואלית|כיתה מקוונת|סינכרונ|חדר פגישות/i.test(name)) {
+  if (/זום|מפגש מקוון|מפגשים מקוונים|מפגשי זום|מפגש זום|שיעור זום|שיעורי זום|חדר זום|חדרי זום|הרצאה מקוונת|הרצאות מקוונות|תרגול מקוון|תרגולים מקוונים|שיעור מקוון|שיעורים מקוונים|קישור לשיעור|קישור לשיעורים|קישורים לשיעורים|קישור להרצאה|קישור להרצאות|קישורים להרצאות|קישור לתרגול|קישור לתרגולים|קישורים לתרגולים|קישור למפגש|קישור למפגשים|קישורים למפגשים|קישור לזום|קישורי זום|קישורי מפגש|קישורי מפגשים|קישור לקורס|קישורים לקורס|קישור לכיתה|קישורים לכיתה|לינק לזום|לינק לשיעור|לינק להרצאה|לינק לתרגול|לינק למפגש|חדר הרצאות|חדר תרגולים|חדר שיעור|חדר השיעור|חדר הרצאה|חדר פגישות|חדר מפגש|היוועדות חזותית|כיתה וירטואלית|כיתה מקוונת|סינכרונ|הוראה מרחוק|למידה מרחוק|שיעור אונליין|שיעורים אונליין|הרצאה אונליין|הרצאות אונליין|תרגול אונליין|תרגולים אונליין/i.test(name)) {
     return true;
   }
   return false;
@@ -615,19 +619,35 @@ export async function scrapeZoomMeetingsWithToken(
     if (!Array.isArray(list)) return;
 
     for (const m of list) {
-      const directJoinUrl = m.joinUrl || '';
-      const matchNum = directJoinUrl.match(/\/j\/(\d+)/);
-      const meetingNumber = matchNum ? matchNum[1] : '';
+      const directJoinUrl = m.joinUrl || m.join_url || m.url || '';
+      const matchNum = directJoinUrl.match(/\/(?:j|w|s)\/(\d+)/i) || directJoinUrl.match(/\/my\/([a-zA-Z0-9._-]+)/i);
+      let meetingNumber = matchNum ? matchNum[1] : '';
+      if (!meetingNumber && (m.meetingNumber || m.meeting_number || m.meetingId || m.id || m.pmi)) {
+        meetingNumber = String(m.meetingNumber || m.meeting_number || m.meetingId || m.id || m.pmi);
+      }
       
       let password = '';
+      if (m.password || m.passcode || m.pwd) {
+        password = String(m.password || m.passcode || m.pwd);
+      }
       try {
-        const urlObj = new URL(directJoinUrl);
-        password = urlObj.searchParams.get('pwd') || '';
+        if (!password && directJoinUrl) {
+          const urlObj = new URL(directJoinUrl);
+          password = urlObj.searchParams.get('pwd') || '';
+        }
       } catch (_) {}
 
-      const directUrl = meetingNumber 
-        ? `https://tau-ac-il.zoom.us/j/${meetingNumber}${password ? `?pwd=${password}` : ''}`
-        : directJoinUrl;
+      let directUrl = directJoinUrl;
+      if (meetingNumber && /^\d+$/.test(meetingNumber)) {
+        directUrl = `https://tau-ac-il.zoom.us/j/${meetingNumber}${password ? `?pwd=${password}` : ''}`;
+      } else if (!directUrl && meetingNumber) {
+        directUrl = `https://tau-ac-il.zoom.us/my/${meetingNumber}${password ? `?pwd=${password}` : ''}`;
+      }
+
+      // Strictly ensure the URL is a genuine Zoom URL
+      if (!directUrl || !isZoomUrl(directUrl)) {
+        continue;
+      }
 
       const roomKey = meetingNumber || directUrl;
       if (isUpcoming && roomKey) {
@@ -639,12 +659,12 @@ export async function scrapeZoomMeetingsWithToken(
 
       const normalizedStartTime = normalizeZoomStartTime(m, isUpcoming);
       console.log(
-        `[ZoomScraper] Parsed meeting "${m.topic}": raw="${m.startTime || m.start_time}", tz="${m.timezone || m.timeZone}", normalized="${normalizedStartTime}"`
+        `[ZoomScraper] Parsed meeting "${m.topic || m.title}": raw="${m.startTime || m.start_time}", tz="${m.timezone || m.timeZone}", normalized="${normalizedStartTime}"`
       );
 
       meetings.push({
-        topic: m.topic || '',
-        meetingId: m.meetingId || '',
+        topic: m.topic || m.title || '',
+        meetingId: m.meetingId ? String(m.meetingId) : '',
         meetingNumber,
         startTime: normalizedStartTime,
         joinUrl: directUrl,
@@ -656,17 +676,60 @@ export async function scrapeZoomMeetingsWithToken(
 
   // 5. Fetch upcoming meetings
   const upcomingUrl = 'https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0';
-  const upcomingRes = await mfetch(zoomJar, upcomingUrl, {
-    method: 'GET',
-    headers: ajaxHeaders
-  });
-  if (upcomingRes.ok) {
-    const upcomingData = await upcomingRes.json();
-    if (upcomingData.result && upcomingData.result.list) {
-      parseAndAddMeetings(upcomingData.result.list, true);
+  try {
+    const upcomingRes = await mfetch(zoomJar, upcomingUrl, {
+      method: 'GET',
+      headers: ajaxHeaders
+    });
+    if (upcomingRes.ok) {
+      const upcomingData = await upcomingRes.json();
+      if (upcomingData.result && upcomingData.result.list) {
+        parseAndAddMeetings(upcomingData.result.list, true);
+      }
+    } else {
+      console.warn(`[ZoomScraper] Upcoming meetings fetch failed with status ${upcomingRes.status}`);
     }
-  } else {
-    console.warn(`[ZoomScraper] Upcoming meetings fetch failed with status ${upcomingRes.status}`);
+  } catch (err: any) {
+    console.warn(`[ZoomScraper] Upcoming meetings fetch error:`, err);
+  }
+
+  // 6. Fetch previous / recurring meetings (graceful fallback for recurring rooms without future slots)
+  try {
+    const previousUrl = 'https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0';
+    const previousRes = await mfetch(zoomJar, previousUrl, {
+      method: 'GET',
+      headers: ajaxHeaders
+    });
+    if (previousRes.ok) {
+      const previousData = await previousRes.json();
+      if (previousData.result && previousData.result.list) {
+        parseAndAddMeetings(previousData.result.list, false);
+      }
+    }
+  } catch {
+    // Non-critical: ignore 403 or network errors on /previous/
+  }
+
+  // 7. Extract any Zoom links directly from the LTI launch HTML (e.g. static links or personal rooms)
+  if (zoomHtml) {
+    const embeddedLinks = extractZoomLinksFromHtml(zoomHtml);
+    for (const el of embeddedLinks) {
+      const parsed = parseZoomUrl(el.url);
+      if (isZoomUrl(parsed.meetingUrl)) {
+        const roomKey = parsed.meetingNumber || parsed.meetingUrl;
+        if (roomKey && !seenUpcomingRooms.has(roomKey)) {
+          seenUpcomingRooms.add(roomKey);
+          meetings.push({
+            topic: el.title || 'Zoom Meeting',
+            meetingId: parsed.meetingNumber || '',
+            meetingNumber: parsed.meetingNumber || "",
+            joinUrl: parsed.meetingUrl,
+            password: parsed.password,
+            isUpcoming: false,
+          });
+        }
+      }
+    }
   }
 
   return meetings;
@@ -681,7 +744,8 @@ export async function scrapeZoomMeetingsWithToken(
 export function collapseRecurringMeetings(meetings: ZoomMeeting[], referenceDate: Date = new Date()): ZoomMeeting[] {
   const groups = new Map<string, ZoomMeeting[]>();
 
-  for (const m of meetings) {
+  for (const m of meetings || []) {
+    if (!m || !m.meetingUrl) continue;
     const key = `${m.courseId || m.courseName}_${m.meetingNumber || m.meetingUrl}`;
     if (!groups.has(key)) {
       groups.set(key, []);

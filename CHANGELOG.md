@@ -7,6 +7,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Added
+- **Theme-by-Time Automatic Switching (`apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/popup/Popup.tsx`)**:
+  - Added opt-in automatic theme switching (`theme: 'time'`) that uses Noodle theme during daytime hours and transitions to Coffee theme in the evening/night.
+  - Added configurable daytime start (`themeTimeDayStart`, default 7:00) and evening start (`themeTimeDayEnd`, default 17:00) with localized settings controls.
+  - Added active interval watching (every 30 seconds) in both full options dashboard and popup to dynamically update body theme classes without manual refresh.
+- **Dedicated Manage Courses Action in Settings (`apps/extension/src/options/App.tsx`)**:
+  - Lifted course management modal state to top-level `App` view, enabling course configuration to be opened directly from either the Dashboard or the newly added Settings section.
+
+### Changed
+- **Settings Page Hierarchy Reorganization (`apps/extension/src/options/App.tsx`)**:
+  - Prioritized user-critical controls at the top of the Settings tab: Appearance & Theme (including Theme-by-Time), Due Date Colors (urgency thresholds), Manage Tracked Courses, and Configuration Backup (Export/Import).
+  - Modernized configuration import with clean SVG vector `<UploadIcon />` and removed extraneous emojis across settings headers and buttons.
+- **Default View Mode & Calendar View Persistence (`apps/extension/src/options/App.tsx`)**:
+  - Set default courses view mode on initial load to `cards` instead of `list`.
+  - Set default calendar view state to `true` (open by default) and persisted user toggle choices in `localStorage` (`noodle_show_calendar_view`).
+- **Button Styling & Action Hierarchy Consistency (`apps/extension/src/options/App.tsx`, `apps/extension/src/index.css`)**:
+  - Standardized "Go to Course" across all views (Course Cards, Course Rows, Queue, Assignments Table) as secondary action buttons (`secondary-btn btn-sm`/`btn-xs`) with `<BookOpenIcon />`.
+  - Standardized "Submit" / "Submit in Moodle" across all views (Upcoming Queue, Assignments Table, Course Detail View) as primary submission CTAs (`primary-btn btn-xs action-submit-btn`).
+  - Removed unicode `⚙️` icon from "Manage Courses" button and modal header in compliance with Zero-Emoji minimal design rules.
+- **Coffee Theme Color Vibrancy & Custom Color Restoration (`apps/extension/src/index.css`)**:
+  - Restored student custom course colors across course cards, rows, and upcoming queue in Coffee theme by removing blanket `!important` color overrides on `h4` and `.stat-val`.
+  - Enhanced contrast and color vibrancy for urgency badges (`.badge-success`, `.badge-warning`, `.badge-danger`, `.badge-muted`) and primary action buttons.
 ### Changed
 - **Zero-Emoji Design Standard & Minimalist Vector Iconography (.agents/rules/03-coding-constraints.md, docs/UI_SPECIFICATION.md, AGENTS.md, pps/extension, pps/mobile)**:
   - Established a strict project-wide prohibition of colorful unicode emojis in user-facing components, lists, cards, badges, and file trees (e.g. 📕, 📦, 💻, 🖼️, 📄, 📁) to eliminate amateurish, 'AI-generated' visual aesthetics.
@@ -14,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Removed getFileEmoji utility from pps/extension/src/shared/mimeUtils.ts.
 
 ### Fixed
+- **Two-Way "Mark Done" / "Mark as To Do" State Synchronization (`packages/moodle-client/src/activityState.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/background/serviceWorker.ts`, `apps/mobile/src/app/index.tsx`, `apps/mobile/src/app/courses.tsx`, `TC-ACT-02`, `TC-ASN-14`)**:
+  - Fixed an issue where the "Mark Done" and "Mark as To Do" buttons had stopped working (doing nothing when clicked) due to strict numeric-vs-string identifier comparison (`Set.has(a.id)` where `a.id` was a number while `completedAssignments` stored canonical strings like `"assign:123"`).
+  - Exported `isMoodleActivitySubmitted` from `@tautracker/moodle-client` to evaluate actual completion across grades, manual completion, finished attempts, and submission flags.
+  - Rewrote assignment list mapping and toggle handlers across the extension dashboard, course detail view, toolbar badge updater, and mobile app to use canonical `isActivityCompleted` and `matchesActivityIdentifier`, ensuring instant UI state updates and two-way toggle behavior across both Chrome/Firefox and mobile.
 - **Submitted & Graded Quiz Recognition and Google Tasks Re-Addition Fix (`packages/moodle-client/src/syncEngine.ts`, `activityState.ts`, `googleTasksSync.ts`, `TC-GT-10`)**:
   - Fixed an issue where submitted and graded quizzes (such as Software 1 "Lecture 2 Quiz") were not removed from Google Tasks and were continuously re-added when deleted because past deadlines flipped nominally unsubmitted items to `'Not submitted'`.
   - Added automatic activity completion detection (`completion === 2` with `completiondata.state === 1 || 2`) and gradebook score detection (`grade !== null`) in `processQuiz` and `processAssignment`, ensuring quizzes and assignments completed through automatic criteria or graded in Moodle are marked `status: 'Submitted'` and `isCompleted: true`.
