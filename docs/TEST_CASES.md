@@ -174,6 +174,7 @@ graph LR
 | **TC-GT-07** | Manual Google Tasks Sync Trigger | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-08** | Assignments Without Deadline Sync Setting & Deletion Logic | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-09** | Persistent Auth, Silent Refresh & Unauthenticated Sync Alert | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
+| **TC-GT-10** | Graded & Automatic Completion Quiz Sync & Multi-Portal Deduplication | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
@@ -1017,6 +1018,16 @@ graph LR
   2. Verify red status badge "⚠️ Not connected — Authentication required" is visible.
   3. Navigate to Dashboard; verify warning banner "Google Tasks sync is enabled but not connected" is displayed with a "Connect Now ↗" button.
   4. Click "Connect Now ↗", authenticate, and verify status changes to "● Connected to Google Tasks" and the warning banner dismisses.
+
+#### TC-GT-10: Graded & Automatic Completion Quiz Sync & Multi-Portal Deduplication
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that quizzes with recorded grades in the gradebook (`grade !== null`) or automatic completion criteria satisfied (`completion === 2` with `state === 1 || state === 2`) are recognized as completed/submitted, deleted from Google Tasks (`DELETE /tasks/{id}`), and never recreated as active tasks upon deletion. Also verifies that activities duplicated across multiple course portals (e.g. Lecture and Recitation portals in unified courses like Software 1) are deduplicated, prioritizing completed and graded entries.
+* **Automated Test Flow**:
+  1. Prepare a quiz with past deadline, empty attempts response, but a valid numeric grade in the gradebook.
+  2. Run `syncAssignmentsToGoogleTasks` with an existing matching task in Google Tasks; assert `DELETE` is called.
+  3. Run sync again with no existing task in Google Tasks; assert `POST` is NOT called (task is not re-added).
+  4. Run sync with two duplicate sub-course portal entries (one submitted/graded, one unsubmitted); assert only one entry is evaluated and the graded version is recognized as done with 0 active tasks created.
 
 ---
 

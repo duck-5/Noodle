@@ -408,7 +408,37 @@ export async function runSync(
       });
     }
 
-    let status: 'Assigned' | 'Submitted' | 'Not submitted' = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
+    const assignCmid = assign.cmid;
+    const completionInfo = moduleCompletionMap.get(assignCmid);
+    const effectiveCompletion = completionInfo?.completion ?? assign.completion;
+    const effectiveCompletionData = completionInfo?.completiondata ?? assign.completiondata;
+    const requiresManualCompletion = effectiveCompletion === 1;
+    const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
+    const isAutomaticCompletionDone =
+      effectiveCompletion === 2 &&
+      (effectiveCompletionData?.state === 1 || effectiveCompletionData?.state === 2);
+
+    const gradeInfo = gradesByCmid.get(Number(assign.cmid));
+    let grade: number | null = null;
+    let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = /בונוס|bonus/i.test(assign.name || '');
+
+    if (gradeInfo && !gradeInfo.gradeishidden) {
+      grade = gradeInfo.graderaw;
+      gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
+        isBonus = true;
+      }
+    }
+
+    const hasGrade = grade !== null && grade !== undefined;
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' =
+      (subStatus === 'submitted' || hasGrade || isAutomaticCompletionDone || (requiresManualCompletion && isManualCompletionDone))
+        ? 'Submitted'
+        : 'Assigned';
 
     const dueTs = assign.duedate || 0;
     const cutoffTs = assign.cutoffdate || 0;
@@ -441,21 +471,6 @@ export async function runSync(
     const openedIso = assign.allowsubmissionsfromdate > 0
       ? new Date(assign.allowsubmissionsfromdate * 1000).toISOString()
       : null;
-
-    const gradeInfo = gradesByCmid.get(Number(assign.cmid));
-    let grade: number | null = null;
-    let gradeMax: number | null = null;
-    let feedback: string | undefined = undefined;
-    let isBonus = /בונוס|bonus/i.test(assign.name || '');
-
-    if (gradeInfo && !gradeInfo.gradeishidden) {
-      grade = gradeInfo.graderaw;
-      gradeMax = gradeInfo.grademax;
-      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
-      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
-        isBonus = true;
-      }
-    }
 
     let attachments: Attachment[] = assign.introattachments
       ? assign.introattachments.map((att) => ({
@@ -502,6 +517,9 @@ export async function runSync(
       sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid)),
       activityType: 'assign',
       uid: `assign:${assign.id}`,
+      requiresManualCompletion,
+      isManualCompletionDone: isManualCompletionDone || isAutomaticCompletionDone,
+      completionTracking: effectiveCompletion,
       isCompleted: status === 'Submitted',
       feedback,
       isBonus,
@@ -537,26 +555,9 @@ export async function runSync(
     const effectiveCompletionData = completionInfo?.completiondata ?? quiz.completiondata;
     const requiresManualCompletion = effectiveCompletion === 1;
     const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
-
-    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
-    if (hasFinished) {
-      status = 'Submitted';
-    } else if (requiresManualCompletion && isManualCompletionDone) {
-      status = 'Submitted';
-    }
-
-    const closeTs = quiz.timeclose || 0;
-    let deadlineIso: string | null = null;
-    if (closeTs > 0) {
-      const closeDate = new Date(closeTs * 1000);
-      deadlineIso = closeDate.toISOString();
-      if (status !== 'Submitted' && closeDate < now) {
-        status = 'Not submitted';
-      }
-    }
-
-    const openTs = quiz.timeopen || 0;
-    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
+    const isAutomaticCompletionDone =
+      effectiveCompletion === 2 &&
+      (effectiveCompletionData?.state === 1 || effectiveCompletionData?.state === 2);
 
     const gradeInfo = gradesByCmid.get(Number(cmid));
     let grade: number | null = null;
@@ -573,6 +574,26 @@ export async function runSync(
     } else if (quiz.sumgrades !== undefined && quiz.sumgrades !== null) {
       gradeMax = quiz.sumgrades;
     }
+
+    const hasGrade = grade !== null && grade !== undefined;
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
+    if (hasFinished || hasGrade || isAutomaticCompletionDone || (requiresManualCompletion && isManualCompletionDone)) {
+      status = 'Submitted';
+    }
+
+    const closeTs = quiz.timeclose || 0;
+    let deadlineIso: string | null = null;
+    if (closeTs > 0) {
+      const closeDate = new Date(closeTs * 1000);
+      deadlineIso = closeDate.toISOString();
+      if (status !== 'Submitted' && closeDate < now) {
+        status = 'Not submitted';
+      }
+    }
+
+    const openTs = quiz.timeopen || 0;
+    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
 
     const courseInfo = courseMap.get(quiz.course);
     const quizBaseUrl = courseInfo?.instanceUrl
@@ -604,7 +625,7 @@ export async function runSync(
       attemptsAllowed: quiz.attempts > 0 ? quiz.attempts : undefined,
       hasFinishedAttempt: hasFinished,
       requiresManualCompletion,
-      isManualCompletionDone,
+      isManualCompletionDone: isManualCompletionDone || isAutomaticCompletionDone,
       completionTracking: effectiveCompletion,
       isCompleted: status === 'Submitted',
     };

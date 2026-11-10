@@ -7,7 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+### Changed
+- **Zero-Emoji Design Standard & Minimalist Vector Iconography (.agents/rules/03-coding-constraints.md, docs/UI_SPECIFICATION.md, AGENTS.md, pps/extension, pps/mobile)**:
+  - Established a strict project-wide prohibition of colorful unicode emojis in user-facing components, lists, cards, badges, and file trees (e.g. 📕, 📦, 💻, 🖼️, 📄, 📁) to eliminate amateurish, 'AI-generated' visual aesthetics.
+  - Replaced file-type emojis with clean, subtle, monochrome SVG vector icons (<FileIcon />, <FolderIcon />) and clean typography across both Chrome/Firefox extension options pages and the Expo React Native mobile course browser.
+  - Removed getFileEmoji utility from pps/extension/src/shared/mimeUtils.ts.
+
 ### Fixed
+- **Submitted & Graded Quiz Recognition and Google Tasks Re-Addition Fix (`packages/moodle-client/src/syncEngine.ts`, `activityState.ts`, `googleTasksSync.ts`, `TC-GT-10`)**:
+  - Fixed an issue where submitted and graded quizzes (such as Software 1 "Lecture 2 Quiz") were not removed from Google Tasks and were continuously re-added when deleted because past deadlines flipped nominally unsubmitted items to `'Not submitted'`.
+  - Added automatic activity completion detection (`completion === 2` with `completiondata.state === 1 || 2`) and gradebook score detection (`grade !== null`) in `processQuiz` and `processAssignment`, ensuring quizzes and assignments completed through automatic criteria or graded in Moodle are marked `status: 'Submitted'` and `isCompleted: true`.
+  - Updated `isActivityCompleted` in `activityState.ts` and `isAssignmentDone` in `googleTasksSync.ts` to recognize graded activities and completion flags as completed tasks.
+  - Implemented cross-portal activity deduplication in `syncAssignmentsToGoogleTasks` prioritizing completed and graded entries across sub-courses in unified multi-portal courses.
+  - Added unit and integration test suites in `quizSync.test.ts`, `activityState.test.ts`, and `googleTasks.test.ts` (`TC-GT-10`).
 - **True Deadline Calculation & Late Submission Cutoff Separation (`packages/moodle-client/src/syncEngine.ts`, `types.ts`, `apps/mobile/src/services/database.ts`)**:
   - Fixed an issue where assignments with a late submission grace period (`cutoffdate > duedate`) had their deadline erroneously pushed to the cut-off date (e.g. November 12 instead of November 9 in "תרגיל בית 1").
   - Corrected the True Deadline computation formula: individual student extensions (`extensionduedate`) take top priority, followed by nominal deadlines (`duedate`), only falling back to `cutoffdate` when no nominal deadline is configured (`duedate === 0`).

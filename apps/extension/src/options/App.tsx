@@ -70,7 +70,7 @@ import {
   resumeLocalFsSyncOnBackground,
 } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
-import { getInlineMimeType, getFileEmoji } from '../shared/mimeUtils.js';
+import { getInlineMimeType } from '../shared/mimeUtils.js';
 import { createFileSystemProvider, isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
 import { ChromiumFsaProvider } from '../services/fs/ChromiumFsaProvider.js';
 import { FirefoxDownloadsProvider } from '../services/fs/FirefoxDownloadsProvider.js';
@@ -2766,8 +2766,8 @@ const BookOpenIcon = ({ size = 13 }: { size?: number }) => (
   </svg>
 );
 
-const FolderIcon = ({ size = 13 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const FolderIcon = ({ size = 13, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', ...style }}>
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
   </svg>
 );
@@ -2816,6 +2816,14 @@ const ClockIcon = ({ size = 13, className, style }: { size?: number; className?:
     <polyline points="12 6 12 12 16 14" />
   </svg>
 );
+
+const FileIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', ...style }}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+  </svg>
+);
+
 
 const DashboardIcon = ({ size = 18 }: { size?: number }) => (
   <svg
@@ -7684,9 +7692,7 @@ function CourseDetailView({
                                     }}
                                   >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                      <span style={{ fontSize: '1.25rem' }}>
-                                        {isExpanded && files.length > 0 ? '📂' : '📁'}
-                                      </span>
+                                      <FolderIcon size={18} style={{ color: "var(--accent, #6366f1)", opacity: 0.9 }} />
                                       <div>
                                         <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -7731,7 +7737,7 @@ function CourseDetailView({
                                           opacity: files.length === 0 ? 0.6 : 1,
                                         }}
                                       >
-                                        <span>📦</span>
+                                        <DownloadIcon size={12} />
                                         <span>
                                           {isDownloading
                                             ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
@@ -7759,8 +7765,7 @@ function CourseDetailView({
                                       {rootFiles.map((f, fIdx) => {
                                         const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
                                         const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                                        const emoji = getFileEmoji(f.fileName);
-                                        return (
+                                                                                return (
                                           <div
                                             key={`root_${fIdx}`}
                                             className="section-file-item folder-file-item"
@@ -7776,7 +7781,7 @@ function CourseDetailView({
                                             }}
                                           >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
-                                              <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{emoji}</span>
+                                              <FileIcon size={15} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
                                               <span
                                                 className="item-name"
                                                 style={{
@@ -7840,7 +7845,7 @@ function CourseDetailView({
                                               padding: '0.2rem 0',
                                             }}
                                           >
-                                            <span>📁</span>
+                                            <FolderIcon size={14} style={{ color: "var(--accent, #6366f1)", opacity: 0.85 }} />
                                             <span>{subPath}/</span>
                                             <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({subFiles.length})</span>
                                           </div>
@@ -7848,8 +7853,7 @@ function CourseDetailView({
                                             {subFiles.map((subFile, sfIdx) => {
                                               const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
                                               const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
-                                              const emoji = getFileEmoji(subFile.fileName);
-                                              return (
+                                                                                            return (
                                                 <div
                                                   key={`${subPath}_${sfIdx}`}
                                                   className="section-file-item folder-file-item"
@@ -7865,7 +7869,7 @@ function CourseDetailView({
                                                   }}
                                                 >
                                                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
-                                                    <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{emoji}</span>
+                                                    <FileIcon size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
                                                     <span
                                                       className="item-name"
                                                       style={{

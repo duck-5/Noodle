@@ -436,7 +436,7 @@ Course Detail views in the desktop extension and mobile apps render a format-awa
 1. **Folder Container**: Renders a dedicated card for Moodle folders (`mod_folder`) displaying folder title, description, file count, and total size.
 2. **Interactive Directory Tree & Single-File Access**:
    - Folders are expandable and collapsible via header click or toggle chevron (`▼`/`▲`), defaulting to expanded so students can immediately see and access files.
-   - Files inside the folder are rendered with extension-specific emoji icons (e.g. 📕 PDF, 📦 ZIP, 📘 DOC, 💻 Code, 🖼️ Images), file sizes, 1-click in-browser/local PC opening via `FileOpenAction`, and direct single-file download buttons.
+   - Files inside the folder are rendered with a clean, minimalist monochrome <FileIcon />, file sizes, 1-click in-browser/local PC opening via FileOpenAction, and direct single-file download buttons. Zero emojis are used.
    - Preserves nested directory paths (`relativePath`), visually grouping files under styled subfolder headers (`📁 <subfolder>/`).
    - Empty folders display an empty state note (`No files in this folder` / `אין קבצים בתיקייה זו`) and disable ZIP downloading.
 3. **Bulk ZIP Download Button**:
@@ -463,3 +463,11 @@ Renders a blue accent noticeboard card at the top of the course detail page for 
   - **Locally Synced Files (`.file-action-local`)**: Displays an emerald **PC/Monitor icon** (`<PcIcon />`) + **`Open` / `פתח`** as a `<button>` (suppressing the browser's bottom-left Moodle URL status preview on hover and instead displaying a local relative-path tooltip).
   - **Remote / Unsynced Files (`.file-action-web`)**: Displays a blue **Globe icon** (`<GlobeIcon />`) + **`Open ↗` / `פתח ↗`** as an `<a href={openUrl}>` linking to Moodle.
 * **Synchronous Local Dispatch & Fallback**: Clicking a locally synced file reads `LocalFilesContext` synchronously in the click handler (`handleOpenFileInNewTab`) so Firefox preserves click activation for `browser.downloads.open(downloadId)` without losing user gesture across storage awaits, and Chromium opens a `blob:` preview tab from the `FileSystemFileHandle`. If the local copy is missing on disk, it flips cleanly to the Web icon and falls back seamlessly to Moodle HTTPS.
+
+---
+
+## 13. Minimalist Iconography & Zero-Emoji Standard
+
+* **Zero Emojis**: The Noodle UI enforces a strict, professional design language. Colorful unicode emojis (such as file type emojis) are strictly prohibited across all screens, cards, badges, and file trees. They create a cheap, AI-generated appearance.
+* **Minimalist Monochrome Icons**: When visual affordances are necessary, use crisp SVG vector components (<FileIcon />, <FolderIcon />, <ClockIcon />, <DownloadIcon />, <EyeIcon />).
+* **Clean Restraint**: Never overuse icons. Prefer typography, clear hierarchy, and subtle neutral badges over icon clutter.

@@ -69,11 +69,19 @@ export function isActivityCompleted(
     status: string;
     isManualCompletionDone?: boolean;
     requiresManualCompletion?: boolean;
+    grade?: number | null;
+    isCompleted?: boolean;
+    hasFinishedAttempt?: boolean;
   },
   completedIdentifiers?: Array<string | number> | null,
   uncompletedIdentifiers?: Array<string | number> | null
 ): boolean {
-  const isMoodleSubmitted = activity.status === 'Submitted' || Boolean(activity.isManualCompletionDone);
+  const isMoodleSubmitted =
+    activity.status === 'Submitted' ||
+    Boolean(activity.isCompleted) ||
+    Boolean(activity.isManualCompletionDone) ||
+    Boolean(activity.hasFinishedAttempt) ||
+    (activity.grade !== null && activity.grade !== undefined);
   const isExplicitlyCompleted = (completedIdentifiers || []).some((id) =>
     matchesActivityIdentifier(id, activity)
   );

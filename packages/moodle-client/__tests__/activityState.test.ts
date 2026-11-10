@@ -53,4 +53,21 @@ describe('activityState helpers', () => {
     // Overriding a submitted item to uncompleted
     expect(isActivityCompleted(assignSubmitted, [], ['assign:15'])).toBe(false);
   });
+
+  it('isActivityCompleted recognizes grade, isCompleted flag, and finished attempts', () => {
+    // Activity with a grade is considered completed even if nominal status is not Submitted
+    const gradedQuiz = { id: 45, activityType: 'quiz' as const, status: 'Not submitted', grade: 100 };
+    expect(isActivityCompleted(gradedQuiz)).toBe(true);
+
+    // Activity with isCompleted flag
+    const completedFlag = { id: 46, activityType: 'quiz' as const, status: 'Assigned', isCompleted: true };
+    expect(isActivityCompleted(completedFlag)).toBe(true);
+
+    // Activity with finished attempt
+    const finishedAttempt = { id: 47, activityType: 'quiz' as const, status: 'Not submitted', hasFinishedAttempt: true };
+    expect(isActivityCompleted(finishedAttempt)).toBe(true);
+
+    // Explicit uncompleted override still wins over grade
+    expect(isActivityCompleted(gradedQuiz, [], ['quiz:45'])).toBe(false);
+  });
 });

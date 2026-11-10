@@ -1511,7 +1511,7 @@ export default function CoursesScreen({
                                   }}
                                 >
                                   <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1 }}>
-                                    <Text style={{ fontSize: 18 }}>{isExpanded && filesList.length > 0 ? '📂' : '📁'}</Text>
+                                    
                                     <View style={{ marginHorizontal: 8, flex: 1 }}>
                                       <Text
                                         style={{
@@ -1586,7 +1586,7 @@ export default function CoursesScreen({
                                           })}
                                         >
                                           <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1, marginEnd: 8 }}>
-                                            <Text style={{ fontSize: 14 }}>📄</Text>
+                                            
                                             <View style={{ marginHorizontal: 8, flex: 1 }}>
                                               <Text
                                                 style={{
@@ -1601,7 +1601,7 @@ export default function CoursesScreen({
                                               </Text>
                                               {relPath ? (
                                                 <Text style={{ color: theme.textSecondary, fontSize: 10, textAlign: isRtl ? 'right' : 'left' }}>
-                                                  📁 {relPath}/
+                                                  {relPath}/
                                                 </Text>
                                               ) : null}
                                             </View>

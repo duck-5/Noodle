@@ -15,6 +15,7 @@ Welcome to **Noodle**! This repository is a decentralized, client-only replaceme
 7. **Test Case Traceability**: Consult `docs/TEST_CASES.md` before and after modifying features. When introducing or changing features, reference or add corresponding `TC-*` test IDs across both automated and browser interaction modalities.
 8. **Mandatory CHANGELOG Updates**: Every single change (feature, bugfix, UI change, or refactoring that affects behavior) MUST be recorded in [`CHANGELOG.md`](file:///d:/ProgramFiles/Projects/Noodle/CHANGELOG.md) under `## [Unreleased]` adhering to [Keep a Changelog](https://keepachangelog.com/) standards (`Added`, `Changed`, `Fixed`, `Removed`).
 9. **Mandatory Documentation Synchronization**: On **every change**, the agent MUST update the corresponding documentation files in `docs/` (e.g. `docs/TEST_CASES.md`, `docs/API_DESCRIPTION.md`, `docs/ARCHITECTURE.md`, `docs/UI_SPECIFICATION.md`, `docs/AI_KNOWLEDGE.md`). Code and documentation must never drift apart.
+10. **Zero Emojis in UI / Minimalist Design**: Never use colorful unicode emojis in user-facing components, lists, cards, or file trees (especially file-type emojis). Use minimalistic SVG vector icons sparingly, maintaining a clean and professional appearance.
 
 ---
 

@@ -50,7 +50,16 @@ $$\text{True Deadline} = \begin{cases}
 
 ---
 
-## 4. Google Tasks Integration Logic
+## 4. Strict Prohibition of Emojis / Minimalist Iconography Standard
+
+- **Zero Emojis in UI**: Never use colorful unicode emojis in user-facing components, labels, lists, badges, tooltips, or file representations (e.g. 📕, 📦, 💻, 🖼️, 📄, 📁, ⏳, ✨, ⏱️, 📢, 🏆). Emojis look amateurish, AI-generated, and cluttered.
+- **Minimalist Vector Icons Only**: When visual categorization is necessary, use subtle, monochrome/minimalist SVG vector icons (<FileIcon />, <FolderIcon />, <ClockIcon />, <DownloadIcon />, <EyeIcon />).
+- **Never Overuse Icons**: Keep the interface clean, functional, and typography-first. Avoid excessive iconography beside every line of text. Subtle badges and clean text hierarchy are strictly preferred over decorative icons.
+- **File Type Representations**: Render files with clean typography or a minimalist monochrome <FileIcon />, or uppercase file extension badge tags (PDF, ZIP, DOCX), rather than colorful file emojis.
+
+---
+
+## 5. Google Tasks Integration Logic
 
 Google Tasks does not have custom key-value metadata fields.
 - **Metadata Tagging**: Embed a structured identifier into the task's `notes` (description) field:
@@ -62,7 +71,7 @@ Google Tasks does not have custom key-value metadata fields.
 
 ---
 
-## 5. Authentication, Cookies & Session Security
+## 6. Authentication, Cookies & Session Security
 
 - **Cookies Permission**: The extension requests `"cookies"` permission in `manifest.json` to purge `moodle.tau.ac.il` and `nidp.tau.ac.il` session cookies (`MoodleSession`, `JSESSIONID`) on user logout, preventing SAML session poisoning across Chromium and Firefox.
 - **Token Interception**: In the browser extension, intercept the token via `browser.webRequest.onBeforeRedirect` watching for redirects matching `moodlemobile://token=*`.
