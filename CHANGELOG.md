@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Changed
+- **Removed Quick `✓` Checkboxes from Assignment Rows (`apps/extension/src/options/App.tsx`, `apps/extension/src/popup/Popup.tsx`, `docs/UI_SPECIFICATION.md`)**:
+  - Removed the circular `.quick-check-btn` (`✓`) from collapsed assignment rows in the Dashboard Upcoming Tasks Queue and `.popup-done-btn` (`✓`) from assignment cards in the Toolbar Popup so new users rely on submitting in Moodle and syncing rather than treating the queue as a manual checklist.
+  - Updated the `"סמן כבוצע" / "Mark as Done"` button inside the Dashboard detail pane footer to be text-only (removing `<CheckIcon />`) with an explanatory hover tooltip noting that Moodle submissions update automatically on sync.
+  - Preserved the quick `✓` watched button on Panopto Catch-Up Recordings in both the Dashboard and Toolbar Popup.
 - **Unified Master–Detail Split Pane for Upcoming Tasks Queue (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/e2e/dashboard.spec.ts`, `TC-DASH-REHAUL-02`)**:
   - Replaced the cramped inline vertical accordion inside `.queue-item` with a side-by-side split view (`.queue-card.is-split` / `.queue-split-layout`) inside the Upcoming Tasks Queue card.
   - Clicking an assignment in the queue opens a dedicated detail pane (`.queue-detail-pane`) between the task list and the Panopto Catch-Up Queue without altering the `310px` vertical card height or causing page layout shifts.

@@ -590,15 +590,15 @@ graph LR
   3. Verify chevron flips upward.
   4. Verify visible Zoom meetings section and up to 5 next course assignments are displayed.
 
-#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Drawer Expansion
+#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Split Detail Pane Expansion
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer (`.queue-item-expanded`) displaying attachments, course subject files (`קבצי הנושא`), submitted files, and the full action suite (Go to Course, Mark Done, Hide, and Submit in Moodle).
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly splits `.queue-card` (`is-split`) to open the side-by-side detail pane (`.queue-detail-pane.queue-item-expanded.open`) framed by a border in the course's color, while keeping the task list scrollable alongside it.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
 * **Browser Agent Prompt / Action**:
   1. Verify queue list does not contain completed or hidden assignments.
   2. Click a queue item card.
-  3. Verify `.queue-item-expanded` expands smoothly with attachment pills, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
+  3. Verify `.queue-card.is-split` opens `.queue-detail-pane.queue-item-expanded.open` alongside the scrollable list, framed by a course-colored border, displaying attachments, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
 
 #### TC-DASH-REHAUL-03: Manage Courses Modal Dialog & Semester Partitioning
 * **Platform Target**: `Extension (Chrome & Firefox)`

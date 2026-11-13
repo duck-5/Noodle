@@ -4199,16 +4199,6 @@ function DashboardTab({
                       >
                         <div className="queue-item-main-row">
                           <div className="queue-item-left">
-                            <button
-                              className="quick-check-btn"
-                              title={t('mark_done')}
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                onToggleCompleted && onToggleCompleted(task.uid || getActivityUid(task));
-                              }}
-                            >
-                              <CheckIcon size={12} />
-                            </button>
                             <span className="course-color-dot" style={{ backgroundColor: color }} />
                             <div className="queue-item-texts">
                               <div className="queue-item-course" style={{ color }}>{courseName}</div>
@@ -4456,9 +4446,13 @@ function DashboardTab({
                     <button
                       className="secondary-btn btn-xs"
                       onClick={() => onToggleCompleted && onToggleCompleted(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      title={
+                        lang === 'he'
+                          ? 'סימון ידני כבוצע (הגשות במודל מתעדכנות אוטומטית בסנכרון)'
+                          : 'Mark done manually (Moodle submissions update automatically on sync)'
+                      }
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                     >
-                      <CheckIcon size={11} />
                       <span>{isSelectedTaskCompleted ? t('mark_incomplete') : t('mark_done')}</span>
                     </button>
                     <button

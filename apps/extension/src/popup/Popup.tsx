@@ -2,12 +2,9 @@ import browser from 'webextension-polyfill';
 import { useState, useEffect } from 'react';
 import {
   decodeHTMLEntities,
-  MoodleClient,
   type SyncResult,
-  getActivityUid,
   isActivityHidden,
   isActivityCompleted,
-  matchesActivityIdentifier,
   hasGracePeriod,
   isZoomUrl,
   isZoomJoinUrl,
@@ -28,7 +25,7 @@ import {
   type LocalFsStatus,
   getEffectiveTheme,
 } from '../shared/storage.js';
-import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
+import { syncNowOnBackground, loginTauSsoOnBackground } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import logoImg from '../assets/logo.png';
 import './Popup.css';
@@ -144,34 +141,6 @@ export default function Popup() {
       console.error(e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleMarkDone = async (e: React.MouseEvent, assignId: number | string) => {
-    e.stopPropagation();
-    if (!settings) return;
-    const assign = (syncResult?.assignments || []).find(
-      (a: any) => a.uid === assignId || a.id === assignId || getActivityUid(a) === String(assignId)
-    );
-    const targetKey = assign ? getActivityUid(assign) : String(assignId);
-
-    const completed = Array.from(new Set([...(settings.completedAssignments || []), targetKey]));
-    const uncompleted = (settings.uncompletedAssignments || []).filter(
-      (id: any) => !matchesActivityIdentifier(id, assign || { id: Number(assignId) })
-    );
-    const updated = { ...settings, completedAssignments: completed, uncompletedAssignments: uncompleted };
-    setSettingsState(updated);
-    await saveSettings({ completedAssignments: completed, uncompletedAssignments: uncompleted });
-    if (assign && assign.requiresManualCompletion && token) {
-      try {
-        const instanceBaseUrl = assign.link ? new URL(assign.link).origin : undefined;
-        const client = new MoodleClient(token, instanceBaseUrl);
-        client.updateActivityCompletionManually(assign.cmid, true).catch(() => {});
-      } catch {}
-    }
-    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
-    if (settings.googleTasksEnabled) {
-      syncGoogleTasksOnBackground(false).catch(() => { });
     }
   };
 
@@ -413,14 +382,6 @@ export default function Popup() {
                         <ClockIcon size={11} />
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className="popup-done-btn"
-                      onClick={(e) => handleMarkDone(e, a.id)}
-                      title={isHe ? 'סמן כבוצע' : 'Mark as Done'}
-                    >
-                      ✓
-                    </button>
                   </div>
                 </div>
               );
