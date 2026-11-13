@@ -12,7 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { parseTauCourseMetadata, MoodleClient } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl, isZoomJoinUrl } from '@tautracker/moodle-client';
 import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
 import { getMoodleToken } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
@@ -171,7 +171,7 @@ export default function CoursesScreen({
 
   const [courses, setCourses] = useState<any[]>([]);
   const [configExpanded, setConfigExpanded] = useState<boolean>(false);
-  const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
+  const [hiddenZoomMeetings, setHiddenZoomMeetings] = useState<string[]>([]);
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
 
   // Detail screen state
@@ -182,6 +182,14 @@ export default function CoursesScreen({
   const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
   const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
   const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Record<number, boolean>>({});
+
+  const toggleFolderCollapsed = (folderId: number) => {
+    setCollapsedFolderIds((prev) => ({
+      ...prev,
+      [folderId]: !prev[folderId],
+    }));
+  };
 
   // Editing Course Modal State
   const [editingCourse, setEditingCourse] = useState<EditingCourseState | null>(null);
@@ -199,14 +207,14 @@ export default function CoursesScreen({
 
   function loadInterestedMeetings() {
     try {
-      const interestedStr = getPreference('interested_meetings') || '';
-      let interestedList: string[] = [];
-      if (interestedStr) {
+      const hiddenStr = getPreference('hidden_zoom_meetings') || '';
+      let hiddenList: string[] = [];
+      if (hiddenStr) {
         try {
-          interestedList = JSON.parse(interestedStr);
+          hiddenList = JSON.parse(hiddenStr);
         } catch (e) {}
       }
-      setInterestedMeetings(interestedList);
+      setHiddenZoomMeetings(hiddenList);
     } catch (e) {
       console.error(e);
     }
@@ -214,13 +222,13 @@ export default function CoursesScreen({
 
   const handleToggleMeetingInterest = (meetingId: string) => {
     let updated: string[];
-    if (interestedMeetings.includes(meetingId)) {
-      updated = interestedMeetings.filter((id) => id !== meetingId);
+    if (hiddenZoomMeetings.includes(meetingId)) {
+      updated = hiddenZoomMeetings.filter((id) => id !== meetingId);
     } else {
-      updated = [...interestedMeetings, meetingId];
+      updated = [...hiddenZoomMeetings, meetingId];
     }
-    setInterestedMeetings(updated);
-    setPreference('interested_meetings', JSON.stringify(updated));
+    setHiddenZoomMeetings(updated);
+    setPreference('hidden_zoom_meetings', JSON.stringify(updated));
   };
 
   function loadCourses() {
@@ -397,22 +405,38 @@ export default function CoursesScreen({
 
     const courseAssignments = courseAssignmentsRaw.map(a => {
       let mod = { ...a };
-      const rawMoodleSubmitted = a.status === 'Submitted';
+      const rawMoodleSubmitted = isMoodleActivitySubmitted({
+        status: a.status,
+        grade: a.grade,
+        isCompleted: Boolean(a.is_completed),
+        isManualCompletionDone: Boolean(a.is_manual_completion_done),
+        requiresManualCompletion: Boolean(a.requires_manual_completion),
+      });
       mod.rawMoodleSubmitted = rawMoodleSubmitted;
 
-      if (hiddenIds.includes(a.moodle_assign_id) || a.is_hidden === 1) {
-        mod.isHidden = true;
-      }
+      const isHidden = isActivityHidden(
+        { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid, isHidden: Boolean(a.is_hidden) },
+        hiddenIds
+      );
+      mod.isHidden = isHidden;
 
-      let isCompleted = rawMoodleSubmitted;
-      if (rawMoodleSubmitted && uncompletedIds.includes(a.moodle_assign_id)) {
-        isCompleted = false;
-      } else if (!rawMoodleSubmitted && completedIds.includes(a.moodle_assign_id)) {
-        isCompleted = true;
-      }
+      const isCompleted = isActivityCompleted(
+        {
+          id: a.moodle_assign_id,
+          activityType: a.activity_type,
+          uid: a.uid,
+          status: a.status,
+          grade: a.grade,
+          isCompleted: Boolean(a.is_completed),
+          isManualCompletionDone: Boolean(a.is_manual_completion_done),
+          requiresManualCompletion: Boolean(a.requires_manual_completion),
+        },
+        completedIds,
+        uncompletedIds
+      );
 
       mod.isCompleted = isCompleted;
-      mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
+      mod.status = a.status;
       return mod;
     });
     const courseFiles = db.getAllSync<any>(
@@ -427,6 +451,7 @@ export default function CoursesScreen({
     const courseSections = rawCourseSections.filter((s: any) => s.visible !== 0 && s.visible !== false);
     const courseFolders = getCourseFolders(course.moodle_id);
     const courseLinks = getCourseLinks(course.moodle_id);
+    const moodleZoomLink = (courseLinks || []).find((l: any) => l.link_kind === 'zoom');
 
     const topSections = courseSections.filter((s: any) => s.level === 0 || s.parent_section_id === null);
     const currentSubSections = activeTopSectionId !== null
@@ -500,7 +525,7 @@ export default function CoursesScreen({
     // Calculate course assignment stats (exclude hidden tasks from active tracking & gaps count)
     const visibleAssignments = courseAssignments.filter((a) => !a.isHidden);
     const totalAssignments = visibleAssignments.length;
-    const submittedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+    const submittedCount = visibleAssignments.filter((a) => a.isCompleted).length;
     const pendingCount = Math.max(0, totalAssignments - submittedCount);
     const gradedAssignments = courseAssignments.filter(
       (a) => a.grade !== null && a.grade !== undefined && a.grade_max
@@ -518,7 +543,7 @@ export default function CoursesScreen({
     // Zoom deduplication
     const now = new Date();
     const groups = new Map<string, typeof courseMeetings>();
-    courseMeetings.forEach((m) => {
+    courseMeetings.filter((m: any) => m.meeting_url && (isZoomJoinUrl(m.meeting_url, m.meeting_number) || isZoomUrl(m.meeting_url))).forEach((m) => {
       const key = m.meeting_number || m.meeting_url;
       if (!key) return;
       if (!groups.has(key)) groups.set(key, []);
@@ -548,7 +573,7 @@ export default function CoursesScreen({
 
     const isMarked = (m: any) => {
       const keyId = m.meeting_number || m.meeting_url;
-      return interestedMeetings.includes(keyId);
+      return !hiddenZoomMeetings.includes(keyId);
     };
     const markedMeetings = dedupedMeetings.filter(isMarked);
 
@@ -556,8 +581,9 @@ export default function CoursesScreen({
       if (!startTimeStr) return 'unknown';
       const startTime = new Date(startTimeStr);
       if (isNaN(startTime.getTime())) return 'unknown';
+      const activeStart = new Date(startTime.getTime() - 15 * 60 * 1000);
       const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-      if (now >= startTime && now <= endTime) {
+      if (now >= activeStart && now <= endTime) {
         return 'active';
       } else if (now < startTime) {
         return 'upcoming';
@@ -852,6 +878,16 @@ export default function CoursesScreen({
                         <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
                           {isRtl ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
                         </Text>
+                        {moodleZoomLink && (
+                          <Pressable
+                            onPress={() => (moodleZoomLink.target_url || moodleZoomLink.moodle_url) && Linking.openURL(moodleZoomLink.target_url || moodleZoomLink.moodle_url)}
+                            style={{ marginTop: 8 }}
+                          >
+                            <Text style={{ color: courseColor, fontSize: 13, textDecorationLine: 'underline' }}>
+                              {isRtl ? 'פתח את עמוד הזום במודל ↗' : 'Open Zoom Page in Moodle ↗'}
+                            </Text>
+                          </Pressable>
+                        )}
                       </View>
                     ) : (
                       dedupedMeetings.map((m) => {
@@ -912,7 +948,7 @@ export default function CoursesScreen({
                               </Text>
                               {m.start_time ? (
                                 <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
-                                  📅 {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
+                                  {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                                 </Text>
                               ) : null}
                             </View>
@@ -1326,7 +1362,7 @@ export default function CoursesScreen({
                                     }}
                                   >
                                     <Text style={{ color: badgeFg, fontSize: 11, fontWeight: 'bold' }}>
-                                      {a.status === 'Submitted' ? t('submitted_badge') : deadlineText}
+                                      {a.status === 'Submitted' ? t('submitted_badge') : a.isCompleted ? (isRtl ? 'סומן כהושלם' : 'Marked as done') : deadlineText}
                                     </Text>
                                   </View>
                                 </View>
@@ -1352,7 +1388,7 @@ export default function CoursesScreen({
                                       marginBottom: 8,
                                     }}
                                   >
-                                    📅 {t('due_date')}:{' '}
+                                    {t('due_date')}:{' '}
                                     {new Date(a.deadline).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                                   </Text>
                                 )}
@@ -1473,54 +1509,159 @@ export default function CoursesScreen({
                           {/* Section Folders */}
                           {content.folders && content.folders.map((fld: any) => {
                             const isDownloading = downloadingFolderId === fld.id;
+                            const isExpanded = !collapsedFolderIds[fld.id];
+                            const filesList = Array.isArray(fld.files) ? fld.files : [];
                             return (
-                              <Pressable
+                              <View
                                 key={fld.id}
-                                style={[
-                                  styles.fileRow,
-                                  {
-                                    backgroundColor: theme.background,
-                                    borderColor: theme.border,
-                                    flexDirection: isRtl ? 'row-reverse' : 'row',
-                                  },
-                                ]}
-                                onPress={() => handleDownloadFolderZip(fld)}
-                                disabled={isDownloading}
+                                style={{
+                                  backgroundColor: theme.backgroundElement,
+                                  borderColor: theme.border,
+                                  borderWidth: 1,
+                                  borderRadius: 10,
+                                  marginBottom: 8,
+                                  overflow: 'hidden',
+                                }}
                               >
-                                <Text style={{ fontSize: 16 }}>📁</Text>
-                                <View style={{ flex: 1, marginHorizontal: 8 }}>
-                                  <Text
-                                    style={{
-                                      color: theme.text,
-                                      fontSize: 13,
-                                      fontWeight: '600',
-                                      textAlign: isRtl ? 'right' : 'left',
-                                    }}
-                                    numberOfLines={1}
-                                  >
-                                    {fld.name}
-                                  </Text>
-                                  <Text
-                                    style={{
-                                      color: theme.textSecondary,
-                                      fontSize: 11,
-                                      textAlign: isRtl ? 'right' : 'left',
-                                    }}
-                                  >
-                                    {fld.files ? fld.files.length : 0} {isRtl ? 'קבצים' : 'files'}
-                                  </Text>
-                                </View>
-                                <View
-                                  style={[
-                                    styles.smallActionBtn,
-                                    { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
-                                  ]}
+                                {/* Folder Header */}
+                                <Pressable
+                                  style={{
+                                    padding: 12,
+                                    flexDirection: isRtl ? 'row-reverse' : 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    backgroundColor: isExpanded && filesList.length > 0 ? theme.background : theme.backgroundElement,
+                                  }}
+                                  onPress={() => {
+                                    if (filesList.length > 0) {
+                                      toggleFolderCollapsed(fld.id);
+                                    }
+                                  }}
                                 >
-                                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
-                                    {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
-                                  </Text>
-                                </View>
-                              </Pressable>
+                                  <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1 }}>
+                                    
+                                    <View style={{ marginHorizontal: 8, flex: 1 }}>
+                                      <Text
+                                        style={{
+                                          color: theme.text,
+                                          fontSize: 13,
+                                          fontWeight: '600',
+                                          textAlign: isRtl ? 'right' : 'left',
+                                        }}
+                                        numberOfLines={1}
+                                      >
+                                        {fld.name}
+                                      </Text>
+                                      <Text
+                                        style={{
+                                          color: theme.textSecondary,
+                                          fontSize: 11,
+                                          textAlign: isRtl ? 'right' : 'left',
+                                        }}
+                                      >
+                                        {filesList.length} {isRtl ? 'קבצים' : 'files'}
+                                        {fld.total_size > 0 || fld.totalSize > 0
+                                          ? ` (${(((fld.total_size || fld.totalSize || 0) / 1024 / 1024)).toFixed(2)} MB)`
+                                          : ''}
+                                        {filesList.length > 0 ? (isExpanded ? '  ▲' : '  ▼') : ''}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {/* Download ZIP Button */}
+                                  <Pressable
+                                    style={[
+                                      styles.smallActionBtn,
+                                      {
+                                        backgroundColor: theme.primary + '15',
+                                        borderColor: theme.primary + '40',
+                                        opacity: filesList.length === 0 ? 0.5 : 1,
+                                      },
+                                    ]}
+                                    disabled={isDownloading || filesList.length === 0}
+                                    onPress={() => handleDownloadFolderZip(fld)}
+                                  >
+                                    <Text style={{ color: theme.primary, fontSize: 12, fontWeight: 'bold' }}>
+                                      {isDownloading ? (isRtl ? 'מוריד ZIP...' : 'Downloading...') : (isRtl ? 'הורד ZIP' : 'Download ZIP')}
+                                    </Text>
+                                  </Pressable>
+                                </Pressable>
+
+                                {/* Expanded Files List */}
+                                {isExpanded && filesList.length > 0 && (
+                                  <View style={{ paddingHorizontal: 12, paddingBottom: 10, paddingTop: 4 }}>
+                                    {filesList.map((file: any, fIdx: number) => {
+                                      const fileName = file.fileName || file.file_name || 'file';
+                                      const fileSize = file.fileSize || file.file_size || 0;
+                                      const relPath = (file.relativePath || file.relative_path || '').replace(/^\/+|\/+$/g, '');
+                                      return (
+                                        <Pressable
+                                          key={fIdx}
+                                          style={{
+                                            paddingVertical: 8,
+                                            paddingHorizontal: 10,
+                                            borderTopWidth: 1,
+                                            borderTopColor: theme.border + '40',
+                                            flexDirection: isRtl ? 'row-reverse' : 'row',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                          }}
+                                          onPress={() => handleDownloadFile({
+                                            file_name: fileName,
+                                            file_url: file.fileUrl || file.file_url,
+                                            file_size: fileSize,
+                                            mime_type: file.mimeType || file.mime_type,
+                                          })}
+                                        >
+                                          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', flex: 1, marginEnd: 8 }}>
+                                            
+                                            <View style={{ marginHorizontal: 8, flex: 1 }}>
+                                              <Text
+                                                style={{
+                                                  color: theme.text,
+                                                  fontSize: 12,
+                                                  fontWeight: '500',
+                                                  textAlign: isRtl ? 'right' : 'left',
+                                                }}
+                                                numberOfLines={1}
+                                              >
+                                                {fileName}
+                                              </Text>
+                                              {relPath ? (
+                                                <Text style={{ color: theme.textSecondary, fontSize: 10, textAlign: isRtl ? 'right' : 'left' }}>
+                                                  {relPath}/
+                                                </Text>
+                                              ) : null}
+                                            </View>
+                                          </View>
+
+                                          <View style={{ flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 6 }}>
+                                            {fileSize > 0 && (
+                                              <Text style={{ color: theme.textSecondary, fontSize: 11 }}>
+                                                {(fileSize / 1024 / 1024).toFixed(2)} MB
+                                              </Text>
+                                            )}
+                                            <View
+                                              style={{
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 4,
+                                                borderRadius: 4,
+                                                backgroundColor: theme.primary + '10',
+                                                borderWidth: 1,
+                                                borderColor: theme.primary + '30',
+                                              }}
+                                            >
+                                              <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '600' }}>
+                                                {isRtl ? 'פתח / הורד' : 'Open / Save'}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </View>
                             );
                           })}
 
@@ -1681,7 +1822,7 @@ export default function CoursesScreen({
                 </View>
               ) : (
                 courseAssignments.map((a) => {
-                  const isSubmitted = a.status === 'Submitted';
+                  const isSubmitted = Boolean(a.isCompleted);
                   const { deadlineText, badgeClass } = getDueTextAndClass(
                     a.deadline,
                     lang,
@@ -1824,7 +1965,7 @@ export default function CoursesScreen({
                       >
                         {a.deadline ? (
                           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                            📅 {t('due_date')}:{' '}
+                            {t('due_date')}:{' '}
                             {new Date(a.deadline).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                           </Text>
                         ) : (
@@ -1867,34 +2008,56 @@ export default function CoursesScreen({
                             { backgroundColor: theme.background, borderColor: theme.border },
                           ]}
                           onPress={async () => {
-                            const rawMoodleSubmitted = Boolean(a.rawMoodleSubmitted);
-                            const completedStr = getPreference('completed_assignments');
-                            let completedList: number[] = completedStr ? JSON.parse(completedStr) : [];
-                            const uncompletedStr = getPreference('uncompleted_assignments');
-                            let uncompletedList: number[] = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+                            const targetKey = a.uid || (a.activity_type ? `${a.activity_type}:${a.moodle_assign_id}` : `assign:${a.moodle_assign_id}`);
+                            const isMoodleSubmitted = isMoodleActivitySubmitted({
+                              status: a.status,
+                              grade: a.grade,
+                              isCompleted: Boolean(a.is_completed),
+                              isManualCompletionDone: Boolean(a.is_manual_completion_done),
+                              requiresManualCompletion: Boolean(a.requires_manual_completion),
+                            });
 
-                            let willBeCompleted = false;
-                            if (rawMoodleSubmitted) {
-                              if (uncompletedList.includes(a.moodle_assign_id)) {
-                                uncompletedList = uncompletedList.filter((id: number) => id !== a.moodle_assign_id);
-                                willBeCompleted = true;
-                              } else {
-                                uncompletedList.push(a.moodle_assign_id);
-                                willBeCompleted = false;
+                            const completedStr = getPreference('completed_assignments');
+                            let completedList: Array<string | number> = completedStr ? JSON.parse(completedStr) : [];
+                            const uncompletedStr = getPreference('uncompleted_assignments');
+                            let uncompletedList: Array<string | number> = uncompletedStr ? JSON.parse(uncompletedStr) : [];
+
+                            const isCurrentlyCompleted = isActivityCompleted(
+                              {
+                                id: a.moodle_assign_id,
+                                activityType: a.activity_type,
+                                uid: a.uid,
+                                status: a.status,
+                                grade: a.grade,
+                                isCompleted: Boolean(a.is_completed),
+                                isManualCompletionDone: Boolean(a.is_manual_completion_done),
+                                requiresManualCompletion: Boolean(a.requires_manual_completion),
+                              },
+                              completedList,
+                              uncompletedList
+                            );
+
+                            completedList = completedList.filter(
+                              (id) => !matchesActivityIdentifier(id, { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid })
+                            );
+                            uncompletedList = uncompletedList.filter(
+                              (id) => !matchesActivityIdentifier(id, { id: a.moodle_assign_id, activityType: a.activity_type, uid: a.uid })
+                            );
+
+                            const willBeCompleted = !isCurrentlyCompleted;
+                            if (willBeCompleted) {
+                              if (!isMoodleSubmitted) {
+                                completedList.push(targetKey);
                               }
-                              setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
-                              markSettingUpdatedAndSync(['uncompletedAssignments']);
                             } else {
-                              if (completedList.includes(a.moodle_assign_id)) {
-                                completedList = completedList.filter((id: number) => id !== a.moodle_assign_id);
-                                willBeCompleted = false;
-                              } else {
-                                completedList.push(a.moodle_assign_id);
-                                willBeCompleted = true;
+                              if (isMoodleSubmitted) {
+                                uncompletedList.push(targetKey);
                               }
-                              setPreference('completed_assignments', JSON.stringify(completedList));
-                              markSettingUpdatedAndSync(['completedAssignments']);
                             }
+
+                            setPreference('completed_assignments', JSON.stringify(completedList));
+                            setPreference('uncompleted_assignments', JSON.stringify(uncompletedList));
+                            markSettingUpdatedAndSync(['completedAssignments', 'uncompletedAssignments']);
 
                             if (a.requires_manual_completion && a.cmid) {
                               getMoodleToken().then((tok) => {
@@ -1909,7 +2072,7 @@ export default function CoursesScreen({
                           }}
                         >
                            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                             {a.status === 'Submitted' ? (isRtl ? 'סמן לביצוע ↺' : 'Mark as To Do ↺') : (isRtl ? 'סמן כבוצע ✅' : 'Mark Done ✅')}
+                             {a.isCompleted ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do') : (isRtl ? 'סמן כבוצע' : 'Mark Done')}
                            </Text>
                         </Pressable>
                         <Pressable
@@ -2366,7 +2529,7 @@ export default function CoursesScreen({
                         textAlign: isRtl ? 'right' : 'left',
                       }}
                     >
-                      📅 {group.label}
+                      {group.label}
                     </Text>
 
                     {/* Courses in this semester */}

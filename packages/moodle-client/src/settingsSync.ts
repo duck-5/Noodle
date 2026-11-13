@@ -15,6 +15,28 @@ export interface SharedSettings {
   [key: string]: TrackedValue<any> | undefined;
 }
 
+/**
+ * Resolves the active UI theme, supporting static themes ('dark', 'noodle', 'coffee')
+ * and dynamic theme-by-time scheduling ('time').
+ */
+export function getEffectiveTheme(
+  theme?: string | null,
+  dayStart = 7,
+  dayEnd = 17,
+  currentHour = new Date().getHours()
+): 'dark' | 'noodle' | 'coffee' {
+  if (!theme || theme === 'noodle') return 'noodle';
+  if (theme === 'dark' || theme === 'coffee') return theme;
+  if (theme === 'time') {
+    if (dayStart <= dayEnd) {
+      return currentHour >= dayStart && currentHour < dayEnd ? 'noodle' : 'coffee';
+    } else {
+      return currentHour >= dayStart || currentHour < dayEnd ? 'noodle' : 'coffee';
+    }
+  }
+  return 'noodle';
+}
+
 export class SettingsSyncManager {
   constructor(private moodleClient: MoodleClient, private deviceId: string) {}
 

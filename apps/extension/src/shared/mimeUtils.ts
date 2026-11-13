@@ -54,4 +54,3 @@ export function getInlineMimeType(fileName: string): string | null {
       return null;
   }
 }
-

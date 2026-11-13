@@ -17,7 +17,7 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
       const urlStr = url.toString();
       const body = init?.body?.toString() || '';
 
-      if (body.includes('wsfunction=core_webservice_get_site_info')) {
+      if (body.includes('wsfunction=core_webservice_get_site_info') || urlStr.includes('wsfunction=core_webservice_get_site_info')) {
         return {
           ok: true,
           status: 200,
@@ -25,7 +25,7 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
         };
       }
 
-      if (body.includes('wsfunction=core_enrol_get_users_courses')) {
+      if (body.includes('wsfunction=core_enrol_get_users_courses') || urlStr.includes('wsfunction=core_enrol_get_users_courses')) {
         return {
           ok: true,
           status: 200,
@@ -40,7 +40,7 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
         };
       }
 
-      if (body.includes('wsfunction=mod_assign_get_assignments')) {
+      if (body.includes('wsfunction=mod_assign_get_assignments') || urlStr.includes('wsfunction=mod_assign_get_assignments')) {
         return {
           ok: true,
           status: 200,

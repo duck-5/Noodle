@@ -199,7 +199,8 @@ export async function syncAssignmentsToGoogleTasks(
       setMatchesActivity(completedIds, assign) ||
       assign.isCompleted === true ||
       assign.hasFinishedAttempt === true ||
-      assign.isManualCompletionDone === true
+      assign.isManualCompletionDone === true ||
+      (assign.grade !== null && assign.grade !== undefined)
     ) {
       return true;
     }
@@ -221,8 +222,35 @@ export async function syncAssignmentsToGoogleTasks(
     }
   }
 
+  // Deduplicate activities across courses/portals (e.g. multi-portal courses) prioritizing completed/submitted/graded versions
+  const deduplicatedAssignments: Assignment[] = [];
+  const seenAssignMap = new Map<string, Assignment>();
+
+  for (const assign of assignments) {
+    const uid = getActivityUid(assign);
+    const titleKey = `${(assign.courseName || '').trim().toLowerCase()}::${(assign.name || '').trim().toLowerCase()}::${assign.deadline || ''}`;
+    const existing = seenAssignMap.get(uid) || seenAssignMap.get(titleKey);
+
+    if (!existing) {
+      seenAssignMap.set(uid, assign);
+      seenAssignMap.set(titleKey, assign);
+      deduplicatedAssignments.push(assign);
+    } else {
+      const isCurrentDone = isAssignmentDone(assign);
+      const isExistingDone = isAssignmentDone(existing);
+      if (isCurrentDone && !isExistingDone) {
+        const idx = deduplicatedAssignments.indexOf(existing);
+        if (idx !== -1) {
+          deduplicatedAssignments[idx] = assign;
+        }
+        seenAssignMap.set(uid, assign);
+        seenAssignMap.set(titleKey, assign);
+      }
+    }
+  }
+
   // 2. Process assignments with bounded concurrency
-  await runWithConcurrency(assignments, async (assign) => {
+  await runWithConcurrency(deduplicatedAssignments, async (assign) => {
     try {
       const taskTitle = `[${assign.courseName}] ${assign.name}`;
       const isHidden = isAssignmentHidden(assign);
@@ -387,7 +415,7 @@ export async function syncAssignmentsToGoogleTasks(
 
   // 3. Delete orphaned tasks or completed tasks in Google Tasks using composite UIDs
   const activeActivityUids = new Set(
-    assignments
+    deduplicatedAssignments
       .filter((a) => !isAssignmentHidden(a) && !isAssignmentDone(a) && (options?.syncWithoutDeadline || !!a.deadline))
       .map((a) => getActivityUid(a))
   );

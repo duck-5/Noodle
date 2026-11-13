@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,8 +7,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { isAdministrativeCourse } from '@tautracker/moodle-client';
-import { getDb } from '../services/database';
+import { calculateGradesSummary, Assignment } from '@tautracker/moodle-client';
+import { getDb, getPreference } from '../services/database';
 import { t, getLanguage } from '../services/i18n';
 import { useTheme } from '../hooks/use-theme';
 
@@ -17,7 +17,10 @@ export default function GradesScreen() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [courses, setCourses] = useState<any[]>([]);
-  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [hiddenIds, setHiddenIds] = useState<Array<string | number>>([]);
+  const [completedIds, setCompletedIds] = useState<Array<string | number>>([]);
+  const [uncompletedIds, setUncompletedIds] = useState<Array<string | number>>([]);
 
   const lang = getLanguage();
   const isRtl = lang === 'he';
@@ -26,15 +29,41 @@ export default function GradesScreen() {
     setLoading(true);
     try {
       const db = getDb();
-      // Load all graded assignments for active courses only
-      const gradedRows = db.getAllSync<any>(
-        'SELECT a.* FROM assignments a JOIN tracked_courses c ON a.course_moodle_id = c.moodle_id WHERE c.is_active = 1 AND a.grade IS NOT NULL'
-      );
-      setAssignments(gradedRows);
-
       // Load all tracked active courses
       const courseRows = db.getAllSync<any>('SELECT * FROM tracked_courses WHERE is_active = 1');
       setCourses(courseRows);
+
+      // Load all assignments for active tracked courses
+      const assignRows = db.getAllSync<any>(
+        'SELECT a.* FROM assignments a JOIN tracked_courses c ON a.course_moodle_id = c.moodle_id WHERE c.is_active = 1'
+      );
+      const mapped: Assignment[] = assignRows.map((a: any) => ({
+        id: a.moodle_assign_id,
+        uid: a.uid,
+        courseId: a.course_moodle_id,
+        courseName: a.course_name,
+        name: a.name,
+        status: a.status,
+        deadline: a.deadline,
+        opened: a.opened || null,
+        grade: a.grade,
+        gradeMax: a.grade_max,
+        feedback: a.feedback,
+        isBonus: Boolean(a.is_bonus),
+        isHidden: Boolean(a.is_hidden),
+        activityType: a.activity_type || 'assign',
+        cmid: a.cmid,
+        link: a.link,
+      }));
+      setAssignments(mapped);
+
+      // Load local preferences
+      const hiddenStr = getPreference('hidden_assignments');
+      const completedStr = getPreference('completed_assignments');
+      const uncompletedStr = getPreference('uncompleted_assignments');
+      setHiddenIds(hiddenStr ? JSON.parse(hiddenStr) : []);
+      setCompletedIds(completedStr ? JSON.parse(completedStr) : []);
+      setUncompletedIds(uncompletedStr ? JSON.parse(uncompletedStr) : []);
     } catch (e) {
       console.error('loadGrades error:', e);
     } finally {
@@ -58,35 +87,14 @@ export default function GradesScreen() {
     return course?.name || fallback;
   };
 
-  // Group graded assignments by course to calculate averages
-  const gradesByCourse: Record<number, { courseName: string; sum: number; count: number; list: any[] }> = {};
-  assignments.forEach((a) => {
-    if (a.grade === null) return;
-    if (!gradesByCourse[a.course_moodle_id]) {
-      gradesByCourse[a.course_moodle_id] = { courseName: a.course_name, sum: 0, count: 0, list: [] };
-    }
-    gradesByCourse[a.course_moodle_id].list.push(a);
-
-    // Skip bonus items from percentage average calculation
-    if (a.is_bonus === 1) return;
-
-    const ratio = a.grade_max ? a.grade / a.grade_max : 0;
-    gradesByCourse[a.course_moodle_id].sum += ratio * 100;
-    gradesByCourse[a.course_moodle_id].count += 1;
-  });
-
-  // Calculate overall average GPA (excluding administrative/safety courses and bonus items)
-  let totalCourseAverageSum = 0;
-  let courseAveragesCount = 0;
-  Object.entries(gradesByCourse).forEach(([moodleIdStr, c]) => {
-    const moodleId = Number(moodleIdStr);
-    if (isAdministrativeCourse({ id: moodleId, courseId: String(moodleId), fullname: c.courseName, shortname: c.courseName } as any)) return;
-    if (c.count > 0) {
-      totalCourseAverageSum += c.sum / c.count;
-      courseAveragesCount++;
-    }
-  });
-  const overallAverage = courseAveragesCount > 0 ? (totalCourseAverageSum / courseAveragesCount).toFixed(1) : '-';
+  const { overallGpa, courseGroups, totalCalculatedItems } = useMemo(() => {
+    return calculateGradesSummary({
+      assignments,
+      hiddenIdentifiers: hiddenIds,
+      completedIdentifiers: completedIds,
+      uncompletedIdentifiers: uncompletedIds,
+    });
+  }, [assignments, hiddenIds, completedIds, uncompletedIds]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -98,7 +106,7 @@ export default function GradesScreen() {
         <View style={styles.center}>
           <ActivityIndicator size="large" color={theme.primary} />
         </View>
-      ) : assignments.length === 0 ? (
+      ) : totalCalculatedItems === 0 ? (
         <View style={styles.center}>
           <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>
             {t('no_grades')}
@@ -106,20 +114,26 @@ export default function GradesScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll}>
+          {/* Subtle Notice Banner */}
+          <View style={[styles.policyNotice, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <Text style={[styles.policyNoticeText, { color: theme.textSecondary, textAlign: isRtl ? 'right' : 'left' }]}>
+              {t('grades_policy_note')}
+            </Text>
+          </View>
+
           {/* GPA Stat Card */}
           <View style={[styles.gpaCard, { backgroundColor: theme.backgroundElement }]}>
             <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: 'bold' }}>{t('gpa_title')}</Text>
-            <Text style={[styles.gpaVal, { color: theme.text }]}>{overallAverage}</Text>
+            <Text style={[styles.gpaVal, { color: theme.text }]}>{overallGpa}</Text>
             <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
               {t('unweighted_average')}
             </Text>
           </View>
 
           {/* Graded groups list */}
-          {Object.entries(gradesByCourse).map(([moodleIdStr, group]) => {
+          {Object.entries(courseGroups).map(([moodleIdStr, group]) => {
             const moodleId = Number(moodleIdStr);
             const color = getCourseColor(moodleId);
-            const courseAverage = (group.sum / group.count).toFixed(1);
 
             return (
               <View
@@ -138,7 +152,7 @@ export default function GradesScreen() {
                 <View style={[styles.courseHeader, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
                   <Text style={[styles.courseTitle, { color, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{getCourseName(moodleId, group.courseName)}</Text>
                   <View style={[styles.avgBadge, { backgroundColor: color }]}>
-                    <Text style={styles.avgBadgeText}>{t('course_average_label')}: {courseAverage}</Text>
+                    <Text style={styles.avgBadgeText}>{t('course_average_label')}: {group.average}</Text>
                   </View>
                 </View>
 
@@ -146,21 +160,21 @@ export default function GradesScreen() {
                   {group.list.map((a) => (
                     <View key={a.id} style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border, paddingVertical: 8 }}>
                       <View style={[styles.gradeRow, { flexDirection: isRtl ? 'row-reverse' : 'row' }]}>
-                        <View style={{ flex: 1, flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ flex: 1, flexDirection: isRtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={[styles.gradeName, { color: theme.text, textAlign: isRtl ? 'right' : 'left', writingDirection: 'auto' }]}>{a.name}</Text>
-                          {a.is_bonus === 1 && (
+                          {a.isBonus && (
                             <View style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                              <Text style={{ color: '#eab308', fontSize: 10, fontWeight: 'bold' }}>BONUS</Text>
+                              <Text style={{ color: '#eab308', fontSize: 10, fontWeight: 'bold' }}>{t('grades_bonus_label')}</Text>
                             </View>
                           )}
                         </View>
                         <Text style={[styles.gradeValLabel, { color: theme.text }]}>
-                          {a.grade} / {a.grade_max}
+                          {a.effectiveGrade} / {a.effectiveGradeMax}
                         </Text>
                       </View>
                       {a.feedback && (
                         <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4, textAlign: isRtl ? 'right' : 'left' }}>
-                          💬 {a.feedback}
+                          {a.feedback}
                         </Text>
                       )}
                     </View>
@@ -197,6 +211,16 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     padding: 16,
+  },
+  policyNotice: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  policyNoticeText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   gpaCard: {
     padding: 20,

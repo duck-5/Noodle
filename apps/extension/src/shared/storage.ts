@@ -11,8 +11,11 @@ export interface ExtensionSettings {
   language: 'he' | 'en';
   assignmentGreenDaysThreshold?: number;
   assignmentYellowDaysThreshold?: number;
-  theme?: 'dark' | 'noodle' | 'coffee';
-  interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
+  theme?: 'dark' | 'noodle' | 'coffee' | 'time';
+  themeTimeDayStart?: number;
+  themeTimeDayEnd?: number;
+  interestedMeetings?: string[]; // Legacy array of meeting numbers
+  hiddenZoomMeetings?: string[]; // Array of zoom meeting identifiers that the user explicitly hid
   showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
   hiddenAssignments?: Array<number | string>;  // Array of assignment ids or uids that are hidden
   completedAssignments?: Array<number | string>; // Array of assignment ids or uids that are marked as completed
@@ -20,6 +23,7 @@ export interface ExtensionSettings {
   scrapingEnabled?: boolean;
   syncWithoutDeadline?: boolean;
   panoptoEnabled?: boolean;
+  showPanoptoFolderOverride?: boolean;
   coursesPanoptoMap?: Record<number, string>;
   watchedRecordings?: string[];
   syncIntervalMinutes?: number;
@@ -36,7 +40,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   assignmentGreenDaysThreshold: 7,
   assignmentYellowDaysThreshold: 3,
   theme: 'noodle',
+  themeTimeDayStart: 7,
+  themeTimeDayEnd: 17,
   interestedMeetings: [],
+  hiddenZoomMeetings: [],
   showAllMeetings: false,
   hiddenAssignments: [],
   completedAssignments: [],
@@ -44,10 +51,26 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   scrapingEnabled: false,
   syncWithoutDeadline: false,
   panoptoEnabled: false,
+  showPanoptoFolderOverride: false,
   coursesPanoptoMap: {},
   watchedRecordings: [],
-  syncIntervalMinutes: 5,
+  syncIntervalMinutes: 60,
 };
+
+export function getEffectiveTheme(settings: ExtensionSettings | null): 'dark' | 'noodle' | 'coffee' {
+  if (!settings?.theme) return 'noodle';
+  if (settings.theme === 'time') {
+    const hour = new Date().getHours();
+    const start = settings.themeTimeDayStart ?? 7;
+    const end = settings.themeTimeDayEnd ?? 17;
+    if (start <= end) {
+      return hour >= start && hour < end ? 'noodle' : 'coffee';
+    } else {
+      return hour >= start || hour < end ? 'noodle' : 'coffee';
+    }
+  }
+  return settings.theme;
+}
 
 export async function getStoredToken(): Promise<string | null> {
   const res = (await browser.storage.local.get('wstoken')) as { wstoken?: string };

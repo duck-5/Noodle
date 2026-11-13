@@ -259,9 +259,9 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     const courseCard = optionsPage.locator('.course-row-card').first();
     await expect(courseCard).toBeVisible();
 
-    const goBtn = courseCard.locator('button').filter({ hasText: /עבור לקורס|Go to/ });
-    await expect(goBtn).toBeVisible();
-    await goBtn.click();
+    const courseTitle = courseCard.locator('.course-row-title');
+    await expect(courseTitle).toBeVisible();
+    await courseTitle.click();
 
     const detailView = optionsPage.locator('.course-detail-view');
     await expect(detailView).toBeVisible();
@@ -272,8 +272,8 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     await expect(announcementsCard).toContainText('לוח מודעות והודעות');
     await expect(announcementsCard.locator('a[href*="mod/forum"]')).toBeVisible();
 
-    // 3. Verify Authoritative Course Total Badge in header
-    const totalBadge = detailView.locator('.detail-title-section .badge').filter({ hasText: 'ציון כולל: 94.50' });
+    // 3. Verify Computed Course Average Badge in header
+    const totalBadge = detailView.locator('.detail-title-section .badge').filter({ hasText: /ממוצע:\s*98\.00|Avg:\s*98\.00/ });
     await expect(totalBadge).toBeVisible();
 
     // 4. Verify 2-Level Section Hierarchy Navigation Chips
@@ -322,13 +322,27 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     await expect(summaryBanner).toBeVisible();
     await expect(summaryBanner).toContainText('ברוכים הבאים לקורס מבני נתונים!');
 
-    // 6. Verify Folder Card & Bulk ZIP Download Button
+    // 6. Verify Folder Card, Subfolders & Individual File Actions
     const folderCard = detailView.locator('.section-folder-card');
     await expect(folderCard).toBeVisible();
     await expect(folderCard).toContainText('מבחנים משנים קודמות ופתרונות');
     await expect(folderCard).toContainText('2 קבצים');
     const zipBtn = folderCard.locator('button', { hasText: /הורד כ-ZIP|Download ZIP/ });
     await expect(zipBtn).toBeVisible();
+
+    // Verify individual files inside folder card
+    const folderFiles = folderCard.locator('.folder-file-item');
+    await expect(folderFiles).toHaveCount(2);
+    await expect(folderFiles.first()).toContainText('exam_2025_moed_a.pdf');
+    await expect(folderCard.locator('.folder-subgroup')).toContainText('2025/');
+    await expect(folderFiles.first().locator('.file-download-btn')).toBeVisible();
+
+    // Verify expand/collapse toggle
+    const folderHeader = folderCard.locator('.folder-header-row');
+    await folderHeader.click();
+    await expect(folderCard.locator('.folder-files-container')).not.toBeVisible();
+    await folderHeader.click();
+    await expect(folderCard.locator('.folder-files-container')).toBeVisible();
 
     // 7. Verify External Resource Link (GitHub)
     const linkItem = detailView.locator('.section-link-item');
@@ -374,15 +388,15 @@ test.describe('Moodle Missing Structures Overhaul — Browser E2E Suite', () => 
     const tabGrades = optionsPage.locator('.tab-grades');
     await expect(tabGrades).toBeVisible();
 
-    // Verify Authoritative Course Total in course group header
+    // Verify Computed Course Average in course group header
     const courseGroup = tabGrades.locator('.course-grades-group');
     await expect(courseGroup).toBeVisible();
-    await expect(courseGroup.locator('.course-avg-badge')).toContainText('ציון סופי: 94.50');
+    await expect(courseGroup.locator('.course-avg-badge')).toContainText(/ממוצע:\s*98\.00|Avg:\s*98\.00/);
 
     // Verify Bonus badge in grade row
     const bonusRow = courseGroup.locator('.grade-row').filter({ hasText: 'שאלת בונוס מתקדמת' });
     await expect(bonusRow).toBeVisible();
-    await expect(bonusRow.locator('.badge', { hasText: '✨ בונוס' })).toBeVisible();
+    await expect(bonusRow.locator('.badge', { hasText: /בונוס|Bonus/ })).toBeVisible();
 
     // Verify Feedback in grade row
     const feedbackRow = courseGroup.locator('.grade-row').filter({ hasText: 'מטלה 1 - עצי חיפוש בינאריים' });

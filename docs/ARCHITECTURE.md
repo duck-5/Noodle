@@ -87,6 +87,7 @@ Noodle/
 │       ├── src/
 │       │   ├── moodleApi.ts        # fetch()-based Moodle Web Service functions
 │       │   ├── syncEngine.ts       # Two-stage deterministic sync pipeline (contents -> activities/quizzes)
+│       │   ├── syncProgress.ts     # Smart weighted monotonic sync progress engine (0-100%)
 │       │   ├── courseFormatState.ts# 2-level section hierarchy & mod_subsection parser
 │       │   ├── courseGrouping.ts   # Academic parent/sub-course & 5900* umbrella grouping
 │       │   ├── zipBuilder.ts       # Pure-TS PKZIP archive builder for mod_folder downloads

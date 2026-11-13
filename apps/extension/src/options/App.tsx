@@ -7,17 +7,22 @@ import type {
   CourseFile,
   CourseSection,
   CourseFolder,
+  CourseFolderFile,
   CourseLink,
   CourseAnnouncement,
-  CourseGradeSummary,
   ZoomMeeting,
   PanoptoRecording,
   GroupedCoursesResult,
+  SyncProgressState,
 } from '@tautracker/moodle-client';
 import {
   parseTauCourseMetadata,
   MoodleClient,
   isValidIsraeliId,
+  isZoomUrl,
+  isZoomJoinUrl,
+  getZoomMeetingKey,
+  isZoomMeetingHidden,
   collapseRecurringMeetings,
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
@@ -29,9 +34,11 @@ import {
   getActivityUid,
   isActivityHidden,
   isActivityCompleted,
+  isMoodleActivitySubmitted,
   matchesActivityIdentifier,
   hasGracePeriod,
   getCanonicalFileUrlPath,
+  calculateGradesSummary,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -52,6 +59,7 @@ import {
   getLocalFsStatus,
   DEFAULT_LOCAL_FS_CONFIG,
   DEFAULT_LOCAL_FS_STATUS,
+  getEffectiveTheme,
 } from '../shared/storage.js';
 import type {
   ExtensionSettings,
@@ -320,78 +328,281 @@ function FileOpenAction({
   );
 }
 
-function SyncCountdown({
-  syncedAt,
-  isSyncing,
-  currentLang,
-  syncIntervalMinutes = 5,
-}: {
-  syncedAt?: string;
-  isSyncing: boolean;
-  currentLang: 'he' | 'en';
-  syncIntervalMinutes?: number;
-}) {
-  const [nextSyncSecs, setNextSyncSecs] = useState<number | null>(null);
 
+
+
+function SyncProgressWindow({
+  isOpen,
+  isCollapsed,
+  onCollapse,
+  onExpand,
+  isSyncing,
+  syncState,
+  syncError,
+  hasPanopto,
+  t,
+  lang,
+}: {
+  isOpen: boolean;
+  isCollapsed: boolean;
+  onCollapse: () => void;
+  onExpand: () => void;
+  isSyncing: boolean;
+  syncState: SyncProgressState | null;
+  syncError?: string | null;
+  hasPanopto?: boolean;
+  t: (key: any) => string;
+  lang: 'he' | 'en';
+}) {
   useEffect(() => {
-    const updateCountdown = async () => {
-      try {
-        const alarm = await browser.alarms.get('periodicSync');
-        const intervalMs = (syncIntervalMinutes || 5) * 60 * 1000;
-        const targetTime =
-          alarm?.scheduledTime || (syncedAt ? new Date(syncedAt).getTime() + intervalMs : null);
-        if (!targetTime) {
-          setNextSyncSecs(null);
-          return;
-        }
-        const diffMs = targetTime - Date.now();
-        setNextSyncSecs(diffMs > 0 ? Math.floor(diffMs / 1000) : 0);
-      } catch (e) {
-        setNextSyncSecs(null);
+    if (!isOpen || isCollapsed) return;
+    const handleClickOutside = (ev: MouseEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (
+        target &&
+        !target.closest('.sync-progress-window') &&
+        !target.closest('.sync-progress-collapsed') &&
+        !target.closest('.header-sync-btn')
+      ) {
+        onCollapse();
       }
     };
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [syncedAt, syncIntervalMinutes]);
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, isCollapsed, onCollapse]);
 
-  if (isSyncing) {
+  if (!isOpen) return null;
+
+  const currentStage = syncState?.stage || (isSyncing ? 'init' : 'idle');
+  const isComplete = currentStage === 'complete' || (!isSyncing && !syncError && syncState?.percent === 100);
+
+  if (isCollapsed) {
     return (
-      <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
-        <SyncClockIcon spinning /> {currentLang === 'he' ? 'מסנכרן...' : 'Syncing...'}
-      </span>
+      <div
+        className="sync-progress-collapsed"
+        onClick={onExpand}
+        title={t('sync_expand')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onExpand();
+        }}
+      >
+        <div className="sync-collapsed-icon-wrap">
+          {isComplete ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : syncError ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isSyncing ? 'spinning-sync-icon' : ''}>
+              <path d="M21 2v6h-6"></path>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+              <path d="M3 22v-6h6"></path>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+            </svg>
+          )}
+        </div>
+        <span className="sync-collapsed-label">
+          {isComplete ? t('sync_success') : `${syncState?.percent || (isSyncing ? 2 : 0)}%`}
+        </span>
+        <button
+          className="sync-collapsed-arrow-btn"
+          aria-label={t('sync_expand')}
+          title={t('sync_expand')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+      </div>
     );
   }
 
-  if (nextSyncSecs !== null && nextSyncSecs > 0) {
-    return (
-      <span style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)' }}>
-        <SyncClockIcon /> {Math.floor(nextSyncSecs / 60)}:{(nextSyncSecs % 60).toString().padStart(2, '0')}
-      </span>
-    );
-  }
+  const STAGE_ORDER: Record<string, number> = {
+    idle: 0,
+    init: 1,
+    mapping: 2,
+    global_fetch: 3,
+    courses: 4,
+    activities: 5,
+    panopto: 6,
+    finalizing: hasPanopto ? 7 : 6,
+    complete: hasPanopto ? 8 : 7,
+  };
 
-  return null;
-}
+  const currentStageIndex = isComplete
+    ? (hasPanopto ? 8 : 7)
+    : (STAGE_ORDER[currentStage] ?? (isSyncing ? 1 : 0));
 
-function SyncClockIcon({ spinning }: { spinning?: boolean }) {
+  const tasks = [
+    {
+      id: 'init',
+      order: 1,
+      title: t('sync_task_init'),
+    },
+    {
+      id: 'mapping',
+      order: 2,
+      title: t('sync_task_mapping'),
+    },
+    {
+      id: 'global_fetch',
+      order: 3,
+      title: t('sync_task_global_fetch'),
+    },
+    {
+      id: 'courses',
+      order: 4,
+      title: t('sync_task_courses'),
+      subtext:
+        currentStage === 'courses' && (syncState?.totalCourses || 0) > 0
+          ? `${syncState?.coursesCompleted || 0} / ${syncState?.totalCourses} ${t('sync_courses_scanned')}`
+          : undefined,
+    },
+    {
+      id: 'activities',
+      order: 5,
+      title: t('sync_task_activities'),
+      subtext:
+        currentStage === 'activities' && (syncState?.totalActivities || 0) > 0
+          ? `${syncState?.activitiesCompleted || 0} / ${syncState?.totalActivities} ${t('sync_activities_checked')}`
+          : undefined,
+    },
+    ...(hasPanopto
+      ? [
+        {
+          id: 'panopto',
+          order: 6,
+          title: t('sync_task_panopto'),
+          subtext:
+            currentStage === 'panopto' && (syncState?.totalPanoptoCourses || 0) > 0
+              ? `${syncState?.panoptoCoursesCompleted || 0} / ${syncState?.totalPanoptoCourses} ${t('sync_panopto_scanned')}`
+              : undefined,
+        },
+      ]
+      : []),
+    {
+      id: 'finalizing',
+      order: hasPanopto ? 7 : 6,
+      title: t('sync_task_finalizing'),
+    },
+  ];
+
   return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={spinning ? 'sync-icon-spin' : undefined}
-      style={{ verticalAlign: '-1px', marginInlineEnd: '0.3rem', opacity: 0.8 }}
+    <div
+      className="sync-progress-window"
+      onClick={(e) => e.stopPropagation()}
     >
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <polyline points="21 3 21 9 15 9" />
-    </svg>
+      <div className="sync-window-header">
+        <div className="sync-window-title-row">
+          {isComplete ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : syncError ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isSyncing ? 'spinning-sync-icon' : ''}>
+              <path d="M21 2v6h-6"></path>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+              <path d="M3 22v-6h6"></path>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+            </svg>
+          )}
+          <span className="sync-window-title">
+            {isComplete ? t('sync_success') : syncError ? t('sync_failed') : t('sync_window_title')}
+          </span>
+        </div>
+        <button
+          className="sync-window-collapse-btn"
+          onClick={onCollapse}
+          aria-label={t('sync_collapse')}
+          title={t('sync_collapse')}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="sync-tasks-list">
+        {tasks.map((task) => {
+          let status: 'done' | 'active' | 'pending' | 'failed' = 'pending';
+          if (syncError && task.order === currentStageIndex) {
+            status = 'failed';
+          } else if (currentStageIndex > task.order || isComplete) {
+            status = 'done';
+          } else if (currentStageIndex === task.order && isSyncing) {
+            status = 'active';
+          }
+
+          return (
+            <div key={task.id} className={`sync-task-item status-${status}`}>
+              <div className="sync-task-icon-col">
+                {status === 'done' ? (
+                  <div className="sync-task-badge done">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                ) : status === 'active' ? (
+                  <div className="sync-task-badge active">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spinning-sync-icon">
+                      <line x1="12" y1="2" x2="12" y2="6"></line>
+                      <line x1="12" y1="18" x2="12" y2="22"></line>
+                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                      <line x1="2" y1="12" x2="6" y2="12"></line>
+                      <line x1="18" y1="12" x2="22" y2="12"></line>
+                      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                    </svg>
+                  </div>
+                ) : status === 'failed' ? (
+                  <div className="sync-task-badge" style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#ef4444' }}>
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="sync-task-badge pending">
+                    <div className="sync-task-dot" />
+                  </div>
+                )}
+              </div>
+              <div className="sync-task-content">
+                <div className="sync-task-title">{task.title}</div>
+                {task.subtext && <div className="sync-task-subtext">{task.subtext}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="sync-window-footer">
+        <span className="sync-window-status-msg">
+          {syncError ? syncError : isComplete ? (lang === 'he' ? 'הכל מעודכן' : 'All up to date') : syncState?.message || t('syncing')}
+        </span>
+        <span className="sync-window-pct">
+          {syncError ? '' : isComplete ? '100%' : `${syncState?.percent || (isSyncing ? 2 : 0)}%`}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -668,8 +879,15 @@ export default function App() {
   // Backup and custom disconnect states
   const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
   const [deletePermanently, setDeletePermanently] = useState<boolean>(false);
+  const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
+
+
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [showSyncWindow, setShowSyncWindow] = useState<boolean>(false);
+  const [isSyncWindowCollapsed, setIsSyncWindowCollapsed] = useState<boolean>(false);
+  const [syncState, setSyncState] = useState<SyncProgressState | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Dashboard Max Width State (persisted in localStorage, default 1200px)
   const DEFAULT_DASHBOARD_WIDTH = 1200;
@@ -767,6 +985,9 @@ export default function App() {
       .then((res: any) => {
         if (res && typeof res.isSyncing === 'boolean') {
           setIsSyncing(res.isSyncing);
+          if (res.isSyncing) {
+            if (res.syncState) setSyncState(res.syncState);
+          }
           if (!res.isSyncing) browser.storage.local.set({ isSyncing: false }).catch(() => { });
           return;
         }
@@ -792,6 +1013,28 @@ export default function App() {
     const messageListener = (msg: any) => {
       if (msg.type === 'SYNC_START') {
         setIsSyncing(true);
+        if (msg.isManual) {
+          setShowSyncWindow(true);
+          setIsSyncWindowCollapsed(false);
+        }
+        setSyncError(null);
+      }
+      if (msg.type === 'SYNC_PROGRESS') {
+        if (typeof msg.percent === 'number' && !isNaN(msg.percent)) {
+        }
+        if (msg.syncState) {
+          setSyncState(msg.syncState);
+        } else if (msg.stage) {
+          setSyncState((prev) => ({
+            percent: msg.percent ?? prev?.percent ?? 0,
+            stage: msg.stage,
+            message: msg.msg || prev?.message || '',
+            coursesCompleted: prev?.coursesCompleted ?? 0,
+            totalCourses: prev?.totalCourses ?? 0,
+            activitiesCompleted: prev?.activitiesCompleted ?? 0,
+            totalActivities: prev?.totalActivities ?? 0,
+          }));
+        }
       }
       if (msg.type === 'SYNC_PARTIAL') {
         if (msg.partial && typeof msg.partial === 'object') {
@@ -816,8 +1059,23 @@ export default function App() {
         }
       }
       if (msg.type === 'SYNC_COMPLETE') {
-        setIsSyncing(false);
-        setLoading(false);
+        setSyncState((prev) => ({
+          percent: 100,
+          stage: 'complete',
+          message: 'Sync completed.',
+          coursesCompleted: prev?.totalCourses || prev?.coursesCompleted || 0,
+          totalCourses: prev?.totalCourses || 0,
+          activitiesCompleted: prev?.totalActivities || prev?.activitiesCompleted || 0,
+          totalActivities: prev?.totalActivities || 0,
+        }));
+        setTimeout(() => {
+          setIsSyncing(false);
+          setLoading(false);
+        }, 500);
+        setTimeout(() => {
+          setShowSyncWindow(false);
+          setIsSyncWindowCollapsed(false);
+        }, 2500);
         // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
         Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
           setTrackedCourseIdsState(ids);
@@ -906,12 +1164,16 @@ export default function App() {
   }), [localFsConfig.enabled, localFilesByUrl, missingLocalFileIds]);
 
   useEffect(() => {
-    if (settings?.theme) {
-      document.body.className = `theme-${settings.theme}`;
-    } else {
-      document.body.className = 'theme-noodle';
+    const applyTheme = () => {
+      const eff = getEffectiveTheme(settings);
+      document.body.className = `theme-${eff}`;
+    };
+    applyTheme();
+    if (settings?.theme === 'time') {
+      const interval = setInterval(applyTheme, 30000);
+      return () => clearInterval(interval);
     }
-  }, [settings]);
+  }, [settings?.theme, settings?.themeTimeDayStart, settings?.themeTimeDayEnd]);
 
   useEffect(() => {
     if (token && trackedCourseIds && trackedCourseIds.length > 0 && settings) {
@@ -1006,28 +1268,25 @@ export default function App() {
 
   const assignmentsList = useMemo(() => {
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
-    const completedSet = new Set(settings?.completedAssignments || []);
-    const uncompletedSet = new Set(settings?.uncompletedAssignments || []);
     return rawAssignments.map((a) => {
-      const isMoodleSubmitted = a.status === 'Submitted';
-      const isManuallyCompleted = completedSet.has(a.id);
-      const isManuallyToDo = uncompletedSet.has(a.id);
+      const isMoodleSubmitted = isMoodleActivitySubmitted(a);
+      const isCompleted = isActivityCompleted(
+        a,
+        settings?.completedAssignments,
+        settings?.uncompletedAssignments
+      );
 
-      let isCompleted = isMoodleSubmitted;
-      if (isMoodleSubmitted && isManuallyToDo) {
-        isCompleted = false;
-      } else if (!isMoodleSubmitted && isManuallyCompleted) {
-        isCompleted = true;
-      }
+      const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
 
       return {
         ...a,
         isMoodleSubmitted,
         isCompleted,
-        status: (isCompleted ? 'Submitted' : (isMoodleSubmitted ? 'Assigned' : a.status)) as 'Assigned' | 'Submitted' | 'Not submitted',
+        isHidden,
+        status: a.status as 'Assigned' | 'Submitted' | 'Not submitted',
       };
     });
-  }, [mergedSyncView, syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+  }, [mergedSyncView, syncResult?.assignments, settings?.completedAssignments, settings?.uncompletedAssignments, settings?.hiddenAssignments]);
 
   const filesList = mergedSyncView?.files || [];
   const meetingsList = mergedSyncView?.meetings || [];
@@ -1359,6 +1618,9 @@ export default function App() {
 
   async function handleManualSync() {
     setLoading(true);
+    setShowSyncWindow(true);
+    setIsSyncWindowCollapsed(false);
+    setSyncError(null);
     try {
       const res = await syncNowOnBackground();
       if (res?.success && res.result) {
@@ -1368,9 +1630,13 @@ export default function App() {
           setGoogleTasksAuthError((res.result as any).googleSyncError);
         }
       } else if (res && !res.success) {
+        setSyncError(res.error || 'Sync failed');
         showToast(`Sync failed: ${res.error}`, 'error');
       }
+      setTimeout(() => {
+      }, 500);
     } catch (e: any) {
+      setSyncError(e?.message || 'Sync failed');
       showToast(`Sync failed: ${e.message}`, 'error');
     } finally {
       setLoading(false);
@@ -1435,7 +1701,8 @@ export default function App() {
       version: "TauTrackerConfig-v1",
       trackedCourseIds: trackedCourseIds,
       settings: settings,
-      zoomLinks: settings.interestedMeetings || []
+      zoomLinks: settings.interestedMeetings || [],
+      hiddenZoomMeetings: settings.hiddenZoomMeetings || []
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1464,6 +1731,12 @@ export default function App() {
           data.settings.interestedMeetings = Array.from(new Set([
             ...(data.settings.interestedMeetings || []),
             ...data.zoomLinks
+          ]));
+        }
+        if (data.hiddenZoomMeetings && Array.isArray(data.hiddenZoomMeetings)) {
+          data.settings.hiddenZoomMeetings = Array.from(new Set([
+            ...(data.settings.hiddenZoomMeetings || []),
+            ...data.hiddenZoomMeetings
           ]));
         }
 
@@ -1504,44 +1777,38 @@ export default function App() {
     await setSettings(updated);
   }
 
-  async function handleToggleMeetingInterest(targetMeetingKey: string, allMeetingKeys: string[]) {
+  async function handleToggleMeetingInterest(targetMeetingKey: string, _allMeetingKeys: string[]) {
     if (!settings) return;
-    let currentInterested = settings.interestedMeetings || [];
-    if (currentInterested.length === 0) {
-      const allSystemMeetings = syncResult?.meetings || [];
-      const allSystemKeys = allSystemMeetings.map((m) => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
-      currentInterested = Array.from(new Set(allSystemKeys.length > 0 ? allSystemKeys : allMeetingKeys));
-    }
-    let updatedInterested: string[];
-    if (currentInterested.includes(targetMeetingKey)) {
-      updatedInterested = currentInterested.filter((key) => key !== targetMeetingKey);
+    const currentHidden = settings.hiddenZoomMeetings || [];
+    let updatedHidden: string[];
+    if (currentHidden.includes(targetMeetingKey)) {
+      // Unhide meeting (make visible)
+      updatedHidden = currentHidden.filter((key) => key !== targetMeetingKey);
     } else {
-      updatedInterested = [...currentInterested, targetMeetingKey];
+      // Hide meeting
+      updatedHidden = [...currentHidden, targetMeetingKey];
     }
-    const updated = { ...settings, interestedMeetings: updatedInterested };
+    const updated = { ...settings, hiddenZoomMeetings: updatedHidden };
     setSettingsState(updated);
     await setSettings(updated);
   }
 
   async function handleSetCourseMeetingsVisibility(courseMeetings: ZoomMeeting[], makeVisible: boolean) {
     if (!settings) return;
-    const courseKeys = courseMeetings.map((m) => `${m.courseName}:${m.meetingNumber || ''}${m.title}`);
-    let currentInterested = settings.interestedMeetings || [];
+    const courseKeys = courseMeetings.map((m) => getZoomMeetingKey(m));
+    const courseKeySet = new Set(courseKeys);
+    const currentHidden = settings.hiddenZoomMeetings || [];
 
-    if (currentInterested.length === 0) {
-      const allSystemMeetings = syncResult?.meetings || [];
-      currentInterested = Array.from(new Set(allSystemMeetings.map((m) => `${m.courseName}:${m.meetingNumber || ''}${m.title}`)));
-    }
-
-    let updatedInterested: string[];
+    let updatedHidden: string[];
     if (makeVisible) {
-      updatedInterested = Array.from(new Set([...currentInterested, ...courseKeys]));
+      // Remove all course meetings from hiddenZoomMeetings
+      updatedHidden = currentHidden.filter((key) => !courseKeySet.has(key));
     } else {
-      const courseKeySet = new Set(courseKeys);
-      updatedInterested = currentInterested.filter((key) => !courseKeySet.has(key));
+      // Add all course meetings to hiddenZoomMeetings
+      updatedHidden = Array.from(new Set([...currentHidden, ...courseKeys]));
     }
 
-    const updated = { ...settings, interestedMeetings: updatedInterested };
+    const updated = { ...settings, hiddenZoomMeetings: updatedHidden };
     setSettingsState(updated);
     await setSettings(updated);
   }
@@ -1621,10 +1888,10 @@ export default function App() {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const assign = rawAssignments.find(
-      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+      (x) => matchesActivityIdentifier(assignmentId, x) || x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId || x.id === Number(assignmentId)
     );
     const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
-    const isMoodleSubmitted = assign ? assign.status === 'Submitted' || Boolean(assign.isManualCompletionDone) : false;
+    const isMoodleSubmitted = assign ? isMoodleActivitySubmitted(assign) : false;
 
     const currentCompleted = settings.completedAssignments || [];
     const currentUncompleted = settings.uncompletedAssignments || [];
@@ -1677,7 +1944,7 @@ export default function App() {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
     const assign = rawAssignments.find(
-      (x) => x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId
+      (x) => matchesActivityIdentifier(assignmentId, x) || x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId || x.id === Number(assignmentId)
     );
     const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
     const currentHidden = settings.hiddenAssignments || [];
@@ -1971,7 +2238,7 @@ export default function App() {
 
   const currentLang = settings?.language || 'he';
   const t = (key: keyof typeof translations['en']) => {
-    return translations[currentLang]?.[key] || translations['en']?.[key] || key;
+    return (translations[currentLang] as any)?.[key] || translations['en']?.[key] || key;
   };
 
   if (loading && onboardingStep === 1) {
@@ -2182,8 +2449,9 @@ export default function App() {
                 >
                   {t('start_tracking')} ({trackedCourseIds.length} {currentLang === 'he' ? 'קורסים' : 'Courses'})
                 </button>
-                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-block' }}>
-                  📁 {t('import_config_btn')}
+                <label className="secondary-btn btn-sm" style={{ width: '100%', maxWidth: '280px', textAlign: 'center', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <UploadIcon size={13} />
+                  <span>{t('import_config_btn')}</span>
                   <input
                     type="file"
                     accept=".json"
@@ -2219,6 +2487,24 @@ export default function App() {
       </div>
     );
   }
+
+  const handleSaveTrackedCourses = async (newIds: number[], panoptoOverrides?: Record<number, string>) => {
+    const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
+    setTrackedCourseIdsState(expandedIds);
+    await setTrackedCourseIds(expandedIds);
+    if (panoptoOverrides && settings) {
+      const cleanedMap: Record<number, string> = {};
+      for (const [k, v] of Object.entries(panoptoOverrides)) {
+        if (v && String(v).trim()) {
+          cleanedMap[Number(k)] = String(v).trim();
+        }
+      }
+      const updated = { ...settings, coursesPanoptoMap: cleanedMap };
+      setSettingsState(updated);
+      await setSettings(updated);
+    }
+    handleManualSync();
+  };
 
   return (
     <LocalFilesContext.Provider value={localFilesCtxValue}>
@@ -2326,17 +2612,35 @@ export default function App() {
                       )
                       : t(activeTab as any)}
                   </h2>
-                  <p className="subtitle" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <span>{t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}</span>
-                    <SyncCountdown syncedAt={syncResult?.syncedAt} isSyncing={isSyncing} currentLang={currentLang} syncIntervalMinutes={settings?.syncIntervalMinutes ?? 5} />
+                  <p className="subtitle">
+                    {t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}
                   </p>
                 </div>
-                <div className="header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <div className="header-actions" style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <button
                     className={`primary-btn btn-sm header-sync-btn ${tourStep === 1 ? 'tour-highlight' : ''}`}
-                    onClick={handleManualSync}
-                    disabled={loading || isSyncing}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}
+                    onClick={() => {
+                      if (loading || isSyncing) {
+                        if (!showSyncWindow) {
+                          setShowSyncWindow(true);
+                          setIsSyncWindowCollapsed(false);
+                        } else if (isSyncWindowCollapsed) {
+                          setIsSyncWindowCollapsed(false);
+                        } else {
+                          setIsSyncWindowCollapsed(true);
+                        }
+                      } else {
+                        handleManualSync();
+                      }
+                    }}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      cursor: 'pointer',
+                    }}
+                    title={loading || isSyncing ? t('sync_window_title') : t('sync_now')}
                   >
                     <svg
                       width="14"
@@ -2354,8 +2658,23 @@ export default function App() {
                       <path d="M3 22v-6h6"></path>
                       <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
                     </svg>
-                    <span>{loading || isSyncing ? t('syncing') : t('sync_now')}</span>
+                    <span>
+                      {loading || isSyncing ? t('syncing') : t('sync_now')}
+                    </span>
                   </button>
+
+                  <SyncProgressWindow
+                    isOpen={showSyncWindow}
+                    isCollapsed={isSyncWindowCollapsed}
+                    onCollapse={() => setIsSyncWindowCollapsed(true)}
+                    onExpand={() => setIsSyncWindowCollapsed(false)}
+                    isSyncing={loading || isSyncing}
+                    syncState={syncState}
+                    syncError={syncError}
+                    hasPanopto={settings?.panoptoEnabled ?? false}
+                    t={t}
+                    lang={currentLang}
+                  />
                 </div>
               </header>
 
@@ -2372,7 +2691,6 @@ export default function App() {
                     courseFolders={mergedSyncView?.folders}
                     courseLinks={mergedSyncView?.links}
                     courseAnnouncements={mergedSyncView?.announcements}
-                    courseGradeSummaries={mergedSyncView?.gradeSummaries}
                     syncErrors={syncResult?.errors}
                     token={token}
                     getCourseColor={getCourseColor}
@@ -2414,23 +2732,8 @@ export default function App() {
                     onUpdateColor={handleUpdateCourseColor}
                     onUpdateCustomName={handleUpdateCourseCustomName}
                     onUpdatePanopto={handleUpdateCoursePanopto}
-                    onSaveTrackedCourses={async (newIds, panoptoOverrides) => {
-                      const expandedIds = expandTrackedCourseIds(newIds, groupedCoursesResult);
-                      setTrackedCourseIdsState(expandedIds);
-                      await setTrackedCourseIds(expandedIds);
-                      if (panoptoOverrides && settings) {
-                        const cleanedMap: Record<number, string> = {};
-                        for (const [k, v] of Object.entries(panoptoOverrides)) {
-                          if (v && String(v).trim()) {
-                            cleanedMap[Number(k)] = String(v).trim();
-                          }
-                        }
-                        const updated = { ...settings, coursesPanoptoMap: cleanedMap };
-                        setSettingsState(updated);
-                        await setSettings(updated);
-                      }
-                      handleManualSync();
-                    }}
+                    onSaveTrackedCourses={handleSaveTrackedCourses}
+                    onOpenManageCourses={() => setIsManageModalOpen(true)}
                     onGoToCourse={(courseId) => {
                       setSelectedCourseId(courseId);
                     }}
@@ -2491,8 +2794,8 @@ export default function App() {
                 {activeTab === 'grades' && (
                   <GradesTab
                     assignments={assignmentsList}
-                    gradeSummaries={mergedSyncView?.gradeSummaries}
                     excludedCourseIds={excludedGpaCourseIds}
+                    settings={settings}
                     getCourseColor={getCourseColor}
                     getCourseDisplayName={getCourseDisplayName}
                     t={t}
@@ -2536,12 +2839,19 @@ export default function App() {
                       setSettingsState(updated);
                       await setSettings(updated);
                     }}
-                    onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee') => {
+                    onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee' | 'time') => {
                       if (!settings) return;
                       const updated = { ...settings, theme };
                       setSettingsState(updated);
                       await setSettings(updated);
                     }}
+                    onUpdateTimeThemeHours={async (start: number, end: number) => {
+                      if (!settings) return;
+                      const updated = { ...settings, themeTimeDayStart: start, themeTimeDayEnd: end };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onOpenManageCourses={() => setIsManageModalOpen(true)}
                     onUpdateThresholds={async (green: number, yellow: number) => {
                       if (!settings) return;
                       const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
@@ -2551,6 +2861,12 @@ export default function App() {
                     onToggleScraping={async (enabled: boolean) => {
                       if (!settings) return;
                       const updated = { ...settings, scrapingEnabled: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onTogglePanoptoFolderOverride={async (enabled: boolean) => {
+                      if (!settings) return;
+                      const updated = { ...settings, showPanoptoFolderOverride: enabled };
                       setSettingsState(updated);
                       await setSettings(updated);
                     }}
@@ -2634,6 +2950,69 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Manage Courses Modal */}
+        {isManageModalOpen && (
+          <div
+            className="modal-backdrop"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: tourStep === 4 ? 'flex-start' : 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              backdropFilter: 'blur(4px)',
+              padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
+            }}
+            onClick={() => setIsManageModalOpen(false)}
+          >
+            <div
+              className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
+              style={{
+                maxWidth: '850px',
+                width: '100%',
+                maxHeight: tourStep === 4 ? '62vh' : '85vh',
+                overflowY: 'auto',
+                padding: '1.75rem',
+                borderRadius: 'var(--radius-md)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
+                <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
+                  ✕
+                </button>
+              </div>
+
+              <CoursesConfigTable
+                trackedCourseIds={trackedCourseIds}
+                syncResult={syncResult}
+                enrolledCourses={availableCourses || []}
+                getCourseColor={getCourseColor}
+                getCourseDisplayName={getCourseDisplayName}
+                coursesPanoptoMap={settings?.coursesPanoptoMap}
+                panoptoEnabled={settings?.panoptoEnabled ?? false}
+                showPanoptoFolderOverride={settings?.showPanoptoFolderOverride ?? false}
+                onUpdateColor={handleUpdateCourseColor}
+                onUpdateCustomName={handleUpdateCourseCustomName}
+                onUpdatePanopto={handleUpdateCoursePanopto}
+                onSaveTrackedCourses={(newIds, panoptoOverrides) => {
+                  setIsManageModalOpen(false);
+                  handleSaveTrackedCourses(newIds, panoptoOverrides);
+                }}
+                onLabDetected={(id, name) => setLabModalCourse({ id, name })}
+                t={t}
+                lang={currentLang}
+              />
+            </div>
+          </div>
+        )}
 
         {showDisconnectModal && (
           <div className="modal-overlay">
@@ -2747,15 +3126,23 @@ function getMeetingStatus(startTimeStr?: string): MeetingStatus {
   const startTime = new Date(startTimeStr);
   if (isNaN(startTime.getTime())) return 'unknown';
   const now = new Date();
+  const activeStart = new Date(startTime.getTime() - 15 * 60 * 1000); // 15 min early join window
   const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2h duration
-  if (now >= startTime && now <= endTime) {
+  if (now >= activeStart && now <= endTime) {
     return 'active';
-  } else if (now < startTime) {
+  } else if (now < activeStart) {
     return 'upcoming';
   } else {
     return 'inactive';
   }
 }
+
+const VideoIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', ...style }}>
+    <polygon points="23 7 16 12 23 17 23 7" />
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+  </svg>
+);
 
 const EyeIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
@@ -2792,8 +3179,8 @@ const BookOpenIcon = ({ size = 13 }: { size?: number }) => (
   </svg>
 );
 
-const FolderIcon = ({ size = 13 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const FolderIcon = ({ size = 13, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', ...style }}>
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
   </svg>
 );
@@ -2824,6 +3211,13 @@ const DownloadIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const UploadIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5 12 12 5 19 12" />
+  </svg>
+);
+
 const ClockIcon = ({ size = 13, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) => (
   <svg
     width={size}
@@ -2842,6 +3236,14 @@ const ClockIcon = ({ size = 13, className, style }: { size?: number; className?:
     <polyline points="12 6 12 12 16 14" />
   </svg>
 );
+
+const FileIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', ...style }}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+  </svg>
+);
+
 
 const DashboardIcon = ({ size = 18 }: { size?: number }) => (
   <svg
@@ -2996,6 +3398,7 @@ function CoursesConfigTable({
   getCourseDisplayName,
   coursesPanoptoMap,
   panoptoEnabled,
+  showPanoptoFolderOverride,
   onUpdateColor,
   onUpdateCustomName,
   onUpdatePanopto,
@@ -3011,6 +3414,7 @@ function CoursesConfigTable({
   getCourseDisplayName: (id: number, defaultName: string) => string;
   coursesPanoptoMap?: Record<number, string>;
   panoptoEnabled?: boolean;
+  showPanoptoFolderOverride?: boolean;
   onUpdateColor?: (id: number, color: string) => void;
   onUpdateCustomName?: (id: number, name: string) => void;
   onUpdatePanopto?: (id: number, panoptoVal: string) => void;
@@ -3021,6 +3425,7 @@ function CoursesConfigTable({
 }) {
   const [activeTrackedIds, setActiveTrackedIds] = useState<number[]>(trackedCourseIds);
   const [localPanoptoMap, setLocalPanoptoMap] = useState<Record<number, string>>(coursesPanoptoMap || {});
+  const showPanoptoCol = Boolean(panoptoEnabled && showPanoptoFolderOverride);
 
   useEffect(() => {
     setActiveTrackedIds(trackedCourseIds);
@@ -3125,12 +3530,12 @@ function CoursesConfigTable({
                 >
                   {sec.label}
                 </h4>
-                <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+                <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
                   <div className="table-header">
                     <div>{t('track')}</div>
                     <div>{t('course_code_name')}</div>
                     <div>{t('display_nickname')}</div>
-                    {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
+                    {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                     <div>{t('theme_color_label')}</div>
                   </div>
 
@@ -3178,7 +3583,7 @@ function CoursesConfigTable({
                               onBlur={(e) => onUpdateCustomName && onUpdateCustomName(u.id, e.target.value)}
                             />
                           </div>
-                          {panoptoEnabled && (
+                          {showPanoptoCol && (
                             <div>
                               <input
                                 type="text"
@@ -3264,7 +3669,7 @@ function CoursesConfigTable({
                                   onBlur={(e) => onUpdateCustomName && onUpdateCustomName(sub.courseId, e.target.value)}
                                 />
                               </div>
-                              {panoptoEnabled && (
+                              {showPanoptoCol && (
                                 <div>
                                   <input
                                     type="text"
@@ -3314,12 +3719,12 @@ function CoursesConfigTable({
                   >
                     🛡️ {lang === 'he' ? 'הדרכות בטיחות ומנהלה' : 'Safety & Administrative Tutorials'}
                   </h4>
-                  <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+                  <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
                     <div className="table-header">
                       <div>{t('track')}</div>
                       <div>{t('course_code_name')}</div>
                       <div>{t('display_nickname')}</div>
-                      {panoptoEnabled && <div>{t('panopto_folder_column')}</div>}
+                      {showPanoptoCol && <div>{t('panopto_folder_column')}</div>}
                       <div>{t('theme_color_label')}</div>
                     </div>
 
@@ -3392,12 +3797,12 @@ function CoursesConfigTable({
               >
                 {group.label}
               </h4>
-              <div className={`courses-settings-table ${panoptoEnabled ? 'with-panopto-col' : ''}`}>
+              <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
                 <div className="table-header">
                   <div>{t('track')}</div>
                   <div>{t('course_code_name')}</div>
                   <div>{t('display_nickname')}</div>
-                  {panoptoEnabled && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
+                  {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                   <div>{t('theme_color_label')}</div>
                 </div>
                 {[...group.courses].map((c) => (
@@ -3422,7 +3827,7 @@ function CoursesConfigTable({
                         onBlur={(e) => onUpdateCustomName && onUpdateCustomName(c.id, e.target.value)}
                       />
                     </div>
-                    {panoptoEnabled && (
+                    {showPanoptoCol && (
                       <div>
                         <input
                           type="text"
@@ -3479,17 +3884,18 @@ function DashboardTab({
   showHiddenZoomCourseIds: _showHiddenZoomCourseIds,
   onToggleShowHiddenZoom: _onToggleShowHiddenZoom,
   trackedCourseIds,
-  enrolledCourses,
-  onUpdateColor,
-  onUpdateCustomName,
-  onUpdatePanopto,
-  onSaveTrackedCourses,
+  enrolledCourses: _enrolledCourses,
+  onUpdateColor: _onUpdateColor,
+  onUpdateCustomName: _onUpdateCustomName,
+  onUpdatePanopto: _onUpdatePanopto,
+  onSaveTrackedCourses: _onSaveTrackedCourses,
+  onOpenManageCourses,
   onGoToCourse,
   onViewCourseAssignments,
   syncResult,
   onToggleCompleted,
   onToggleHidden,
-  onLabDetected,
+  onLabDetected: _onLabDetected,
   hasGoogleTasksToken,
   googleTasksAuthError,
   onSyncGoogle,
@@ -3517,11 +3923,12 @@ function DashboardTab({
   onUpdateCustomName?: (id: number, name: string) => void;
   onUpdatePanopto?: (id: number, panoptoVal: string) => void;
   onSaveTrackedCourses?: (newIds: number[], panoptoOverrides?: Record<number, string>) => void;
+  onOpenManageCourses?: () => void;
   onGoToCourse: (courseId: number) => void;
   onViewCourseAssignments: (courseId: number) => void;
   syncResult: SyncResult | null;
-  onToggleCompleted?: (assignmentId: number) => void;
-  onToggleHidden?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
+  onToggleHidden?: (assignmentId: number | string) => void;
   onLabDetected?: (id: number, name: string) => void;
   hasGoogleTasksToken?: boolean;
   googleTasksAuthError?: string | null;
@@ -3536,11 +3943,10 @@ function DashboardTab({
   onReconnectLocalFs?: () => void;
 } & TabProps) {
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<number | null>(null);
-  const [isManageModalOpen, setIsManageModalOpen] = useState<boolean>(false);
   const [coursesViewMode, setCoursesViewMode] = useState<'list' | 'cards'>(() => {
     try {
       const saved = localStorage.getItem('noodle_courses_view_mode');
-      return saved === 'cards' ? 'cards' : 'list';
+      return saved === 'list' ? 'list' : 'cards';
     } catch {
       return 'cards';
     }
@@ -3570,20 +3976,14 @@ function DashboardTab({
     }
   };
 
-  useEffect(() => {
-    if (tourStep === 4) {
-      setIsManageModalOpen(true);
-    } else if (tourStep !== undefined && tourStep >= 0) {
-      setIsManageModalOpen(false);
-    }
-  }, [tourStep]);
+
 
   const visibleAssignments = assignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
   const now = new Date();
 
   // Partition pending tasks to prioritize future -> no-deadline -> overdue (with deterministic tie-breakers)
   const pendingTasks = assignments
-    .filter((a) => !isActivityHidden(a, settings?.hiddenAssignments) && a.status !== 'Submitted')
+    .filter((a) => !isActivityHidden(a, settings?.hiddenAssignments) && !a.isCompleted)
     .sort((a, b) => {
       const aHasFuture = a.deadline && new Date(a.deadline) > now;
       const bHasFuture = b.deadline && new Date(b.deadline) > now;
@@ -3603,18 +4003,50 @@ function DashboardTab({
 
   // All actionable upcoming tasks (excluding hero)
   const upcomingTasks = pendingTasks;
+  const selectedUpcomingTask = upcomingTasks.find((task) => task.id === expandedUpcomingId) || null;
+  const isTaskSplitOpen = Boolean(selectedUpcomingTask);
+  const selectedTaskColor = selectedUpcomingTask ? getCourseColor(selectedUpcomingTask.courseId) : 'var(--primary)';
+  const selectedTaskCourseName = selectedUpcomingTask
+    ? getCourseDisplayName(selectedUpcomingTask.courseId, selectedUpcomingTask.courseName)
+    : '';
+  const selectedTaskDueInfo = selectedUpcomingTask
+    ? getDueTextAndClass(
+      selectedUpcomingTask.deadline || null,
+      lang,
+      settings?.assignmentGreenDaysThreshold,
+      settings?.assignmentYellowDaysThreshold,
+      false,
+      selectedUpcomingTask.status
+    )
+    : null;
+  const selectedTaskSubjectFiles = selectedUpcomingTask
+    ? (syncResult?.files || []).filter(
+      (f) =>
+        f.courseId === selectedUpcomingTask.courseId &&
+        f.sectionName &&
+        selectedUpcomingTask.sectionName &&
+        f.sectionName.trim().toLowerCase() === selectedUpcomingTask.sectionName.trim().toLowerCase()
+    )
+    : [];
+  const isSelectedTaskHidden = selectedUpcomingTask
+    ? isActivityHidden(selectedUpcomingTask, settings?.hiddenAssignments)
+    : false;
+  const isSelectedTaskCompleted = selectedUpcomingTask ? Boolean(selectedUpcomingTask.isCompleted) : false;
+  const hasAnySelectedTaskFiles = Boolean(
+    (selectedUpcomingTask?.attachments && selectedUpcomingTask.attachments.length > 0) ||
+    selectedTaskSubjectFiles.length > 0 ||
+    (selectedUpcomingTask?.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0)
+  );
 
-  // Active Zoom meetings right now (excluding hidden meetings)
+  // Active Zoom meetings right now (excluding hidden meetings, default is visible)
   const isMeetingVisible = (m: ZoomMeeting) => {
-    if (!settings?.interestedMeetings || settings.interestedMeetings.length === 0) return true;
-    const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
-    return settings.interestedMeetings.includes(id);
+    return !isZoomMeetingHidden(m, settings?.hiddenZoomMeetings, settings?.interestedMeetings);
   };
-  const activeMeetings = meetings.filter((m) => getMeetingStatus(m.startTime) === 'active' && isMeetingVisible(m));
+  const activeMeetings = collapseRecurringMeetings(meetings, new Date()).filter((m) => (isZoomJoinUrl(m.meetingUrl, m.meetingNumber) || isZoomUrl(m.meetingUrl)) && getMeetingStatus(m.startTime) === 'active' && isMeetingVisible(m));
 
   // Semester progress calculation
   const totalAssignCount = visibleAssignments.length;
-  const completedAssignCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+  const completedAssignCount = visibleAssignments.filter((a) => a.isCompleted).length;
   const semProgressPercent = totalAssignCount > 0 ? Math.round((completedAssignCount / totalAssignCount) * 100) : 0;
 
   // Panopto catch-up recordings (unwatched recordings for tracked courses, oldest first)
@@ -3752,264 +4184,326 @@ function DashboardTab({
       )}
 
       {/* 1. Hero Action Strip: Upcoming To-Do Queue + Catch-Up Queue */}
-      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''}`}>
-        {/* Upcoming To-Do Queue (Closest task expanded by default with urgent flare) */}
-        <div className={`queue-card glass-panel ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
-          <div className="queue-header">
-            <div className="queue-title">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-              <span>{t('upcoming_tasks')}</span>
-            </div>
-            <span className="queue-count">{upcomingTasks.length} {t('tasks_count')}</span>
-          </div>
-
-          <div className="queue-list">
-            {upcomingTasks.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
-                🎉 {t('all_caught_up')}
+      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''} ${isTaskSplitOpen ? 'has-expanded-task' : ''}`}>
+        {/* Upcoming To-Do Queue (Splits horizontally into Master List + Course-Bordered Detail Pane when a task is selected) */}
+        <div className={`queue-card glass-panel ${isTaskSplitOpen ? 'is-split' : ''} ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
+          <div className="queue-split-layout">
+            <div className="queue-master-pane">
+              <div className="queue-header">
+                <div className="queue-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                  <span>{t('upcoming_tasks')}</span>
+                </div>
+                <span className="queue-count">{upcomingTasks.length} {t('tasks_count')}</span>
               </div>
-            ) : (
-              upcomingTasks.map((task) => {
-                const color = getCourseColor(task.courseId);
-                const courseName = getCourseDisplayName(task.courseId, task.courseName);
-                const isExpanded = expandedUpcomingId === task.id;
-                const isClosestTask = pendingTasks.length > 0 && task.id === pendingTasks[0].id;
-                const { badgeClass, deadlineText } = getDueTextAndClass(
-                  task.deadline || null,
-                  lang,
-                  settings?.assignmentGreenDaysThreshold,
-                  settings?.assignmentYellowDaysThreshold,
-                  false,
-                  task.status
-                );
 
-                const taskSubjectFiles = (syncResult?.files || []).filter(
-                  (f) =>
-                    f.courseId === task.courseId &&
-                    f.sectionName &&
-                    task.sectionName &&
-                    f.sectionName.trim().toLowerCase() === task.sectionName.trim().toLowerCase()
-                );
-                const isTaskHidden = isActivityHidden(task, settings?.hiddenAssignments);
-                const isTaskCompleted = task.isCompleted || task.status === 'Submitted';
+              <div className="queue-list">
+                {upcomingTasks.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
+                    {t('all_caught_up')}
+                  </div>
+                ) : (
+                  upcomingTasks.map((task) => {
+                    const color = getCourseColor(task.courseId);
+                    const courseName = getCourseDisplayName(task.courseId, task.courseName);
+                    const isExpanded = expandedUpcomingId === task.id;
+                    const isClosestTask = pendingTasks.length > 0 && task.id === pendingTasks[0].id;
+                    const { badgeClass, deadlineText } = getDueTextAndClass(
+                      task.deadline || null,
+                      lang,
+                      settings?.assignmentGreenDaysThreshold,
+                      settings?.assignmentYellowDaysThreshold,
+                      false,
+                      task.status
+                    );
 
-                return (
-                  <div
-                    key={task.id}
-                    className={`queue-item ${isClosestTask ? 'closest-metallic-wave' : ''} ${isExpanded ? 'is-expanded' : ''}`}
-                    onClick={() => setExpandedUpcomingId(isExpanded ? null : task.id)}
-                  >
-                    <div className="queue-item-main-row">
-                      <div className="queue-item-left">
-                        <button
-                          className="quick-check-btn"
-                          title={t('mark_done')}
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            onToggleCompleted && onToggleCompleted(task.id);
-                          }}
-                        >
-                          <CheckIcon size={12} />
-                        </button>
-                        <span className="course-color-dot" style={{ backgroundColor: color }} />
-                        <div className="queue-item-texts">
-                          <div className="queue-item-course" style={{ color }}>{courseName}</div>
-                          <div className="queue-item-name" title={task.name}>{task.name}</div>
+                    return (
+                      <div
+                        key={task.id}
+                        className={`queue-item ${isClosestTask ? 'closest-task-glow closest-metallic-wave' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                        style={isExpanded ? { borderColor: color, boxShadow: `inset 0 0 0 1px ${color}40` } : undefined}
+                        onClick={() => setExpandedUpcomingId(isExpanded ? null : task.id)}
+                      >
+                        <div className="queue-item-main-row">
+                          <div className="queue-item-left">
+                            <span className="course-color-dot" style={{ backgroundColor: color }} />
+                            <div className="queue-item-texts">
+                              <div className="queue-item-course" style={{ color }}>{courseName}</div>
+                              <div className="queue-item-name" title={task.name}>{task.name}</div>
+                            </div>
+                          </div>
+
+                          <div className="queue-item-meta">
+                            <span className={`badge ${badgeClass}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                              {deadlineText}
+                            </span>
+                            {task.cutoffDate && hasGracePeriod(task) && (
+                              <span
+                                className="grace-period-clock-icon"
+                                title={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                                aria-label={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                              >
+                                <ClockIcon size={12} />
+                              </span>
+                            )}
+                            <span
+                              className="queue-item-chevron"
+                              style={{
+                                fontSize: '0.75rem',
+                                color: isExpanded ? color : 'var(--text-muted)',
+                                transform: isExpanded ? (lang === 'he' ? 'rotate(90deg)' : 'rotate(-90deg)') : 'none',
+                                transition: 'transform 0.2s, color 0.2s',
+                                display: 'inline-block',
+                              }}
+                            >
+                              ▼
+                            </span>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
 
-                      <div className="queue-item-meta">
-                        <span className={`badge ${badgeClass}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                          {deadlineText}
+            {selectedUpcomingTask && (
+              <div
+                className="queue-detail-pane queue-item-expanded open"
+                style={{
+                  borderColor: selectedTaskColor,
+                  borderInlineStartColor: selectedTaskColor,
+                  '--detail-course-color': selectedTaskColor,
+                } as React.CSSProperties}
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                {/* 1. Pinned Detail Header */}
+                <div className="queue-detail-header">
+                  <div className="queue-detail-top-bar">
+                    <div className="queue-detail-course-group">
+                      <span className="course-color-dot" style={{ backgroundColor: selectedTaskColor }} />
+                      <span className="queue-detail-course-name" style={{ color: selectedTaskColor }} title={selectedTaskCourseName}>
+                        {selectedTaskCourseName}
+                      </span>
+                      <span className="subject-pill">
+                        <FolderIcon size={11} />
+                        <span style={{ fontSize: '0.72rem' }}>
+                          {selectedUpcomingTask.sectionName || (lang === 'he' ? 'כללי' : 'General')}
                         </span>
-                        {task.cutoffDate && hasGracePeriod(task) && (
-                          <span
-                            className="grace-period-clock-icon"
-                            title={formatGracePeriodTooltip(task.cutoffDate, lang)}
-                            aria-label={formatGracePeriodTooltip(task.cutoffDate, lang)}
-                          >
-                            <ClockIcon size={12} />
-                          </span>
-                        )}
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>
-                          ▼
-                        </span>
-                      </div>
+                      </span>
                     </div>
 
-                    <div className={`queue-item-expanded ${isExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
-                      {/* Attachments */}
-                      {task.attachments && task.attachments.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {t('attachments')}:
-                          </span>
-                          <div className="files-column-list">
-                            {task.attachments.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={att.url}
-                                      openUrl={openUrl}
-                                      fileName={att.name}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={att.name}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Subject Files */}
-                      {taskSubjectFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {t('subject_files')}:
-                          </span>
-                          <div className="files-column-list">
-                            {taskSubjectFiles.map((sf, sfIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                              const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                              return (
-                                <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={sf.fileUrl}
-                                      openUrl={openUrl}
-                                      fileName={sf.fileName}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={sf.fileName}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Submitted Files */}
-                      {task.submittedFiles && task.submittedFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                          </span>
-                          <div className="files-column-list">
-                            {task.submittedFiles.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <CheckIcon size={11} />
-                                  <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={att.url}
-                                      openUrl={openUrl}
-                                      fileName={att.name}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={att.name}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Actions Toolbar */}
-                      <div className="card-expanded-toolbar" style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        <span className="subject-pill">
-                          <FolderIcon size={12} />
-                          <span style={{ fontSize: '0.75rem' }}>{task.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                    <div className="queue-detail-meta-right">
+                      {selectedTaskDueInfo && (
+                        <span className={`badge ${selectedTaskDueInfo.badgeClass}`} style={{ fontSize: '0.72rem', padding: '0.18rem 0.45rem' }}>
+                          {selectedTaskDueInfo.deadlineText}
                         </span>
-                        <div className="toolbar-buttons-group" style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                          <button
-                            className="secondary-btn btn-xs"
-                            onClick={() => onGoToCourse(task.courseId)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            <BookOpenIcon size={11} />
-                            <span>{t('go_to_course')}</span>
-                          </button>
-                          <button
-                            className="secondary-btn btn-xs"
-                            onClick={() => onToggleCompleted && onToggleCompleted(task.id)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            <CheckIcon size={11} />
-                            <span>{isTaskCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                          </button>
-                          <button
-                            className="secondary-btn btn-xs"
-                            onClick={() => onToggleHidden && onToggleHidden(task.id)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            {isTaskHidden ? <EyeIcon size={11} /> : <EyeOffIcon size={11} />}
-                            <span>{isTaskHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
-                          </button>
-                          {task.link && (
-                            <a
-                              href={task.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="primary-btn btn-xs"
-                              data-moodle-link="true"
-                            >
-                              <span>{t('submit_assignment')}</span>
-                            </a>
-                          )}
-                        </div>
-                      </div>
+                      )}
+                      {selectedUpcomingTask.cutoffDate && hasGracePeriod(selectedUpcomingTask) && (
+                        <span
+                          className="grace-period-clock-icon"
+                          title={formatGracePeriodTooltip(selectedUpcomingTask.cutoffDate, lang)}
+                          aria-label={formatGracePeriodTooltip(selectedUpcomingTask.cutoffDate, lang)}
+                        >
+                          <ClockIcon size={12} />
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="queue-detail-close-btn"
+                        onClick={() => setExpandedUpcomingId(null)}
+                        title={lang === 'he' ? 'סגור' : 'Close'}
+                        aria-label={lang === 'he' ? 'סגור' : 'Close'}
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
-                );
-              })
+
+                  <div className="queue-detail-title" title={selectedUpcomingTask.name}>
+                    {selectedUpcomingTask.name}
+                  </div>
+                </div>
+
+                {/* 2. Scrollable Middle Body (Files) */}
+                <div className="queue-detail-body">
+                  {/* Attachments */}
+                  {selectedUpcomingTask.attachments && selectedUpcomingTask.attachments.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {t('attachments')}:
+                      </span>
+                      <div className="files-column-list">
+                        {selectedUpcomingTask.attachments.map((att, attIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(att.url, token);
+                          const openUrl = buildFileOpenUrl(att.url, token);
+                          return (
+                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FileIcon size={12} />{att.name}</span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={att.name}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subject Files */}
+                  {selectedTaskSubjectFiles.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {t('subject_files')}:
+                      </span>
+                      <div className="files-column-list">
+                        {selectedTaskSubjectFiles.map((sf, sfIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                          const openUrl = buildFileOpenUrl(sf.fileUrl, token);
+                          return (
+                            <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={sf.fileUrl}
+                                  openUrl={openUrl}
+                                  fileName={sf.fileName}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={sf.fileName}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Submitted Files */}
+                  {selectedUpcomingTask.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                      </span>
+                      <div className="files-column-list">
+                        {selectedUpcomingTask.submittedFiles.map((att, attIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(att.url, token);
+                          const openUrl = buildFileOpenUrl(att.url, token);
+                          return (
+                            <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <CheckIcon size={11} />
+                              <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={att.name}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {!hasAnySelectedTaskFiles && (
+                    <div className="queue-detail-empty-files">
+                      <FileIcon size={13} />
+                      <span>{lang === 'he' ? 'אין קבצים מצורפים למטלה זו' : 'No attached files for this assignment'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Pinned Action Footer */}
+                <div className="card-expanded-toolbar queue-detail-footer">
+                  <div className="toolbar-buttons-group" style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn-go-to-course btn-xs"
+                      onClick={() => onGoToCourse(selectedUpcomingTask.courseId)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <BookOpenIcon size={11} />
+                      <span>{t('go_to_course')}</span>
+                    </button>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleCompleted && onToggleCompleted(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      title={
+                        lang === 'he'
+                          ? 'סימון ידני כבוצע (הגשות במודל מתעדכנות אוטומטית בסנכרון)'
+                          : 'Mark done manually (Moodle submissions update automatically on sync)'
+                      }
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <span>{isSelectedTaskCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                    </button>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleHidden && onToggleHidden(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      {isSelectedTaskHidden ? <EyeIcon size={11} /> : <EyeOffIcon size={11} />}
+                      <span>{isSelectedTaskHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                    </button>
+                    {selectedUpcomingTask.link && (
+                      <a
+                        href={selectedUpcomingTask.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="primary-btn btn-xs action-submit-btn"
+                        data-moodle-link="true"
+                      >
+                        <span>{t('submit_assignment')}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -4186,10 +4680,13 @@ function DashboardTab({
             </div>
 
             <button
-              className={`secondary-btn btn-sm manage-courses-trigger-btn ${tourStep === 4 ? 'pulse-btn' : ''}`}
-              onClick={() => setIsManageModalOpen(true)}
+              type="button"
+              className={`primary-btn btn-sm manage-courses-trigger-btn ${tourStep === 4 ? 'pulse-btn' : ''}`}
+              onClick={() => onOpenManageCourses?.()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              ⚙️ {t('manage_courses')}
+              <BookOpenIcon size={13} />
+              <span>{t('manage_courses')}</span>
             </button>
           </div>
         </div>
@@ -4201,12 +4698,12 @@ function DashboardTab({
             displayCourseIds.map((cid, idx) => {
               const color = getCourseColor(cid);
               const courseAssigns = assignments.filter((a) => a.courseId === cid);
-              const courseMeetings = meetings.filter((m) => m.courseId === cid);
+              const courseMeetings = meetings.filter((m) => m.courseId === cid && (isZoomJoinUrl(m.meetingUrl, m.meetingNumber) || isZoomUrl(m.meetingUrl)));
 
               // Breakdown: Assignments (exclude hidden tasks from active tracking & gaps count)
               const visibleCourseAssigns = courseAssigns.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
               const totalAssigns = visibleCourseAssigns.length;
-              const doneAssigns = visibleCourseAssigns.filter((a) => a.status === 'Submitted').length;
+              const doneAssigns = visibleCourseAssigns.filter((a) => a.isCompleted).length;
               const gapAssigns = Math.max(0, totalAssigns - doneAssigns);
 
               // Breakdown: Panopto (Lectures and Recitations)
@@ -4228,7 +4725,7 @@ function DashboardTab({
 
               const nowTs = now.getTime();
               const pendingCourseAssigns = courseAssigns
-                .filter((a) => a.status !== 'Submitted' && !isActivityHidden(a, settings?.hiddenAssignments))
+                .filter((a) => !a.isCompleted && !isActivityHidden(a, settings?.hiddenAssignments))
                 .sort((a, b) => {
                   const aDue = a.deadline ? new Date(a.deadline).getTime() : null;
                   const bDue = b.deadline ? new Date(b.deadline).getTime() : null;
@@ -4272,7 +4769,7 @@ function DashboardTab({
                 >
                   {coursesViewMode === 'cards' ? (
                     <div className="course-card-content">
-                      {/* 1st row - title (+ real title) and Go To course button */}
+                      {/* 1st row - title (+ real title) */}
                       <div className="course-card-row-top">
                         <div className="course-card-title-group">
                           <span className="course-color-dot" style={{ backgroundColor: color }} />
@@ -4285,17 +4782,6 @@ function DashboardTab({
                             </span>
                           </div>
                         </div>
-
-                        <button
-                          type="button"
-                          className="primary-btn btn-sm course-card-goto-btn"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            onGoToCourse(cid);
-                          }}
-                        >
-                          <span>{t('go_to_course')}</span>
-                        </button>
                       </div>
 
                       {/* 2nd row - Next Task + Assignments button */}
@@ -4318,14 +4804,13 @@ function DashboardTab({
                         </button>
                       </div>
 
-                      {/* 3rd row - Gaps (פערים) label + assignments, lecs, recs + overall progress bar */}
+                      {/* 3rd row - Breakdown badges + overall progress bar */}
                       <div className="course-card-row-bottom">
                         <div className="course-card-gaps-container">
-                          <span className="course-gaps-label">{lang === 'he' ? 'פערים:' : 'Gaps:'}</span>
                           <div className="course-card-gaps">
                             <span
                               className={`course-stat-gap ${gapAssigns > 0 ? 'gap-pending' : 'gap-clear'}`}
-                              title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns} ${gapAssigns === 1 ? t('gap_label') : t('gaps_label')})`}
+                              title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns})`}
                             >
                               {t('assignments')}: {gapAssigns}
                             </span>
@@ -4333,13 +4818,13 @@ function DashboardTab({
                               <>
                                 <span
                                   className={`course-stat-gap ${gapLectures > 0 ? 'gap-pending' : 'gap-clear'}`}
-                                  title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures} ${gapLectures === 1 ? t('gap_label') : t('gaps_label')})`}
+                                  title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures})`}
                                 >
                                   {t('lectures')}: {gapLectures}
                                 </span>
                                 <span
                                   className={`course-stat-gap ${gapRecitations > 0 ? 'gap-pending' : 'gap-clear'}`}
-                                  title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations} ${gapRecitations === 1 ? t('gap_label') : t('gaps_label')})`}
+                                  title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations})`}
                                 >
                                   {t('recitations')}: {gapRecitations}
                                 </span>
@@ -4369,31 +4854,31 @@ function DashboardTab({
                         </div>
                       </div>
 
-                      {/* Breakdown: Assignments (x/y) [z gaps], Lectures (x/y) [z gaps], Recitations (x/y) [z gaps] */}
+                      {/* Breakdown: Assignments (x/y) [z], Lectures (x/y) [z], Recitations (x/y) [z] */}
                       <div className="course-breakdown-row">
-                        <div className="course-breakdown-stat" title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns} ${gapAssigns === 1 ? t('gap_label') : t('gaps_label')})`}>
+                        <div className="course-breakdown-stat" title={`${t('assignments')}: ${doneAssigns}/${totalAssigns} (${gapAssigns})`}>
                           <span className="stat-name">{t('assignments')}</span>
                           <span className="stat-count">({doneAssigns}/{totalAssigns})</span>
                           <span className={`course-stat-gap ${gapAssigns > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                            [{gapAssigns} {gapAssigns === 1 ? t('gap_label') : t('gaps_label')}]
+                            [{gapAssigns}]
                           </span>
                         </div>
 
                         {isPanoptoActive && (
                           <>
-                            <div className="course-breakdown-stat" title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures} ${gapLectures === 1 ? t('gap_label') : t('gaps_label')})`}>
+                            <div className="course-breakdown-stat" title={`${t('lectures')}: ${doneLectures}/${totalLectures} (${gapLectures})`}>
                               <span className="stat-name">{t('lectures')}</span>
                               <span className="stat-count">({doneLectures}/{totalLectures})</span>
                               <span className={`course-stat-gap ${gapLectures > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                                [{gapLectures} {gapLectures === 1 ? t('gap_label') : t('gaps_label')}]
+                                [{gapLectures}]
                               </span>
                             </div>
 
-                            <div className="course-breakdown-stat" title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations} ${gapRecitations === 1 ? t('gap_label') : t('gaps_label')})`}>
+                            <div className="course-breakdown-stat" title={`${t('recitations')}: ${doneRecitations}/${totalRecitations} (${gapRecitations})`}>
                               <span className="stat-name">{t('recitations')}</span>
                               <span className="stat-count">({doneRecitations}/{totalRecitations})</span>
                               <span className={`course-stat-gap ${gapRecitations > 0 ? 'gap-pending' : 'gap-clear'}`}>
-                                [{gapRecitations} {gapRecitations === 1 ? t('gap_label') : t('gaps_label')}]
+                                [{gapRecitations}]
                               </span>
                             </div>
                           </>
@@ -4431,12 +4916,14 @@ function DashboardTab({
                         </button>
 
                         <button
-                          className="primary-btn btn-sm"
+                          className="btn-go-to-course btn-sm"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             onGoToCourse(cid);
                           }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
+                          <BookOpenIcon size={12} />
                           <span>{t('go_to_course')}</span>
                         </button>
                       </div>
@@ -4450,67 +4937,7 @@ function DashboardTab({
         </div>
       </div>
 
-      {/* 5. Manage Courses Modal */}
-      {isManageModalOpen && (
-        <div
-          className="modal-backdrop"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: tourStep === 4 ? 'flex-start' : 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            backdropFilter: 'blur(4px)',
-            padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
-          }}
-          onClick={() => setIsManageModalOpen(false)}
-        >
-          <div
-            className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
-            style={{
-              maxWidth: '850px',
-              width: '100%',
-              maxHeight: tourStep === 4 ? '62vh' : '85vh',
-              overflowY: 'auto',
-              padding: '1.75rem',
-              borderRadius: 'var(--radius-md)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>⚙️ {t('tracked_courses_config')}</h3>
-              <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
 
-            <CoursesConfigTable
-              trackedCourseIds={trackedCourseIds}
-              syncResult={syncResult}
-              enrolledCourses={enrolledCourses || []}
-              getCourseColor={getCourseColor}
-              getCourseDisplayName={getCourseDisplayName}
-              coursesPanoptoMap={settings?.coursesPanoptoMap}
-              panoptoEnabled={settings?.panoptoEnabled ?? false}
-              onUpdateColor={onUpdateColor}
-              onUpdateCustomName={onUpdateCustomName}
-              onUpdatePanopto={onUpdatePanopto}
-              onSaveTrackedCourses={(newIds, panoptoOverrides) => {
-                setIsManageModalOpen(false);
-                onSaveTrackedCourses?.(newIds, panoptoOverrides);
-              }}
-              onLabDetected={onLabDetected}
-              t={t}
-              lang={lang}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -4540,8 +4967,8 @@ function AssignmentsTab({
   onGoToCourse: (courseId: number) => void;
   settings: ExtensionSettings | null;
   tourStep?: number;
-  onToggleCompleted?: (assignmentId: number) => void;
-  onToggleHidden?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
+  onToggleHidden?: (assignmentId: number | string) => void;
 } & TabProps) {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterPending, setFilterPending] = useState<boolean>(true);
@@ -4549,7 +4976,14 @@ function AssignmentsTab({
   const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
   const [filterHidden, setFilterHidden] = useState<boolean>(false);
   const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
-  const [showCalendarView, setShowCalendarView] = useState<boolean>(true);
+  const [showCalendarView, setShowCalendarView] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('noodle_show_calendar_view');
+      return saved === 'false' ? false : true;
+    } catch {
+      return true;
+    }
+  });
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -4560,7 +4994,7 @@ function AssignmentsTab({
   const handleToggleHiddenWithFilter = (targetAssign: EnhancedAssignment) => {
     const isCurrentlyHidden = isActivityHidden(targetAssign, settings?.hiddenAssignments);
     if (isCurrentlyHidden) {
-      const isCompleted = targetAssign.status === 'Submitted';
+      const isCompleted = Boolean(targetAssign.isCompleted);
       const hasDeadlinePassed = targetAssign.deadline ? new Date(targetAssign.deadline) < now : false;
       if (isCompleted && !filterCompleted) {
         setFilterCompleted(true);
@@ -4596,7 +5030,7 @@ function AssignmentsTab({
     }
 
     const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
-    const isCompleted = a.status === 'Submitted';
+    const isCompleted = Boolean(a.isCompleted);
     const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
 
     if (isHidden && filterHidden) return true;
@@ -4613,7 +5047,7 @@ function AssignmentsTab({
   // Select an assignment from the Calendar View -> ensure its filter is enabled, expand it, and scroll to it
   const handleSelectCalendarAssignment = (a: EnhancedAssignment) => {
     const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
-    const isCompleted = a.status === 'Submitted';
+    const isCompleted = Boolean(a.isCompleted);
     const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
 
     if (isHidden && !filterHidden) setFilterHidden(true);
@@ -4763,7 +5197,17 @@ function AssignmentsTab({
           <button
             type="button"
             className={`calendar-toggle-btn ${showCalendarView ? 'active' : ''}`}
-            onClick={() => setShowCalendarView((prev) => !prev)}
+            onClick={() => {
+              setShowCalendarView((prev) => {
+                const next = !prev;
+                try {
+                  localStorage.setItem('noodle_show_calendar_view', String(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }}
             title={showCalendarView ? t('hide_calendar_view') : t('calendar_view')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4817,7 +5261,7 @@ function AssignmentsTab({
                 false,
                 a.status
               );
-              const isCompleted = a.status === 'Submitted';
+              const isCompleted = Boolean(a.isCompleted);
               const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
               const isExpanded = expandedAssignId === a.id;
               const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName);
@@ -4852,21 +5296,6 @@ function AssignmentsTab({
                         {a.name}
                       </span>
                       {isHidden && <span className="badge-hidden-tag">{t('hidden_tag')}</span>}
-                      {a.isCompleted && !a.isMoodleSubmitted && (
-                        <span
-                          className="assignment-tag"
-                          style={{
-                            background: 'rgba(16, 185, 129, 0.15)',
-                            color: 'var(--secondary)',
-                            border: '1px solid rgba(16, 185, 129, 0.3)',
-                            padding: '0.15rem 0.45rem',
-                            borderRadius: '4px',
-                            fontSize: '0.72rem'
-                          }}
-                        >
-                          {t('marked_as_done')}
-                        </span>
-                      )}
                       {!a.isCompleted && a.isMoodleSubmitted && (
                         <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
                           {t('submitted_tag')}
@@ -4875,7 +5304,22 @@ function AssignmentsTab({
                     </div>
 
                     <div className="assign-right-meta">
-                      <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                      {a.status === 'Submitted' ? (
+                        <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
+                      ) : a.isCompleted ? (
+                        <span
+                          className="badge badge-success"
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#10b981',
+                            borderColor: 'rgba(16, 185, 129, 0.3)',
+                          }}
+                        >
+                          {t('marked_as_done')}
+                        </span>
+                      ) : (
+                        <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                      )}
                       {a.cutoffDate && hasGracePeriod(a) && (
                         <span
                           className="grace-period-clock-icon"
@@ -4885,16 +5329,16 @@ function AssignmentsTab({
                           <ClockIcon size={13} />
                         </span>
                       )}
-                      {!isCompleted && a.link && (
+                      {!a.isMoodleSubmitted && a.link && (
                         <a
                           href={a.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="file-action-btn"
+                          className="primary-btn btn-xs action-submit-btn"
                           onClick={(ev) => ev.stopPropagation()}
                           data-moodle-link="true"
                         >
-                          {t('submit_in_moodle')}
+                          <span>{t('submit_in_moodle')}</span>
                         </a>
                       )}
                       {isCompleted && (
@@ -4939,7 +5383,7 @@ function AssignmentsTab({
                             const openUrl = buildFileOpenUrl(att.url, token);
                             return (
                               <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                <span className="file-name">📄 {att.name}</span>
+                                <span className="file-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
                                   <FileOpenAction
                                     rawUrl={att.url}
@@ -4980,7 +5424,7 @@ function AssignmentsTab({
                             const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                             return (
                               <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                <span className="file-name">📂 {sf.fileName}</span>
+                                <span className="file-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
                                 <div className="file-actions-group" style={{ display: 'flex', gap: '0.35rem', marginInlineStart: 'auto' }}>
                                   <FileOpenAction
                                     rawUrl={sf.fileUrl}
@@ -5063,7 +5507,7 @@ function AssignmentsTab({
 
                       <div className="toolbar-buttons-group">
                         <button
-                          className="secondary-btn btn-xs"
+                          className="btn-go-to-course btn-xs"
                           onClick={() => onGoToCourse(a.courseId)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
@@ -5073,7 +5517,7 @@ function AssignmentsTab({
 
                         <button
                           className="secondary-btn btn-xs"
-                          onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
+                          onClick={() => onToggleCompleted && onToggleCompleted(a.uid || getActivityUid(a))}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           <CheckIcon size={12} />
@@ -5163,7 +5607,7 @@ function AssignmentsTab({
                       const color = getCourseColor(item.courseId);
                       const courseName = getCourseDisplayName(item.courseId, item.courseName);
                       const isSelected = expandedAssignId === item.id;
-                      const isDone = item.status === 'Submitted';
+                      const isDone = Boolean(item.isCompleted);
                       const dueTimeStr = item.deadline
                         ? new Date(item.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : '';
@@ -5210,8 +5654,8 @@ function AssignmentsTab({
 // 4. GRADES TAB
 function GradesTab({
   assignments,
-  gradeSummaries,
   excludedCourseIds,
+  settings,
   getCourseColor,
   getCourseDisplayName,
   t,
@@ -5219,43 +5663,42 @@ function GradesTab({
   tourStep,
 }: {
   assignments: Assignment[];
-  gradeSummaries?: Record<number, CourseGradeSummary>;
   excludedCourseIds?: Set<number>;
+  settings?: ExtensionSettings | null;
   tourStep?: number;
 } & TabProps) {
-  // Collect all assignments that are graded (excluding administrative/safety tutorials from GPA)
-  const gradedAssigns = assignments.filter(
-    (a) => a.grade !== null && !excludedCourseIds?.has(a.courseId) && !/^5[89]00\d{4}/.test(a.courseName || '')
-  );
-
-  // Group graded assignments by course to calculate averages
-  const gradesByCourse: Record<number, { courseName: string; sum: number; count: number; list: Assignment[] }> = {};
-  gradedAssigns.forEach((a) => {
-    if (a.grade === null) return;
-    if (!gradesByCourse[a.courseId]) {
-      gradesByCourse[a.courseId] = { courseName: a.courseName, sum: 0, count: 0, list: [] };
-    }
-    const ratio = a.gradeMax ? a.grade / a.gradeMax : 0;
-    if (!a.isBonus) {
-      gradesByCourse[a.courseId].sum += ratio * 100;
-      gradesByCourse[a.courseId].count += 1;
-    }
-    gradesByCourse[a.courseId].list.push(a);
-  });
-
-  // Calculate overall GPA (simple unweighted average of course averages)
-  let totalCourseAverageSum = 0;
-  let courseAveragesCount = 0;
-  Object.values(gradesByCourse).forEach((c) => {
-    if (c.count > 0) {
-      totalCourseAverageSum += c.sum / c.count;
-      courseAveragesCount++;
-    }
-  });
-  const overallGpa = courseAveragesCount > 0 ? (totalCourseAverageSum / courseAveragesCount).toFixed(2) : '-';
+  const { overallGpa, courseGroups, totalCalculatedItems } = useMemo(() => {
+    return calculateGradesSummary({
+      assignments,
+      hiddenIdentifiers: settings?.hiddenAssignments,
+      completedIdentifiers: settings?.completedAssignments,
+      uncompletedIdentifiers: settings?.uncompletedAssignments,
+      excludedCourseIds,
+    });
+  }, [assignments, settings?.hiddenAssignments, settings?.completedAssignments, settings?.uncompletedAssignments, excludedCourseIds]);
 
   return (
     <div className="tab-grades">
+      <div className="grades-calc-notice glass-panel">
+        <svg
+          className="grades-calc-notice-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+        <span className="grades-calc-notice-text">
+          {t('grades_policy_note')}
+        </span>
+      </div>
+
       <div className="gpa-card-container">
         <div className={`stat-card glass-panel border-left-secondary ${tourStep === 7 ? 'tour-highlight' : ''}`} style={{ maxWidth: '300px' }}>
           <span className="stat-title">{t('gpa_title')}</span>
@@ -5264,25 +5707,18 @@ function GradesTab({
         </div>
       </div>
 
-      {gradedAssigns.length === 0 ? (
+      {totalCalculatedItems === 0 ? (
         <div className="empty-state glass-panel">{t('empty_state_grades')}</div>
       ) : (
         <div className="grades-grouped-list">
-          {Object.entries(gradesByCourse).map(([courseIdStr, group]) => {
+          {Object.entries(courseGroups).map(([courseIdStr, group]) => {
             const courseId = Number(courseIdStr);
             const color = getCourseColor(courseId);
-            const courseAverage = group.count > 0 ? (group.sum / group.count).toFixed(2) : '-';
             return (
               <div key={courseId} className="course-grades-group glass-panel" style={{ borderLeft: `4px solid ${color}` }}>
                 <div className="group-header">
                   <h4 style={{ color }}>{getCourseDisplayName(courseId, group.courseName)}</h4>
-                  {gradeSummaries?.[courseId]?.hasCourseTotal && gradeSummaries[courseId].courseTotalFormatted ? (
-                    <span className="course-avg-badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
-                      {lang === 'he' ? 'ציון סופי:' : 'Course Total:'} {gradeSummaries[courseId].courseTotalFormatted}
-                    </span>
-                  ) : (
-                    <span className="course-avg-badge">{t('course_average_label')}: {courseAverage}</span>
-                  )}
+                  <span className="course-avg-badge">{t('course_average_label')}: {group.average}</span>
                 </div>
 
                 <div className="grades-table">
@@ -5293,17 +5729,17 @@ function GradesTab({
                           {a.name}
                           {a.isBonus && (
                             <span className="badge" style={{ marginInlineStart: '0.4rem', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)', fontSize: '0.72rem', padding: '0.1rem 0.4rem' }}>
-                              ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
+                              {t('grades_bonus_label') || (lang === 'he' ? 'בונוס' : 'Bonus')}
                             </span>
                           )}
                         </span>
                         <span className="grade-value-span">
-                          {a.grade} / {a.gradeMax}
+                          {a.effectiveGrade} / {a.effectiveGradeMax}
                         </span>
                       </div>
                       {a.feedback && (
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', paddingInlineStart: '0.5rem', borderInlineStart: '2px solid #10b981' }}>
-                          💬 {a.feedback}
+                          {a.feedback}
                         </div>
                       )}
                     </div>
@@ -5338,9 +5774,12 @@ function SettingsTab({
   lang,
   onUpdateLanguage,
   onUpdateTheme,
+  onUpdateTimeThemeHours,
+  onOpenManageCourses,
   onUpdateThresholds,
   onToggleScraping,
   onTogglePanopto,
+  onTogglePanoptoFolderOverride,
   onToggleNotifications,
   onAddMockCourse,
   tourStep,
@@ -5370,10 +5809,13 @@ function SettingsTab({
   onToggleSyncWithoutDeadline?: (enabled: boolean) => void;
   onUpdateGoogleClientId?: (id: string) => void;
   onUpdateLanguage: (l: 'he' | 'en') => void;
-  onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee') => void;
+  onUpdateTheme: (theme: 'dark' | 'noodle' | 'coffee' | 'time') => void;
+  onUpdateTimeThemeHours?: (start: number, end: number) => void;
+  onOpenManageCourses?: () => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
   onToggleScraping?: (enabled: boolean) => void;
   onTogglePanopto?: (enabled: boolean) => void;
+  onTogglePanoptoFolderOverride?: (enabled: boolean) => void;
   onToggleNotifications?: (enabled: boolean) => void;
   onAddMockCourse?: () => void;
   t: (key: any) => string;
@@ -5435,15 +5877,67 @@ function SettingsTab({
         <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
           <select
             className="settings-text-input"
-            value={settings.theme || 'dark'}
-            onChange={(e) => onUpdateTheme(e.target.value as 'dark' | 'noodle' | 'coffee')}
-            style={{ maxWidth: '200px', cursor: 'pointer' }}
+            value={settings.theme || 'noodle'}
+            onChange={(e) => onUpdateTheme(e.target.value as 'dark' | 'noodle' | 'coffee' | 'time')}
+            style={{ maxWidth: '280px', cursor: 'pointer' }}
           >
+            <option value="noodle">{lang === 'he' ? 'נודל (Noodle)' : 'Noodle'}</option>
+            <option value="coffee">{lang === 'he' ? 'קפה (Coffee)' : 'Coffee'}</option>
             <option value="dark">{lang === 'he' ? 'כהה (Dark)' : 'Dark'}</option>
-            <option value="noodle">{lang === 'he' ? 'נודל 🍜 (Noodle)' : 'Noodle 🍜'}</option>
-            <option value="coffee">{lang === 'he' ? 'קפה ☕ (Coffee)' : 'Coffee ☕'}</option>
+            <option value="time">{t('theme_time')}</option>
           </select>
         </div>
+        {settings.theme === 'time' && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+            <p className="subtitle" style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem' }}>
+              {t('theme_time_desc')}
+            </p>
+            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+              <div>
+                <label htmlFor="theme-time-start" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.82rem' }}>
+                  {t('theme_time_noodle_start')}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <input
+                    type="number"
+                    id="theme-time-start"
+                    min={0}
+                    max={23}
+                    className="settings-text-input"
+                    style={{ width: '70px' }}
+                    value={settings.themeTimeDayStart ?? 7}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(23, parseInt(e.target.value) || 0));
+                      onUpdateTimeThemeHours?.(val, settings.themeTimeDayEnd ?? 17);
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>:00</span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="theme-time-end" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.82rem' }}>
+                  {t('theme_time_coffee_start')}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <input
+                    type="number"
+                    id="theme-time-end"
+                    min={0}
+                    max={23}
+                    className="settings-text-input"
+                    style={{ width: '70px' }}
+                    value={settings.themeTimeDayEnd ?? 17}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(23, parseInt(e.target.value) || 0));
+                      onUpdateTimeThemeHours?.(settings.themeTimeDayStart ?? 7, val);
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>:00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dashboard Width Section */}
@@ -5486,6 +5980,101 @@ function SettingsTab({
               {t('reset_to_default_width')}
             </button>
           )}
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Due Date Colors Thresholds Section */}
+      <div className="settings-section">
+        <h4>{t('due_dates_colors_title')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('due_dates_colors_desc')}
+        </p>
+        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+          <div>
+            <label htmlFor="green-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {t('green_threshold_label')}
+            </label>
+            <input
+              type="number"
+              id="green-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentGreenDaysThreshold ?? 7}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(val, settings.assignmentYellowDaysThreshold ?? 3);
+              }}
+            />
+          </div>
+          <div>
+            <label htmlFor="yellow-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
+              {t('yellow_threshold_label')}
+            </label>
+            <input
+              type="number"
+              id="yellow-threshold"
+              className="settings-text-input"
+              style={{ width: '80px' }}
+              value={settings.assignmentYellowDaysThreshold ?? 3}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                onUpdateThresholds(settings.assignmentGreenDaysThreshold ?? 7, val);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Manage Tracked Courses Section */}
+      <div className="settings-section">
+        <h4>{t('manage_courses')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('manage_courses_desc')}
+        </p>
+        <div>
+          <button
+            type="button"
+            className="secondary-btn btn-sm"
+            onClick={onOpenManageCourses}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <BookOpenIcon size={13} />
+            <span>{t('manage_courses')}</span>
+          </button>
+        </div>
+      </div>
+
+      <hr className="settings-divider" />
+
+      {/* Configuration Backup Section */}
+      <div className="settings-section">
+        <h4>{t('config_backup_title')}</h4>
+        <p className="subtitle" style={{ marginBottom: '1rem' }}>
+          {t('config_backup_desc')}
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="primary-btn btn-sm" onClick={onExportConfig} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <DownloadIcon size={13} />
+            <span>{t('export_config_btn')}</span>
+          </button>
+          <label className="secondary-btn btn-sm" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+            <UploadIcon size={13} />
+            <span>{t('import_config_btn')}</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  onImportConfig(e.target.files[0]);
+                }
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
         </div>
       </div>
 
@@ -5601,13 +6190,8 @@ function SettingsTab({
                 }}
                 onClick={() => setShowAdvancedGoogle(!showAdvancedGoogle)}
               >
-                <span style={{
-                  fontSize: '0.75rem',
-                  transform: showAdvancedGoogle ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s',
-                  display: 'inline-block'
-                }}>▼</span>
-                <span>⚙️ {t('advanced_google_settings')}</span>
+                <ChevronDownIcon size={14} expanded={showAdvancedGoogle} />
+                <span>{t('advanced_google_settings')}</span>
               </button>
 
               {showAdvancedGoogle && (
@@ -5645,7 +6229,7 @@ function SettingsTab({
                         }}
                         style={{ whiteSpace: 'nowrap' }}
                       >
-                        {copiedRedirect ? `✓ ${t('copied_btn')}` : t('copy_btn')}
+                        {copiedRedirect ? t('copied_btn') : t('copy_btn')}
                       </button>
                     </div>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', lineHeight: '1.4' }}>
@@ -5698,7 +6282,7 @@ function SettingsTab({
                         }}
                         style={{ whiteSpace: 'nowrap' }}
                       >
-                        {tokenSavedToast ? `✓ ${t('token_saved')}` : t('save_and_sync_btn')}
+                        {tokenSavedToast ? t('token_saved') : t('save_and_sync_btn')}
                       </button>
                     </div>
                   </div>
@@ -5711,8 +6295,8 @@ function SettingsTab({
                 {googleSyncLoading
                   ? t('syncing')
                   : hasGoogleTasksToken && !googleTasksAuthError
-                    ? `🔄 ${t('sync_tasks_now')}`
-                    : `🔗 ${t('auth_sync_google')}`}
+                    ? t('sync_tasks_now')
+                    : t('auth_sync_google')}
               </button>
             </div>
 
@@ -5732,7 +6316,7 @@ function SettingsTab({
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
           <select
             className="settings-text-input"
-            value={settings.syncIntervalMinutes ?? 5}
+            value={settings.syncIntervalMinutes ?? 60}
             onChange={(e) => onUpdateSyncInterval && onUpdateSyncInterval(parseInt(e.target.value, 10))}
             style={{ maxWidth: '240px', cursor: 'pointer' }}
           >
@@ -5835,6 +6419,34 @@ function SettingsTab({
             <span className="slider round"></span>
           </label>
         </div>
+
+        {settings.panoptoEnabled && (
+          <div className="toggle-row" style={{ marginTop: '0.5rem', padding: '0.25rem 0' }}>
+            <div>
+              <span className="toggle-label" style={{ fontSize: '0.92rem' }}>
+                {t('panopto_manual_override_setting_title')}
+              </span>
+              <p className="subtitle" style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
+                {t('panopto_manual_override_setting_desc')}
+              </p>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                id="panopto-folder-override-toggle"
+                checked={settings.showPanoptoFolderOverride ?? false}
+                onChange={async (e) => {
+                  if (onTogglePanoptoFolderOverride) {
+                    onTogglePanoptoFolderOverride(e.target.checked);
+                  } else {
+                    await setSettings({ showPanoptoFolderOverride: e.target.checked });
+                  }
+                }}
+              />
+              <span className="slider round"></span>
+            </label>
+          </div>
+        )}
         {settings.panoptoEnabled && !hasPanoptoPermission && (
           <div
             style={{
@@ -5888,91 +6500,11 @@ function SettingsTab({
         </>
       )}
 
-      {/* Threshold configuration section */}
-      <div className="settings-section">
-        <h4>{lang === 'he' ? 'צבעי מועדי הגשה (מטלה הבאה)' : 'Due Date Colors (Next Assignment)'}</h4>
-        <p className="subtitle" style={{ marginBottom: '1rem' }}>
-          {lang === 'he'
-            ? 'הגדר את סף הימים לשינוי צבעי ההתראה של המטלה הבאה.'
-            : 'Configure the day thresholds for the next assignment due date alerts.'}
-        </p>
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-          <div>
-            <label htmlFor="green-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
-              {lang === 'he' ? 'ירוק - יותר מ-X ימים (X):' : 'Green - more than X days (X):'}
-            </label>
-            <input
-              type="number"
-              id="green-threshold"
-              className="settings-text-input"
-              style={{ width: '80px' }}
-              value={settings.assignmentGreenDaysThreshold ?? 7}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0;
-                onUpdateThresholds(val, settings.assignmentYellowDaysThreshold ?? 3);
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="yellow-threshold" style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem' }}>
-              {lang === 'he' ? 'צהוב - יותר מ-Y ימים (Y):' : 'Yellow - more than Y days (Y):'}
-            </label>
-            <input
-              type="number"
-              id="yellow-threshold"
-              className="settings-text-input"
-              style={{ width: '80px' }}
-              value={settings.assignmentYellowDaysThreshold ?? 3}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) || 0;
-                onUpdateThresholds(settings.assignmentGreenDaysThreshold ?? 7, val);
-              }}
-            />
-          </div>
-        </div>
 
-      </div>
-
-      <hr className="settings-divider" />
-
-
-
-
-
-      {/* Configuration Backup Section */}
-      <div className="settings-section">
-        <h4>{lang === 'he' ? 'גיבוי ושחזור הגדרות' : 'Configuration Backup'}</h4>
-        <p className="subtitle" style={{ marginBottom: '1rem' }}>
-          {lang === 'he'
-            ? 'ייצא את כל הגדרות התוסף, הצבעים והאסימונים לקובץ JSON במחשב שלך, כדי שתוכל לשחזר אותם מאוחר יותר.'
-            : 'Export all extension settings, course colors, nicknames, and tokens to a JSON file on your computer to restore them later.'}
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button className="primary-btn btn-sm" onClick={onExportConfig} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <DownloadIcon size={13} />
-            <span>{t('export_config_btn')}</span>
-          </button>
-          <label className="secondary-btn btn-sm" style={{ cursor: 'pointer', display: 'inline-block', margin: 0 }}>
-            📁 {t('import_config_btn')}
-            <input
-              type="file"
-              accept=".json"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  onImportConfig(e.target.files[0]);
-                }
-              }}
-              style={{ display: 'none' }}
-            />
-          </label>
-        </div>
-      </div>
-
-      <hr className="settings-divider" />
 
       {/* Account & Development Section */}
       <div className="settings-section">
-        <h4>👤 {t('account_section_title')}</h4>
+        <h4>{t('account_section_title')}</h4>
         <p className="subtitle" style={{ marginBottom: '1rem' }}>
           {t('account_section_desc')}
         </p>
@@ -6081,7 +6613,6 @@ function CourseDetailView({
   courseFolders,
   courseLinks,
   courseAnnouncements,
-  courseGradeSummaries,
   syncErrors,
   token,
   getCourseColor,
@@ -6112,7 +6643,6 @@ function CourseDetailView({
   courseFolders?: CourseFolder[];
   courseLinks?: CourseLink[];
   courseAnnouncements?: CourseAnnouncement[];
-  courseGradeSummaries?: Record<number, CourseGradeSummary>;
   syncErrors?: SyncError[];
   token: string | null;
   onBack: () => void;
@@ -6123,8 +6653,8 @@ function CourseDetailView({
   onSetCourseMeetingsVisibility?: (courseMeetings: ZoomMeeting[], makeVisible: boolean) => void;
   showHiddenZoomCourseIds?: Set<number>;
   onToggleShowHiddenZoom?: (courseId: number) => void;
-  onToggleCompleted?: (assignmentId: number) => void;
-  onToggleHidden?: (assignmentId: number) => void;
+  onToggleCompleted?: (assignmentId: number | string) => void;
+  onToggleHidden?: (assignmentId: number | string) => void;
   onToggleHideAllCourse?: (courseAssignIds: number[], shouldHideAll: boolean) => void;
   onToggleRecordingWatched?: (recordingId: string) => void;
   onUpdatePanopto?: (courseId: number, panoptoVal: string, triggerSync?: boolean) => void;
@@ -6146,6 +6676,19 @@ function CourseDetailView({
   const [activeSubSectionId, setActiveSubSectionId] = useState<number | null>(null);
   const [downloadingFolderId, setDownloadingFolderId] = useState<number | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<number>>(new Set());
+
+  const toggleFolderCollapsed = (folderId: number) => {
+    setCollapsedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
   const [showEmptySections, setShowEmptySections] = useState<boolean>(() => {
     try {
       return localStorage.getItem('noodle_show_empty_sections') === 'true';
@@ -6233,6 +6776,15 @@ function CourseDetailView({
   // Filter items for this course
   const allCourseAssignments = assignments.filter((a) => a.courseId === courseId);
   const courseAssignments = allCourseAssignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
+  const courseGradeSummary = useMemo(() => {
+    return calculateGradesSummary({
+      assignments: courseAssignments,
+      hiddenIdentifiers: settings?.hiddenAssignments,
+      completedIdentifiers: settings?.completedAssignments,
+      uncompletedIdentifiers: settings?.uncompletedAssignments,
+    });
+  }, [courseAssignments, settings?.hiddenAssignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+  const thisCourseGroup = courseGradeSummary.courseGroups[courseId];
   const courseFiles = files.filter((f) => f.courseId === courseId);
   const courseRecordings = (settings?.panoptoEnabled ? (recordings || []) : []).filter((r) => r.courseId === courseId);
   const watchedSet = new Set(settings?.watchedRecordings || []);
@@ -6463,9 +7015,9 @@ function CourseDetailView({
         <div className="detail-title-section">
           <h3 style={{ color: courseColor }}>{courseDisplayName}</h3>
           <span className="course-id-badge">{rawCourseName}</span>
-          {courseGradeSummaries?.[courseId]?.hasCourseTotal && (
+          {thisCourseGroup && thisCourseGroup.count > 0 && (
             <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
-              {lang === 'he' ? 'ציון כולל:' : 'Total Grade:'} {courseGradeSummaries[courseId].courseTotalFormatted}
+              {t('course_average_label')}: {thisCourseGroup.average}
             </span>
           )}
         </div>
@@ -6512,13 +7064,12 @@ function CourseDetailView({
             );
           })()}
           {(() => {
-            const rawCourseMeetings = meetings.filter(m => m.courseId === courseId);
+            const rawCourseMeetings = meetings.filter(m => m.courseId === courseId && (isZoomJoinUrl(m.meetingUrl, m.meetingNumber) || isZoomUrl(m.meetingUrl)));
             const courseMeetings = collapseRecurringMeetings(rawCourseMeetings, new Date());
+            const moodleZoomLink = (courseLinks || []).find((l: CourseLink) => l.courseId === courseId && l.linkKind === 'zoom');
 
             const isMarked = (m: ZoomMeeting) => {
-              if (!settings?.interestedMeetings || settings.interestedMeetings.length === 0) return true;
-              const id = `${m.courseName}:${m.meetingNumber || ''}${m.title}`;
-              return settings.interestedMeetings.includes(id);
+              return !isZoomMeetingHidden(m, settings?.hiddenZoomMeetings, settings?.interestedMeetings);
             };
             const markedMeetings = courseMeetings.filter(isMarked);
             const hiddenMeetings = courseMeetings.filter(m => !isMarked(m));
@@ -6533,28 +7084,37 @@ function CourseDetailView({
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, textAlign: lang === 'he' ? 'right' : 'left' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold' }}>
-                        📹 {t('zoom_links_found')} ({markedMeetings.length}/{courseMeetings.length})
+                      <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <VideoIcon size={16} />
+                        <span>{t('zoom_links_found')} ({markedMeetings.length}/{courseMeetings.length})</span>
                       </h4>
                       {courseMeetings.length > 0 && onSetCourseMeetingsVisibility && (
-                        <div style={{ display: 'flex', gap: '0.35rem' }} onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="zoom-actions-row"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             type="button"
-                            className="btn-ghost"
-                            style={{ fontSize: '0.72rem', padding: '0.15rem 0.4rem', borderRadius: '4px', cursor: 'pointer' }}
+                            className="secondary-btn btn-xs"
                             onClick={() => onSetCourseMeetingsVisibility(courseMeetings, true)}
                             title={t('show_all_course_zoom')}
                           >
-                            {t('show_all_course_zoom')}
+                            <EyeIcon size={12} />
+                            <span>{t('show_all_course_zoom')}</span>
                           </button>
                           <button
                             type="button"
-                            className="btn-ghost"
-                            style={{ fontSize: '0.72rem', padding: '0.15rem 0.4rem', borderRadius: '4px', cursor: 'pointer' }}
+                            className="secondary-btn btn-xs"
                             onClick={() => onSetCourseMeetingsVisibility(courseMeetings, false)}
                             title={t('hide_all_course_zoom')}
                           >
-                            {t('hide_all_course_zoom')}
+                            <EyeOffIcon size={12} />
+                            <span>{t('hide_all_course_zoom')}</span>
                           </button>
                         </div>
                       )}
@@ -6633,8 +7193,33 @@ function CourseDetailView({
                   {(() => {
                     if (courseMeetings.length === 0) {
                       return (
-                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '8px 0' }}>
-                          {lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}
+                        <div style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px', padding: '10px 0' }}>
+                          <div>{lang === 'he' ? 'לא נמצאו פגישות זום עבור קורס זה.' : 'No Zoom meetings found for this course.'}</div>
+                          {moodleZoomLink && (
+                            <div style={{ marginTop: '0.65rem' }}>
+                              <a
+                                href={moodleZoomLink.targetUrl || moodleZoomLink.moodleUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                data-moodle-link="true"
+                                className="btn-ghost"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '5px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  border: '1px solid rgba(255,255,255,0.15)',
+                                  color: 'var(--primary)',
+                                  textDecoration: 'none'
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
+                                <span>{lang === 'he' ? 'פתח עמוד זום במודל ↗' : 'Open Zoom Page in Moodle ↗'}</span>
+                              </a>
+                            </div>
+                          )}
                         </div>
                       );
                     }
@@ -6691,7 +7276,7 @@ function CourseDetailView({
                               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.sectionName}</span>
                               {m.startTime && (
                                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                  📅 {new Date(m.startTime).toLocaleString()}
+                                  {new Date(m.startTime).toLocaleString()}
                                 </span>
                               )}
                             </div>
@@ -6742,26 +7327,16 @@ function CourseDetailView({
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.25rem' }}>
                             <button
                               type="button"
-                              className="btn-ghost zoom-toggle-hidden-btn"
+                              className="secondary-btn btn-xs zoom-toggle-hidden-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onToggleShowHiddenZoom && onToggleShowHiddenZoom(courseId);
                               }}
                               style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                fontSize: '0.75rem',
-                                color: 'var(--text-secondary)',
-                                padding: '0.25rem 0.5rem',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
                                 alignSelf: 'flex-start',
-                                background: isHiddenOpen ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                                border: '1px solid rgba(255, 255, 255, 0.08)'
                               }}
                             >
-                              {isHiddenOpen ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
+                              {isHiddenOpen ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
                               <span>
                                 {isHiddenOpen
                                   ? `${t('hide_hidden_zoom')} (${hiddenMeetings.length})`
@@ -6893,8 +7468,8 @@ function CourseDetailView({
                       </div>
                     )}
 
-                    {/* Inline Folder URL / UUID Override Bar */}
-                    {onUpdatePanopto && (
+                    {/* Inline Folder URL / UUID Override Bar (defaults to off) */}
+                    {onUpdatePanopto && settings?.showPanoptoFolderOverride && (
                       <div
                         className="panopto-inline-override-row"
                         style={{
@@ -6983,7 +7558,7 @@ function CourseDetailView({
                                 </span>
                                 <span className="item-name recording-title-span">{rec.title}</span>
                                 {rec.publishedDate && (
-                                  <span className="recording-date-badge">📅 {rec.publishedDate}</span>
+                                  <span className="recording-date-badge">{rec.publishedDate}</span>
                                 )}
                               </div>
                               <div className="recording-actions">
@@ -7525,6 +8100,17 @@ function CourseDetailView({
                                     )}
                                     {a.status === 'Submitted' ? (
                                       <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
+                                    ) : (a as any).isCompleted ? (
+                                      <span
+                                        className="badge badge-success"
+                                        style={{
+                                          background: 'rgba(16, 185, 129, 0.15)',
+                                          color: '#10b981',
+                                          borderColor: 'rgba(16, 185, 129, 0.3)',
+                                        }}
+                                      >
+                                        {t('marked_as_done')}
+                                      </span>
                                     ) : (
                                       <span className={`badge ${badgeClass}`}>{deadlineText}</span>
                                     )}
@@ -7565,7 +8151,7 @@ function CourseDetailView({
                                         <button
                                           type="button"
                                           className="secondary-btn btn-sm"
-                                          onClick={() => onToggleCompleted(a.id)}
+                                          onClick={() => onToggleCompleted(a.uid || getActivityUid(a))}
                                           style={{
                                             fontSize: '0.75rem',
                                             padding: '0.2rem 0.55rem',
@@ -7587,7 +8173,7 @@ function CourseDetailView({
                                           const openUrl = buildFileOpenUrl(att.url, token);
                                           return (
                                             <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                              <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
+                                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
                                               <FileOpenAction
                                                 rawUrl={att.url}
                                                 openUrl={openUrl}
@@ -7618,7 +8204,7 @@ function CourseDetailView({
                               const openUrl = buildFileOpenUrl(f.fileUrl, token);
                               return (
                                 <div key={fIdx} className="section-file-item">
-                                  <span className="item-name">📄 {f.fileName}</span>
+                                  <span className="item-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{f.fileName}</span></span>
                                   <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                     {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
                                     <FileOpenAction
@@ -7648,69 +8234,278 @@ function CourseDetailView({
                         )}
 
                         {content.folders && content.folders.length > 0 && (
-                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem' }}>
+                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
                             {content.folders.map((fld) => {
                               const isDownloading = downloadingFolderId === fld.id;
+                              const isExpanded = !collapsedFolderIds.has(fld.id);
+                              const files = fld.files || [];
+                              const rootFiles = files.filter((f) => !f.relativePath || f.relativePath === '' || f.relativePath === '/');
+                              const subfolderMap = new Map<string, CourseFolderFile[]>();
+                              files.forEach((f) => {
+                                const cleanRel = (f.relativePath || '').replace(/^\/+|\/+$/g, '');
+                                if (cleanRel) {
+                                  if (!subfolderMap.has(cleanRel)) subfolderMap.set(cleanRel, []);
+                                  subfolderMap.get(cleanRel)!.push(f);
+                                }
+                              });
+                              const subfolders = Array.from(subfolderMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+
                               return (
                                 <div
                                   key={fld.id}
                                   className="section-folder-card glass-panel"
                                   style={{
-                                    padding: '0.75rem 1rem',
                                     borderRadius: '8px',
                                     border: '1px solid rgba(255, 255, 255, 0.1)',
                                     background: 'rgba(255, 255, 255, 0.02)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    flexWrap: 'wrap',
-                                    gap: '0.5rem'
+                                    overflow: 'hidden',
+                                    transition: 'all 0.2s ease',
                                   }}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span style={{ fontSize: '1.2rem' }}>📁</span>
-                                    <div>
-                                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                        {fld.files.length} {lang === 'he' ? 'קבצים' : 'files'}
-                                        {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                  {/* Folder Header Row */}
+                                  <div
+                                    className="folder-header-row"
+                                    style={{
+                                      padding: '0.75rem 1rem',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: '0.5rem',
+                                      cursor: files.length > 0 ? 'pointer' : 'default',
+                                      background: isExpanded && files.length > 0 ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
+                                      borderBottom: isExpanded && files.length > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
+                                    }}
+                                    onClick={() => {
+                                      if (files.length > 0) {
+                                        toggleFolderCollapsed(fld.id);
+                                      }
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                      <FolderIcon size={18} style={{ color: "var(--accent, #6366f1)", opacity: 0.9 }} />
+                                      <div>
+                                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                          <span>
+                                            {files.length} {lang === 'he' ? 'קבצים' : 'files'}
+                                            {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                          </span>
+                                          {files.length > 0 && (
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--accent, #6366f1)', marginInlineStart: '0.2rem' }}>
+                                              {isExpanded ? '▲' : '▼'}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <a
-                                      href={fld.moodleUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="action-link-btn"
-                                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                    <div
+                                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                      onClick={(e) => e.stopPropagation()}
                                     >
-                                      {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
-                                    </a>
-                                    <button
-                                      type="button"
-                                      className="secondary-btn btn-sm"
-                                      disabled={isDownloading}
-                                      onClick={() => handleDownloadFolderZip(fld)}
+                                      <a
+                                        href={fld.moodleUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="action-link-btn"
+                                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                      >
+                                        {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                      </a>
+                                      <button
+                                        type="button"
+                                        className="secondary-btn btn-sm"
+                                        disabled={isDownloading || files.length === 0}
+                                        onClick={() => handleDownloadFolderZip(fld)}
+                                        title={files.length === 0 ? (lang === 'he' ? 'אין קבצים בתיקייה' : 'Folder is empty') : undefined}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem',
+                                          fontSize: '0.75rem',
+                                          padding: '0.3rem 0.6rem',
+                                          cursor: isDownloading ? 'wait' : files.length === 0 ? 'not-allowed' : 'pointer',
+                                          opacity: files.length === 0 ? 0.6 : 1,
+                                        }}
+                                      >
+                                        <DownloadIcon size={12} />
+                                        <span>
+                                          {isDownloading
+                                            ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
+                                            : lang === 'he'
+                                              ? 'הורד כ-ZIP'
+                                              : 'Download ZIP'}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Expanded Folder Files List */}
+                                  {isExpanded && files.length > 0 && (
+                                    <div
+                                      className="folder-files-container"
                                       style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
+                                        padding: '0.5rem 0.75rem 0.75rem',
+                                        display: 'flex',
+                                        flexDirection: 'column',
                                         gap: '0.35rem',
-                                        fontSize: '0.75rem',
-                                        padding: '0.3rem 0.6rem',
-                                        cursor: isDownloading ? 'wait' : 'pointer'
+                                        background: 'rgba(0, 0, 0, 0.08)',
                                       }}
                                     >
-                                      <span>📦</span>
-                                      <span>
-                                        {isDownloading
-                                          ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || fld.files.length})`
-                                          : lang === 'he'
-                                            ? 'הורד כ-ZIP'
-                                            : 'Download ZIP'}
-                                      </span>
-                                    </button>
-                                  </div>
+                                      {/* Root files */}
+                                      {rootFiles.map((f, fIdx) => {
+                                        const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                                        const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                                        return (
+                                          <div
+                                            key={`root_${fIdx}`}
+                                            className="section-file-item folder-file-item"
+                                            style={{
+                                              padding: '0.5rem 0.75rem',
+                                              borderRadius: '6px',
+                                              background: 'rgba(255, 255, 255, 0.025)',
+                                              border: '1px solid rgba(255, 255, 255, 0.06)',
+                                              display: 'flex',
+                                              justifyContent: 'space-between',
+                                              alignItems: 'center',
+                                              gap: '0.5rem',
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                              <FileIcon size={15} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
+                                              <span
+                                                className="item-name"
+                                                style={{
+                                                  fontSize: '0.85rem',
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                                title={f.fileName}
+                                              >
+                                                {f.fileName}
+                                              </span>
+                                            </div>
+                                            <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                              {f.fileSize > 0 && (
+                                                <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                              )}
+                                              <FileOpenAction
+                                                rawUrl={f.fileUrl}
+                                                openUrl={openUrl}
+                                                fileName={f.fileName}
+                                                token={token}
+                                                t={t}
+                                                lang={lang}
+                                              />
+                                              <a
+                                                href={downloadUrl}
+                                                download={f.fileName}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="file-action-btn file-download-btn"
+                                                title={t('download_file')}
+                                                aria-label={t('download_file')}
+                                              >
+                                                <DownloadIcon size={12} />
+                                              </a>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+
+                                      {/* Subfolders */}
+                                      {subfolders.map(([subPath, subFiles]) => (
+                                        <div
+                                          key={subPath}
+                                          className="folder-subgroup"
+                                          style={{
+                                            marginBlockStart: '0.4rem',
+                                            paddingInlineStart: '0.5rem',
+                                            borderInlineStart: '2px solid rgba(255, 255, 255, 0.12)',
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontSize: '0.78rem',
+                                              fontWeight: 600,
+                                              color: 'var(--text-secondary)',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '0.35rem',
+                                              padding: '0.2rem 0',
+                                            }}
+                                          >
+                                            <FolderIcon size={14} style={{ color: "var(--accent, #6366f1)", opacity: 0.85 }} />
+                                            <span>{subPath}/</span>
+                                            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({subFiles.length})</span>
+                                          </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.2rem' }}>
+                                            {subFiles.map((subFile, sfIdx) => {
+                                              const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
+                                              const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
+                                              return (
+                                                <div
+                                                  key={`${subPath}_${sfIdx}`}
+                                                  className="section-file-item folder-file-item"
+                                                  style={{
+                                                    padding: '0.5rem 0.75rem',
+                                                    borderRadius: '6px',
+                                                    background: 'rgba(255, 255, 255, 0.025)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    gap: '0.5rem',
+                                                  }}
+                                                >
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                                    <FileIcon size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
+                                                    <span
+                                                      className="item-name"
+                                                      style={{
+                                                        fontSize: '0.85rem',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                      }}
+                                                      title={subFile.fileName}
+                                                    >
+                                                      {subFile.fileName}
+                                                    </span>
+                                                  </div>
+                                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                    {subFile.fileSize > 0 && (
+                                                      <span className="file-size">{(subFile.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                                    )}
+                                                    <FileOpenAction
+                                                      rawUrl={subFile.fileUrl}
+                                                      openUrl={openUrl}
+                                                      fileName={subFile.fileName}
+                                                      token={token}
+                                                      t={t}
+                                                      lang={lang}
+                                                    />
+                                                    <a
+                                                      href={downloadUrl}
+                                                      download={subFile.fileName}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="file-action-btn file-download-btn"
+                                                      title={t('download_file')}
+                                                      aria-label={t('download_file')}
+                                                    >
+                                                      <DownloadIcon size={12} />
+                                                    </a>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -7780,7 +8575,7 @@ function CourseDetailView({
                                     </span>
                                     <span className="item-name recording-title-span">{rec.title}</span>
                                     {rec.publishedDate && (
-                                      <span className="recording-date-badge">📅 {rec.publishedDate}</span>
+                                      <span className="recording-date-badge">{rec.publishedDate}</span>
                                     )}
                                   </div>
                                   <div className="recording-actions">
@@ -7859,8 +8654,8 @@ function CourseDetailView({
                     key={a.id}
                     className="sidebar-assign-card"
                     style={{
-                      borderLeft: lang !== 'he' ? `3px solid ${a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
-                      borderRight: lang === 'he' ? `3px solid ${a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
+                      borderLeft: lang !== 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
+                      borderRight: lang === 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
                       cursor: 'pointer'
                     }}
                     onClick={() => setExpandedDetailAssignId(isExpanded ? null : a.id)}
@@ -7871,21 +8666,6 @@ function CourseDetailView({
                         {isHidden && (
                           <span className="assignment-tag tag-hidden" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontSize: '0.72rem' }}>
                             {t('hidden_tag')}
-                          </span>
-                        )}
-                        {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
-                          <span
-                            className="assignment-tag"
-                            style={{
-                              background: 'rgba(16, 185, 129, 0.15)',
-                              color: 'var(--secondary)',
-                              border: '1px solid rgba(16, 185, 129, 0.3)',
-                              padding: '0.15rem 0.45rem',
-                              borderRadius: '4px',
-                              fontSize: '0.72rem'
-                            }}
-                          >
-                            {t('marked_as_done')}
                           </span>
                         )}
                         {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
@@ -7905,6 +8685,10 @@ function CourseDetailView({
                     {a.status === 'Submitted' ? (
                       <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
                         {lang === 'he' ? 'הוגש!' : 'Submitted!'} {a.grade !== null && a.gradeMax ? `(${a.grade}/${a.gradeMax})` : ''}
+                      </p>
+                    ) : (a as any).isCompleted ? (
+                      <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
+                        {t('marked_as_done')}
                       </p>
                     ) : a.deadline && (() => {
                       const { timeColorClass } = getDueTextAndClass(
@@ -7952,7 +8736,7 @@ function CourseDetailView({
                               const openUrl = buildFileOpenUrl(att.url, token);
                               return (
                                 <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem' }}>📄 {att.name}</span>
+                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
                                   <FileOpenAction
                                     rawUrl={att.url}
                                     openUrl={openUrl}
@@ -7983,7 +8767,7 @@ function CourseDetailView({
                               const openUrl = buildFileOpenUrl(sf.fileUrl, token);
                               return (
                                 <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem' }}>📂 {sf.fileName}</span>
+                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
                                   <FileOpenAction
                                     rawUrl={sf.fileUrl}
                                     openUrl={openUrl}
@@ -8036,15 +8820,15 @@ function CourseDetailView({
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                         <button
                           className="secondary-btn btn-xs"
-                          onClick={() => onToggleCompleted && onToggleCompleted(a.id)}
+                          onClick={() => onToggleCompleted && onToggleCompleted(a.uid || getActivityUid(a))}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           <CheckIcon size={12} />
-                          <span>{a.status === 'Submitted' ? t('mark_incomplete') : t('mark_done')}</span>
+                          <span>{(a as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
                         </button>
                         <button
                           className="secondary-btn btn-xs"
-                          onClick={() => onToggleHidden && onToggleHidden(a.id)}
+                          onClick={() => onToggleHidden && onToggleHidden(a.uid || getActivityUid(a))}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           {isHidden ? <EyeIcon /> : <EyeOffIcon />}
@@ -8055,7 +8839,7 @@ function CourseDetailView({
                             href={a.link}
                             target="_blank"
                             rel="noreferrer"
-                            className="secondary-btn btn-xs"
+                            className="primary-btn btn-xs action-submit-btn"
                             data-moodle-link="true"
                           >
                             <span>{t('submit_assignment')}</span>
@@ -8089,7 +8873,7 @@ function AboutTab({
   logoImg?: string;
 }) {
   const isHe = lang === 'he';
-  const manifestVersion = browser.runtime.getManifest()?.version || '4.0.2';
+  const manifestVersion = browser.runtime.getManifest()?.version || '4.0.3';
 
   return (
     <div className={`tab-about glass-panel ${tourStep === 9 ? 'tour-highlight' : ''}`} style={{ padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -8097,9 +8881,10 @@ function AboutTab({
       <div className="about-hero">
         <img src={customLogo || logoImg} alt="Noodle Logo" className="about-hero-logo" />
         <div>
-          <h2 style={{ fontSize: '2rem', margin: '0 0 0.35rem 0', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <span>Noodle</span>
-            <span style={{ fontSize: '0.85rem', padding: '0.2rem 0.55rem', background: 'rgba(255,255,255,0.1)', borderRadius: '12px', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
+          <h2 className="about-hero-title">
+            <span className="about-brand-text">Noodle</span>
+            <span className="about-version-badge">
+              <span className="about-version-dot" aria-hidden="true" />
               v{manifestVersion}
             </span>
           </h2>
@@ -8112,21 +8897,25 @@ function AboutTab({
       </div>
 
       {/* Description & Credits Card */}
-      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem 1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-        <p style={{ lineHeight: '1.8', fontSize: '1.05rem', margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>
+      <div className="about-desc-card">
+        <p className="about-desc-text">
           {isHe ? (
             <>
-              <strong>Noodle</strong> הוא כלי עזר חכם בקוד פתוח המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל, לסנן קישורי זום בזמן אמת, לעקוב אחר הקלטות פנופטו (בטא), ולהוריד קבצים והנחיות במהירות ובפרטיות מוחלטת ללא שרתים חיצוניים.
+              <strong className="about-brand-highlight">Noodle</strong> הוא כלי עזר חכם בקוד פתוח המאפשר לסנכרן מועדי הגשת מטלות מהמודל ישירות ל-Google Tasks וללוח השנה של גוגל, לסנן קישורי זום בזמן אמת, לעקוב אחר הקלטות פנופטו (בטא), ולהוריד קבצים והנחיות במהירות ובפרטיות מוחלטת ללא שרתים חיצוניים.
             </>
           ) : (
             <>
-              <strong>Noodle</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, tracks Panopto recordings (beta), provides fast offline-ready access to files, and protects your privacy without any external backend servers.
+              <strong className="about-brand-highlight">Noodle</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, tracks Panopto recordings (beta), provides fast offline-ready access to files, and protects your privacy without any external backend servers.
             </>
           )}
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>
-          <span>
+        <div className="about-credits-row">
+          <span className="about-credits-author-chip">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
             <strong>{t('developed_by')}</strong> {t('credits_authors')}
           </span>
         </div>
@@ -8137,68 +8926,80 @@ function AboutTab({
             href="https://noodle.mantin.dev/"
             target="_blank"
             rel="noreferrer"
-            className="about-link-card featured"
+            className="about-link-card card-accent-web featured"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </div>
             <span>{t('website_link')}</span>
           </a>
           <a
             href="https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope"
             target="_blank"
             rel="noreferrer"
-            className="about-link-card"
+            className="about-link-card card-accent-review"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </div>
             <span>{t('review_extension_label')}</span>
           </a>
           <a
             href="https://github.com/duck-5/Noodle"
             target="_blank"
             rel="noreferrer"
-            className="about-link-card"
+            className="about-link-card card-accent-github"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+            </div>
             <span>{t('github_repo_link')}</span>
           </a>
           <a
             href="https://github.com/duck-5/Noodle/issues"
             target="_blank"
             rel="noreferrer"
-            className="about-link-card"
+            className="about-link-card card-accent-issues"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
             <span>{t('github_issues_link')}</span>
           </a>
           <a
             href="mailto:noodle.d3v@gmail.com"
-            className="about-link-card"
+            className="about-link-card card-accent-email"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+              </svg>
+            </div>
             <span>noodle.d3v@gmail.com</span>
           </a>
           <div
-            className="about-link-card"
+            className="about-link-card card-accent-tour"
             onClick={onStartTour}
             style={{ cursor: 'pointer' }}
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
+            <div className="about-link-icon-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+            </div>
             <span>{isHe ? 'סיור מודרך' : 'Interactive Tour'}</span>
           </div>
         </div>
@@ -8207,80 +9008,516 @@ function AboutTab({
       {/* Expandable Sections */}
       <div>
         {/* Accordion 1: Features */}
-        <details className="about-accordion" open>
+        <details className="about-accordion section-features" open>
           <summary>
-            <span>{t('about_features_title')}</span>
+            <div className="about-summary-left">
+              <div className="about-summary-icon-box accent-indigo">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </div>
+              <span>{t('about_features_title')}</span>
+            </div>
+            <div className="about-summary-right">
+              <span className="about-count-badge accent-indigo">7</span>
+              <span className="about-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+            </div>
           </summary>
           <div className="about-accordion-content">
             {isHe ? (
-              <ul>
-                <li><strong>סנכרון דו-כיווני ל-Google Tasks ולוח שנה:</strong> דדליינים מהמודל מסונכרנים אוטומטית לרשימת המשימות שלך. משימות שסימנת כבוצעות או שמחקת מסונכרנות באופן שקוף.</li>
-                <li><strong>זיהוי חכם לקורסי מעבדה:</strong> זיהוי אוטומטי של המילה "מעבדה" בשם הקורס והצעה להסתרת כל המטלות כברירת מחדל, כדי שלא תוצף בעשרות ניסויים שאינך נדרש להגיש.</li>
-                <li><strong>Spotlight וספירה לאחור חיה:</strong> כרטיס המטלה הבאה מציג ספירה לאחור מדויקת עם צבעי התראה מותאמים אישית (ירוק/צהוב/אדום) וקישורי הגשה וקבצים ישירים.</li>
-                <li><strong>Zoom Hub לשיעורים ותרגולים:</strong> זיהוי הרצאות ותרגולים שמתקיימים כעת והצטרפות בלחיצה אחת, עם אפשרות להסתיר קבוצות תרגול לא רלוונטיות.</li>
-                <li><strong>מעקב הקלטות Panopto (בטא):</strong> סנכרון אוטומטי של הרצאות ותרגולים מוקלטים מתוך תיקיות פנופטו ישירות לנושאי הקורס.</li>
-                <li><strong>גישה ישירה לקבצים ולהגשות:</strong> צפייה והורדה של קבצי הנחיות, קבצי נושא וקבצים שהגשת בעבר ישירות מתוך התוסף ללא מעבר בין דפי המודל.</li>
-                <li><strong>ערכות נושא מותאמות:</strong> בחירה בין ערכת נושא כהה (Dark), נודלס חמים (Noodle), או קפה אספרסו עשיר (Coffee).</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                      <polyline points="9 16 11 18 15 14" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">סנכרון דו-כיווני ל-Google Tasks ולוח שנה:</strong>
+                    <span>דדליינים מהמודל מסונכרנים אוטומטית לרשימת המשימות שלך. משימות שסימנת כבוצעות או שמחקת מסונכרנות באופן שקוף.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M10 2v7.31L4.69 18.2A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.71-2.8L14 9.31V2" />
+                      <line x1="8.5" y1="2" x2="15.5" y2="2" />
+                      <line x1="14" y1="9.3" x2="10" y2="9.3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">זיהוי חכם לקורסי מעבדה:</strong>
+                    <span>זיהוי אוטומטי של המילה "מעבדה" בשם הקורס והצעה להסתרת כל המטלות כברירת מחדל, כדי שלא תוצף בעשרות ניסויים שאינך נדרש להגיש.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-amber">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="13" r="8" />
+                      <polyline points="12 9 12 13 15 15" />
+                      <line x1="12" y1="2" x2="12" y2="5" />
+                      <line x1="18.5" y1="5.5" x2="20.5" y2="7.5" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Spotlight וספירה לאחור חיה:</strong>
+                    <span>כרטיס המטלה הבאה מציג ספירה לאחור מדויקת עם צבעי התראה מותאמים אישית (ירוק/צהוב/אדום) וקישורי הגשה וקבצים ישירים.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Zoom Hub לשיעורים ותרגולים:</strong>
+                    <span>זיהוי הרצאות ותרגולים שמתקיימים כעת והצטרפות בלחיצה אחת, עם אפשרות להסתיר קבוצות תרגול לא רלוונטיות.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-rose">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <polygon points="10 8 16 12 10 16 10 8" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">מעקב הקלטות Panopto (בטא):</strong>
+                    <span>סנכרון אוטומטי של הרצאות ותרגולים מוקלטים מתוך תיקיות פנופטו ישירות לנושאי הקורס.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      <line x1="12" y1="11" x2="12" y2="17" />
+                      <polyline points="9 14 12 17 15 14" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">גישה ישירה לקבצים ולהגשות:</strong>
+                    <span>צפייה והורדה של קבצי הנחיות, קבצי נושא וקבצים שהגשת בעבר ישירות מתוך התוסף ללא מעבר בין דפי המודל.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-orange">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+                      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+                      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+                      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+                      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">ערכות נושא מותאמות:</strong>
+                    <span>בחירה בין ערכת נושא כהה (Dark), נודלס חמים (Noodle), או קפה אספרסו עשיר (Coffee).</span>
+                  </div>
+                </li>
               </ul>
             ) : (
-              <ul>
-                <li><strong>2-Way Google Tasks & Calendar Sync:</strong> Automatically synchronize deadlines to Google Tasks with instant updates when assignments are marked done or submitted.</li>
-                <li><strong>Lab Course Experiment Detection:</strong> Detects lab courses ("מעבדה") and offers to hide all assignments by default so you aren't overwhelmed with experiments you don't take.</li>
-                <li><strong>Next Task Spotlight & Live Countdown:</strong> Real-time countdown for upcoming submissions with customizable color thresholds (green/yellow/red) and 1-click submission links.</li>
-                <li><strong>Zoom Hub:</strong> Highlights active lectures and recitations happening right now, with easy per-meeting visibility toggles to hide recitations you don't attend.</li>
-                <li><strong>Panopto Recordings Tracking (Beta):</strong> Automatic sync of lecture and recitation recordings from Panopto folders directly grouped within course views.</li>
-                <li><strong>Fast File Browser & Attachments:</strong> View and download subject materials, prompt PDFs, and your past submitted files without navigating endless Moodle pages.</li>
-                <li><strong>Custom Themes:</strong> Switch anytime between Dark, Noodle (warm terracotta), and Coffee (deep espresso).</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                      <polyline points="9 16 11 18 15 14" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">2-Way Google Tasks & Calendar Sync:</strong>
+                    <span>Automatically synchronize deadlines to Google Tasks with instant updates when assignments are marked done or submitted.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M10 2v7.31L4.69 18.2A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.71-2.8L14 9.31V2" />
+                      <line x1="8.5" y1="2" x2="15.5" y2="2" />
+                      <line x1="14" y1="9.3" x2="10" y2="9.3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Lab Course Experiment Detection:</strong>
+                    <span>Detects lab courses ("מעבדה") and offers to hide all assignments by default so you aren't overwhelmed with experiments you don't take.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-amber">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="13" r="8" />
+                      <polyline points="12 9 12 13 15 15" />
+                      <line x1="12" y1="2" x2="12" y2="5" />
+                      <line x1="18.5" y1="5.5" x2="20.5" y2="7.5" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Next Task Spotlight & Live Countdown:</strong>
+                    <span>Real-time countdown for upcoming submissions with customizable color thresholds (green/yellow/red) and 1-click submission links.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Zoom Hub:</strong>
+                    <span>Highlights active lectures and recitations happening right now, with easy per-meeting visibility toggles to hide recitations you don't attend.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-rose">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <polygon points="10 8 16 12 10 16 10 8" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Panopto Recordings Tracking (Beta):</strong>
+                    <span>Automatic sync of lecture and recitation recordings from Panopto folders directly grouped within course views.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      <line x1="12" y1="11" x2="12" y2="17" />
+                      <polyline points="9 14 12 17 15 14" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Fast File Browser & Attachments:</strong>
+                    <span>View and download subject materials, prompt PDFs, and your past submitted files without navigating endless Moodle pages.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-orange">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+                      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+                      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+                      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+                      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Custom Themes:</strong>
+                    <span>Switch anytime between Dark, Noodle (warm terracotta), and Coffee (deep espresso).</span>
+                  </div>
+                </li>
               </ul>
             )}
           </div>
         </details>
 
         {/* Accordion 2: Usage Tips */}
-        <details className="about-accordion">
+        <details className="about-accordion section-tips">
           <summary>
-            <span>{t('about_tips_title')}</span>
+            <div className="about-summary-left">
+              <div className="about-summary-icon-box accent-amber">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="9" y1="18" x2="15" y2="18" />
+                  <line x1="10" y1="22" x2="14" y2="22" />
+                  <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
+                </svg>
+              </div>
+              <span>{t('about_tips_title')}</span>
+            </div>
+            <div className="about-summary-right">
+              <span className="about-count-badge accent-amber">5</span>
+              <span className="about-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+            </div>
           </summary>
           <div className="about-accordion-content">
             {isHe ? (
-              <ul>
-                <li><strong>איך להשתמש במעבדות ביעילות?</strong> לאחר הוספת קורס מעבדה והסתרת כל המטלות, עבור ללשונית "מטלות", סמן את תיבת הסינון "מוסתרים", ולחץ על סמל העין רק ליד הניסויים שהוקצו לך. כך תראה בלוח הבקרה רק את הניסויים שבאמת עליך לבצע!</li>
-                <li><strong>סנכרון מטלות ללא תאריך יעד:</strong> סטודנטים רבים רוצים לראות גם פרויקטים פתוחים או תרגילי רשות ברשימת המשימות שלהם. ניתן להפעיל זאת בקלות בהגדרות Google Tasks.</li>
-                <li><strong>כינויי קורסים וצבעים:</strong> לחץ על "ניהול קורסים" בלוח הבקרה והענק לכל קורס שם קצר ומוכר וצבע ייחודי שיסונכרן בכל הממשק.</li>
-                <li><strong>גיבוי ושחזור קונפיגורציה:</strong> עובר למחשב אחר או משתמש גם בפיירפוקס? ייצא קובץ גיבוי בלשונית ההגדרות וייבא אותו בשניות בכל דפדפן.</li>
-                <li><strong>קיצורי דרך בסיור המודרך:</strong> השתמש במקשי החצים ימינה ושמאלה כדי לנווט בין שלבי הסיור, ולחץ על Esc כדי לצאת בכל עת.</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">איך להשתמש במעבדות ביעילות?</strong>
+                    <span>לאחר הוספת קורס מעבדה והסתרת כל המטלות, עבור ללשונית "מטלות", סמן את תיבת הסינון "מוסתרים", ולחץ על סמל העין רק ליד הניסויים שהוקצו לך. כך תראה בלוח הבקרה רק את הניסויים שבאמת עליך לבצע!</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">סנכרון מטלות ללא תאריך יעד:</strong>
+                    <span>סטודנטים רבים רוצים לראות גם פרויקטים פתוחים או תרגילי רשות ברשימת המשימות שלהם. ניתן להפעיל זאת בקלות בהגדרות Google Tasks.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-amber">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                      <line x1="7" y1="7" x2="7.01" y2="7" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">כינויי קורסים וצבעים:</strong>
+                    <span>לחץ על "ניהול קורסים" בלוח הבקרה והענק לכל קורס שם קצר ומוכר וצבע ייחודי שיסונכרן בכל הממשק.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">גיבוי ושחזור קונפיגורציה:</strong>
+                    <span>עובר למחשב אחר או משתמש גם בפיירפוקס? ייצא קובץ גיבוי בלשונית ההגדרות וייבא אותו בשניות בכל דפדפן.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-indigo">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+                      <line x1="6" y1="8" x2="8" y2="8" />
+                      <line x1="10" y1="8" x2="14" y2="8" />
+                      <line x1="16" y1="8" x2="18" y2="8" />
+                      <line x1="6" y1="12" x2="8" y2="12" />
+                      <line x1="10" y1="12" x2="14" y2="12" />
+                      <line x1="16" y1="12" x2="18" y2="12" />
+                      <line x1="7" y1="16" x2="17" y2="16" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">קיצורי דרך בסיור המודרך:</strong>
+                    <span>השתמש במקשי החצים ימינה ושמאלה כדי לנווט בין שלבי הסיור, ולחץ על Esc כדי לצאת בכל עת.</span>
+                  </div>
+                </li>
               </ul>
             ) : (
-              <ul>
-                <li><strong>How to efficiently handle lab courses:</strong> When adding a lab course, choose to hide all assignments. Then head over to the Assignments tab, check the "Hidden" filter, and click the eye icon only on the experiments you actually need to submit!</li>
-                <li><strong>Syncing tasks without a deadline:</strong> If you want ongoing projects and optional exercises to appear in your Google Tasks, enable "Sync assignments without deadline" under Settings.</li>
-                <li><strong>Custom Course Nicknames & Colors:</strong> Tap "Manage Courses" on your dashboard to assign short nicknames and distinct colors for instant recognition across all tabs.</li>
-                <li><strong>Cross-device Backup & Restore:</strong> Switching laptops or using both Chrome and Firefox? Export your JSON config in Settings and import it anywhere in seconds.</li>
-                <li><strong>Keyboard Navigation:</strong> During the interactive tour, use arrow keys to navigate forward/back and hit Escape to exit at any time.</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">How to efficiently handle lab courses:</strong>
+                    <span>When adding a lab course, choose to hide all assignments. Then head over to the Assignments tab, check the "Hidden" filter, and click the eye icon only on the experiments you actually need to submit!</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Syncing tasks without a deadline:</strong>
+                    <span>If you want ongoing projects and optional exercises to appear in your Google Tasks, enable "Sync assignments without deadline" under Settings.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-amber">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                      <line x1="7" y1="7" x2="7.01" y2="7" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Custom Course Nicknames & Colors:</strong>
+                    <span>Tap "Manage Courses" on your dashboard to assign short nicknames and distinct colors for instant recognition across all tabs.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Cross-device Backup & Restore:</strong>
+                    <span>Switching laptops or using both Chrome and Firefox? Export your JSON config in Settings and import it anywhere in seconds.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-indigo">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+                      <line x1="6" y1="8" x2="8" y2="8" />
+                      <line x1="10" y1="8" x2="14" y2="8" />
+                      <line x1="16" y1="8" x2="18" y2="8" />
+                      <line x1="6" y1="12" x2="8" y2="12" />
+                      <line x1="10" y1="12" x2="14" y2="12" />
+                      <line x1="16" y1="12" x2="18" y2="12" />
+                      <line x1="7" y1="16" x2="17" y2="16" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Keyboard Navigation:</strong>
+                    <span>During the interactive tour, use arrow keys to navigate forward/back and hit Escape to exit at any time.</span>
+                  </div>
+                </li>
               </ul>
             )}
           </div>
         </details>
 
         {/* Accordion 3: Privacy */}
-        <details className="about-accordion">
+        <details className="about-accordion section-privacy">
           <summary>
-            <span>{t('about_privacy_title')}</span>
+            <div className="about-summary-left">
+              <div className="about-summary-icon-box accent-emerald">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
+              <span>{t('about_privacy_title')}</span>
+            </div>
+            <div className="about-summary-right">
+              <span className="about-count-badge accent-emerald">4</span>
+              <span className="about-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </span>
+            </div>
           </summary>
           <div className="about-accordion-content">
             {isHe ? (
-              <ul>
-                <li><strong>100% Client-Only & Decentralized:</strong> Noodle פועל אך ורק בתוך הדפדפן שלך. אין לנו שרת מרכזי, שרת פרוקסי או בסיס נתונים בענן.</li>
-                <li><strong>ללא מעקב או טלמטריה:</strong> אפס מעקב (Analytics), אפס קוקיות מעקב ואפס שיתוף נתונים עם צדדים שלישיים.</li>
-                <li><strong>אחסון מקומי מאובטח:</strong> פרטי החיבור ואסימון הגישה למודל נשמרים באחסון המקומי של הדפדפן שלך בלבד (browser.storage.local).</li>
-                <li><strong>קוד פתוח ושקוף:</strong> הקוד זמין במלואו לבדיקה ותרומה ב-GitHub, ונכתב מתוך אהבה ומחויבות לקהילת הסטודנטים ב-TAU.</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">100% Client-Only & Decentralized:</strong>
+                    <span>Noodle פועל אך ורק בתוך הדפדפן שלך. אין לנו שרת מרכזי, שרת פרוקסי או בסיס נתונים בענן.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-teal">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">ללא מעקב או טלמטריה:</strong>
+                    <span>אפס מעקב (Analytics), אפס קוקיות מעקב ואפס שיתוף נתונים עם צדדים שלישיים.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">אחסון מקומי מאובטח:</strong>
+                    <span>פרטי החיבור ואסימון הגישה למודל נשמרים באחסון המקומי של הדפדפן שלך בלבד (browser.storage.local).</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="16 18 22 12 16 6" />
+                      <polyline points="8 6 2 12 8 18" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">קוד פתוח ושקוף:</strong>
+                    <span>הקוד זמין במלואו לבדיקה ותרומה ב-GitHub, ונכתב מתוך אהבה ומחויבות לקהילת הסטודנטים ב-TAU.</span>
+                  </div>
+                </li>
               </ul>
             ) : (
-              <ul>
-                <li><strong>100% Client-Only & Decentralized:</strong> Noodle executes entirely within your browser. There is no middleman server, proxy, or backend database.</li>
-                <li><strong>Zero Analytics or Telemetry:</strong> No tracking scripts, no behavioral telemetry, and no third-party data collection whatsoever.</li>
-                <li><strong>Secure Local Storage:</strong> All credentials and Moodle access tokens are stored strictly within your browser's private local storage (browser.storage.local).</li>
-                <li><strong>Open Source Transparency:</strong> The complete codebase is open on GitHub for auditing, contributions, and community improvements.</li>
+              <ul className="about-items-list">
+                <li className="about-item-card accent-emerald">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">100% Client-Only & Decentralized:</strong>
+                    <span>Noodle executes entirely within your browser. There is no middleman server, proxy, or backend database.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-teal">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Zero Analytics or Telemetry:</strong>
+                    <span>No tracking scripts, no behavioral telemetry, and no third-party data collection whatsoever.</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-sky">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Secure Local Storage:</strong>
+                    <span>All credentials and Moodle access tokens are stored strictly within your browser's private local storage (browser.storage.local).</span>
+                  </div>
+                </li>
+                <li className="about-item-card accent-purple">
+                  <div className="about-item-icon-box">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="16 18 22 12 16 6" />
+                      <polyline points="8 6 2 12 8 18" />
+                    </svg>
+                  </div>
+                  <div className="about-item-text">
+                    <strong className="about-item-title">Open Source Transparency:</strong>
+                    <span>The complete codebase is open on GitHub for auditing, contributions, and community improvements.</span>
+                  </div>
+                </li>
               </ul>
             )}
           </div>

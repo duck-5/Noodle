@@ -149,6 +149,7 @@ graph LR
 | **TC-ZM-04** | One-Tap Join Zoom Meeting | All (Mobile + Chrome + Firefox) | Browser Agent | Zoom Meetings |
 | **TC-ZM-05** | Multi-Modal Zoom Link Extraction & Deduplication | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
 | **TC-ZM-06** | Recurring Zoom Session Collapsing, Uncluttered Panel & Show-Hidden Toggle | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Zoom Meetings |
+| **TC-ZM-07** | Moodle Native `mod_zoom` & LTI Pro Server-Rendered HTML Table Scraping | All (Mobile + Chrome + Firefox) | Automated | Zoom Meetings |
 | **TC-PAN-01** | Panopto URL, Folder UUID & Delivery ID Extraction | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
 | **TC-PAN-02** | Course Page & Block HTML Panopto Discovery | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
 | **TC-PAN-03** | Garbage Title Filtering & Recitation Series Deduplication | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
@@ -164,7 +165,10 @@ graph LR
 | **TC-GRD-01** | Grade Items Query & Parsing | All (Mobile + Chrome + Firefox) | Automated | Grades & GPA |
 | **TC-GRD-02** | Graded Assignment Item Breakdown | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
 | **TC-GRD-03** | Course Average & Overall GPA Calculation | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
-| **TC-GRD-04** | Empty Grades Placeholder State | All (Mobile + Chrome + Firefox) | Browser Agent | Grades & GPA |
+| **TC-GRD-04** | Pedagogical Policy Filtering (Hidden, Locally Done, Pending) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
+| **TC-GRD-05** | Exclusion of Ungraded Overdue & Pending Tasks | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
+| **TC-GRD-06** | Administrative / Safety Course Exclusion & Bonus Handling | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
+| **TC-GRD-07** | Empty Grades Placeholder State & Policy Notice | All (Mobile + Chrome + Firefox) | Browser Agent | Grades & GPA |
 | **TC-GT-01** | Google OAuth 2.0 Authorization Flow | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-02** | Automatic "Noodle" Task List Provisioning | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-GT-03** | Assignment Mapping to Task Format | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
@@ -174,6 +178,7 @@ graph LR
 | **TC-GT-07** | Manual Google Tasks Sync Trigger | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-08** | Assignments Without Deadline Sync Setting & Deletion Logic | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
 | **TC-GT-09** | Persistent Auth, Silent Refresh & Unauthenticated Sync Alert | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Google Tasks |
+| **TC-GT-10** | Graded & Automatic Completion Quiz Sync & Multi-Portal Deduplication | All (Mobile + Chrome + Firefox) | Automated | Google Tasks |
 | **TC-SYNC-01** | Serialize Settings to Calendar Event | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-02** | Remote Settings Pull & LWW Merge | All (Mobile + Chrome + Firefox) | Automated | Cross-Device Sync |
 | **TC-SYNC-03** | Cross-Client Settings Reflection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Cross-Device Sync |
@@ -189,11 +194,15 @@ graph LR
 | **TC-UI-03** | Reactive Theme/Language Update (No Reload) | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
 | **TC-UI-04** | Custom Urgency Days Thresholds | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Localization & Theme |
 | **TC-UI-05** | Account Section Links & Elaborated About Page Experience | All (Mobile + Chrome + Firefox) | Browser Agent | Localization & Theme |
+| **TC-UI-06** | Theme-by-Time Auto Switching (Noodle Day, Coffee Night) | Extension (Chrome & Firefox) | Automated & Browser Agent | Localization & Theme |
+| **TC-UI-07** | Prioritized Settings Hierarchy & Direct Manage Courses Access | Extension (Chrome & Firefox) | Browser Agent | Settings & Course Management |
+| **TC-UI-08** | Button Action Consistency & Default Cards and Calendar Views | Extension (Chrome & Firefox) | Automated & Browser Agent | Layout & Visual Hierarchy |
 | **TC-BG-01** | Recurring Background Sync Alarm / Task | All (Mobile + Chrome + Firefox) | Automated | Background Sync |
 | **TC-BG-02** | New Assignment Discovery Notification | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
 | **TC-BG-03** | 24-Hour and 1-Hour Deadline Alerts | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Background Sync |
 | **TC-BG-04** | Notification Permission Handshake | All (Mobile + Chrome + Firefox) | Browser Agent | Background Sync |
 | **TC-BG-05** | Toolbar Icon Badge Count | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension Specials |
+| **TC-BG-06** | Smart Weighted Sync Progress Calculation & Monotonic State Progression | All (Mobile + Chrome + Firefox) | Automated | Background Sync |
 | **TC-EXT-01** | Toolbar Popup Quick-Access View | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-02** | Collapsible Sidebar (240px to 72px) | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-03** | First-Time Interactive Onboarding Tour | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
@@ -239,6 +248,7 @@ graph LR
 | **TC-MOB-015** | Mobile SQLite `assignments_v2` Migration & 2-Level Section Navigation | Mobile Only | Automated & Browser Agent | Mobile UI & SQLite |
 | **TC-SYNC-011** | Selective Course Tracking Freedom & Absorbed Sub-Course Card Dedup | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Course Grouping & UI |
 | **TC-SYNC-012** | Unified Activity State Identity (`uid`) & Partial-Sync Protection | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Sync Engine & State |
+| **TC-SYNC-013** | Expandable Step-by-Step Sync Progress Window & Smart Stage Weighting | Extension (Chrome & Firefox) | Automated & Browser Agent | Sync Engine & Extension UI |
 | **TC-EXT-017** | Hierarchical Course Management, Assignment Deduplication, Card Urgency Thresholds & Unhide Filter Activation | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Sync Engine |
 | **TC-EXT-018** | Empty Course Sections Suppression by Default & Interactive Visibility Toggle | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI |
 | **TC-DASH-REHAUL-09** | Hidden Tasks Excluded from Gaps Count & Course Card Breakdown | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension UI & Dashboard |
@@ -584,15 +594,15 @@ graph LR
   3. Verify chevron flips upward.
   4. Verify visible Zoom meetings section and up to 5 next course assignments are displayed.
 
-#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Drawer Expansion
+#### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Split Detail Pane Expansion
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly opens its expanded drawer (`.queue-item-expanded`) displaying attachments, course subject files (`קבצי הנושא`), submitted files, and the full action suite (Go to Course, Mark Done, Hide, and Submit in Moodle).
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly splits `.queue-card` (`is-split`) to open the side-by-side detail pane (`.queue-detail-pane.queue-item-expanded.open`) framed by a border in the course's color, while keeping the task list scrollable alongside it.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
 * **Browser Agent Prompt / Action**:
   1. Verify queue list does not contain completed or hidden assignments.
   2. Click a queue item card.
-  3. Verify `.queue-item-expanded` expands smoothly with attachment pills, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
+  3. Verify `.queue-card.is-split` opens `.queue-detail-pane.queue-item-expanded.open` alongside the scrollable list, framed by a course-colored border, displaying attachments, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
 
 #### TC-DASH-REHAUL-03: Manage Courses Modal Dialog & Semester Partitioning
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -648,12 +658,12 @@ graph LR
 #### TC-DASH-REHAUL-08: Tracked Courses Cards Grid View & Two-Section Horizontal Card Layout
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the "My Tracked Courses" section supports toggling between List and Cards views via the segmented header buttons (`.view-mode-toggle-group`). In Cards mode, courses render in a responsive CSS grid (`.courses-cards-grid`) capped at max 3 cards per row: Row 1 features the course title + real title and primary "Go to Course" button, Row 2 displays the next task preview and secondary "Assignments" button, and Row 3 shows the "פערים:" gaps summary alongside an overall course progress bar. Clicking the card navigates directly to the comprehensive course details view without accordion clutter.
+* **Description**: Verifies that the "My Tracked Courses" section supports toggling between List and Cards views via the segmented header buttons (`.view-mode-toggle-group`). In Cards mode, courses render in a responsive CSS grid (`.courses-cards-grid`) capped at max 3 cards per row: Row 1 features the course title + real title and color indicator, Row 2 displays the next task preview and secondary "Assignments" button, and Row 3 shows the counts summary alongside an overall course progress bar. Clicking the card navigates directly to the comprehensive course details view without accordion clutter.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-08"`
 * **Browser Agent Prompt / Action**:
   1. In the Dashboard "My Tracked Courses" header, click the "Cards" button (`.view-mode-btn`).
   2. Verify `.courses-rows-container` receives `.courses-cards-grid` with a maximum of 3 cards per row.
-  3. Verify each course card displays the 3-row layout: Row 1 (`.course-card-row-top`) with title, real title, and "Go to Course" button; Row 2 (`.course-card-row-middle`) with next task (`.course-card-next-task`) and "Assignments" button (`.course-card-assignments-btn`); Row 3 (`.course-card-row-bottom`) with gaps (`.course-card-gaps-container`) and progress bar (`.course-card-progress-box`).
+  3. Verify each course card displays the 3-row layout: Row 1 (`.course-card-row-top`) with title and real title; Row 2 (`.course-card-row-middle`) with next task (`.course-card-next-task`) and "Assignments" button (`.course-card-assignments-btn`); Row 3 (`.course-card-row-bottom`) with count breakdown chips (`.course-card-gaps-container`) and progress bar (`.course-card-progress-box`).
   4. Click a course card; verify it navigates directly to the course details view (`CourseDetailView`).
   5. Click the "List" button; verify layout switches back to top-down row list.
 
@@ -684,6 +694,27 @@ graph LR
 * **Modality**: `Automated`
 * **Description**: Verifies that assignments returned by `SyncEngine` preserve the exact discovery order from Moodle REST/Scraper APIs regardless of asynchronous network completion timings, and that UI sort algorithms use stable tie-breakers (`a.id - b.id`) preventing undated assignments from jumping positions upon sync.
 * **Automated Playwright Command**: `pnpm --filter @tautracker/moodle-client test -t "syncEngine"`
+
+#### TC-ASN-14: Two-Way Mark Done & Mark as To Do State Synchronization
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that clicking "Mark Done" (סמן כבוצע) or "Mark as To Do" (סמן לביצוע) reliably updates assignment completion status across the Upcoming Tasks queue, Assignments feed, Course Detail view, toolbar badge counter, and mobile app. Ensures canonical UID strings (`assign:<id>`, `quiz:<id>`) and numeric identifiers match seamlessly via `matchesActivityIdentifier` without type mismatches (`Set.has(a.id)`), that gradebook grades and automatic completion flags are properly respected, and that completed tasks can be smoothly toggled back to to-do and vice versa.
+* **Automated Test Command**: `pnpm --filter @tautracker/moodle-client test -t "TC-ACT-02"`
+* **Browser Agent Prompt / Action**:
+  1. In the Dashboard Upcoming Queue, click the checkmark button ("Mark Done") on a pending assignment.
+  2. Verify the task immediately drops out of the pending queue.
+  3. Navigate to the Assignments tab; verify the task card displays `Submitted` / `הוגש` and the button label reads "Mark as To Do" (`סמן לביצוע`).
+  4. Click "Mark as To Do"; verify the task returns to `Assigned` status and reappears in the Dashboard Upcoming Queue.
+
+#### TC-ASN-15: Decoupled Local Completion from Moodle Submission Status
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that manually marking an unsubmitted assignment as "Done" on the personal checklist sets `isCompleted: true` and renders the dedicated `Marked as done` (`סמן כהושלם`) badge, while strictly preserving the authentic Moodle submission status (`status: 'Assigned'` or `'Not submitted'`). Confirms that the assignment is NOT mislabeled as `Submitted!` (`הוגש!`) in Moodle, and that the "Submit in Moodle" action button remains accessible so students are never misled into believing an unsubmitted assignment was turned in.
+* **Browser Agent Prompt / Action**:
+  1. Locate an unsubmitted assignment in the Course Detail view or Assignments Hub.
+  2. Click "Mark Done" (`סמן כבוצע`).
+  3. Verify the card displays a single Marked as done (סומן כהושלם) badge on the right (without a duplicate tag in the title row) and Not submitted (לא הוגש), and does NOT display Submitted! (הוגש!).
+  4. Verify the "Submit in Moodle" action link is still visible and functional.
 
 #### TC-DASH-REHAUL-09: Course Page Grid Containment & No Frame Overflow
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -792,17 +823,18 @@ graph LR
 #### TC-ZM-05: Multi-Modal Zoom Link Extraction & Deduplication
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated`
-* **Description**: Validates extraction of Zoom meeting links across multiple Moodle activity modalities: URL modules with direct Zoom links, URL modules with Hebrew keywords ("קישור לזום", "מפגש מקוון", "שיעור זום"), LTI modules with automatic Moodle view fallback when scraping is disabled or fails, embedded HTML links in label modules (`modname === 'label'`), and section summaries. Verifies that duplicate meeting entries within the same course are deterministically deduplicated.
+* **Description**: Validates extraction of genuine Zoom meeting links across multiple Moodle activity modalities: URL modules with direct Zoom links, Page modules (`modname === 'page'`) with embedded links in `c.content`, Label modules (`modname === 'label'`) and Section Summaries. Enforces strict `isZoomJoinUrl()` and `parseZoomUrl()` normalization (sanitizing meeting IDs containing spaces or dashes like "862 9509 2403" to canonical "86295092403" and direct `/j/` join URLs) to ensure only real, joinable meetings or webinars are stored in `meetings`, strictly rejecting generic portal roots (`tau-ac-il.zoom.us`, `zoom.us`), internal LTI endpoints (`applications.zoom.us`), and non-meeting URLs. Verifies that Moodle LTI modules are saved to `links` (with `linkKind: 'zoom'`) for opening the course Zoom page, but strictly prevents non-Zoom Moodle view URLs (`mod/lti/view.php`) from ever entering `meetings` as fake Zoom meetings with misleading "Join Zoom" buttons. Verifies that duplicate meeting entries within the same course are deterministically deduplicated.
 * **Automated Test Flow**:
-  1. Mock `core_course_get_contents` with a course containing: URL module (`zoom.us`), URL module with Hebrew keyword ("מפגש מקוון"), LTI module (`modname === 'lti'`), Label module with `<a href="...zoom.us...">`, and section summary with embedded link.
+  1. Mock `core_course_get_contents` with a course containing: URL module (`zoom.us`), URL module with Hebrew keyword and Moodle URL, LTI module (`modname === 'lti'`), Label module with `<a href="...zoom.us...">`, Page module with `<a href="...zoom.us...">` in `contents[0].content`, and section summary with embedded link.
   2. Execute `runSync` with `enableScraping: false`.
-  3. Assert all 4 distinct Zoom meeting sources are detected, normalized (`https://tau-ac-il.zoom.us/j/...`), and populated with meetingNumber and password.
-  4. Assert duplicate Zoom links across sections are collapsed into a single meeting record.
+  3. Assert all genuine Zoom meeting sources are detected, normalized (`https://tau-ac-il.zoom.us/j/...`), and populated with meetingNumber and password.
+  4. Assert non-Zoom Moodle URLs are excluded from `result.meetings`, and LTI module is registered under `result.links` with `linkKind: 'zoom'`.
+  5. Assert duplicate Zoom links across sections are collapsed into a single meeting record.
 
 #### TC-ZM-06: Recurring Zoom Session Collapsing, Uncluttered Panel & Show-Hidden Toggle
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Validates that recurring weekly sessions of the same room/meetingNumber are collapsed into a single entry representing the nearest upcoming meeting (or the latest past meeting if none upcoming). Validates that the Dashboard and Course Detail Zoom panels render only visible meetings by default, preventing clutter when courses have 10+ recitation/lecture groups. Provides a toggle button ("הצג פגישות מוסתרות" / "Show hidden meetings") to expand hidden sessions with unhide actions, alongside bulk "הצג הכל" / "הסתר הכל" buttons per course.
+* **Description**: Validates that recurring weekly sessions of the same room/meetingNumber are collapsed into a single entry representing the nearest upcoming meeting (or the latest past meeting if none upcoming). Validates that the Dashboard and Course Detail Zoom panels render only visible meetings by default, preventing clutter when courses have 10+ recitation/lecture groups. Provides a toggle button ("הצג פגישות מוסתרות" / "Show hidden meetings") to expand hidden sessions with unhide actions, alongside modernized `.secondary-btn.btn-xs` buttons with `<EyeIcon size={12} />` and `<EyeOffIcon size={12} />` icons for bulk "הצג הכל" / "הסתר הכל" visibility toggling and drawer expansion without raw unicode camera emojis.
 * **Automated Test Flow**:
   1. Call `collapseRecurringMeetings(meetings, referenceDate)` with 3 weekly instances of Lecture 01 (one past, two upcoming).
   2. Verify it collapses to the single nearest upcoming slot (`2026-10-16`).
@@ -816,6 +848,30 @@ graph LR
   4. Click "הצג פגישות מוסתרות"; verify hidden meetings expand in a dashed container.
   5. Click the eye icon on one meeting; verify it moves immediately to the visible list.
   6. Verify meetings in other courses remain unaffected.
+
+#### TC-ZM-07: Moodle Native `mod_zoom` & LTI Pro Server-Rendered HTML Table Scraping
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Asserts that `scrapeZoomMeetingsWithToken` accurately fetches and parses Moodle native Zoom activities (`/mod/zoom/view.php?id=...`) and embedded Zoom LTI iframes. Extracts meeting IDs with arbitrary space/dash formatting (e.g. `840 9026 3132` -> `84090263132`), Hebrew session topics (e.g., `תרגול שלישי רביעי 17:00-18:00`), relative/recurring human-readable start times (`Tomorrow (Recurring) 7:05 AM`, `Thu, Nov 12 (Recurring) 4:00 AM`), and canonical direct join URLs (`https://tau-ac-il.zoom.us/j/...`).
+* **Automated Test Flow**:
+  1. Mock `/mod/zoom/view.php?id=301` returning an HTML table with 4 Hebrew recurring lecture and recitation sessions.
+  2. Call `scrapeZoomMeetingsWithToken('mock-token', 301, 'https://moodle.tau.ac.il', 301, null, 'zoom')`.
+  3. Verify all 4 meetings are parsed into structured `LtiZoomMeeting` objects with topics, normalized numeric IDs, and valid join URLs.
+
+#### TC-ZM-08: Default Visible Zoom Links, Denylist Persistence & Extension Popup Filter Synchronization
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Asserts that all detected and future course Zoom meetings default to **visible** (`hiddenZoomMeetings: []`). When a user explicitly hides a meeting, its composite key or meeting identifier is stored in `hiddenZoomMeetings`. In the extension popup, active live sessions (`diffMinutes >= -15 && diffMinutes <= 120`) are strictly filtered using `!isZoomMeetingHidden()`, preventing hidden meetings from ever displaying in the popup or dashboard live banner.
+* **Automated Test Flow**:
+  1. Call `isZoomMeetingHidden(meeting, [], [])` and assert it returns `false` (default visible).
+  2. Call `isZoomMeetingHidden(meeting, [getZoomMeetingKey(meeting)])` and assert it returns `true` (hidden).
+  3. Verify normalization supports space-separated IDs (`840 9026 3132` vs `84090263132`), meeting URLs, and legacy `hidden_` prefixes.
+  4. Verify recurring sessions collapse to active instance and that hidden active meetings are excluded from `activeMeetings` in popup and dashboard.
+* **Browser Agent Prompt / Action**:
+  1. Expand course Zoom section in Dashboard; verify all discovered Zoom links are marked with `<EyeIcon />` (visible by default).
+  2. Click the eye icon to hide a Zoom link.
+  3. Open extension popup during the active meeting window; verify the hidden meeting does NOT appear in the "Live Now" banner.
+  4. Verify visible live meetings display with clean `<VideoIcon />` join buttons and zero unicode emojis.
 
 
 ---
@@ -905,14 +961,41 @@ graph LR
   1. View Grades tab header.
   2. Assert "Overall Average" card displays `87.5`.
 
-#### TC-GRD-04: Empty Grades Placeholder State
+#### TC-GRD-04: Pedagogical Policy Filtering (Hidden, Locally Done, Pending Tasks)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies that hidden assignments (auto-suppressed or student-hidden), assignments locally checked off as done without actual Moodle submission, and pending future tasks do not skew course averages or cumulative GPA.
+* **Automated Test Flow**:
+  1. Provide mock assignments: 1 graded (90/100), 1 hidden, 1 marked done locally with no Moodle submission, 1 future pending task, 1 submitted task awaiting grading.
+  2. Invoke `calculateGradesSummary`.
+  3. Assert only the graded assignment is included; overall GPA is `90.00`.
+
+#### TC-GRD-05: Exclusion of Ungraded Overdue & Pending Tasks (Only Published Grades Included)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Confirms overdue unsubmitted tasks are NOT defaulted to zero; only assignments with an actual published grade in Moodle are displayed and included in calculation (an official 0 assigned in Moodle by the instructor is included).
+* **Automated Test Flow**:
+  1. Provide mock assignments: 1 graded (100/100), 1 overdue unsubmitted task without grade (deadline in past), 1 official zero in Moodle (0/100).
+  2. Run `calculateGradesSummary`.
+  3. Assert only the 2 tasks with published grades are calculated; course average and GPA are `50.00`.
+
+#### TC-GRD-06: Administrative / Safety Course Exclusion & Bonus Activity Handling
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Confirms administrative and laboratory safety tutorial courses (`5800...`, `5900...`) are completely excluded from GPA calculations, and bonus items are listed without inflating the unweighted course average denominator.
+* **Automated Test Flow**:
+  1. Provide mock assignments for safety tutorial (code 58001001), regular course homework, and regular course bonus item.
+  2. Run `calculateGradesSummary`.
+  3. Assert safety course is excluded; bonus item appears in course list with badge but does not count in course group count.
+
+#### TC-GRD-07: Empty Grades Placeholder State & Policy Notice
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Browser Agent`
-* **Description**: If a student has no graded assignments, renders an encouraging empty state ("אין ציונים זמינים כרגע" / "No grades available yet") instead of a broken zero or NaN.
+* **Description**: If a student has no graded or overdue assignments, renders an encouraging empty state instead of broken NaN/0 values. Confirms the subtle policy notice banner (`.grades-calc-notice`) renders above the GPA card.
 * **Browser Agent Prompt / Action**:
   1. Clear assignments table or mock zero grades.
-  2. Navigate to Grades tab.
-  3. Verify friendly empty state is rendered with no errors.
+  2. Navigate to Grades tab (`/grades`).
+  3. Verify subtle policy notice banner is present and empty state is rendered cleanly.
 
 ---
 
@@ -1021,6 +1104,16 @@ graph LR
   2. Verify red status badge "⚠️ Not connected — Authentication required" is visible.
   3. Navigate to Dashboard; verify warning banner "Google Tasks sync is enabled but not connected" is displayed with a "Connect Now ↗" button.
   4. Click "Connect Now ↗", authenticate, and verify status changes to "● Connected to Google Tasks" and the warning banner dismisses.
+
+#### TC-GT-10: Graded & Automatic Completion Quiz Sync & Multi-Portal Deduplication
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies that quizzes with recorded grades in the gradebook (`grade !== null`) or automatic completion criteria satisfied (`completion === 2` with `state === 1 || state === 2`) are recognized as completed/submitted, deleted from Google Tasks (`DELETE /tasks/{id}`), and never recreated as active tasks upon deletion. Also verifies that activities duplicated across multiple course portals (e.g. Lecture and Recitation portals in unified courses like Software 1) are deduplicated, prioritizing completed and graded entries.
+* **Automated Test Flow**:
+  1. Prepare a quiz with past deadline, empty attempts response, but a valid numeric grade in the gradebook.
+  2. Run `syncAssignmentsToGoogleTasks` with an existing matching task in Google Tasks; assert `DELETE` is called.
+  3. Run sync again with no existing task in Google Tasks; assert `POST` is NOT called (task is not re-added).
+  4. Run sync with two duplicate sub-course portal entries (one submitted/graded, one unsubmitted); assert only one entry is evaluated and the graded version is recognized as done with 0 active tasks created.
 
 ---
 
@@ -1141,6 +1234,30 @@ graph LR
     3. Privacy & Architecture (100% client-side, zero analytics, direct REST/AJAX)
 * **Browser Agent Prompt / Action**:
   1. Navigate to Settings and locate the Account card. Verify all links (GitHub, Issues, Email, Chrome Web Store) and credits for Yuval Mantin & Michael Kushnir are rendered and clickable.
+
+#### TC-UI-06: Theme-by-Time Auto Switching (Noodle Day, Coffee Night)
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Confirms that configuring `theme: 'time'` switches dynamically between Noodle theme (daytime hours, e.g. 7:00–17:00) and Coffee theme (nighttime hours, e.g. 17:00–7:00).
+* **Automated Test Flow**:
+  1. Call `getEffectiveTheme({ theme: 'time', themeTimeDayStart: 7, themeTimeDayEnd: 17 })` at 12:00 -> returns `'noodle'`.
+  2. Call `getEffectiveTheme({ theme: 'time', themeTimeDayStart: 7, themeTimeDayEnd: 17 })` at 21:00 -> returns `'coffee'`.
+  3. Verify dynamic interval updates body classes in both Options dashboard and Extension Popup.
+
+#### TC-UI-07: Prioritized Settings Hierarchy & Direct Manage Courses Access
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Browser Agent`
+* **Description**: Validates that critical user configuration sections (General/Theme, Due Date Colors, Manage Courses, and Config Backup) are rendered at the top of the Settings page. Verifies clicking "Manage Courses" opens the modal dialog over Settings and saves preferences cleanly.
+* **Browser Agent Action**:
+  1. Navigate to Settings Tab.
+  2. Verify Appearance, Due Date thresholds, Manage Tracked Courses, and Backup are the first sections visible.
+  3. Click "Manage Courses" button; verify modal opens without navigating away from Settings.
+  4. Edit custom course color and click "Save Tracking Options". Verify modal closes and stays on Settings.
+
+#### TC-UI-08: Button Action Consistency & Default Cards and Calendar Views
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Description**: Verifies consistent visual styling across buttons: "Go to Course" buttons on assignments and "Manage Courses" buttons feature the signature purple-orange Noodle gradient (`.btn-go-to-course`, `.manage-courses-trigger-btn`), and all "Submit" actions use primary CTA styling (`.action-submit-btn`). Verifies default courses view is `cards` and default calendar view is open (`true`).
   2. Navigate to the About tab.
   3. Verify the 5 action link cards render.
   4. Click each of the 3 accordion sections to verify they expand and collapse smoothly with localized content.
@@ -1181,6 +1298,16 @@ graph LR
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Browser Agent`
 * **Description**: Checks whether notifications permission is granted; if denied, displays a prompt in Settings allowing the user to request permission.
+
+#### TC-BG-06: Smart Weighted Sync Progress Calculation & Monotonic State Progression
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Description**: Verifies the `SmartProgressCalculator` engine in `@tautracker/moodle-client` dynamically computes real progress percentages across the 6 synchronization stages, strictly prevents retrograde percentage jumps, and handles edge cases (zero tracked courses, zero activities) gracefully without getting stuck.
+* **Automated Test Flow**:
+  1. Instantiate `SmartProgressCalculator` with 2 courses and 2 activities.
+  2. Advance through stages: init (0% -> 7%), mapping (7% -> 15%), global fetch (15% -> 28%), courses (28% -> 75%), activities (75% -> 95%), finalizing (95% -> 98%), and complete (100%).
+  3. Assert progress percentages are strictly non-decreasing throughout all emissions.
+  4. Instantiate calculator with 0 courses and 0 activities; assert progress reaches 100% without hanging.
 
 ---
 
@@ -1589,7 +1716,7 @@ graph LR
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated & Browser Agent`
 * **Description**: Verifies the end-to-end UI integration of Panopto recordings in the extension:
-  1. In **Settings**, enabling `#panopto-enabled-toggle` sets `panoptoEnabled: true` and reveals the Panopto Folder column in the **Manage Courses** modal (`CoursesConfigTable`) for manual folder URL/UUID overrides (`coursesPanoptoMap`).
+  1. In **Settings**, enabling `#panopto-enabled-toggle` sets `panoptoEnabled: true`. Manual folder URL/UUID overrides in both the **Manage Courses** modal (`CoursesConfigTable`) and `CourseDetailView` are guarded by the `showPanoptoFolderOverride` toggle (default: false), remaining hidden from non-technical students unless explicitly toggled on in Settings.
   2. In **Dashboard ("My Tracked Courses")**, each course card (Cards mode) and row (List mode) displays breakdown completion and gap badges for `Assignments (x/y) [z gaps]`, `Lectures (x/y) [z gaps]`, and `Recitations (x/y) [z gaps]`, accompanied by an overall combined progress bar (`x/y (z%)`).
   3. In **Dashboard Hero Action Strip**, when `panoptoEnabled` is true, a **Lectures & Recitations to Catch Up** panel (`.catchup-queue-card`) appears in a balanced 3-column layout alongside the Spotlight card and Upcoming To-Do queue, listing up to 5 unwatched recordings ordered from oldest to newest with 1-click mark-as-watched (`✓`) and direct watch links.
   4. In **CourseDetailView**, recordings appear grouped inside dedicated localized **Lectures (`הרצאות`)** and **Recitations (`תרגולים`)** sections with direct `Panopto ↗` (`פנופטו ↗`) links to the course's Panopto folder page, displaying type badges (`הרצאה` / `תרגול`), date, Watched/Unwatched toggle button (`watchedRecordings`), and direct `צפה בהקלטה ↗` / `Watch ↗` link.
@@ -1606,16 +1733,17 @@ graph LR
 #### TC-SYNC-04: Stale "Syncing..." State Recovery
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Browser Agent`
-* **Description**: Reload the extension mid-sync (or let the worker terminate), then open the dashboard without pressing Sync. The header must show the countdown (not `Syncing...`) and the Sync button must be enabled: the worker resets `isSyncing` on load and the dashboard queries the live state via `GET_SYNC_STATUS`.
+* **Description**: Reload the extension mid-sync (or let the worker terminate), then open the dashboard without pressing Sync. The header subtitle must show the last synced timestamp (not `Syncing...`), the progress bar on the Sync button must reset, and the Sync button must be enabled: the worker resets `isSyncing` on load and the dashboard queries the live state via `GET_SYNC_STATUS`.
 
 #### TC-SYNC-05: Automatic Sync Interval Configuration & Moodle Storage Sync
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated & Browser Agent`
 * **Description**:
-  1. In **Settings**, changing the **Automatic Sync Interval** dropdown (`syncIntervalMinutes`, e.g. 10m) saves locally and dispatches `SYNC_SETTINGS`.
-  2. The background service worker re-arms the `periodicSync` alarm with the chosen interval.
-  3. The `SyncCountdown` timer in the dashboard header reflects the new interval immediately.
-  4. The setting syncs to Moodle Calendar private storage (`NOODLE_SYNC_DATA`) and propagates across devices with Last-Write-Wins (LWW) conflict resolution.
+  1. Default automatic sync interval is configured to 60 minutes (`syncIntervalMinutes: 60`, 1 hour).
+  2. In **Settings**, changing the **Automatic Sync Interval** dropdown (`syncIntervalMinutes`, e.g. 10m) saves locally and dispatches `SYNC_SETTINGS`.
+  3. The background service worker re-arms the `periodicSync` alarm with the chosen interval.
+  4. The `SyncCountdown` timer in the dashboard header reflects the new interval immediately.
+  5. The setting syncs to Moodle Calendar private storage (`NOODLE_SYNC_DATA`) and propagates across devices with Last-Write-Wins (LWW) conflict resolution.
 
 ---
 
@@ -1690,7 +1818,7 @@ graph LR
 * **Target Components**: `apps/extension/src/options/App.tsx`
 * **Description**:
   1. Course Detail view displays 2-level topic chips (top-level topics and nested subtopics) with smooth scrolling to matching section cards.
-  2. Displays folder cards with `📦 הורד תיקייה כ-ZIP` button, triggering bounded parallel file downloads with live progress bar and direct browser download.
+  2. Displays folder cards with interactive directory browser, file count, total size, expand/collapse toggles, subfolder groupings, individual file open/download actions, and `📦 הורד כ-ZIP` button triggering bounded parallel file downloads with live progress bar.
   3. Displays course announcements banner (`📢`) linking directly to Moodle forum notices.
   4. Grades Tab and Course Detail view prioritize authoritative course totals (`🏆 ציון כולל`) from gradebook summaries, bonus badges (`✨ בונוס`), and instructor feedback notes (`💬`).
 * **Verification**: Headless Chromium & Firefox build verification (`pnpm --filter extension run build`).
@@ -1750,6 +1878,26 @@ graph LR
   3. Incremental `SYNC_PARTIAL` messages preserve existing `sections`, `folders`, `links`, and `gradeSummaries`, preventing subjects from disappearing mid-sync.
   4. Mobile partial sync updates do not execute table-wide `DELETE` pruning in SQLite until the final sync payload with `syncedAt` arrives.
 * **Verification**: `jest packages/moodle-client/__tests__/activityState.test.ts`.
+
+#### TC-SYNC-013: Expandable Step-by-Step Sync Progress Window & Smart Stage Weighting
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `packages/moodle-client/src/syncProgress.ts`, `packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`
+* **Description**:
+  1. `SmartProgressCalculator` strictly enforces monotonic percentage updates across lifecycle stages (`init`, `mapping`, `global_fetch`, `courses`, `activities`, `panopto`, `finalizing`, `complete`).
+  2. Panopto recording resolution and session discovery are completely decoupled from Stage 1 course contents fetching into a dedicated Stage 3 (`panopto`), ensuring core Moodle course contents, files, and assignments finish in seconds without slow Panopto network bottlenecks.
+  3. Clicking "Sync now" (`.header-sync-btn`) displays a subtle floating progress window (`.sync-progress-window`) docked in the bottom corner (`bottom: 1.5rem; inset-inline-end: 1.5rem; width: 248px;`) that never overlaps headers, search bars, filter buttons, or dashboard cards.
+  4. Fully adheres to active theme styling: light warm cream with terracotta borders in `theme-noodle`, rich espresso with amber borders in `theme-coffee`, and slate with indigo borders in `theme-dark`.
+  5. Task status badges transition accurately between `pending` (subtle dot), `active` (spinning icon), `done` (green checkmark), and `failed` (red cross icon).
+  6. **Collapsible Mini Dock & Outside-Click Collapse**:
+     * In the expanded window header, an exclusive collapse arrow button (`.sync-window-collapse-btn`) collapses the window to the bottom corner (with no close `✕` button).
+     * Clicking anywhere outside the window automatically collapses it into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying the spinning sync glyph, live progress percentage, and an expand arrow.
+     * Clicking anywhere on the collapsed pill or on the header "Sync" button while sync is running expands it back to the full progress window.
+  7. **Automatic Dismissal on Completion**:
+     * On completion (`SYNC_COMPLETE`), all items mark done, title indicates success, and the entire sync progress UI (whether expanded or collapsed) automatically closes after 2.5 seconds.
+  8. **Anti-Jitter Level-Based Atomic Updates**: Instead of emitting `onPartialSync` on every single assignment, file, or folder in loops (which causes high-frequency React re-renders, jumping layout, and progress bar jitter), `runSync` buffers items in memory and emits atomic updates strictly at stage boundaries: Level 1 (Course Contents Complete), Level 2 (Assignments & Quizzes Complete), and Level 3 (Panopto Complete).
+  9. **Silent Background Sync vs. Interactive Manual Sync**: Periodic background syncs (triggered via alarms) run silently without popping open `.sync-progress-window` unprompted, displaying only the spinning sync glyph on the header button; manual sync explicitly displays the progress window.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test` (`__tests__/syncProgress.test.ts`), `pnpm --filter extension run build:chrome`, and `pnpm --filter extension run build:firefox`.
 
 #### TC-EXT-017: Hierarchical Course Management, Assignment Deduplication, Card Urgency Thresholds & Unhide Filter Activation
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -1856,3 +2004,14 @@ graph LR
   1. Firefox sync performs zero `fetch()` GET preflights (`fetch` is not invoked prior to `browser.downloads.download`), enforces `maxBytes` (`LocalFsDownloadOversizedError`), detects `text/html`/small non-`.json` `application/json`/`url`+`finalUrl` SAML redirects and `SERVER_UNAUTHORIZED`/`SERVER_FORBIDDEN` (`LocalFsDownloadAuthError`), awaits temporary download cleanup before rejecting, and runs a 1-shot `reauthenticate()` retry.
   2. `ChromiumFsaProvider` translates `NotAllowedError` / `SecurityError` from `getDirectoryHandle`, `getFileHandle`, `createWritable`, `pipeTo`, and `queryPermission` into `LocalFsPermissionError`, enforces `Content-Length > maxBytes` prior to bounded (<=16 KB) `checkIsJsonApiError()` stream reads, and streams `ReadableStream` bodies directly into `FileSystemWritableFileStream`.
 * **Verification**: `pnpm --filter extension test` (`__tests__/localFsSync.test.ts`, `__tests__/FirefoxDownloadsProvider.test.ts`, `__tests__/ChromiumFsaProvider.test.ts`).
+
+#### TC-PAN-08: Cross-Browser Panopto Authentication (Chrome, Firefox, Brave) & Block AJAX Fallback
+* **Platform Target**: `Extension (Chrome, Brave & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/serviceWorker.ts`, `packages/moodle-client/src/syncEngine.ts`, `packages/moodle-client/src/panoptoScraper.ts`
+* **Description**:
+  1. `getPanoptoCookies()` checks both standard cookies and CHIPS partitioned cookies (`partitionKey: {}`) with `try/catch` safety for Firefox compatibility.
+  2. `isPanoptoServerSessionAuthenticated()` checks `/Panopto/Api/v1/users/me` (`credentials: 'include'`) alongside `Data.svc/GetSessions` without prematurely failing if `.ASPXAUTH` is partitioned.
+  3. `injectedPanoptoLoginStep` detects `window.Panopto.user.isAuthenticated` on `Login.aspx` / `Home.aspx` (preventing 25s timeouts when `externalLoginButton` is hidden for already-authenticated users) and falls back to `?instance=Moodle<year>&AllowBounce=true` if `Panopto.Login.checkStorageAccess()` stalls `extBtn.click()` in inactive background tabs.
+  4. When `core_block_get_course_blocks` returns a lazy `<div id="loading_text">` placeholder, Stage 3 invokes `discoverPanoptoFromMoodleAjaxBlock` (`/blocks/panopto/ajax/load_panopto_block.php`) with the active Moodle `sesskey`.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test`, `pnpm --filter extension run build:chrome`, and `pnpm --filter extension run build:firefox`.

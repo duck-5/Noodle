@@ -58,6 +58,28 @@ export function isActivityHidden(
 }
 
 /**
+ * Determines whether an activity is considered submitted or completed by Moodle.
+ * Evaluates nominal status ('Submitted'), explicit completion flag, manual completion,
+ * finished quiz attempts, and recorded gradebook grades.
+ */
+export function isMoodleActivitySubmitted(activity: {
+  status: string;
+  isManualCompletionDone?: boolean;
+  requiresManualCompletion?: boolean;
+  grade?: number | null;
+  isCompleted?: boolean;
+  hasFinishedAttempt?: boolean;
+}): boolean {
+  return (
+    activity.status === 'Submitted' ||
+    Boolean(activity.isCompleted) ||
+    Boolean(activity.isManualCompletionDone) ||
+    Boolean(activity.hasFinishedAttempt) ||
+    (activity.grade !== null && activity.grade !== undefined)
+  );
+}
+
+/**
  * Returns true if an activity is completed — considering Moodle submission status,
  * manual completion overrides, and user completed/uncompleted settings.
  */
@@ -69,19 +91,87 @@ export function isActivityCompleted(
     status: string;
     isManualCompletionDone?: boolean;
     requiresManualCompletion?: boolean;
+    grade?: number | null;
+    isCompleted?: boolean;
+    hasFinishedAttempt?: boolean;
   },
   completedIdentifiers?: Array<string | number> | null,
   uncompletedIdentifiers?: Array<string | number> | null
 ): boolean {
-  const isMoodleSubmitted = activity.status === 'Submitted' || Boolean(activity.isManualCompletionDone);
-  const isExplicitlyCompleted = (completedIdentifiers || []).some((id) =>
-    matchesActivityIdentifier(id, activity)
-  );
+  const isMoodleSubmitted = isMoodleActivitySubmitted(activity);
   const isExplicitlyUncompleted = (uncompletedIdentifiers || []).some((id) =>
     matchesActivityIdentifier(id, activity)
   );
-
-  if (isExplicitlyCompleted) return true;
   if (isExplicitlyUncompleted) return false;
+
+  const isExplicitlyCompleted = (completedIdentifiers || []).some((id) =>
+    matchesActivityIdentifier(id, activity)
+  );
+  if (isExplicitlyCompleted) return true;
+
   return isMoodleSubmitted;
+}
+
+export interface ZoomMeetingLike {
+  courseId?: number | string;
+  courseName?: string;
+  meetingNumber?: string;
+  title?: string;
+  meetingUrl?: string;
+}
+
+/**
+ * Returns the canonical compound key used to identify a Zoom meeting session.
+ * Format: "<courseName>:<meetingNumber><title>", matching the dashboard keying convention.
+ */
+export function getZoomMeetingKey(meeting: ZoomMeetingLike): string {
+  const courseName = meeting.courseName || '';
+  const meetingNum = meeting.meetingNumber || '';
+  const title = meeting.title || '';
+  return courseName + ":" + meetingNum + title;
+}
+
+/**
+ * Determines whether a Zoom meeting is explicitly marked as hidden by the user.
+ * Default state: VISIBLE (returns false).
+ * A meeting is only hidden if it (or its normalized meeting number or URL or compound key)
+ * is present in hiddenZoomMeetings or legacy interestedMeetings denylist.
+ */
+export function isZoomMeetingHidden(
+  meeting: ZoomMeetingLike,
+  hiddenZoomMeetings?: string[] | null,
+  legacyInterestedMeetings?: string[] | null
+): boolean {
+  if (!meeting) return false;
+  const key = getZoomMeetingKey(meeting);
+  const rawNum = meeting.meetingNumber ? String(meeting.meetingNumber).trim() : '';
+  const cleanNum = rawNum ? rawNum.replace(/[\s-]/g, '') : '';
+  const url = meeting.meetingUrl ? meeting.meetingUrl.trim() : '';
+
+  // 1. Explicit modern denylist: hiddenZoomMeetings
+  if (hiddenZoomMeetings && hiddenZoomMeetings.length > 0) {
+    if (
+      hiddenZoomMeetings.includes(key) ||
+      (rawNum && hiddenZoomMeetings.includes(rawNum)) ||
+      (cleanNum && hiddenZoomMeetings.includes(cleanNum)) ||
+      (url && hiddenZoomMeetings.includes(url))
+    ) {
+      return true;
+    }
+  }
+
+  // 2. Legacy denylist format support (prefixed with 'hidden_')
+  if (legacyInterestedMeetings && legacyInterestedMeetings.length > 0) {
+    if (
+      (rawNum && legacyInterestedMeetings.includes("hidden_" + rawNum)) ||
+      (cleanNum && legacyInterestedMeetings.includes("hidden_" + cleanNum)) ||
+      (url && legacyInterestedMeetings.includes("hidden_" + url)) ||
+      legacyInterestedMeetings.includes("hidden_" + key)
+    ) {
+      return true;
+    }
+  }
+
+  // By default: all zoom links are VISIBLE
+  return false;
 }

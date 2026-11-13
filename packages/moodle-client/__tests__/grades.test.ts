@@ -1,4 +1,6 @@
 import { MoodleClient, RawGradeReportResponse } from '../src/moodleApi.js';
+import { calculateGradesSummary } from '../src/gradesCalculation.js';
+import { Assignment } from '../src/types.js';
 
 describe('Category 7 & 4: Grades, Progress & Course Statistics', () => {
   const originalFetch = global.fetch;
@@ -121,6 +123,210 @@ describe('Category 7 & 4: Grades, Progress & Course Statistics', () => {
       expect(avgGrade).toBe(90.0);
       expect(submitted).toHaveLength(3);
       expect(pending).toHaveLength(1);
+    });
+  });
+
+  describe('TC-GRD-04: Pedagogical Policy Filtering (Hidden, Locally Checked-Done, Pending Tasks)', () => {
+    const fixedNow = new Date('2026-11-10T12:00:00Z');
+    const createMockAssignment = (partial: Partial<Assignment> & { id: number; courseId: number; name: string }): Assignment => ({
+      cmid: partial.id * 10,
+      courseName: 'CS 101',
+      status: 'Assigned',
+      deadline: null,
+      opened: null,
+      link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${partial.id * 10}`,
+      grade: null,
+      gradeMax: 100,
+      ...partial,
+    });
+
+    it('should exclude hidden assignments, unsubmitted locally checked tasks, and future pending tasks', () => {
+      const mockAssignments: Assignment[] = [
+        createMockAssignment({
+          id: 1,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Graded Homework 1',
+          grade: 90,
+          gradeMax: 100,
+          status: 'Submitted',
+        }),
+        createMockAssignment({
+          id: 2,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Hidden Homework 2',
+          isHidden: true,
+          grade: null,
+          status: 'Not submitted',
+          deadline: '2026-11-01T12:00:00Z', // past deadline, but hidden!
+        }),
+        createMockAssignment({
+          id: 3,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Locally Done But Unsubmitted HW 3',
+          grade: null,
+          status: 'Not submitted',
+          deadline: '2026-11-05T12:00:00Z',
+          // Marked as done locally without Moodle submission
+        }),
+        createMockAssignment({
+          id: 4,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Future Pending Assignment 4',
+          grade: null,
+          status: 'Not submitted',
+          deadline: '2026-11-20T12:00:00Z', // future deadline
+        }),
+        createMockAssignment({
+          id: 5,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Submitted Awaiting Grade HW 5',
+          grade: null,
+          status: 'Submitted',
+          deadline: '2026-11-08T12:00:00Z', // past deadline, submitted, not graded yet
+        }),
+      ];
+
+      const result = calculateGradesSummary({
+        assignments: mockAssignments,
+        hiddenIdentifiers: [],
+        completedIdentifiers: [3], // HW 3 is checked locally
+        uncompletedIdentifiers: [],
+        now: fixedNow,
+      });
+
+      // Only HW 1 (graded 90/100) should be included!
+      expect(result.totalCalculatedItems).toBe(1);
+      expect(result.calculatedItems[0].id).toBe(1);
+      expect(result.overallGpa).toBe('90.00');
+      expect(result.courseGroups[101].average).toBe('90.00');
+    });
+  });
+
+  describe('TC-GRD-05: Exclusion of Ungraded Overdue & Pending Tasks (Only Published Grades Included)', () => {
+    const fixedNow = new Date('2026-11-10T12:00:00Z');
+    const createMockAssignment = (partial: Partial<Assignment> & { id: number; courseId: number; name: string }): Assignment => ({
+      cmid: partial.id * 10,
+      courseName: 'CS 101',
+      status: 'Assigned',
+      deadline: null,
+      opened: null,
+      link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${partial.id * 10}`,
+      grade: null,
+      gradeMax: 100,
+      ...partial,
+    });
+
+    it('should NOT default overdue tasks to zero and only include tasks with published grades', () => {
+      const mockAssignments: Assignment[] = [
+        createMockAssignment({
+          id: 1,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Graded HW 1',
+          grade: 100,
+          gradeMax: 100,
+          status: 'Submitted',
+        }),
+        createMockAssignment({
+          id: 2,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Overdue HW 2 (No Grade)',
+          grade: null,
+          gradeMax: 100,
+          status: 'Not submitted',
+          deadline: '2026-11-05T12:00:00Z', // Overdue relative to fixedNow, but ungraded -> excluded!
+        }),
+        createMockAssignment({
+          id: 3,
+          courseId: 101,
+          courseName: 'CS 101',
+          name: 'Official Zero in Moodle HW 3',
+          grade: 0,
+          gradeMax: 100,
+          status: 'Submitted',
+          deadline: '2026-11-04T12:00:00Z', // Officially graded 0 in Moodle -> included!
+        }),
+      ];
+
+      const result = calculateGradesSummary({
+        assignments: mockAssignments,
+        now: fixedNow,
+      });
+
+      // Overdue HW 2 is excluded; Graded HW 1 (100) and Official Zero HW 3 (0) are included
+      expect(result.totalCalculatedItems).toBe(2);
+      expect(result.calculatedItems.map((i) => i.id)).toEqual([1, 3]);
+
+      // Course average: (100% + 0%) / 2 = 50.00%
+      expect(result.courseGroups[101].average).toBe('50.00');
+      expect(result.overallGpa).toBe('50.00');
+    });
+  });
+
+  describe('TC-GRD-06: Administrative / Safety Course Exclusion & Bonus Activity Handling', () => {
+    const createMockAssignment = (partial: Partial<Assignment> & { id: number; courseId: number; name: string }): Assignment => ({
+      cmid: partial.id * 10,
+      courseName: 'General Course',
+      status: 'Assigned',
+      deadline: null,
+      opened: null,
+      link: `https://moodle.tau.ac.il/mod/assign/view.php?id=${partial.id * 10}`,
+      grade: null,
+      gradeMax: 100,
+      ...partial,
+    });
+
+    it('should exclude administrative safety course prefixes and handle bonus items gracefully', () => {
+      const mockAssignments: Assignment[] = [
+        createMockAssignment({
+          id: 10,
+          courseId: 58001001,
+          courseName: '58001001 - Safety in Laboratories',
+          name: 'Lab Safety Quiz',
+          grade: 100,
+          gradeMax: 100,
+          status: 'Submitted',
+        }),
+        createMockAssignment({
+          id: 20,
+          courseId: 202,
+          courseName: 'Math 202',
+          name: 'Midterm Exam',
+          grade: 80,
+          gradeMax: 100,
+          status: 'Submitted',
+        }),
+        createMockAssignment({
+          id: 21,
+          courseId: 202,
+          courseName: 'Math 202',
+          name: 'Bonus Riddle',
+          grade: 10,
+          gradeMax: 10,
+          isBonus: true,
+          status: 'Submitted',
+        }),
+      ];
+
+      const result = calculateGradesSummary({
+        assignments: mockAssignments,
+      });
+
+      // Course 58001001 is excluded entirely
+      expect(result.courseGroups[58001001]).toBeUndefined();
+
+      // Course 202 should have 2 items listed (Midterm and Bonus), but count = 1 for average
+      expect(result.courseGroups[202]).toBeDefined();
+      expect(result.courseGroups[202].list).toHaveLength(2);
+      expect(result.courseGroups[202].count).toBe(1);
+      expect(result.courseGroups[202].average).toBe('80.00');
+      expect(result.overallGpa).toBe('80.00');
     });
   });
 });

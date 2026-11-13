@@ -571,7 +571,7 @@ test.describe('Local Filesystem Sync (Issue #18)', () => {
     await optionsPage.locator('.nav-item').filter({ hasText: /לוח בקרה|Dashboard/ }).click();
     const courseCard = optionsPage.locator('.course-row-card').first();
     await expect(courseCard).toBeVisible();
-    await courseCard.locator('button').filter({ hasText: /עבור לקורס|Go to/ }).click();
+    await courseCard.locator('.course-row-title').click();
 
     const detailView = optionsPage.locator('.course-detail-view');
     await expect(detailView).toBeVisible();
