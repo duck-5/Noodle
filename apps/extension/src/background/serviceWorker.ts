@@ -603,6 +603,8 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
       }
     } catch (_) {}
 
+    await syncPanoptoCookieToDnr().catch(() => {});
+
     try {
       result = await runSync(
         token,
@@ -1449,6 +1451,56 @@ async function getPanoptoCookies(): Promise< browser.Cookies.Cookie[] > {
   return results;
 }
 
+const PANOPTO_COOKIE_DNR_RULE_ID = 2026;
+
+async function syncPanoptoCookieToDnr(): Promise<void> {
+  try {
+    const dnr =
+      (typeof chrome !== 'undefined' && (chrome as any).declarativeNetRequest) ||
+      (browser as any).declarativeNetRequest;
+    if (!dnr || typeof dnr.updateDynamicRules !== 'function') return;
+
+    const cookies = await getPanoptoCookies();
+    const aspxCookie = cookies.find((c) => c.name.toUpperCase().includes('ASPXAUTH') && Boolean(c.value));
+    if (!aspxCookie) {
+      await dnr.updateDynamicRules({ removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID] }).catch(() => {});
+      return;
+    }
+
+    const cookieHeaderValue = cookies
+      .filter((c) => Boolean(c.value))
+      .map((c) => `${c.name}=${c.value}`)
+      .join('; ');
+
+    await dnr.updateDynamicRules({
+      removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID],
+      addRules: [
+        {
+          id: PANOPTO_COOKIE_DNR_RULE_ID,
+          priority: 10,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              {
+                header: 'Cookie',
+                operation: 'set',
+                value: cookieHeaderValue,
+              },
+            ],
+          },
+          condition: {
+            urlFilter: '||tau.cloud.panopto.eu',
+            resourceTypes: ['xmlhttprequest'],
+          },
+        },
+      ],
+    });
+    console.log('[Panopto][DNR] Attached Panopto cookies via declarativeNetRequest dynamic rule.');
+  } catch (err) {
+    console.warn('[Panopto][DNR] Could not configure dynamic cookie rule:', err);
+  }
+}
+
 async function hasPanoptoAuthCookie(): Promise<boolean> {
   try {
     const cookies = await getPanoptoCookies();
@@ -1466,6 +1518,12 @@ async function hasPanoptoAuthCookie(): Promise<boolean> {
 
 async function clearPanoptoAuthCookies(): Promise<void> {
   try {
+    const dnr =
+      (typeof chrome !== 'undefined' && (chrome as any).declarativeNetRequest) ||
+      (browser as any).declarativeNetRequest;
+    if (dnr && typeof dnr.updateDynamicRules === 'function') {
+      await dnr.updateDynamicRules({ removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID] }).catch(() => {});
+    }
     const cookies = await getPanoptoCookies();
     for (const cookie of cookies) {
       if (cookie.name.toUpperCase().includes('ASPXAUTH')) {
@@ -1483,6 +1541,7 @@ async function clearPanoptoAuthCookies(): Promise<void> {
 }
 
 async function isPanoptoServerSessionAuthenticated(): Promise<boolean> {
+  await syncPanoptoCookieToDnr();
   try {
     // 1. Fast check against Panopto's REST user profile endpoint (returns 401 when unauthenticated, 200 OK when logged in)
     const meRes = await fetch('https://tau.cloud.panopto.eu/Panopto/Api/v1/users/me', {
@@ -1592,8 +1651,8 @@ async function ensurePanoptoAuthViaHiddenTab(
         }
       }
 
-      // Remove any stale/expired unpartitioned .ASPXAUTH cookie before opening the login tab
-      if (await hasPanoptoAuthCookie()) {
+      // Only clear cookies if an explicit force refresh was requested
+      if (forceRefresh && (await hasPanoptoAuthCookie())) {
         await clearPanoptoAuthCookies();
       }
 
