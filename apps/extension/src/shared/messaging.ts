@@ -109,3 +109,25 @@ export async function retryFailedLocalFsOnBackground(): Promise<{ success: boole
 export async function resetLocalFsFolderOnBackground(): Promise<{ success: boolean; error?: string }> {
   return sendMessageToBackground({ type: 'LOCAL_FS_RESET_FOLDER' });
 }
+
+export interface ScannedLocalFileMetadata {
+  relativePath: string;
+  size: number;
+  lastModified: number;
+}
+
+export async function adoptScannedLocalFilesOnBackground(
+  files: ScannedLocalFileMetadata[]
+): Promise<{ success: boolean; adoptedCount?: number; totalSynced?: number; error?: string }> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_ADOPT_SCANNED', files });
+}
+
+export async function reconcileLocalFsOnBackground(): Promise<{
+  success: boolean;
+  repaired?: number;
+  cleared?: number;
+  confirmedMissingIds?: string[];
+  error?: string;
+}> {
+  return sendMessageToBackground({ type: 'LOCAL_FS_RECONCILE' });
+}

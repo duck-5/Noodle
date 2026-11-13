@@ -75,12 +75,12 @@ import {
   loginTauSsoOnBackground,
   logoutOnBackground,
   resumeLocalFsSyncOnBackground,
+  reconcileLocalFsOnBackground,
 } from '../shared/messaging.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import { getInlineMimeType } from '../shared/mimeUtils.js';
 import { createFileSystemProvider, isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
 import { ChromiumFsaProvider } from '../services/fs/ChromiumFsaProvider.js';
-import { FirefoxDownloadsProvider } from '../services/fs/FirefoxDownloadsProvider.js';
 import { LocalFsSettingsSection } from './LocalFsSettingsSection.js';
 import { translations } from '../shared/i18n';
 
@@ -140,7 +140,7 @@ interface LocalFilesContextValue {
 const LocalFilesContext = createContext<LocalFilesContextValue>({
   enabled: false,
   findRecord: () => null,
-  markLocalMissing: () => {},
+  markLocalMissing: () => { },
 });
 
 let cachedLocalLookup: {
@@ -180,7 +180,7 @@ export async function handleOpenFileInNewTab(
     let localEnabled = Boolean(preResolvedLocalRecord) || cachedLocalLookup.enabled;
     let matchedRecord: LocalFsManifestRecord | undefined = preResolvedLocalRecord ?? undefined;
 
-    if (!matchedRecord && rawUrl) {
+    if (preResolvedLocalRecord === undefined && rawUrl) {
       if (cachedLocalLookup.initialized) {
         if (localEnabled) {
           matchedRecord = cachedLocalLookup.byUrl.get(normalizeLocalFileLookupKey(rawUrl));
@@ -196,7 +196,13 @@ export async function handleOpenFileInNewTab(
       }
     }
 
-    if (localEnabled && matchedRecord) {
+    const canOpenViaLocalBackend = Boolean(
+      localEnabled &&
+      matchedRecord &&
+      (!isFirefoxExtensionRuntime() || typeof matchedRecord.downloadId === 'number')
+    );
+
+    if (canOpenViaLocalBackend && matchedRecord) {
       const provider = createFileSystemProvider();
       const openedLocally = await provider.openLocalFile(matchedRecord);
       if (openedLocally) {
@@ -272,8 +278,11 @@ function FileOpenAction({
 }) {
   const localCtx = useContext(LocalFilesContext);
   const localRec = localCtx.enabled ? localCtx.findRecord(rawUrl) : null;
+  const isFirefoxScanOnly = Boolean(
+    localRec && isFirefoxExtensionRuntime() && typeof localRec.downloadId !== 'number'
+  );
 
-  if (localRec) {
+  if (localRec && !isFirefoxScanOnly) {
     const localLabel = lang === 'he' ? 'פתח' : 'Open';
     const localTooltip =
       lang === 'he'
@@ -296,8 +305,11 @@ function FileOpenAction({
     );
   }
 
-  const webTooltip =
-    lang === 'he' ? 'פתח מ-Moodle (לא מסונכרן מקומית)' : 'Open from Moodle (not synced locally)';
+  const webTooltip = isFirefoxScanOnly
+    ? t('local_fs_scan_only_open_tooltip')
+    : lang === 'he'
+      ? 'פתח מ-Moodle (לא מסונכרן מקומית)'
+      : 'Open from Moodle (not synced locally)';
   return (
     <a
       href={openUrl}
@@ -306,7 +318,9 @@ function FileOpenAction({
       className="file-action-btn file-action-web"
       style={style}
       title={webTooltip}
-      onClick={(ev) => handleOpenFileInNewTab(ev, rawUrl, token, fileName)}
+      onClick={(ev) =>
+        handleOpenFileInNewTab(ev, rawUrl, token, fileName, isFirefoxScanOnly ? null : undefined)
+      }
     >
       <GlobeIcon size={12} />
       <span>{t('open_file')}</span>
@@ -466,16 +480,16 @@ function SyncProgressWindow({
     },
     ...(hasPanopto
       ? [
-          {
-            id: 'panopto',
-            order: 6,
-            title: t('sync_task_panopto'),
-            subtext:
-              currentStage === 'panopto' && (syncState?.totalPanoptoCourses || 0) > 0
-                ? `${syncState?.panoptoCoursesCompleted || 0} / ${syncState?.totalPanoptoCourses} ${t('sync_panopto_scanned')}`
-                : undefined,
-          },
-        ]
+        {
+          id: 'panopto',
+          order: 6,
+          title: t('sync_task_panopto'),
+          subtext:
+            currentStage === 'panopto' && (syncState?.totalPanoptoCourses || 0) > 0
+              ? `${syncState?.panoptoCoursesCompleted || 0} / ${syncState?.totalPanoptoCourses} ${t('sync_panopto_scanned')}`
+              : undefined,
+        },
+      ]
       : []),
     {
       id: 'finalizing',
@@ -1326,8 +1340,21 @@ export default function App() {
       setLocalFsManifestState(fsManifest);
 
       if (fsCfg.enabled && isFirefoxExtensionRuntime()) {
-        // Reconcile stale Firefox downloadIds after browser restarts/reloads before user clicks Open
-        void new FirefoxDownloadsProvider().reconcileManifest();
+        // Reconcile stale Firefox downloadIds via background lock so UI never races storage
+        void reconcileLocalFsOnBackground().then((res) => {
+          if (
+            res.success &&
+            !fsCfg.autoResyncMissingFiles &&
+            Array.isArray(res.confirmedMissingIds) &&
+            res.confirmedMissingIds.length > 0
+          ) {
+            setMissingLocalFileIds((prev) => {
+              const next = new Set(prev);
+              for (const id of res.confirmedMissingIds!) next.add(id);
+              return next;
+            });
+          }
+        });
       }
 
       const cached = await getCachedSyncResult();
@@ -1905,8 +1932,8 @@ export default function App() {
       try {
         const instanceBaseUrl = assign.link ? new URL(assign.link).origin : undefined;
         const client = new MoodleClient(token, instanceBaseUrl);
-        client.updateActivityCompletionManually(assign.cmid, willBeCompleted).catch(() => {});
-      } catch {}
+        client.updateActivityCompletionManually(assign.cmid, willBeCompleted).catch(() => { });
+      } catch { }
     }
     if (updated.googleTasksEnabled) {
       syncGoogleTasksOnBackground(false).catch(() => { });
@@ -2482,600 +2509,600 @@ export default function App() {
   return (
     <LocalFilesContext.Provider value={localFilesCtxValue}>
       <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
-      {/* Sidebar Navigation */}
-      <aside className={`sidebar glass-panel ${sidebarCollapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-logo" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center', marginBottom: '2rem' }}>
-          <img src={logoImg} alt="Noodle Logo" className="sidebar-logo-img" />
-          <span>Noodle</span>
-        </div>
-
-        <nav className="sidebar-nav">
-          <button
-            className={`nav-item ${activeTab === 'dashboard' && selectedCourseId === null ? 'active' : ''}`}
-            onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
-          >
-            <DashboardIcon size={18} /> <span>{t('dashboard')}</span>
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'assignments' && selectedCourseId === null ? 'active' : ''}`}
-            onClick={() => { setActiveTab('assignments'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
-          >
-            <AssignmentsIcon size={18} /> <span>{t('assignments')}</span>
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'grades' && selectedCourseId === null ? 'active' : ''}`}
-            onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
-          >
-            <GradesIcon size={18} /> <span>{t('grades')}</span>
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'settings' && selectedCourseId === null ? 'active' : ''}`}
-            onClick={() => { setActiveTab('settings'); setSelectedCourseId(null); }}
-          >
-            <SettingsIcon size={18} /> <span>{t('settings')}</span>
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'about' && selectedCourseId === null ? 'active' : ''}`}
-            onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
-          >
-            <AboutIcon size={18} /> <span>{t('about')}</span>
-          </button>
-
-          <button
-            className="nav-item collapse-toggle-btn"
-            onClick={toggleSidebarCollapse}
-            style={{ marginTop: 'auto' }}
-          >
-            <CollapseSidebarIcon size={16} isCollapsed={sidebarCollapsed} isRtl={currentLang === 'he'} />
-            <span>{t('collapse_sidebar')}</span>
-          </button>
-        </nav>
-
-        <div className="sidebar-footer">
-          <a
-            href="https://noodle.mantin.dev/"
-            target="_blank"
-            rel="noreferrer"
-            className="sidebar-website-link"
-            title="noodle.mantin.dev"
-          >
-            <span>noodle.mantin.dev</span>
-            <ExternalLinkIcon size={12} />
-          </a>
-          <button className="text-btn danger-text disconnect-btn" onClick={handleDisconnectClick}>
-            <ExitIcon size={16} />
-            <span>{t('disconnect_account')}</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Viewport & Resizable Container */}
-      <div className="main-viewport" ref={mainViewportRef}>
-        <div
-          className={`main-container ${isResizingWidth ? 'is-resizing' : ''}`}
-          style={{ maxWidth: `${dashboardMaxWidth}px` }}
-        >
-          {/* Subtle Left Resize Handle */}
-          <div
-            className="content-resize-handle handle-left"
-            onMouseDown={(e) => handleResizeMouseDown(e, 'left')}
-            onDoubleClick={handleResetDashboardWidth}
-            title={t('resize_width_tooltip')}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize width left"
-          >
-            <div className="resize-handle-line" />
-            <div className="resize-handle-pill">
-              <span className="resize-handle-grip">⋮</span>
-              <span className="resize-handle-val">{dashboardMaxWidth}px</span>
-            </div>
+        {/* Sidebar Navigation */}
+        <aside className={`sidebar glass-panel ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          <div className="sidebar-logo" style={{ flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center', marginBottom: '2rem' }}>
+            <img src={logoImg} alt="Noodle Logo" className="sidebar-logo-img" />
+            <span>Noodle</span>
           </div>
 
-          <main className="main-content">
-            <header className="content-header">
-              <div className="header-title">
-                <h2>
-                  {selectedCourseId !== null
-                    ? getCourseDisplayName(
-                      selectedCourseId,
-                      assignmentsList.find((a) => a.courseId === selectedCourseId)?.courseName ||
-                      filesList.find((f) => f.courseId === selectedCourseId)?.courseName ||
-                      `Course ${selectedCourseId}`
-                    )
-                    : t(activeTab as any)}
-                </h2>
-                <p className="subtitle">
-                  {t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}
-                </p>
+          <nav className="sidebar-nav">
+            <button
+              className={`nav-item ${activeTab === 'dashboard' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('dashboard'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
+            >
+              <DashboardIcon size={18} /> <span>{t('dashboard')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeTab === 'assignments' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('assignments'); setSelectedCourseId(null); setAssignmentFilterCourseId(null); }}
+            >
+              <AssignmentsIcon size={18} /> <span>{t('assignments')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeTab === 'grades' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
+            >
+              <GradesIcon size={18} /> <span>{t('grades')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeTab === 'settings' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('settings'); setSelectedCourseId(null); }}
+            >
+              <SettingsIcon size={18} /> <span>{t('settings')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeTab === 'about' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('about'); setSelectedCourseId(null); }}
+            >
+              <AboutIcon size={18} /> <span>{t('about')}</span>
+            </button>
+
+            <button
+              className="nav-item collapse-toggle-btn"
+              onClick={toggleSidebarCollapse}
+              style={{ marginTop: 'auto' }}
+            >
+              <CollapseSidebarIcon size={16} isCollapsed={sidebarCollapsed} isRtl={currentLang === 'he'} />
+              <span>{t('collapse_sidebar')}</span>
+            </button>
+          </nav>
+
+          <div className="sidebar-footer">
+            <a
+              href="https://noodle.mantin.dev/"
+              target="_blank"
+              rel="noreferrer"
+              className="sidebar-website-link"
+              title="noodle.mantin.dev"
+            >
+              <span>noodle.mantin.dev</span>
+              <ExternalLinkIcon size={12} />
+            </a>
+            <button className="text-btn danger-text disconnect-btn" onClick={handleDisconnectClick}>
+              <ExitIcon size={16} />
+              <span>{t('disconnect_account')}</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Viewport & Resizable Container */}
+        <div className="main-viewport" ref={mainViewportRef}>
+          <div
+            className={`main-container ${isResizingWidth ? 'is-resizing' : ''}`}
+            style={{ maxWidth: `${dashboardMaxWidth}px` }}
+          >
+            {/* Subtle Left Resize Handle */}
+            <div
+              className="content-resize-handle handle-left"
+              onMouseDown={(e) => handleResizeMouseDown(e, 'left')}
+              onDoubleClick={handleResetDashboardWidth}
+              title={t('resize_width_tooltip')}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize width left"
+            >
+              <div className="resize-handle-line" />
+              <div className="resize-handle-pill">
+                <span className="resize-handle-grip">⋮</span>
+                <span className="resize-handle-val">{dashboardMaxWidth}px</span>
               </div>
-              <div className="header-actions" style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button
-                  className={`primary-btn btn-sm header-sync-btn ${tourStep === 1 ? 'tour-highlight' : ''}`}
-                  onClick={() => {
-                    if (loading || isSyncing) {
-                      if (!showSyncWindow) {
-                        setShowSyncWindow(true);
-                        setIsSyncWindowCollapsed(false);
-                      } else if (isSyncWindowCollapsed) {
-                        setIsSyncWindowCollapsed(false);
+            </div>
+
+            <main className="main-content">
+              <header className="content-header">
+                <div className="header-title">
+                  <h2>
+                    {selectedCourseId !== null
+                      ? getCourseDisplayName(
+                        selectedCourseId,
+                        assignmentsList.find((a) => a.courseId === selectedCourseId)?.courseName ||
+                        filesList.find((f) => f.courseId === selectedCourseId)?.courseName ||
+                        `Course ${selectedCourseId}`
+                      )
+                      : t(activeTab as any)}
+                  </h2>
+                  <p className="subtitle">
+                    {t('last_synced')}: {syncResult ? new Date(syncResult.syncedAt).toLocaleString() : t('never')}
+                  </p>
+                </div>
+                <div className="header-actions" style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <button
+                    className={`primary-btn btn-sm header-sync-btn ${tourStep === 1 ? 'tour-highlight' : ''}`}
+                    onClick={() => {
+                      if (loading || isSyncing) {
+                        if (!showSyncWindow) {
+                          setShowSyncWindow(true);
+                          setIsSyncWindowCollapsed(false);
+                        } else if (isSyncWindowCollapsed) {
+                          setIsSyncWindowCollapsed(false);
+                        } else {
+                          setIsSyncWindowCollapsed(true);
+                        }
                       } else {
-                        setIsSyncWindowCollapsed(true);
+                        handleManualSync();
                       }
-                    } else {
-                      handleManualSync();
-                    }
-                  }}
-                  style={{
-                    position: 'relative',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                    cursor: 'pointer',
-                  }}
-                  title={loading || isSyncing ? t('sync_window_title') : t('sync_now')}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={loading || isSyncing ? 'spinning-sync-icon' : ''}
+                    }}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      cursor: 'pointer',
+                    }}
+                    title={loading || isSyncing ? t('sync_window_title') : t('sync_now')}
                   >
-                    <path d="M21 2v6h-6"></path>
-                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-                    <path d="M3 22v-6h6"></path>
-                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-                  </svg>
-                  <span>
-                    {loading || isSyncing ? t('syncing') : t('sync_now')}
-                  </span>
-                </button>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={loading || isSyncing ? 'spinning-sync-icon' : ''}
+                    >
+                      <path d="M21 2v6h-6"></path>
+                      <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                      <path d="M3 22v-6h6"></path>
+                      <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                    </svg>
+                    <span>
+                      {loading || isSyncing ? t('syncing') : t('sync_now')}
+                    </span>
+                  </button>
 
-                <SyncProgressWindow
-                  isOpen={showSyncWindow}
-                  isCollapsed={isSyncWindowCollapsed}
-                  onCollapse={() => setIsSyncWindowCollapsed(true)}
-                  onExpand={() => setIsSyncWindowCollapsed(false)}
-                  isSyncing={loading || isSyncing}
-                  syncState={syncState}
-                  syncError={syncError}
-                  hasPanopto={settings?.panoptoEnabled ?? false}
-                  t={t}
-                  lang={currentLang}
-                />
-              </div>
-            </header>
+                  <SyncProgressWindow
+                    isOpen={showSyncWindow}
+                    isCollapsed={isSyncWindowCollapsed}
+                    onCollapse={() => setIsSyncWindowCollapsed(true)}
+                    onExpand={() => setIsSyncWindowCollapsed(false)}
+                    isSyncing={loading || isSyncing}
+                    syncState={syncState}
+                    syncError={syncError}
+                    hasPanopto={settings?.panoptoEnabled ?? false}
+                    t={t}
+                    lang={currentLang}
+                  />
+                </div>
+              </header>
 
-            {/* Tab Contents */}
-            <div className="tab-pane">
-              {selectedCourseId !== null ? (
-                <CourseDetailView
-                  courseId={selectedCourseId}
-                  assignments={assignmentsList}
-                  files={filesList}
-                  meetings={meetingsList}
-                  recordings={recordingsList}
-                  courseSections={mergedSyncView?.sections}
-                  courseFolders={mergedSyncView?.folders}
-                  courseLinks={mergedSyncView?.links}
-                  courseAnnouncements={mergedSyncView?.announcements}
-                  syncErrors={syncResult?.errors}
-                  token={token}
-                  getCourseColor={getCourseColor}
-                  getCourseDisplayName={getCourseDisplayName}
-                  onBack={() => setSelectedCourseId(null)}
-                  t={t}
-                  lang={currentLang}
-                  settings={settings}
-                  onToggleMeetingInterest={handleToggleMeetingInterest}
-                  onSetCourseMeetingsVisibility={handleSetCourseMeetingsVisibility}
-                  showHiddenZoomCourseIds={showHiddenZoomCourseIds}
-                  onToggleShowHiddenZoom={handleToggleShowHiddenZoom}
-                  onToggleCompleted={handleToggleCompleted}
-                  onToggleHidden={handleToggleHidden}
-                  onToggleHideAllCourse={handleToggleHideAllCourse}
-                  onToggleRecordingWatched={handleToggleRecordingWatched}
-                  onUpdatePanopto={handleUpdateCoursePanopto}
-                  isSyncing={loading || isSyncing}
-                  hasPanoptoPermission={hasPanoptoPermission}
-                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
-                />
-              ) : activeTab === 'dashboard' ? (
-                <DashboardTab
-                  assignments={assignmentsList}
-                  meetings={meetingsList}
-                  token={token}
-                  getCourseColor={getCourseColor}
-                  getCourseDisplayName={getCourseDisplayName}
-                  settings={settings}
-                  t={t}
-                  lang={currentLang}
-                  tourStep={tourStep}
-                  onToggleMeetingInterest={handleToggleMeetingInterest}
-                  onSetCourseMeetingsVisibility={handleSetCourseMeetingsVisibility}
-                  showHiddenZoomCourseIds={showHiddenZoomCourseIds}
-                  onToggleShowHiddenZoom={handleToggleShowHiddenZoom}
-                  trackedCourseIds={trackedCourseIds}
-                  enrolledCourses={availableCourses}
-                  onUpdateColor={handleUpdateCourseColor}
-                  onUpdateCustomName={handleUpdateCourseCustomName}
-                  onUpdatePanopto={handleUpdateCoursePanopto}
-                  onSaveTrackedCourses={handleSaveTrackedCourses}
-                  onOpenManageCourses={() => setIsManageModalOpen(true)}
-                  onGoToCourse={(courseId) => {
-                    setSelectedCourseId(courseId);
-                  }}
-                  onViewCourseAssignments={(courseId) => {
-                    setAssignmentFilterCourseId(courseId);
-                    setActiveTab('assignments');
-                  }}
-                  syncResult={mergedSyncView || syncResult}
-                  onToggleCompleted={handleToggleCompleted}
-                  onToggleHidden={handleToggleHidden}
-                  onLabDetected={(id, name) => setLabModalCourse({ id, name })}
-                  hasGoogleTasksToken={hasGoogleTasksToken}
-                  googleTasksAuthError={googleTasksAuthError}
-                  onSyncGoogle={handleSyncGoogleTasks}
-                  googleSyncLoading={googleSyncLoading}
-                  onToggleRecordingWatched={handleToggleRecordingWatched}
-                  groupedCoursesResult={groupedCoursesResult}
-                  hasPanoptoPermission={hasPanoptoPermission}
-                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
-                  localFsConfig={localFsConfig}
-                  localFsStatus={localFsStatus}
-                  onReconnectLocalFs={async () => {
-                    const provider = createFileSystemProvider();
-                    if (provider instanceof ChromiumFsaProvider) {
-                      const granted = await provider.requestStoredPermission();
-                      if (granted) {
-                        await resumeLocalFsSyncOnBackground();
-                        showToast(t('local_fs_status_idle'), 'success');
+              {/* Tab Contents */}
+              <div className="tab-pane">
+                {selectedCourseId !== null ? (
+                  <CourseDetailView
+                    courseId={selectedCourseId}
+                    assignments={assignmentsList}
+                    files={filesList}
+                    meetings={meetingsList}
+                    recordings={recordingsList}
+                    courseSections={mergedSyncView?.sections}
+                    courseFolders={mergedSyncView?.folders}
+                    courseLinks={mergedSyncView?.links}
+                    courseAnnouncements={mergedSyncView?.announcements}
+                    syncErrors={syncResult?.errors}
+                    token={token}
+                    getCourseColor={getCourseColor}
+                    getCourseDisplayName={getCourseDisplayName}
+                    onBack={() => setSelectedCourseId(null)}
+                    t={t}
+                    lang={currentLang}
+                    settings={settings}
+                    onToggleMeetingInterest={handleToggleMeetingInterest}
+                    onSetCourseMeetingsVisibility={handleSetCourseMeetingsVisibility}
+                    showHiddenZoomCourseIds={showHiddenZoomCourseIds}
+                    onToggleShowHiddenZoom={handleToggleShowHiddenZoom}
+                    onToggleCompleted={handleToggleCompleted}
+                    onToggleHidden={handleToggleHidden}
+                    onToggleHideAllCourse={handleToggleHideAllCourse}
+                    onToggleRecordingWatched={handleToggleRecordingWatched}
+                    onUpdatePanopto={handleUpdateCoursePanopto}
+                    isSyncing={loading || isSyncing}
+                    hasPanoptoPermission={hasPanoptoPermission}
+                    onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                  />
+                ) : activeTab === 'dashboard' ? (
+                  <DashboardTab
+                    assignments={assignmentsList}
+                    meetings={meetingsList}
+                    token={token}
+                    getCourseColor={getCourseColor}
+                    getCourseDisplayName={getCourseDisplayName}
+                    settings={settings}
+                    t={t}
+                    lang={currentLang}
+                    tourStep={tourStep}
+                    onToggleMeetingInterest={handleToggleMeetingInterest}
+                    onSetCourseMeetingsVisibility={handleSetCourseMeetingsVisibility}
+                    showHiddenZoomCourseIds={showHiddenZoomCourseIds}
+                    onToggleShowHiddenZoom={handleToggleShowHiddenZoom}
+                    trackedCourseIds={trackedCourseIds}
+                    enrolledCourses={availableCourses}
+                    onUpdateColor={handleUpdateCourseColor}
+                    onUpdateCustomName={handleUpdateCourseCustomName}
+                    onUpdatePanopto={handleUpdateCoursePanopto}
+                    onSaveTrackedCourses={handleSaveTrackedCourses}
+                    onOpenManageCourses={() => setIsManageModalOpen(true)}
+                    onGoToCourse={(courseId) => {
+                      setSelectedCourseId(courseId);
+                    }}
+                    onViewCourseAssignments={(courseId) => {
+                      setAssignmentFilterCourseId(courseId);
+                      setActiveTab('assignments');
+                    }}
+                    syncResult={mergedSyncView || syncResult}
+                    onToggleCompleted={handleToggleCompleted}
+                    onToggleHidden={handleToggleHidden}
+                    onLabDetected={(id, name) => setLabModalCourse({ id, name })}
+                    hasGoogleTasksToken={hasGoogleTasksToken}
+                    googleTasksAuthError={googleTasksAuthError}
+                    onSyncGoogle={handleSyncGoogleTasks}
+                    googleSyncLoading={googleSyncLoading}
+                    onToggleRecordingWatched={handleToggleRecordingWatched}
+                    groupedCoursesResult={groupedCoursesResult}
+                    hasPanoptoPermission={hasPanoptoPermission}
+                    onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                    localFsConfig={localFsConfig}
+                    localFsStatus={localFsStatus}
+                    onReconnectLocalFs={async () => {
+                      const provider = createFileSystemProvider();
+                      if (provider instanceof ChromiumFsaProvider) {
+                        const granted = await provider.requestStoredPermission();
+                        if (granted) {
+                          await resumeLocalFsSyncOnBackground();
+                          showToast(t('local_fs_status_idle'), 'success');
+                        } else {
+                          setActiveTab('settings');
+                        }
                       } else {
                         setActiveTab('settings');
                       }
-                    } else {
-                      setActiveTab('settings');
-                    }
-                  }}
-                />
-              ) : activeTab === 'assignments' ? (
-                <AssignmentsTab
-                  assignments={assignmentsList}
-                  files={filesList}
-                  token={token}
-                  getCourseColor={getCourseColor}
-                  getCourseDisplayName={getCourseDisplayName}
-                  filterCourseId={assignmentFilterCourseId}
-                  onClearFilter={() => setAssignmentFilterCourseId(null)}
-                  onGoToCourse={(courseId) => {
-                    setSelectedCourseId(courseId);
-                  }}
-                  settings={settings}
-                  t={t}
-                  lang={currentLang}
-                  tourStep={tourStep}
-                  onToggleCompleted={handleToggleCompleted}
-                  onToggleHidden={handleToggleHidden}
-                />
-              ) : null}
+                    }}
+                  />
+                ) : activeTab === 'assignments' ? (
+                  <AssignmentsTab
+                    assignments={assignmentsList}
+                    files={filesList}
+                    token={token}
+                    getCourseColor={getCourseColor}
+                    getCourseDisplayName={getCourseDisplayName}
+                    filterCourseId={assignmentFilterCourseId}
+                    onClearFilter={() => setAssignmentFilterCourseId(null)}
+                    onGoToCourse={(courseId) => {
+                      setSelectedCourseId(courseId);
+                    }}
+                    settings={settings}
+                    t={t}
+                    lang={currentLang}
+                    tourStep={tourStep}
+                    onToggleCompleted={handleToggleCompleted}
+                    onToggleHidden={handleToggleHidden}
+                  />
+                ) : null}
 
-              {activeTab === 'grades' && (
-                <GradesTab
-                  assignments={assignmentsList}
-                  excludedCourseIds={excludedGpaCourseIds}
-                  settings={settings}
-                  getCourseColor={getCourseColor}
-                  getCourseDisplayName={getCourseDisplayName}
-                  t={t}
-                  lang={currentLang}
-                  tourStep={tourStep}
-                />
-              )}
+                {activeTab === 'grades' && (
+                  <GradesTab
+                    assignments={assignmentsList}
+                    excludedCourseIds={excludedGpaCourseIds}
+                    settings={settings}
+                    getCourseColor={getCourseColor}
+                    getCourseDisplayName={getCourseDisplayName}
+                    t={t}
+                    lang={currentLang}
+                    tourStep={tourStep}
+                  />
+                )}
 
-              {activeTab === 'settings' && (
-                <SettingsTab
-                  settings={settings}
-                  onToggleGoogle={handleToggleGoogleTasks}
-                  onUpdateListName={handleUpdateGoogleListName}
-                  onSyncGoogle={handleSyncGoogleTasks}
-                  googleSyncLoading={googleSyncLoading}
-                  googleSyncStatus={googleSyncStatus}
-                  hasGoogleTasksToken={hasGoogleTasksToken}
-                  googleTasksAuthError={googleTasksAuthError}
-                  syncResult={syncResult}
-                  onDisconnectClick={handleDisconnectClick}
-                  onToggleSyncWithoutDeadline={async (enabled: boolean) => {
-                    if (!settings) return;
-                    const updated = { ...settings, syncWithoutDeadline: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                    if (updated.googleTasksEnabled) {
-                      syncGoogleTasksOnBackground(false).catch(() => { });
-                    }
-                  }}
-                  onUpdateGoogleClientId={async (id: string) => {
-                    if (!settings) return;
-                    const updated = { ...settings, googleClientId: id || null };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  t={t}
-                  lang={currentLang}
-                  onUpdateLanguage={async (l: 'he' | 'en') => {
-                    if (!settings) return;
-                    const updated = { ...settings, language: l };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee' | 'time') => {
-                    if (!settings) return;
-                    const updated = { ...settings, theme };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onUpdateTimeThemeHours={async (start: number, end: number) => {
-                    if (!settings) return;
-                    const updated = { ...settings, themeTimeDayStart: start, themeTimeDayEnd: end };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onOpenManageCourses={() => setIsManageModalOpen(true)}
-                  onUpdateThresholds={async (green: number, yellow: number) => {
-                    if (!settings) return;
-                    const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onToggleScraping={async (enabled: boolean) => {
-                    if (!settings) return;
-                    const updated = { ...settings, scrapingEnabled: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onTogglePanoptoFolderOverride={async (enabled: boolean) => {
-                    if (!settings) return;
-                    const updated = { ...settings, showPanoptoFolderOverride: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onTogglePanopto={async (enabled: boolean) => {
-                    if (!settings) return;
-                    if (enabled && typeof browser !== 'undefined' && browser.permissions?.request) {
-                      try {
-                        const hasPerm = await browser.permissions.contains({ origins: PANOPTO_ORIGINS });
-                        if (!hasPerm) {
-                          const granted = await browser.permissions.request({ origins: PANOPTO_ORIGINS });
-                          setHasPanoptoPermission(granted);
-                        } else {
-                          setHasPanoptoPermission(true);
-                        }
-                      } catch (err) {
-                        console.warn('[Panopto] Error requesting permissions:', err);
+                {activeTab === 'settings' && (
+                  <SettingsTab
+                    settings={settings}
+                    onToggleGoogle={handleToggleGoogleTasks}
+                    onUpdateListName={handleUpdateGoogleListName}
+                    onSyncGoogle={handleSyncGoogleTasks}
+                    googleSyncLoading={googleSyncLoading}
+                    googleSyncStatus={googleSyncStatus}
+                    hasGoogleTasksToken={hasGoogleTasksToken}
+                    googleTasksAuthError={googleTasksAuthError}
+                    syncResult={syncResult}
+                    onDisconnectClick={handleDisconnectClick}
+                    onToggleSyncWithoutDeadline={async (enabled: boolean) => {
+                      if (!settings) return;
+                      const updated = { ...settings, syncWithoutDeadline: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                      if (updated.googleTasksEnabled) {
+                        syncGoogleTasksOnBackground(false).catch(() => { });
                       }
-                    }
-                    const updated = { ...settings, panoptoEnabled: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                    if (enabled) {
-                      handleManualSync();
-                    }
-                  }}
-                  onToggleNotifications={async (enabled: boolean) => {
-                    if (!settings) return;
-                    const updated = { ...settings, notificationsEnabled: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
-                  onExportConfig={handleExportConfig}
-                  onImportConfig={handleImportConfig}
-                  onAddMockCourse={handleAddMockCourse}
-                  tourStep={tourStep}
-                  dashboardMaxWidth={dashboardMaxWidth}
-                  onUpdateDashboardWidth={handleUpdateDashboardWidth}
-                  onResetDashboardWidth={handleResetDashboardWidth}
-                  onUpdateSyncInterval={async (val: number) => {
-                    if (!settings) return;
-                    const updated = { ...settings, syncIntervalMinutes: val };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                    browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
-                  }}
-                  hasPanoptoPermission={hasPanoptoPermission}
-                  onRequestPanoptoPermission={handleRequestPanoptoPermission}
-                  localFsConfig={localFsConfig}
-                  localFsStatus={localFsStatus}
-                  onLocalFsConfigChanged={setLocalFsConfigState}
-                  onShowToast={showToast}
-                />
-              )}
+                    }}
+                    onUpdateGoogleClientId={async (id: string) => {
+                      if (!settings) return;
+                      const updated = { ...settings, googleClientId: id || null };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    t={t}
+                    lang={currentLang}
+                    onUpdateLanguage={async (l: 'he' | 'en') => {
+                      if (!settings) return;
+                      const updated = { ...settings, language: l };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onUpdateTheme={async (theme: 'dark' | 'noodle' | 'coffee' | 'time') => {
+                      if (!settings) return;
+                      const updated = { ...settings, theme };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onUpdateTimeThemeHours={async (start: number, end: number) => {
+                      if (!settings) return;
+                      const updated = { ...settings, themeTimeDayStart: start, themeTimeDayEnd: end };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onOpenManageCourses={() => setIsManageModalOpen(true)}
+                    onUpdateThresholds={async (green: number, yellow: number) => {
+                      if (!settings) return;
+                      const updated = { ...settings, assignmentGreenDaysThreshold: green, assignmentYellowDaysThreshold: yellow };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onToggleScraping={async (enabled: boolean) => {
+                      if (!settings) return;
+                      const updated = { ...settings, scrapingEnabled: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onTogglePanoptoFolderOverride={async (enabled: boolean) => {
+                      if (!settings) return;
+                      const updated = { ...settings, showPanoptoFolderOverride: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onTogglePanopto={async (enabled: boolean) => {
+                      if (!settings) return;
+                      if (enabled && typeof browser !== 'undefined' && browser.permissions?.request) {
+                        try {
+                          const hasPerm = await browser.permissions.contains({ origins: PANOPTO_ORIGINS });
+                          if (!hasPerm) {
+                            const granted = await browser.permissions.request({ origins: PANOPTO_ORIGINS });
+                            setHasPanoptoPermission(granted);
+                          } else {
+                            setHasPanoptoPermission(true);
+                          }
+                        } catch (err) {
+                          console.warn('[Panopto] Error requesting permissions:', err);
+                        }
+                      }
+                      const updated = { ...settings, panoptoEnabled: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                      if (enabled) {
+                        handleManualSync();
+                      }
+                    }}
+                    onToggleNotifications={async (enabled: boolean) => {
+                      if (!settings) return;
+                      const updated = { ...settings, notificationsEnabled: enabled };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                    }}
+                    onExportConfig={handleExportConfig}
+                    onImportConfig={handleImportConfig}
+                    onAddMockCourse={handleAddMockCourse}
+                    tourStep={tourStep}
+                    dashboardMaxWidth={dashboardMaxWidth}
+                    onUpdateDashboardWidth={handleUpdateDashboardWidth}
+                    onResetDashboardWidth={handleResetDashboardWidth}
+                    onUpdateSyncInterval={async (val: number) => {
+                      if (!settings) return;
+                      const updated = { ...settings, syncIntervalMinutes: val };
+                      setSettingsState(updated);
+                      await setSettings(updated);
+                      browser.runtime.sendMessage({ type: 'SYNC_SETTINGS' }).catch(() => { });
+                    }}
+                    hasPanoptoPermission={hasPanoptoPermission}
+                    onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                    localFsConfig={localFsConfig}
+                    localFsStatus={localFsStatus}
+                    onLocalFsConfigChanged={setLocalFsConfigState}
+                    onShowToast={showToast}
+                  />
+                )}
 
-              {activeTab === 'about' && (
-                <AboutTab
-                  t={t}
-                  lang={currentLang}
-                  tourStep={tourStep}
-                  onStartTour={() => { setShowTour(true); setTourStep(0); }}
-                />
-              )}
-            </div>
-          </main>
+                {activeTab === 'about' && (
+                  <AboutTab
+                    t={t}
+                    lang={currentLang}
+                    tourStep={tourStep}
+                    onStartTour={() => { setShowTour(true); setTourStep(0); }}
+                  />
+                )}
+              </div>
+            </main>
 
-          {/* Subtle Right Resize Handle */}
-          <div
-            className="content-resize-handle handle-right"
-            onMouseDown={(e) => handleResizeMouseDown(e, 'right')}
-            onDoubleClick={handleResetDashboardWidth}
-            title={t('resize_width_tooltip')}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize width right"
-          >
-            <div className="resize-handle-line" />
-            <div className="resize-handle-pill">
-              <span className="resize-handle-grip">⋮</span>
-              <span className="resize-handle-val">{dashboardMaxWidth}px</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Manage Courses Modal */}
-      {isManageModalOpen && (
-        <div
-          className="modal-backdrop"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: tourStep === 4 ? 'flex-start' : 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            backdropFilter: 'blur(4px)',
-            padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
-          }}
-          onClick={() => setIsManageModalOpen(false)}
-        >
-          <div
-            className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
-            style={{
-              maxWidth: '850px',
-              width: '100%',
-              maxHeight: tourStep === 4 ? '62vh' : '85vh',
-              overflowY: 'auto',
-              padding: '1.75rem',
-              borderRadius: 'var(--radius-md)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
-              <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
-                ✕
-              </button>
-            </div>
-
-            <CoursesConfigTable
-              trackedCourseIds={trackedCourseIds}
-              syncResult={syncResult}
-              enrolledCourses={availableCourses || []}
-              getCourseColor={getCourseColor}
-              getCourseDisplayName={getCourseDisplayName}
-              coursesPanoptoMap={settings?.coursesPanoptoMap}
-              panoptoEnabled={settings?.panoptoEnabled ?? false}
-              showPanoptoFolderOverride={settings?.showPanoptoFolderOverride ?? false}
-              onUpdateColor={handleUpdateCourseColor}
-              onUpdateCustomName={handleUpdateCourseCustomName}
-              onUpdatePanopto={handleUpdateCoursePanopto}
-              onSaveTrackedCourses={(newIds, panoptoOverrides) => {
-                setIsManageModalOpen(false);
-                handleSaveTrackedCourses(newIds, panoptoOverrides);
-              }}
-              onLabDetected={(id, name) => setLabModalCourse({ id, name })}
-              t={t}
-              lang={currentLang}
-            />
-          </div>
-        </div>
-      )}
-
-      {showDisconnectModal && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-panel" style={{ maxWidth: '450px', padding: '2rem' }}>
-            <h3 style={{ marginTop: 0 }}>⚠️ {t('disconnect_account')}</h3>
-            <p style={{ margin: '1rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.4' }}>
-              {t('disconnect_warning')}
-            </p>
-            <div className="modal-checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '1.5rem 0' }}>
-              <input
-                type="checkbox"
-                id="perm-delete-checkbox"
-                checked={deletePermanently}
-                onChange={(e) => setDeletePermanently(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <label htmlFor="perm-delete-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                {t('perm_delete_checkbox')}
-              </label>
-            </div>
-            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <button className="secondary-btn btn-sm" onClick={() => setShowDisconnectModal(false)}>
-                {t('cancel_btn')}
-              </button>
-              <button className="primary-btn btn-sm" style={{ background: 'var(--error-color, #ef4444)' }} onClick={confirmDisconnect}>
-                {t('disconnect_confirm_btn')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {labModalCourse && (
-        <div className="modal-overlay" onClick={() => setLabModalCourse(null)}>
-          <div
-            className="modal-content glass-panel"
-            style={{ maxWidth: '480px', padding: '2rem', textAlign: currentLang === 'he' ? 'right' : 'left' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <span style={{ fontSize: '2rem' }}>🧪</span>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{t('lab_detected_title')}</h3>
-                <span style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{labModalCourse.name}</span>
+            {/* Subtle Right Resize Handle */}
+            <div
+              className="content-resize-handle handle-right"
+              onMouseDown={(e) => handleResizeMouseDown(e, 'right')}
+              onDoubleClick={handleResetDashboardWidth}
+              title={t('resize_width_tooltip')}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize width right"
+            >
+              <div className="resize-handle-line" />
+              <div className="resize-handle-pill">
+                <span className="resize-handle-grip">⋮</span>
+                <span className="resize-handle-val">{dashboardMaxWidth}px</span>
               </div>
             </div>
-            <p style={{ margin: '1rem 0 1.5rem', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5' }}>
-              {t('lab_detected_desc')}
-            </p>
-            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                className="secondary-btn btn-sm"
-                onClick={() => setLabModalCourse(null)}
-              >
-                {t('lab_detected_keep_btn')}
-              </button>
-              <button
-                className="primary-btn btn-sm"
-                onClick={() => {
-                  handleConfirmHideLabAssignments(labModalCourse.id);
-                  setLabModalCourse(null);
-                }}
-              >
-                {t('lab_detected_hide_btn')}
-              </button>
-            </div>
           </div>
         </div>
-      )}
 
-      {showTour && (
-        <TourOverlay
-          step={tourStep}
-          setStep={setTourStep}
-          onClose={handleCloseTour}
-          t={t}
-          lang={currentLang}
-        />
-      )}
+        {/* Manage Courses Modal */}
+        {isManageModalOpen && (
+          <div
+            className="modal-backdrop"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              display: 'flex',
+              alignItems: tourStep === 4 ? 'flex-start' : 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              backdropFilter: 'blur(4px)',
+              padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
+            }}
+            onClick={() => setIsManageModalOpen(false)}
+          >
+            <div
+              className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
+              style={{
+                maxWidth: '850px',
+                width: '100%',
+                maxHeight: tourStep === 4 ? '62vh' : '85vh',
+                overflowY: 'auto',
+                padding: '1.75rem',
+                borderRadius: 'var(--radius-md)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
+                <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
+                  ✕
+                </button>
+              </div>
 
-      {signingInToMoodle && (
-        <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
-          <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
-            <span>{t('signing_in_to_moodle')}</span>
-          </span>
-        </div>
-      )}
+              <CoursesConfigTable
+                trackedCourseIds={trackedCourseIds}
+                syncResult={syncResult}
+                enrolledCourses={availableCourses || []}
+                getCourseColor={getCourseColor}
+                getCourseDisplayName={getCourseDisplayName}
+                coursesPanoptoMap={settings?.coursesPanoptoMap}
+                panoptoEnabled={settings?.panoptoEnabled ?? false}
+                showPanoptoFolderOverride={settings?.showPanoptoFolderOverride ?? false}
+                onUpdateColor={handleUpdateCourseColor}
+                onUpdateCustomName={handleUpdateCourseCustomName}
+                onUpdatePanopto={handleUpdateCoursePanopto}
+                onSaveTrackedCourses={(newIds, panoptoOverrides) => {
+                  setIsManageModalOpen(false);
+                  handleSaveTrackedCourses(newIds, panoptoOverrides);
+                }}
+                onLabDetected={(id, name) => setLabModalCourse({ id, name })}
+                t={t}
+                lang={currentLang}
+              />
+            </div>
+          </div>
+        )}
+
+        {showDisconnectModal && (
+          <div className="modal-overlay">
+            <div className="modal-content glass-panel" style={{ maxWidth: '450px', padding: '2rem' }}>
+              <h3 style={{ marginTop: 0 }}>⚠️ {t('disconnect_account')}</h3>
+              <p style={{ margin: '1rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.4' }}>
+                {t('disconnect_warning')}
+              </p>
+              <div className="modal-checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '1.5rem 0' }}>
+                <input
+                  type="checkbox"
+                  id="perm-delete-checkbox"
+                  checked={deletePermanently}
+                  onChange={(e) => setDeletePermanently(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <label htmlFor="perm-delete-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                  {t('perm_delete_checkbox')}
+                </label>
+              </div>
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                <button className="secondary-btn btn-sm" onClick={() => setShowDisconnectModal(false)}>
+                  {t('cancel_btn')}
+                </button>
+                <button className="primary-btn btn-sm" style={{ background: 'var(--error-color, #ef4444)' }} onClick={confirmDisconnect}>
+                  {t('disconnect_confirm_btn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {labModalCourse && (
+          <div className="modal-overlay" onClick={() => setLabModalCourse(null)}>
+            <div
+              className="modal-content glass-panel"
+              style={{ maxWidth: '480px', padding: '2rem', textAlign: currentLang === 'he' ? 'right' : 'left' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '2rem' }}>🧪</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{t('lab_detected_title')}</h3>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{labModalCourse.name}</span>
+                </div>
+              </div>
+              <p style={{ margin: '1rem 0 1.5rem', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                {t('lab_detected_desc')}
+              </p>
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  className="secondary-btn btn-sm"
+                  onClick={() => setLabModalCourse(null)}
+                >
+                  {t('lab_detected_keep_btn')}
+                </button>
+                <button
+                  className="primary-btn btn-sm"
+                  onClick={() => {
+                    handleConfirmHideLabAssignments(labModalCourse.id);
+                    setLabModalCourse(null);
+                  }}
+                >
+                  {t('lab_detected_hide_btn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTour && (
+          <TourOverlay
+            step={tourStep}
+            setStep={setTourStep}
+            onClose={handleCloseTour}
+            t={t}
+            lang={currentLang}
+          />
+        )}
+
+        {signingInToMoodle && (
+          <div className="noodle-toast toast-info" dir={currentLang === 'he' ? 'rtl' : 'ltr'} style={{ zIndex: 100001 }}>
+            <span className="toast-message" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spinning-sync-icon">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <span>{t('signing_in_to_moodle')}</span>
+            </span>
+          </div>
+        )}
 
         {toast && (
           <div className={`noodle-toast toast-${toast.type}`} dir={currentLang === 'he' ? 'rtl' : 'ltr'}>
@@ -3467,12 +3494,12 @@ function CoursesConfigTable({
             sem === 'SemesterA'
               ? (lang === 'he' ? "סמסטר א'" : 'Semester A')
               : sem === 'SemesterB'
-              ? (lang === 'he' ? "סמסטר ב'" : 'Semester B')
-              : sem === 'Summer'
-              ? (lang === 'he' ? 'סמסטר קיץ' : 'Summer Semester')
-              : sem === 'Yearly'
-              ? (lang === 'he' ? 'שנתי' : 'Yearly')
-              : sem;
+                ? (lang === 'he' ? "סמסטר ב'" : 'Semester B')
+                : sem === 'Summer'
+                  ? (lang === 'he' ? 'סמסטר קיץ' : 'Summer Semester')
+                  : sem === 'Yearly'
+                    ? (lang === 'he' ? 'שנתי' : 'Yearly')
+                    : sem;
           label = lang === 'he' ? `שנת ${year} - ${semName}` : `Year ${year} - ${semName}`;
         }
         groups[key] = { semesterKey: key, label, courses: [] };
@@ -3984,22 +4011,22 @@ function DashboardTab({
     : '';
   const selectedTaskDueInfo = selectedUpcomingTask
     ? getDueTextAndClass(
-        selectedUpcomingTask.deadline || null,
-        lang,
-        settings?.assignmentGreenDaysThreshold,
-        settings?.assignmentYellowDaysThreshold,
-        false,
-        selectedUpcomingTask.status
-      )
+      selectedUpcomingTask.deadline || null,
+      lang,
+      settings?.assignmentGreenDaysThreshold,
+      settings?.assignmentYellowDaysThreshold,
+      false,
+      selectedUpcomingTask.status
+    )
     : null;
   const selectedTaskSubjectFiles = selectedUpcomingTask
     ? (syncResult?.files || []).filter(
-        (f) =>
-          f.courseId === selectedUpcomingTask.courseId &&
-          f.sectionName &&
-          selectedUpcomingTask.sectionName &&
-          f.sectionName.trim().toLowerCase() === selectedUpcomingTask.sectionName.trim().toLowerCase()
-      )
+      (f) =>
+        f.courseId === selectedUpcomingTask.courseId &&
+        f.sectionName &&
+        selectedUpcomingTask.sectionName &&
+        f.sectionName.trim().toLowerCase() === selectedUpcomingTask.sectionName.trim().toLowerCase()
+    )
     : [];
   const isSelectedTaskHidden = selectedUpcomingTask
     ? isActivityHidden(selectedUpcomingTask, settings?.hiddenAssignments)
@@ -4007,8 +4034,8 @@ function DashboardTab({
   const isSelectedTaskCompleted = selectedUpcomingTask ? Boolean(selectedUpcomingTask.isCompleted) : false;
   const hasAnySelectedTaskFiles = Boolean(
     (selectedUpcomingTask?.attachments && selectedUpcomingTask.attachments.length > 0) ||
-      selectedTaskSubjectFiles.length > 0 ||
-      (selectedUpcomingTask?.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0)
+    selectedTaskSubjectFiles.length > 0 ||
+    (selectedUpcomingTask?.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0)
   );
 
   // Active Zoom meetings right now (excluding hidden meetings, default is visible)
@@ -6370,9 +6397,9 @@ function SettingsTab({
           <div>
             <span className="toggle-label">
               {t('panopto_enabled_title')}
-              <span className="badge-beta" style={{ marginInlineStart: '0.4rem' }}>
+              {/* <span className="badge-beta" style={{ marginInlineStart: '0.4rem' }}>
                 {lang === 'he' ? 'בטא' : 'BETA'}
-              </span>
+              </span> */}
             </span>
             <p className="subtitle">{t('panopto_enabled_desc')}</p>
           </div>
@@ -6675,7 +6702,7 @@ function CourseDetailView({
       const next = !prev;
       try {
         localStorage.setItem('noodle_show_empty_sections', String(next));
-      } catch {}
+      } catch { }
       if (!next && activeSectionName) {
         const activeContent = sectionsMap.get(activeSectionName);
         if (activeContent && isSectionContentEmpty(activeContent)) {
@@ -8145,49 +8172,49 @@ function CourseDetailView({
                                           const downloadUrl = buildFileDownloadUrl(att.url, token);
                                           const openUrl = buildFileOpenUrl(att.url, token);
                                           return (
-                                              <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                                <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
-                                                <FileOpenAction
-                                                  rawUrl={att.url}
-                                                  openUrl={openUrl}
-                                                  fileName={att.name}
-                                                  token={token}
-                                                  t={t}
-                                                  lang={lang}
-                                                />
-                                                <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                                  <DownloadIcon size={12} />
-                                                </a>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
+                                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
+                                              <FileOpenAction
+                                                rawUrl={att.url}
+                                                openUrl={openUrl}
+                                                fileName={att.name}
+                                                token={token}
+                                                t={t}
+                                                lang={lang}
+                                              />
+                                              <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                                <DownloadIcon size={12} />
+                                              </a>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
 
-                          {content.files.length > 0 && (
-                            <div className="section-files-list">
-                              {content.files.map((f, fIdx) => {
-                                const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
-                                const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                                return (
-                                  <div key={fIdx} className="section-file-item">
-                                    <span className="item-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{f.fileName}</span></span>
-                                    <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                      {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
-                                      <FileOpenAction
-                                        rawUrl={f.fileUrl}
-                                        openUrl={openUrl}
-                                        fileName={f.fileName}
-                                        token={token}
-                                        t={t}
-                                        lang={lang}
-                                      />
+                        {content.files.length > 0 && (
+                          <div className="section-files-list">
+                            {content.files.map((f, fIdx) => {
+                              const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                              const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                              return (
+                                <div key={fIdx} className="section-file-item">
+                                  <span className="item-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{f.fileName}</span></span>
+                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
+                                    <FileOpenAction
+                                      rawUrl={f.fileUrl}
+                                      openUrl={openUrl}
+                                      fileName={f.fileName}
+                                      token={token}
+                                      t={t}
+                                      lang={lang}
+                                    />
                                     <a
                                       href={downloadUrl}
                                       download={f.fileName}
@@ -8306,8 +8333,8 @@ function CourseDetailView({
                                           {isDownloading
                                             ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
                                             : lang === 'he'
-                                            ? 'הורד כ-ZIP'
-                                            : 'Download ZIP'}
+                                              ? 'הורד כ-ZIP'
+                                              : 'Download ZIP'}
                                         </span>
                                       </button>
                                     </div>
@@ -8329,7 +8356,7 @@ function CourseDetailView({
                                       {rootFiles.map((f, fIdx) => {
                                         const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
                                         const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                                                                                return (
+                                        return (
                                           <div
                                             key={`root_${fIdx}`}
                                             className="section-file-item folder-file-item"
@@ -8417,7 +8444,7 @@ function CourseDetailView({
                                             {subFiles.map((subFile, sfIdx) => {
                                               const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
                                               const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
-                                                                                            return (
+                                              return (
                                                 <div
                                                   key={`${subPath}_${sfIdx}`}
                                                   className="section-file-item folder-file-item"

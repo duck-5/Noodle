@@ -277,6 +277,7 @@ export interface LocalFsManifestRecord {
   canonicalUrlPath?: string;
   syncedAt?: number;
   downloadId?: number;
+  origin?: 'fsa' | 'download' | 'scan';
 }
 
 export interface LocalFsManifestStore {
@@ -324,6 +325,8 @@ export interface LocalFsStatus {
   isInitialBulkMode: boolean;
   totalQueued: number;
   completedInCycle: number;
+  plannedTotal?: number;
+  pendingCount?: number;
   failedCount: number;
   skippedTooLargeCount: number;
   syncedCountTotal: number;
@@ -340,6 +343,8 @@ export const DEFAULT_LOCAL_FS_STATUS: LocalFsStatus = {
   isInitialBulkMode: false,
   totalQueued: 0,
   completedInCycle: 0,
+  plannedTotal: 0,
+  pendingCount: 0,
   failedCount: 0,
   skippedTooLargeCount: 0,
   syncedCountTotal: 0,

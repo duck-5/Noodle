@@ -295,39 +295,73 @@ export function buildLocalFsTreePlan(
     }
   }
 
-  // Discover all courseIds present in downloadable items
+  // Discover all courseIds present in downloadable items (scoped to trackedCourseIds when provided)
+  const trackedSet =
+    options.trackedCourseIds && options.trackedCourseIds.length > 0
+      ? new Set(options.trackedCourseIds)
+      : null;
   const courseIdSet = new Set<number>();
   for (const f of effectiveSync.files || []) {
-    if (!f.folderId && f.fileUrl) courseIdSet.add(f.courseId);
+    if (!f.folderId && f.fileUrl && (!trackedSet || trackedSet.has(f.courseId))) {
+      courseIdSet.add(f.courseId);
+    }
   }
   for (const fld of effectiveSync.folders || []) {
-    if (fld.files?.length) courseIdSet.add(fld.courseId);
+    if (fld.files?.length && (!trackedSet || trackedSet.has(fld.courseId))) {
+      courseIdSet.add(fld.courseId);
+    }
   }
   if (includeAssignments) {
     for (const a of effectiveSync.assignments || []) {
-      if ((a.attachments && a.attachments.length > 0) || (includeSubmissions && a.submittedFiles?.length)) {
+      if (
+        ((a.attachments && a.attachments.length > 0) || (includeSubmissions && a.submittedFiles?.length)) &&
+        (!trackedSet || trackedSet.has(a.courseId))
+      ) {
         courseIdSet.add(a.courseId);
       }
     }
   }
 
-  // Assign deterministic, collision-free folder names per courseId
-  const courseFolderNames: Record<number, string> = { ...existingFolders };
+  // Assign deterministic, collision-free folder names per courseId.
+  // Seed usedCourseFoldersLower from existingFolders first so newly introduced courses
+  // with smaller courseIds cannot hijack an already-anchored folder name.
+  const courseFolderNames: Record<number, string> = {};
   const usedCourseFoldersLower = new Set<string>();
-  const sortedCourseIds = Array.from(courseIdSet).sort((a, b) => a - b);
+  const existingEntries = Object.entries(existingFolders)
+    .map(([id, name]) => ({
+      cId: Number(id),
+      name: typeof name === 'string' && name.trim() ? sanitizePathSegment(name) : '',
+    }))
+    .filter((entry) => Number.isFinite(entry.cId) && entry.name.length > 0)
+    .sort((a, b) => a.cId - b.cId);
 
-  for (const cId of sortedCourseIds) {
-    const anchored = existingFolders[cId];
-    let candidate = anchored ? sanitizePathSegment(anchored) : '';
-
-    if (!candidate) {
-      const nickname = useNicknames ? options.coursesCustomNames?.[cId]?.trim() : '';
-      const rawName = nickname || rawCourseNameById.get(cId) || `Course ${cId}`;
-      candidate = sanitizePathSegment(rawName);
+  for (const entry of existingEntries) {
+    let resolved = entry.name;
+    if (usedCourseFoldersLower.has(resolved.toLowerCase())) {
+      resolved = sanitizePathSegment(`${resolved} (${entry.cId})`);
     }
+    while (usedCourseFoldersLower.has(resolved.toLowerCase())) {
+      resolved = sanitizePathSegment(`${resolved}_`);
+    }
+    usedCourseFoldersLower.add(resolved.toLowerCase());
+    courseFolderNames[entry.cId] = resolved;
+  }
+
+  const sortedCourseIds = Array.from(courseIdSet).sort((a, b) => a - b);
+  for (const cId of sortedCourseIds) {
+    if (courseFolderNames[cId]) {
+      continue;
+    }
+
+    const nickname = useNicknames ? options.coursesCustomNames?.[cId]?.trim() : '';
+    const rawName = nickname || rawCourseNameById.get(cId) || `Course ${cId}`;
+    let candidate = sanitizePathSegment(rawName);
 
     if (usedCourseFoldersLower.has(candidate.toLowerCase())) {
       candidate = sanitizePathSegment(`${candidate} (${cId})`);
+    }
+    while (usedCourseFoldersLower.has(candidate.toLowerCase())) {
+      candidate = sanitizePathSegment(`${candidate}_`);
     }
     usedCourseFoldersLower.add(candidate.toLowerCase());
     courseFolderNames[cId] = candidate;
@@ -398,6 +432,7 @@ export function buildLocalFsTreePlan(
     (f) => !f.folderId && Boolean(f.fileUrl)
   );
   for (const f of standaloneFiles) {
+    if (trackedSet && !trackedSet.has(f.courseId)) continue;
     const courseFolder = courseFolderNames[f.courseId];
     if (!courseFolder) continue;
     const srcCourseId = f.sourceCourseId ?? f.courseId;
@@ -420,6 +455,7 @@ export function buildLocalFsTreePlan(
   // 2. Moodle folder modules (mod_folder) with internal relativePath hierarchy
   const folders: CourseFolder[] = effectiveSync.folders || [];
   for (const fld of folders) {
+    if (trackedSet && !trackedSet.has(fld.courseId)) continue;
     const courseFolder = courseFolderNames[fld.courseId];
     if (!courseFolder) continue;
     const srcCourseId = fld.sourceCourseId ?? fld.courseId;
@@ -454,6 +490,7 @@ export function buildLocalFsTreePlan(
   if (includeAssignments) {
     const assigns: Assignment[] = effectiveSync.assignments || [];
     for (const a of assigns) {
+      if (trackedSet && !trackedSet.has(a.courseId)) continue;
       const courseFolder = courseFolderNames[a.courseId];
       if (!courseFolder) continue;
       const srcCourseId = a.sourceCourseId ?? a.courseId;

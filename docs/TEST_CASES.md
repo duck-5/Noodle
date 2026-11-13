@@ -258,6 +258,10 @@ graph LR
 | **TC-LFS-04** | Manual Deletion Policy, `autoResyncMissingFiles` Toggle & HTML SSO Trap Guard | Extension (Chrome & Firefox) | Automated & Browser Agent | Service Worker & Disk Verification |
 | **TC-LFS-05** | Instant Local-First File Opening (`Open ↗`) with Moodle Fallback | Extension (Chrome & Firefox) | Automated & Browser Agent | Options UI & Providers |
 | **TC-LFS-06** | Logout Session Teardown Preserving User Files on Disk | Extension (Chrome & Firefox) | Automated & Browser Agent | Service Worker & IndexedDB |
+| **TC-LFS-07** | Pre-Existing Disk & Download-History Adoption After Reinstall | Extension (Chrome & Firefox) | Automated & Browser Agent | Adoption Engine & Queue |
+| **TC-LFS-08** | Scan/`rclone` Unverifiable Protection with `autoResyncMissingFiles` & Firefox UI Safeguards | Extension (Firefox) | Automated & Browser Agent | Options UI, Scanner & Downloads |
+| **TC-LFS-09** | State Serialization, Pause/Resume Race Drain, Manifest Pruning & Counter Invariants | Extension (Chrome & Firefox) | Automated & Browser Agent | Lock Mutex, Queue & Telemetry |
+| **TC-LFS-10** | Single-Pass Firefox Downloads, Chromium Streaming & `NotAllowedError` Mapping | Extension (Chrome & Firefox) | Automated | Providers & Stream Guard |
 
 
 ---
@@ -1962,6 +1966,44 @@ graph LR
   1. Executing `LOGOUT` clears `localFsConfig`, `localFsManifest`, `localFsQueue`, `localFsStatus`, the `localFsResume` alarm, and Chromium's IndexedDB `NoodleLocalFsDB` directory handle (`rootDirHandle`).
   2. User files already mirrored on the local filesystem remain untouched on disk.
 * **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-07: Pre-Existing Disk & Download-History Adoption After Reinstall
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/services/fs/ChromiumFsaProvider.ts`, `apps/extension/src/services/fs/FirefoxDownloadsProvider.ts`, `apps/extension/src/options/LocalFsSettingsSection.tsx`
+* **Description**:
+  1. When `localFsManifest` is empty (e.g. after extension reinstall or switching back to an existing synced folder), `enqueueLocalFsSync()` invokes `provider.adoptExistingFiles()` before queueing `'new'` downloads (checking disk files on Chromium and `browser.downloads.search` on Firefox) and skips re-downloading already-present non-HTML files.
+  2. Invoking `LOCAL_FS_ADOPT_SCANNED` (`adoptScannedDiskFiles` from Firefox's folder scanner) matches selected relative paths against `buildLocalFsTreePlan`, saves manifest records (`origin: 'scan'`, attaching matching Firefox `downloadId`s when available), and prunes duplicates from `localFsQueue`.
+* **Verification**: `pnpm --filter extension test` (`__tests__/localFsSync.test.ts`, `__tests__/FirefoxDownloadsProvider.test.ts`) and `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-08: Scan/`rclone` Unverifiable Protection with `autoResyncMissingFiles` & Firefox UI Safeguards
+* **Platform Target**: `Extension (Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/services/fs/FirefoxDownloadsProvider.ts`, `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/options/LocalFsSettingsSection.tsx`
+* **Description**:
+  1. Scanned/`rclone` manifest entries lacking a `downloadId` (`origin === 'scan'` or purged history) evaluate to `'unverifiable'` under `batchCheckFilePresence()` / `checkFilePresence()` and are NEVER re-queued as `'missing'` when `autoResyncMissingFiles: true`. Scanning a file restored externally clears stale `exists === false` download IDs, handles Unicode NFC/NFD normalization and nested `rootLabel` prefixes, and settles `'paused'` queues to `'idle'` if all items were adopted.
+  2. Verified Firefox downloads whose underlying file no longer exists on disk (`exists === false`) still evaluate to `'missing'` (and are pruned cleanly only if excluded by updated plan/tracked courses) while scanned/`rclone` entries render the blue `.file-action-web` badge with an explanatory tooltip rather than a misleading green PC button.
+  3. Toggling Local FS ON in Firefox persists config cleanly without triggering immediate file downloads before the user can click **Scan existing folder**, toggling Local FS OFF resets status cleanly to `'idle'`, and changing the normalized Firefox target subfolder opens a busy-safe Escape-dismissible confirmation modal before invoking `LOCAL_FS_RESET_FOLDER`.
+* **Verification**: `pnpm --filter extension test` (`__tests__/FirefoxDownloadsProvider.test.ts`, `__tests__/localFsSync.test.ts`).
+
+#### TC-LFS-09: State Serialization, Pause/Resume Race Drain, Manifest Pruning & Counter Invariants
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/LocalFsSettingsSection.tsx`, `packages/moodle-client/src/localFsPlanner.ts`
+* **Description**:
+  1. All background storage mutations serialize through `withStateLock` with `mutationEpoch`/`controlEpoch` checks (so mid-flight queue evictions never commit removed files back into `manifest.files`), while UI folder reconciliation delegates to background `LOCAL_FS_RECONCILE` rather than racing `browser.storage.local`.
+  2. Calling `pauseLocalFsSync()` followed immediately by `resumeLocalFsSync()` drains the aborting promise safely, preserves `completedInCycle`, `totalQueued`, and `isInitialBulkMode`, yields to subsequent `pauseLocalFsSync()` calls via `controlEpoch`, re-arms `LOCAL_FS_RESUME_ALARM`, settles paused last-item completions cleanly to `'idle'`, and never lets in-flight `RateLimitError`s overwrite `'paused'` with `'cooldown'`.
+  3. Changing `trackedCourseIds` or assignment inclusion flags evicts obsolete queued/manifest items, prunes orphan `courseFolderNames` and resolved/obsolete logs, preserves `totalQueued === completedInCycle + pendingCount`, renders `syncedCountTotal / plannedTotal`, `pendingCount`, and formatted `lastSyncAt` in `.local-fs-status-panel`, and pre-seeds `usedCourseFoldersLower` from `existingCourseFolderNames` in `buildLocalFsTreePlan`.
+* **Verification**: `pnpm --filter extension test` (`__tests__/localFsSync.test.ts`), `pnpm --filter @tautracker/moodle-client test` (`__tests__/localFsPlanner.test.ts`), and `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-LFS-10: Single-Pass Firefox Downloads, Chromium Streaming & `NotAllowedError` Mapping
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/services/fs/FirefoxDownloadsProvider.ts`, `apps/extension/src/services/fs/ChromiumFsaProvider.ts`
+* **Description**:
+  1. Firefox sync performs zero `fetch()` GET preflights (`fetch` is not invoked prior to `browser.downloads.download`), enforces `maxBytes` (`LocalFsDownloadOversizedError`), detects `text/html`/small non-`.json` `application/json`/`url`+`finalUrl` SAML redirects and `SERVER_UNAUTHORIZED`/`SERVER_FORBIDDEN` (`LocalFsDownloadAuthError`), awaits temporary download cleanup before rejecting, and runs a 1-shot `reauthenticate()` retry.
+  2. `ChromiumFsaProvider` translates `NotAllowedError` / `SecurityError` from `getDirectoryHandle`, `getFileHandle`, `createWritable`, `pipeTo`, and `queryPermission` into `LocalFsPermissionError`, enforces `Content-Length > maxBytes` prior to bounded (<=16 KB) `checkIsJsonApiError()` stream reads, and streams `ReadableStream` bodies directly into `FileSystemWritableFileStream`.
+* **Verification**: `pnpm --filter extension test` (`__tests__/localFsSync.test.ts`, `__tests__/FirefoxDownloadsProvider.test.ts`, `__tests__/ChromiumFsaProvider.test.ts`).
 
 #### TC-PAN-08: Cross-Browser Panopto Authentication (Chrome, Firefox, Brave) & Block AJAX Fallback
 * **Platform Target**: `Extension (Chrome, Brave & Firefox)`
