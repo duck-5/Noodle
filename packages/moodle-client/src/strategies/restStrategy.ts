@@ -215,26 +215,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       allCourses.push(...rootCourses);
     }
 
-    // 2. Archives (Past year) - only when syncArchive is enabled
-    if (this.context.syncArchive) {
-      const archiveYears = [currentYear - 1];
-      const urlHost = new URL(this.context.baseUrl).origin;
-
-      for (const year of archiveYears) {
-        const archiveUrl = `${urlHost}/${year}`;
-        try {
-          const archiveCourses = await this.apiCall('core_enrol_get_users_courses', { userid: userId }, 'POST', archiveUrl);
-          if (Array.isArray(archiveCourses)) {
-            archiveCourses.forEach(c => this.courseYearMap.set(c.id, year));
-            allCourses.push(...archiveCourses);
-          }
-        } catch (e) {}
-      }
-    }
-    // Deduplicate by course ID (in case the current year archive redirects back to root)
-    const uniqueCourses = Array.from(new Map(allCourses.map(c => [c.id, c])).values());
-
-    return uniqueCourses;
+    return Array.from(new Map(allCourses.map(c => [c.id, c])).values());
   }
 
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
@@ -257,28 +238,6 @@ export class RestMoodleStrategy implements IMoodleStrategy {
           c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, parseInt(year, 10)));
         }
       });
-    }
-
-    if (this.context.syncArchive) {
-      const archiveYears = [currentYear - 1];
-      const urlHost = new URL(this.context.baseUrl).origin;
-
-      for (const year of archiveYears) {
-        const archiveUrl = `${urlHost}/${year}`;
-        try {
-          const aAssigns = await this.apiCall('mod_assign_get_assignments', {}, 'POST', archiveUrl);
-          if (aAssigns && Array.isArray(aAssigns.courses)) {
-            aAssigns.courses.forEach((c: any) => {
-              this.courseYearMap.set(c.id, year);
-              if (Array.isArray(c.assignments)) {
-                c.assignments.forEach((a: any) => this.assignYearMap.set(a.id, year));
-              }
-            });
-            if (!res.courses) res.courses = [];
-            res.courses.push(...aAssigns.courses);
-          }
-        } catch (e) {}
-      }
     }
 
     if (res && res.courses) {

@@ -87,7 +87,6 @@ export interface RunSyncOptions {
   coursesPanoptoMap?: Record<number, string>;
   onEnsurePanoptoAuth?: (forceRefresh?: boolean) => Promise<boolean>;
   lang?: 'he' | 'en';
-  syncArchive?: boolean;
 }
 
 export async function runSync(
@@ -103,13 +102,11 @@ export async function runSync(
 ): Promise<SyncResult> {
   const enableScraping = options?.enableScraping ?? false;
   const enablePanopto = options?.enablePanopto ?? false;
-  const syncArchive = options?.syncArchive ?? false;
   const coursesPanoptoMap = options?.coursesPanoptoMap || {};
   const client = new MoodleClient(token, baseUrl, {
     sesskey,
     devMode: false,
     enableScraping,
-    syncArchive,
     lang: options?.lang,
   });
   const errors: SyncError[] = [];

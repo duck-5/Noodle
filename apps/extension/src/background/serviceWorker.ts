@@ -637,7 +637,6 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
           enableScraping: settings.scrapingEnabled ?? false,
           enablePanopto: settings.panoptoEnabled ?? false,
           coursesPanoptoMap: settings.coursesPanoptoMap,
-          syncArchive: settings.syncArchive ?? false,
           lang: settings.language || 'he',
           onEnsurePanoptoAuth: (forceRefresh) =>
             ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
@@ -687,7 +686,6 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
                 enableScraping: settings.scrapingEnabled ?? false,
                 enablePanopto: settings.panoptoEnabled ?? false,
                 coursesPanoptoMap: settings.coursesPanoptoMap,
-                syncArchive: settings.syncArchive ?? false,
                 lang: settings.language || 'he',
                 onEnsurePanoptoAuth: (forceRefresh) =>
                   ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),

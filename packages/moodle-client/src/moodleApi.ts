@@ -282,7 +282,6 @@ export interface MoodleClientOptions {
   devMode?: boolean;
   strategies?: IMoodleStrategy[];
   enableScraping?: boolean;
-  syncArchive?: boolean;
   lang?: 'he' | 'en';
 }
 
@@ -304,7 +303,6 @@ export class MoodleClient {
       baseUrl: this.baseUrl,
       devMode: this.devMode,
       enableScraping: options?.enableScraping,
-      syncArchive: options?.syncArchive ?? false,
       lang: options?.lang,
     };
 

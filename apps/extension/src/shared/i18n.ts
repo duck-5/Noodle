@@ -357,8 +357,6 @@ export const translations = {
     manage_courses_desc: "ערוך שמות מקוצרים לקורסים, בחר צבעים אישיים והגדר אילו קורסים יסונכרנו.",
     panopto_manual_override_setting_title: "הצגת הגדרה ידנית של תיקיית Panopto",
     panopto_manual_override_setting_desc: "מאפשר הזנה ידנית של קישור או מזהה UUID לתיקיית Panopto עבור קורסים שהסריקה האוטומטית לא מזהה.",
-    sync_archive_title: "סנכרון קורסים מארכיון (שנים קודמות)",
-    sync_archive_desc: "סרוק ומשוך קורסים ומטלות מאתרי הארכיון של שנים קודמות במודל (למשל עבור מועדי ב' מאוחרים). ברירת מחדל: כבוי (חוסך זמן סנכרון).",
   },
   en: {
     dashboard: "Dashboard",
@@ -718,7 +716,5 @@ export const translations = {
     manage_courses_desc: "Edit course nicknames, choose theme colors, and select which courses to track.",
     panopto_manual_override_setting_title: "Show manual Panopto folder override (URL / UUID)",
     panopto_manual_override_setting_desc: "Allows manually entering a custom Panopto folder link or UUID for courses where automatic discovery does not find recordings.",
-    sync_archive_title: "Sync Archive Courses (Past Years)",
-    sync_archive_desc: "Scan and fetch courses and assignments from previous academic year archive portals (e.g. for deferred exams). Default: Off (speeds up sync).",
   }
 };

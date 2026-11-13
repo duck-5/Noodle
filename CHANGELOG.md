@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+- **Dynamic Due Date Threshold Coloring Parity (`apps/extension/src/shared/dateUtils.ts`, `apps/mobile/src/services/dateUtils.ts`, `TC-ASN-02`, `TC-UI-04`)**:
+  - Fixed a legacy bug in `getDueTextAndClass` where countdown badges (`badgeClass`) hardcoded a 72-hour threshold instead of respecting user-configured urgency thresholds (`assignmentGreenDaysThreshold: 7`, `assignmentYellowDaysThreshold: 3`).
+  - Resolved issue where 3-day and 6-day assignment deadlines (e.g. "Lecture 3 Quiz", "Assignment 1 - Submission") were erroneously rendered with green `badge-success` pills instead of amber/yellow `badge-warning` pills.
+  - Aligned badge background and text colors to strictly evaluate: `daysLeft > greenThreshold` -> Green (`badge-success`), `daysLeft > yellowThreshold` -> Amber/Yellow (`badge-warning`), and <= `yellowThreshold` or overdue -> Red (`badge-danger`), maintaining full parity across Chromium, Firefox, and Expo React Native mobile apps.
+
 ### Removed
 - **Archive Course Sync Setting & Dead REST Calls (`apps/extension/src/options/App.tsx`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/moodleApi.ts`, `packages/moodle-client/src/syncEngine.ts`)**:
   - Removed the non-functional `syncArchive` setting and `#sync-archive-toggle` UI from extension options.

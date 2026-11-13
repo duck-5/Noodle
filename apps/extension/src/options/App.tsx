@@ -2759,12 +2759,6 @@ export default function App() {
                     setSettingsState(updated);
                     await setSettings(updated);
                   }}
-                  onToggleSyncArchive={async (enabled: boolean) => {
-                    if (!settings) return;
-                    const updated = { ...settings, syncArchive: enabled };
-                    setSettingsState(updated);
-                    await setSettings(updated);
-                  }}
                   onTogglePanoptoFolderOverride={async (enabled: boolean) => {
                     if (!settings) return;
                     const updated = { ...settings, showPanoptoFolderOverride: enabled };
@@ -5583,7 +5577,6 @@ function SettingsTab({
   onOpenManageCourses,
   onUpdateThresholds,
   onToggleScraping,
-  onToggleSyncArchive,
   onTogglePanopto,
   onTogglePanoptoFolderOverride,
   onToggleNotifications,
@@ -5620,7 +5613,6 @@ function SettingsTab({
   onOpenManageCourses?: () => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
   onToggleScraping?: (enabled: boolean) => void;
-  onToggleSyncArchive?: (enabled: boolean) => void;
   onTogglePanopto?: (enabled: boolean) => void;
   onTogglePanoptoFolderOverride?: (enabled: boolean) => void;
   onToggleNotifications?: (enabled: boolean) => void;
@@ -6183,33 +6175,6 @@ function SettingsTab({
                   onToggleScraping(e.target.checked);
                 } else {
                   await setSettings({ scrapingEnabled: e.target.checked });
-                }
-              }}
-            />
-            <span className="slider round"></span>
-          </label>
-        </div>
-      </div>
-
-      <hr className="settings-divider" />
-
-      <div className="settings-section">
-        <h4>{t('sync_archive_title')}</h4>
-        <div className="toggle-row">
-          <div>
-            <span className="toggle-label">{t('sync_archive_title')}</span>
-            <p className="subtitle">{t('sync_archive_desc')}</p>
-          </div>
-          <label className="switch">
-            <input
-              type="checkbox"
-              id="sync-archive-toggle"
-              checked={settings.syncArchive ?? false}
-              onChange={async (e) => {
-                if (onToggleSyncArchive) {
-                  onToggleSyncArchive(e.target.checked);
-                } else {
-                  await setSettings({ syncArchive: e.target.checked });
                 }
               }}
             />

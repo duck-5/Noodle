@@ -27,7 +27,6 @@ export interface ExtensionSettings {
   coursesPanoptoMap?: Record<number, string>;
   watchedRecordings?: string[];
   syncIntervalMinutes?: number;
-  syncArchive?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -56,7 +55,6 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   coursesPanoptoMap: {},
   watchedRecordings: [],
   syncIntervalMinutes: 60,
-  syncArchive: false,
 };
 
 export function getEffectiveTheme(settings: ExtensionSettings | null): 'dark' | 'noodle' | 'coffee' {
