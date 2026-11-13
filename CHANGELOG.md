@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Removed
+- **Archive Course Sync Setting & Dead REST Calls (`apps/extension/src/options/App.tsx`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/moodleApi.ts`, `packages/moodle-client/src/syncEngine.ts`)**:
+  - Removed the non-functional `syncArchive` setting and `#sync-archive-toggle` UI from extension options.
+  - Removed dead REST API calls to past-year archive endpoints (`${urlHost}/${year}/webservice/rest/server.php`). Since past academic year archive instances on TAU Moodle are separate databases that do not recognize active session REST tokens (`invalidtoken`) and do not enable mobile web services, archive courses were only ever retrievable through web scraping + SAML session initialization (`ScraperMoodleStrategy`). Because Noodle strictly operates in pure client API mode without scraping (`enableScraping: false`), archive courses cannot be retrieved via REST, making the toggle ineffective.
+
+
 ## [4.0.3] - 2026-11-11
 ### Added
 - **Sync Archive Courses Setting & Endpoint Suppression (`packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/strategies/scraperStrategy.ts`, `packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `apps/extension/src/options/App.tsx`, `TC-CRS-09`, `TC-CRS-10`)**:

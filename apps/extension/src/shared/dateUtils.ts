@@ -26,7 +26,6 @@ export function getDueTextAndClass(
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const hoursLeft = diffMs / (1000 * 60 * 60);
   const daysLeft = diffMs / (1000 * 60 * 60 * 24);
 
   if (diffMs < 0) {

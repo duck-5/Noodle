@@ -308,11 +308,6 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
     - Default state: **OFF** (`scrapingEnabled: false`).
     - Bilingual Description: "Scrape Moodle web pages for archived assignments, Zoom links, and files unavailable via the standard API. Default: Off (may slow down sync)." / "סריקת עמודי Moodle לאיתור מטלות בארכיון, קישורי Zoom וקבצים שאינם זמינים ב-API הרגיל. ברירת מחדל: כבוי (עשוי להאט את הסנכרון)."
     - When disabled, synchronization strictly utilizes pure Moodle REST and AJAX endpoints for high-speed performance and minimal resource consumption.
-*   **Sync Archive Courses (Past Years)** (`#sync-archive-toggle`):
-    - Switch toggle to enable or disable scanning previous academic year archive portals (`moodle.tau.ac.il/${currentYear - 1}/`).
-    - Default state: **OFF** (`syncArchive: false`).
-    - Bilingual Description: "Scan and fetch courses and assignments from previous academic year archive portals (e.g. for deferred exams). Default: Off (speeds up sync)." / "סרוק ומשוך קורסים ומטלות מאתרי הארכיון של שנים קודמות במודל (למשל עבור מועדי ב' מאוחרים). ברירת מחדל: כבוי (חוסך זמן סנכרון)."
-    - When disabled (default), synchronization only queries root current-year Moodle endpoints, preventing 401/404 archive errors and saving extensive network overhead.
 *   **Panopto Lecture & Recitation Tracking** (`#panopto-enabled-toggle`):
     - Switch toggle to enable or disable automatic discovery and tracking of Panopto lecture and recitation recordings per course.
     - Default state: **OFF** (`panoptoEnabled: false`).

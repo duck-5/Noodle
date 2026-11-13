@@ -2142,7 +2142,7 @@ export default function App() {
 
   const currentLang = settings?.language || 'he';
   const t = (key: keyof typeof translations['en']) => {
-    return translations[currentLang]?.[key] || translations['en']?.[key] || key;
+    return (translations[currentLang] as any)?.[key] || translations['en']?.[key] || key;
   };
 
   if (loading && onboardingStep === 1) {

@@ -116,8 +116,6 @@ graph LR
 | **TC-CRS-06** | Course Search & Real-Time Filtering | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses |
 | **TC-CRS-07** | Direct Moodle Course Link Launch | All (Mobile + Chrome + Firefox) | Browser Agent | Courses |
 | **TC-CRS-08** | Laboratory Course Assignment Hiding Prompt | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses |
-| **TC-CRS-09** | Archive Courses Sync Suppression (`syncArchive: false`) | All (Mobile + Chrome + Firefox) | Automated | Courses & Sync Engine |
-| **TC-CRS-10** | Archive Courses Sync Activation (`syncArchive: true`) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Courses & Sync Engine |
 | **TC-ASN-01** | Aggregated Chronological Assignment Feed | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-02** | Proximity Urgency Badges & Colors | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-03** | Submission Status & Grade Pill | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
@@ -467,24 +465,6 @@ graph LR
   1. In Onboarding or Manage Courses modal, toggle on a course containing "מעבדה".
   2. Verify confirmation modal appears asking whether to hide all assignments for the laboratory course.
   3. Confirm the modal and verify that the course's assignments are populated in `hiddenAssignments` and hidden from the active dashboard feed.
-
-#### TC-CRS-09: Archive Courses Sync Suppression (`syncArchive: false`)
-* **Platform Target**: `All (Mobile + Chrome + Firefox)`
-* **Modality**: `Automated`
-* **Description**:
-  1. Default configuration has `syncArchive: false`.
-  2. Course discovery (`getEnrolledCourses`) and assignment discovery (`getAssignments`) query only root Moodle endpoints (`moodle.tau.ac.il`).
-  3. Verify past academic year archive URLs (`moodle.tau.ac.il/${currentYear - 1}/`) are never called, eliminating network overhead, 401/404 archive errors, and speeding up synchronization.
-* **Verification**: `jest packages/moodle-client/__tests__/courses.test.ts`.
-
-#### TC-CRS-10: Archive Courses Sync Activation (`syncArchive: true`)
-* **Platform Target**: `All (Mobile + Chrome + Firefox)`
-* **Modality**: `Automated & Browser Agent`
-* **Description**:
-  1. User enables **Sync Archive Courses (Past Years)** toggle in Extension Settings.
-  2. Running sync queries both current year root endpoints and past academic year archive endpoints (`moodle.tau.ac.il/${currentYear - 1}/`).
-  3. Verify courses and assignments from previous academic years (e.g. deferred exams / moed bet) are discovered, mapped, and listed.
-* **Verification**: `jest packages/moodle-client/__tests__/courses.test.ts`.
 
 ---
 
