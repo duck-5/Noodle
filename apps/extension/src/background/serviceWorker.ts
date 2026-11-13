@@ -1262,16 +1262,59 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
     const host = window.location.hostname.toLowerCase();
     const href = window.location.href;
 
-    // 1. On Panopto login page: click #PageContentPlaceholder_loginControl_externalLoginButton
+    // 1. On Panopto domain: check if already authenticated or trigger external SSO login
     if (host.includes('panopto.eu') || host.includes('panopto.tau.ac.il')) {
+      const panoptoUser = win.Panopto?.user;
+      const isPanoptoAuthed = Boolean(
+        panoptoUser?.isAuthenticated &&
+          panoptoUser?.userId &&
+          String(panoptoUser.userId) !== '00000000-0000-0000-0000-000000000000'
+      );
+      if (isPanoptoAuthed) {
+        if (href.includes('/Auth/Login.aspx')) {
+          if (!win.__noodleAuthedRedirectAt || now - win.__noodleAuthedRedirectAt > 3000) {
+            win.__noodleAuthedRedirectAt = now;
+            window.location.href = 'https://tau.cloud.panopto.eu/Panopto/Pages/Home.aspx';
+          }
+          return `PANOPTO_ALREADY_AUTHENTICATED_REDIRECTING (${href})`;
+        }
+        return `PANOPTO_ALREADY_AUTHENTICATED (${href})`;
+      }
+
+      const providerSelect = document.querySelector<HTMLSelectElement>(
+        '#PageContentPlaceholder_loginControl_providerDropdown, select[id*="providerDropdown"]'
+      );
+      if (providerSelect && (!providerSelect.value || providerSelect.value === 'panoptointernal')) {
+        const options = Array.from(providerSelect.options);
+        const currentYear = String(new Date().getFullYear());
+        const moodleOpt =
+          options.find((o) => o.value === `Moodle${currentYear}`) ||
+          options.find((o) => o.value.toLowerCase().startsWith('moodle'));
+        if (moodleOpt) {
+          providerSelect.value = moodleOpt.value;
+          providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+
       const extBtn = document.querySelector<HTMLElement>(
         '#PageContentPlaceholder_loginControl_externalLoginButton, [id*="externalLoginButton"]'
       );
       if (extBtn) {
-        if (!win.__noodleExtLoginClickedAt || now - win.__noodleExtLoginClickedAt > 4000) {
+        if (!win.__noodleExtLoginClickedAt) {
           win.__noodleExtLoginClickedAt = now;
           extBtn.click();
           return `CLICKED_EXTERNAL_LOGIN (${href})`;
+        }
+        // Fallback for Brave hidden tabs where Panopto.Login.checkStorageAccess() stalls onclick navigation
+        if (now - win.__noodleExtLoginClickedAt > 2500 && href.includes('/Auth/Login.aspx')) {
+          win.__noodleExtLoginClickedAt = now;
+          const selectedInstance =
+            (providerSelect?.value && providerSelect.value !== 'panoptointernal'
+              ? providerSelect.value
+              : '') || `Moodle${new Date().getFullYear()}`;
+          const sep = window.location.search.indexOf('?') === -1 ? '?' : '&';
+          window.location.search += `${sep}instance=${encodeURIComponent(selectedInstance)}&AllowBounce=true`;
+          return `REDIRECTED_EXTERNAL_LOGIN_FALLBACK (${href})`;
         }
         return `WAITING_AFTER_EXTERNAL_LOGIN_CLICK (${href})`;
       }
@@ -1290,7 +1333,7 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
     }
 
     // 2. On Moodle login page (if Panopto SSO bounces via Moodle): click SAML login button
-    if (host.includes('moodle.tau.ac.il') && href.includes('/login/')) {
+    if (host.includes('moodle') && host.includes('tau.ac.il') && href.includes('/login/')) {
       const samlBtn = document.querySelector<HTMLElement>(
         'a[href*="/auth/saml2/login.php"], .login-btn, a.btn-primary'
       );
@@ -1381,9 +1424,34 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
   }
 }
 
+async function getPanoptoCookies(): Promise< browser.Cookies.Cookie[] > {
+  const results: browser.Cookies.Cookie[] = [];
+  try {
+    const standard = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    results.push(...standard);
+  } catch {
+    // Ignore
+  }
+  try {
+    // Also query CHIPS / partitioned cookies in Brave & Chromium 119+
+    const partitioned = await browser.cookies.getAll({
+      domain: 'panopto.eu',
+      partitionKey: {},
+    } as any);
+    for (const c of partitioned) {
+      if (!results.some((existing) => existing.name === c.name && existing.value === c.value)) {
+        results.push(c);
+      }
+    }
+  } catch {
+    // Ignore on browsers that do not support partitionKey filter
+  }
+  return results;
+}
+
 async function hasPanoptoAuthCookie(): Promise<boolean> {
   try {
-    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    const cookies = await getPanoptoCookies();
     const nowSec = Date.now() / 1000;
     return cookies.some(
       (c) =>
@@ -1398,12 +1466,15 @@ async function hasPanoptoAuthCookie(): Promise<boolean> {
 
 async function clearPanoptoAuthCookies(): Promise<void> {
   try {
-    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    const cookies = await getPanoptoCookies();
     for (const cookie of cookies) {
       if (cookie.name.toUpperCase().includes('ASPXAUTH')) {
         const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
         const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
-        await browser.cookies.remove({ url, name: cookie.name });
+        const removeDetails: any = { url, name: cookie.name };
+        if (cookie.storeId) removeDetails.storeId = cookie.storeId;
+        if ((cookie as any).partitionKey) removeDetails.partitionKey = (cookie as any).partitionKey;
+        await browser.cookies.remove(removeDetails).catch(() => {});
       }
     }
   } catch (e) {
@@ -1412,9 +1483,27 @@ async function clearPanoptoAuthCookies(): Promise<void> {
 }
 
 async function isPanoptoServerSessionAuthenticated(): Promise<boolean> {
-  if (!(await hasPanoptoAuthCookie())) {
-    return false;
+  try {
+    // 1. Fast check against Panopto's REST user profile endpoint (returns 401 when unauthenticated, 200 OK when logged in)
+    const meRes = await fetch('https://tau.cloud.panopto.eu/Panopto/Api/v1/users/me', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    if (meRes.ok) {
+      const meData = await meRes.json().catch(() => null);
+      const userId = String(meData?.UserId || meData?.userId || '');
+      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
+        return true;
+      }
+    }
+  } catch {
+    // Fallback to Data.svc check below
   }
+
   try {
     const currentYear = String(new Date().getFullYear());
     const res = await fetch('https://tau.cloud.panopto.eu/Panopto/Services/Data.svc/GetSessions', {
@@ -1503,9 +1592,10 @@ async function ensurePanoptoAuthViaHiddenTab(
         }
       }
 
-      // Always remove any stale/expired .ASPXAUTH cookie before opening the login tab
-      // so we don't mistake an old cookie for a newly issued one during the polling loop
-      await clearPanoptoAuthCookies();
+      // Remove any stale/expired unpartitioned .ASPXAUTH cookie before opening the login tab
+      if (await hasPanoptoAuthCookie()) {
+        await clearPanoptoAuthCookies();
+      }
 
       console.log('[Panopto][HiddenTab] Opening hidden background tab for Panopto SSO login...');
       const tab = await browser.tabs.create({
@@ -1577,7 +1667,7 @@ async function ensurePanoptoAuthViaHiddenTab(
           currentUrl.includes('panopto.eu/Panopto/Pages/') &&
           !currentUrl.includes('/Auth/Login.aspx')
         ) {
-          if (hasAuthCookie && (await isPanoptoServerSessionAuthenticated())) {
+          if (await isPanoptoServerSessionAuthenticated()) {
             console.log(
               `[Panopto][HiddenTab] Authenticated Panopto session at ${currentUrl} (serverReady=true)! Closing hidden tab.`
             );
@@ -1604,15 +1694,22 @@ async function ensurePanoptoAuthViaHiddenTab(
               lastLoggedStatus = summary;
               console.log(`[Panopto][HiddenTab] Step: ${summary}`);
             }
+            if (stepStates.some((s) => s.startsWith('PANOPTO_ALREADY_AUTHENTICATED ('))) {
+              const serverOk = await isPanoptoServerSessionAuthenticated();
+              console.log(
+                `[Panopto][HiddenTab] Tab confirmed authenticated Panopto session (serverOk=${serverOk}, hasAuthCookie=${hasAuthCookie}). Closing hidden tab.`
+              );
+              return true;
+            }
           } catch {
             // Tab may be mid-navigation between origins; retry on next tick
           }
         }
       }
 
-      const finalCookieCheck = await hasPanoptoAuthCookie();
+      const finalCookieCheck = (await hasPanoptoAuthCookie()) || (await isPanoptoServerSessionAuthenticated());
       console.warn(
-        `[Panopto][HiddenTab] Timed out after ${timeoutMs}ms waiting for Panopto redirect (hasAuthCookie=${finalCookieCheck}).`
+        `[Panopto][HiddenTab] Timed out after ${timeoutMs}ms waiting for Panopto redirect (authenticated=${finalCookieCheck}).`
       );
       return finalCookieCheck;
     } catch (err) {

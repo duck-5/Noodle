@@ -1962,3 +1962,14 @@ graph LR
   1. Executing `LOGOUT` clears `localFsConfig`, `localFsManifest`, `localFsQueue`, `localFsStatus`, the `localFsResume` alarm, and Chromium's IndexedDB `NoodleLocalFsDB` directory handle (`rootDirHandle`).
   2. User files already mirrored on the local filesystem remain untouched on disk.
 * **Verification**: `pnpm --filter extension exec playwright test e2e/local-fs-sync.spec.ts`.
+
+#### TC-PAN-08: Cross-Browser Panopto Authentication (Chrome, Firefox, Brave) & Block AJAX Fallback
+* **Platform Target**: `Extension (Chrome, Brave & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/extension/src/background/serviceWorker.ts`, `packages/moodle-client/src/syncEngine.ts`, `packages/moodle-client/src/panoptoScraper.ts`
+* **Description**:
+  1. `getPanoptoCookies()` checks both standard cookies and CHIPS partitioned cookies (`partitionKey: {}`) with `try/catch` safety for Firefox compatibility.
+  2. `isPanoptoServerSessionAuthenticated()` checks `/Panopto/Api/v1/users/me` (`credentials: 'include'`) alongside `Data.svc/GetSessions` without prematurely failing if `.ASPXAUTH` is partitioned.
+  3. `injectedPanoptoLoginStep` detects `window.Panopto.user.isAuthenticated` on `Login.aspx` / `Home.aspx` (preventing 25s timeouts when `externalLoginButton` is hidden for already-authenticated users) and falls back to `?instance=Moodle<year>&AllowBounce=true` if `Panopto.Login.checkStorageAccess()` stalls `extBtn.click()` in inactive background tabs.
+  4. When `core_block_get_course_blocks` returns a lazy `<div id="loading_text">` placeholder, Stage 3 invokes `discoverPanoptoFromMoodleAjaxBlock` (`/blocks/panopto/ajax/load_panopto_block.php`) with the active Moodle `sesskey`.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test`, `pnpm --filter extension run build:chrome`, and `pnpm --filter extension run build:firefox`.

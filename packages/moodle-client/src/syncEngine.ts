@@ -35,6 +35,7 @@ import {
   ensurePanoptoAuthenticated,
   resolvePanoptoViaLti,
   discoverPanoptoFromMoodleBlocks,
+  discoverPanoptoFromMoodleAjaxBlock,
   resolveFolderIdFromDelivery,
   fetchPanoptoFolderSessions,
   discoverCourseFolderFromBrowse,
@@ -1392,6 +1393,31 @@ export async function runSync(
           if (discoveredPanoptoFolderIds.length > 0) {
             resolvedFolderId = discoveredPanoptoFolderIds[0];
             resolutionTier = 'Tier 2 (Moodle core_block_get_course_blocks WS)';
+          }
+        }
+
+        if (!resolvedFolderId && sesskey) {
+          const ajaxBlockLinks = await discoverPanoptoFromMoodleAjaxBlock(
+            courseId,
+            '',
+            courseBaseUrl,
+            PANOPTO_BASE_URL,
+            sesskey,
+            jar
+          );
+          for (const fid of ajaxBlockLinks.folderIds) {
+            if (fid && !discoveredPanoptoFolderIds.includes(fid)) {
+              discoveredPanoptoFolderIds.push(fid);
+            }
+          }
+          for (const del of ajaxBlockLinks.deliveries) {
+            if (del.id && !discoveredPanoptoDeliveries.some(d => d.id === del.id)) {
+              discoveredPanoptoDeliveries.push({ id: del.id, title: del.title, recordingUrl: del.recordingUrl });
+            }
+          }
+          if (discoveredPanoptoFolderIds.length > 0) {
+            resolvedFolderId = discoveredPanoptoFolderIds[0];
+            resolutionTier = 'Tier 2 (Moodle Block AJAX)';
           }
         }
 

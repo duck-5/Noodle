@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Styled with full theme integration across Default Dark, Noodle (warm cream/terracotta), and Coffee (espresso/amber) themes with zero unicode emojis.
 
 ### Fixed
+- **Panopto SSO Hidden-Tab Authentication & Block AJAX Discovery (`apps/extension/src/background/serviceWorker.ts`, `packages/moodle-client/src/syncEngine.ts`, `TC-PAN-08`)**:
+  - Fixed Panopto authentication detection in Brave and Chromium browsers with partitioned storage (`CHIPS`) by querying both standard and partitioned (`partitionKey: {}`) cookies in `getPanoptoCookies()` and verifying live server sessions against `GET /Panopto/Api/v1/users/me` (`200 OK` vs `401 Unauthorized`) in addition to `Data.svc/GetSessions`.
+  - Fixed hidden-tab SSO loop on `Login.aspx` when the user is already authenticated in Panopto (`window.Panopto.user.isAuthenticated === true`), where ASP.NET omits `#PageContentPlaceholder_loginControl_externalLoginButton` from the DOM; the injected script now detects `window.Panopto.user.isAuthenticated` immediately and completes authentication without timing out after 25s.
+  - Added a 2.5s navigation fallback in `injectedPanoptoLoginStep` when `Panopto.Login.checkStorageAccess()` stalls `extBtn.click()` in inactive background tabs on Brave, while keeping `extBtn.click()` as the primary path for Chrome and Firefox parity.
+  - Connected `discoverPanoptoFromMoodleAjaxBlock` (`/blocks/panopto/ajax/load_panopto_block.php`) in Stage 3 of `runSync` whenever `core_block_get_course_blocks` returns a lazy-loading `<div id="loading_text">` placeholder, allowing course Panopto folders and recordings to resolve directly via Moodle's `sesskey`.
 - **Dynamic Due Date Threshold Coloring Parity (`apps/extension/src/shared/dateUtils.ts`, `apps/mobile/src/services/dateUtils.ts`, `TC-ASN-02`, `TC-UI-04`)**:
   - Fixed a legacy bug in `getDueTextAndClass` where countdown badges (`badgeClass`) hardcoded a 72-hour threshold instead of respecting user-configured urgency thresholds (`assignmentGreenDaysThreshold: 7`, `assignmentYellowDaysThreshold: 3`).
   - Resolved issue where 3-day and 6-day assignment deadlines (e.g. "Lecture 3 Quiz", "Assignment 1 - Submission") were erroneously rendered with green `badge-success` pills instead of amber/yellow `badge-warning` pills.
