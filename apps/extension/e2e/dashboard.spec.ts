@@ -255,10 +255,10 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     const firstCourseCard = optionsPage.locator('.course-row-card').first();
     await expect(firstCourseCard).toBeVisible();
 
-    // Verify initial breakdown: (1/2) and 1 gap
+    // Verify initial breakdown: (1/2) and 1 pending assignment gap
     const gapStat = firstCourseCard.locator('.course-stat-gap').first();
-    await expect(gapStat).toContainText(/1 פער|1 gap/);
-    await expect(firstCourseCard.locator('.stat-count').first()).toContainText('(1/2)');
+    await expect(gapStat).toContainText(/מטלות:\s*1|Assignments:\s*1/);
+    await expect(firstCourseCard.locator('.course-prog-percent, .stat-count').first()).toContainText('1/2');
 
     // 2. Hide Assignment 101 via settings
     await optionsPage.evaluate(async () => {
@@ -274,8 +274,8 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     const updatedCard = optionsPage.locator('.course-row-card').first();
     await expect(updatedCard).toBeVisible();
     const updatedGapStat = updatedCard.locator('.course-stat-gap').first();
-    await expect(updatedGapStat).toContainText(/0 פערים|0 gaps/);
-    await expect(updatedCard.locator('.stat-count').first()).toContainText('(1/1)');
+    await expect(updatedGapStat).toContainText(/מטלות:\s*0|Assignments:\s*0/);
+    await expect(updatedCard.locator('.course-prog-percent, .stat-count').first()).toContainText('1/1');
   });
 
   test('TC-DASH-REHAUL-08: Toggling to cards view switches to responsive card grid and horizontal 2-section layout', async ({ optionsPage }) => {

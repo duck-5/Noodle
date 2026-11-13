@@ -1097,7 +1097,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
     await dashNavBtn.click();
     await optionsPage.waitForTimeout(400);
 
-    const firstCourseGoBtn = optionsPage.locator('.course-row-card').first().locator('button').filter({ hasText: /עבור לקורס|Go to/ });
+    const firstCourseGoBtn = optionsPage.locator('.course-row-card').first().locator('.course-row-title');
     if (await firstCourseGoBtn.isVisible()) {
       await firstCourseGoBtn.click();
       await optionsPage.waitForTimeout(600);
@@ -1121,7 +1121,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       }
     }
 
-    const secondCourseGoBtn = optionsPage.locator('.course-row-card').nth(1).locator('button').filter({ hasText: /עבור לקורס|Go to/ });
+    const secondCourseGoBtn = optionsPage.locator('.course-row-card').nth(1).locator('.course-row-title');
     if (await secondCourseGoBtn.isVisible()) {
       await secondCourseGoBtn.click();
       await optionsPage.waitForTimeout(600);
