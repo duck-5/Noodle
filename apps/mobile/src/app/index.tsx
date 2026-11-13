@@ -24,7 +24,7 @@ import { loginTauSso, getStoredCredentials, saveCredentials, clearCredentials } 
 import { performSettingsSync, markSettingUpdatedAndSync } from '../services/settingsSyncService';
 import { getDb, getPreference, setPreference } from '../services/database';
 import { setGoogleAccessToken } from '../services/googleTasks';
-import { MoodleClient, parseTauCourseMetadata, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl } from '@tautracker/moodle-client';
+import { MoodleClient, parseTauCourseMetadata, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl, isZoomJoinUrl } from '@tautracker/moodle-client';
 import { t } from '../services/i18n';
 import { openMoodleLink } from '../services/moodleLink';
 import { usePreferences } from '../hooks/use-preferences';
@@ -127,7 +127,7 @@ export default function DashboardScreen() {
   const [expandedAssignments, setExpandedAssignments] = useState<Record<string, boolean>>({});
   const [openMenuAssignId, setOpenMenuAssignId] = useState<string | null>(null);
   const [dashboardFiles, setDashboardFiles] = useState<any[]>([]);
-  const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
+  const [hiddenZoomMeetings, setHiddenZoomMeetings] = useState<string[]>([]);
   const [expandedCourseId, setExpandedCourseId] = useState<number | null>(null);
 
   const [filterPending, setFilterPending] = useState<boolean>(true);
@@ -537,7 +537,7 @@ export default function DashboardScreen() {
         );
 
         mod.isCompleted = isCompleted;
-        mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
+        mod.status = a.status;
         return mod;
       });
 
@@ -562,18 +562,18 @@ export default function DashboardScreen() {
       );
       setDashboardFiles(cachedFiles);
 
-      const computedCompletedCount = cachedAssigns.filter(a => a.status === 'Submitted' && !a.isHidden).length;
+      const computedCompletedCount = cachedAssigns.filter(a => a.isCompleted && !a.isHidden).length;
       setCompletedCount(computedCompletedCount);
 
-      // Load interested meetings preference
-      const interestedStr = getPreference('interested_meetings') || '';
-      let interestedList: string[] = [];
-      if (interestedStr) {
+      // Load hidden zoom meetings preference
+      const hiddenZoomStr = getPreference('hidden_zoom_meetings') || '';
+      let hiddenZoomList: string[] = [];
+      if (hiddenZoomStr) {
         try {
-          interestedList = JSON.parse(interestedStr);
+          hiddenZoomList = JSON.parse(hiddenZoomStr);
         } catch (e) { }
       }
-      setInterestedMeetings(interestedList);
+      setHiddenZoomMeetings(hiddenZoomList);
     } catch (e) {
       console.error('loadDashboardData error:', e);
     }
@@ -581,13 +581,13 @@ export default function DashboardScreen() {
 
   const handleToggleMeetingInterest = (meetingId: string) => {
     let updated;
-    if (interestedMeetings.includes(meetingId)) {
-      updated = interestedMeetings.filter(id => id !== meetingId);
+    if (hiddenZoomMeetings.includes(meetingId)) {
+      updated = hiddenZoomMeetings.filter(id => id !== meetingId);
     } else {
-      updated = [...interestedMeetings, meetingId];
+      updated = [...hiddenZoomMeetings, meetingId];
     }
-    setInterestedMeetings(updated);
-    setPreference('interested_meetings', JSON.stringify(updated));
+    setHiddenZoomMeetings(updated);
+    setPreference('hidden_zoom_meetings', JSON.stringify(updated));
   };
 
   async function handleDownloadFile(file: any) {
@@ -842,7 +842,7 @@ export default function DashboardScreen() {
     // Find the closest future assignment
     const now = new Date();
     const nextAssignment = assignments.find(
-      (a) => a.deadline && new Date(a.deadline) > now && a.status !== 'Submitted' && !a.isHidden
+      (a) => a.deadline && new Date(a.deadline) > now && !a.isCompleted && !a.isHidden
     );
 
     let timeColor: string = theme.danger;
@@ -881,7 +881,7 @@ export default function DashboardScreen() {
       if (!isSearchMatch) return false;
 
       const isHidden = a.isHidden;
-      const isCompleted = a.status === 'Submitted';
+      const isCompleted = Boolean(a.isCompleted);
       const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
 
       if (isHidden && filterHidden) return true;
@@ -906,8 +906,8 @@ export default function DashboardScreen() {
 
     const visibleAssignments = assignments.filter((a) => !a.isHidden);
     const totalTasks = visibleAssignments.length;
-    const currentCompletedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
-    const pendingTasksCount = visibleAssignments.filter((a) => a.status !== 'Submitted').length;
+    const currentCompletedCount = visibleAssignments.filter((a) => a.isCompleted).length;
+    const pendingTasksCount = visibleAssignments.filter((a) => !a.isCompleted).length;
     const progressPercent = totalTasks > 0 ? (currentCompletedCount / totalTasks) * 100 : 0;
 
     return (
@@ -968,7 +968,7 @@ export default function DashboardScreen() {
             const isNextExpanded = !!expandedAssignments['next_' + nextAssignment.id];
             const nextColor = nextAssignment.course_color || theme.primary;
             const nextCourseName = nextAssignment.custom_course_name || nextAssignment.course_name;
-            const isNextDone = nextAssignment.status === 'Submitted';
+            const isNextDone = Boolean(nextAssignment.isCompleted);
             let nextAttachments: any[] = [];
             try {
               nextAttachments = typeof nextAssignment.attachments === 'string'
@@ -1352,7 +1352,7 @@ export default function DashboardScreen() {
               }
 
               const isExpanded = !!expandedAssignments[a.id];
-              const isDone = a.status === 'Submitted';
+              const isDone = Boolean(a.isCompleted);
               let attachments: any[] = [];
               try {
                 attachments = typeof a.attachments === 'string' ? JSON.parse(a.attachments) : a.attachments || [];
@@ -1642,12 +1642,15 @@ export default function DashboardScreen() {
 
           {(() => {
             const activeMeeting = meetings.find(m => {
-              if (!m.start_time || !m.meeting_url || !isZoomUrl(m.meeting_url)) return false;
+              if (!m.start_time || !m.meeting_url || (!isZoomJoinUrl(m.meeting_url, m.meeting_number) && !isZoomUrl(m.meeting_url))) return false;
+              const keyId = m.meeting_number || m.meeting_url;
+              if (hiddenZoomMeetings.includes(keyId)) return false;
               const startTime = new Date(m.start_time);
               if (isNaN(startTime.getTime())) return false;
               const now = new Date();
+              const activeStart = new Date(startTime.getTime() - 15 * 60 * 1000);
               const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-              return now >= startTime && now <= endTime;
+              return now >= activeStart && now <= endTime;
             });
             if (!activeMeeting) return null;
 
@@ -1672,7 +1675,7 @@ export default function DashboardScreen() {
 
           {(() => {
             const coursesWithMeetings = trackedCourses.map((c) => {
-              const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id && m.meeting_url && isZoomUrl(m.meeting_url));
+              const courseMeetings = meetings.filter((m) => m.course_moodle_id === c.moodle_id && m.meeting_url && (isZoomJoinUrl(m.meeting_url, m.meeting_number) || isZoomUrl(m.meeting_url)));
 
               // Deduplicate recurring meetings by meeting_number or meeting_url
               const now = new Date();
@@ -1725,7 +1728,7 @@ export default function DashboardScreen() {
 
             const isMarked = (m: any) => {
               const keyId = m.meeting_number || m.meeting_url;
-              return interestedMeetings.includes(keyId);
+              return !hiddenZoomMeetings.includes(keyId);
             };
 
             const getMeetingStatusText = (startTimeStr?: string) => {
@@ -1733,8 +1736,9 @@ export default function DashboardScreen() {
               const startTime = new Date(startTimeStr);
               if (isNaN(startTime.getTime())) return 'unknown';
               const now = new Date();
+              const activeStart = new Date(startTime.getTime() - 15 * 60 * 1000);
               const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-              if (now >= startTime && now <= endTime) {
+              if (now >= activeStart && now <= endTime) {
                 return 'active';
               } else if (now < startTime) {
                 return 'upcoming';
@@ -1873,7 +1877,7 @@ export default function DashboardScreen() {
                                 <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>{m.section_name || 'General'}</Text>
                                 {m.start_time ? (
                                   <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
-                                    📅 {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
+                                    {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                                   </Text>
                                 ) : null}
                               </View>

@@ -202,7 +202,7 @@ body.theme-coffee .badge-danger {
   border: 1px solid rgba(239, 68, 68, 0.35) !important;
 }
 
-body.theme-coffee .primary-btn,
+body.theme-coffee .primary-btn:not(.manage-courses-trigger-btn):not(.btn-go-to-course),
 body.theme-coffee .action-submit-btn {
   background: linear-gradient(135deg, #d4a373, #b88656) !important;
   color: #14100d !important;
@@ -211,15 +211,15 @@ body.theme-coffee .action-submit-btn {
   box-shadow: 0 4px 12px rgba(212, 163, 115, 0.25);
 }
 
-body.theme-coffee .secondary-btn,
-body.theme-coffee .secondaryBtn {
+body.theme-coffee .secondary-btn:not(.manage-courses-trigger-btn):not(.btn-go-to-course),
+body.theme-coffee .secondaryBtn:not(.manage-courses-trigger-btn):not(.btn-go-to-course) {
   background: rgba(196, 153, 108, 0.10) !important;
   color: var(--text-primary) !important;
   border: 1px solid var(--border) !important;
 }
 
-body.theme-coffee .secondary-btn:hover,
-body.theme-coffee .secondaryBtn:hover {
+body.theme-coffee .secondary-btn:not(.manage-courses-trigger-btn):not(.btn-go-to-course):hover,
+body.theme-coffee .secondaryBtn:not(.manage-courses-trigger-btn):not(.btn-go-to-course):hover {
   background: rgba(196, 153, 108, 0.20) !important;
 }
 

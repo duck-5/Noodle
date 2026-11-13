@@ -10,6 +10,9 @@ import {
   matchesActivityIdentifier,
   hasGracePeriod,
   isZoomUrl,
+  isZoomJoinUrl,
+  isZoomMeetingHidden,
+  collapseRecurringMeetings,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -29,6 +32,41 @@ import { syncNowOnBackground, syncGoogleTasksOnBackground, loginTauSsoOnBackgrou
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import logoImg from '../assets/logo.png';
 import './Popup.css';
+
+const VideoIcon = ({ size = 12, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    style={{ verticalAlign: 'middle', ...style }}
+  >
+    <polygon points="23 7 16 12 23 17 23 7" />
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+  </svg>
+);
+
+const FolderIcon = ({ size = 12, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    style={{ verticalAlign: 'middle', ...style }}
+  >
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
 
 const ClockIcon = ({ size = 11, style }: { size?: number; style?: React.CSSProperties }) => (
   <svg
@@ -207,11 +245,9 @@ export default function Popup() {
     });
 
   // Check for currently active Zoom sessions (within 15 min before start up to 2 hours after start)
-  const interestedList = settings?.interestedMeetings || [];
-  const activeMeetings = (syncResult?.meetings || []).filter((m: any) => {
-    if (!m.startTime || !isZoomUrl(m.meetingUrl)) return false;
-    const key = m.meetingNumber || m.meetingUrl;
-    if (interestedList.includes(`hidden_${key}`)) return false;
+  const activeMeetings = collapseRecurringMeetings(syncResult?.meetings || [], new Date(now)).filter((m: any) => {
+    if (!m.startTime || (!isZoomJoinUrl(m.meetingUrl, m.meetingNumber) && !isZoomUrl(m.meetingUrl))) return false;
+    if (isZoomMeetingHidden(m, settings?.hiddenZoomMeetings, settings?.interestedMeetings)) return false;
     const startMs = new Date(m.startTime).getTime();
     if (isNaN(startMs)) return false;
     const diffMinutes = (now - startMs) / (1000 * 60);
@@ -225,8 +261,29 @@ export default function Popup() {
           <img src={logoImg} alt="Noodle Logo" style={{ width: '34px', height: '34px', objectFit: 'contain' }} />
           <span>Noodle</span>
         </div>
-        <button className="sync-icon-btn" onClick={handleSync} disabled={loading} title={isHe ? 'סנכרן עכשיו' : 'Sync now'}>
-          {loading ? '⏳' : '🔄'}
+        <button
+          className="sync-icon-btn"
+          onClick={handleSync}
+          disabled={loading}
+          title={isHe ? 'סנכרן עכשיו' : 'Sync now'}
+          aria-label={isHe ? 'סנכרן עכשיו' : 'Sync now'}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={loading ? 'spinning-sync-icon' : ''}
+          >
+            <path d="M21 2v6h-6"></path>
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+            <path d="M3 22v-6h6"></path>
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+          </svg>
         </button>
       </header>
 
@@ -250,7 +307,7 @@ export default function Popup() {
               gap: '0.5rem',
             }}
           >
-            <span>📁 {isHe ? 'נדרשת הרשאה לתיקיית הסנכרון המקומית' : 'Local folder permission needed'}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FolderIcon size={13} /> {isHe ? 'נדרשת הרשאה לתיקיית הסנכרון המקומית' : 'Local folder permission needed'}</span>
             <span style={{ textDecoration: 'underline', flexShrink: 0 }}>
               {isHe ? 'פתח הגדרות' : 'Reconnect'}
             </span>
@@ -258,7 +315,7 @@ export default function Popup() {
         )}
         {signingInMoodle && (
           <div style={{ padding: '0.45rem 0.7rem', marginBottom: '0.6rem', borderRadius: '6px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center' }}>
-            ⏳ {isHe ? 'מתחבר למודל...' : 'Signing in to Moodle...'}
+            <span className="spinning-sync-icon" style={{ display: 'inline-flex', marginInlineEnd: '6px' }}><ClockIcon size={13} /></span>{isHe ? 'מתחבר למודל...' : 'Signing in to Moodle...'}
           </div>
         )}
         {activeMeetings.length > 0 && (
@@ -279,7 +336,8 @@ export default function Popup() {
                     rel="noreferrer"
                     className="popup-join-zoom-btn"
                   >
-                    📹 {isHe ? 'הצטרף' : 'Join'}
+                    <VideoIcon size={12} />
+                    <span>{isHe ? 'הצטרף' : 'Join'}</span>
                   </a>
                 </div>
               );
@@ -294,7 +352,7 @@ export default function Popup() {
 
         <div className="popup-list">
           {pendingAssigns.length === 0 ? (
-            <div className="popup-empty">{isHe ? 'אין מטלות לביצוע! 🎉' : 'No pending assignments! 🎉'}</div>
+            <div className="popup-empty">{isHe ? 'אין מטלות לביצוע' : 'No pending assignments'}</div>
           ) : (
             pendingAssigns.slice(0, 5).map((a: any) => {
               const color = settings?.coursesColorMap?.[a.courseId] || '#e07a5f';
@@ -385,7 +443,7 @@ export default function Popup() {
             <div className="popup-list">
               {unwatchedRecordings.length === 0 ? (
                 <div className="popup-empty" style={{ padding: '1rem 0' }}>
-                  {isHe ? 'אין הקלטות חדשות לצפייה! 🎉' : 'No unwatched recordings! 🎉'}
+                  {isHe ? 'אין הקלטות חדשות לצפייה' : 'No unwatched recordings'}
                 </div>
               ) : (
                 unwatchedRecordings.slice(0, 5).map((r: any) => {
@@ -394,11 +452,11 @@ export default function Popup() {
                   const isRecitation = r.type === 'Recitation';
                   const typeLabel = isRecitation
                     ? isHe
-                      ? '📐 תרגול'
-                      : '📐 Recitation'
+                      ? 'תרגול'
+                      : 'Recitation'
                     : isHe
-                      ? '🎬 הרצאה'
-                      : '🎬 Lecture';
+                      ? 'הרצאה'
+                      : 'Lecture';
 
                   return (
                     <div
@@ -422,7 +480,6 @@ export default function Popup() {
                           {courseName}
                         </span>
                         <span className="popup-assign-name">
-                          {isRecitation ? '📐 ' : '🎬 '}
                           {decodeHTMLEntities(r.title || '')}
                         </span>
                       </div>

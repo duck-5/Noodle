@@ -14,7 +14,8 @@ export interface ExtensionSettings {
   theme?: 'dark' | 'noodle' | 'coffee' | 'time';
   themeTimeDayStart?: number;
   themeTimeDayEnd?: number;
-  interestedMeetings?: string[]; // Array of meeting numbers the user is interested in
+  interestedMeetings?: string[]; // Legacy array of meeting numbers
+  hiddenZoomMeetings?: string[]; // Array of zoom meeting identifiers that the user explicitly hid
   showAllMeetings?: boolean;     // Toggle to show all meetings vs only interested ones
   hiddenAssignments?: Array<number | string>;  // Array of assignment ids or uids that are hidden
   completedAssignments?: Array<number | string>; // Array of assignment ids or uids that are marked as completed
@@ -22,9 +23,11 @@ export interface ExtensionSettings {
   scrapingEnabled?: boolean;
   syncWithoutDeadline?: boolean;
   panoptoEnabled?: boolean;
+  showPanoptoFolderOverride?: boolean;
   coursesPanoptoMap?: Record<number, string>;
   watchedRecordings?: string[];
   syncIntervalMinutes?: number;
+  syncArchive?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -41,6 +44,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   themeTimeDayStart: 7,
   themeTimeDayEnd: 17,
   interestedMeetings: [],
+  hiddenZoomMeetings: [],
   showAllMeetings: false,
   hiddenAssignments: [],
   completedAssignments: [],
@@ -48,9 +52,11 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   scrapingEnabled: false,
   syncWithoutDeadline: false,
   panoptoEnabled: false,
+  showPanoptoFolderOverride: false,
   coursesPanoptoMap: {},
   watchedRecordings: [],
-  syncIntervalMinutes: 5,
+  syncIntervalMinutes: 60,
+  syncArchive: false,
 };
 
 export function getEffectiveTheme(settings: ExtensionSettings | null): 'dark' | 'noodle' | 'coffee' {

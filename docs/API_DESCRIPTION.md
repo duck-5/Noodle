@@ -276,13 +276,25 @@ To optimize sync performance and ensure compliance with pure API standards, all 
 ## 7. Zoom Meeting Extraction & Utilities (`@tautracker/moodle-client`)
 
 ### Multi-Modal Detection & Scraping
-* **`scrapeZoomMeetingsWithToken(token: string, instanceId: number, baseUrl?: string): Promise<LtiZoomMeeting[]>`**:
-  * Calls Moodle WS `mod_lti_get_tool_launch_data` using `wstoken` to get the Zoom LTI launch signature, fetches the Zoom session JSON endpoints (`/api/v1/lti/rich/meeting/upComing` and `/previous`), deduplicates `previous` rooms against `upComing`, normalizes start timestamps via `normalizeZoomStartTime`, and returns structured meeting objects with topic, direct `joinUrl`, `meetingNumber`, `password`, and ISO `startTime`.
+* **`scrapeZoomMeetingsWithToken(token: string, instanceId: number, baseUrl?: string, cmid?: number, jar?: CookieJar | null, modname?: string): Promise<LtiZoomMeeting[]>`**:
+  * Multi-layer extraction strategy supporting both Moodle native Zoom activities (`mod_zoom`) and external tools (`mod_lti`):
+    1. Fetches `/mod/${modname}/view.php?id=${cmid || instanceId}` using active Moodle session cookies.
+    2. Parses server-rendered HTML tables with `extractZoomMeetingsFromHtml` to capture spaced meeting IDs (e.g. `840 9026 3132`), Hebrew topics, and action buttons.
+    3. Detects and follows embedded `<iframe id="contentframe" src="...">` to inspect launch endpoints or embedded meeting tables.
+    4. Falls back to `mod_lti_get_tool_launch_data` or direct `/mod/lti/launch.php?id=${cmid}&triggerview=0` to extract OAuth LTI form signatures and post to Zoom LTI Rich API (`/api/v1/lti/rich/meeting/upComing` and `/previous`).
+* **`extractZoomMeetingsFromHtml(html: string, referenceDate?: Date): LtiZoomMeeting[]`**:
+  * Scrapes structured HTML tables (`<tr>...<td>...</td>...</tr>`) containing Zoom meeting rows, extracting spaced meeting IDs, Hebrew/English topics, start times, and direct join buttons.
+* **`parseZoomHumanDateTime(rawStr: string, referenceDate?: Date): Date | undefined`**:
+  * Parses human-readable relative and recurring datetime strings (`Tomorrow (Recurring) 7:05 AM`, `Today 8:05 AM`, `Thu, Nov 12 (Recurring) 4:00 AM`) into valid UTC JavaScript `Date` instances.
 * **`normalizeZoomStartTime(m: Record<string, any>, isUpcoming: boolean, referenceDate?: Date): string | undefined`**:
   * Sanitizes Zoom LTI Pro meeting timestamps. Strips creation timestamps returned by Zoom for "No Fixed Time" recurring rooms (`type === 3`), instant meetings (`type === 1`), PMI rooms (`type === 4`), and past/stale timestamps not aligned to 5-minute `:00` boundaries.
 * **`collapseRecurringMeetings(meetings: ZoomMeeting[], referenceDate?: Date): ZoomMeeting[]`**:
   * Collapses recurring weekly sessions of the same room/meetingNumber into a single entry representing the currently active session (`startTime <= now <= startTime + 2h`), the nearest upcoming meeting, or the latest past meeting if none are active/upcoming.
   * Sorts active/upcoming sessions chronologically, then non-timestamped, then past sessions.
+* **`getZoomMeetingKey(meeting: ZoomMeetingLike): string`**:
+  * Returns the canonical composite key (`<courseName>:<meetingNumber><title>`) used to uniquely identify Zoom meetings across dashboard and popup filters.
+* **`isZoomMeetingHidden(meeting: ZoomMeetingLike, hiddenZoomMeetings?: string[] | null, legacyInterestedMeetings?: string[] | null): boolean`**:
+  * Evaluates Zoom meeting visibility under a denylist architecture. Default state is **visible** (`false`). Returns `true` only if explicitly present in `hiddenZoomMeetings` (by composite key, raw/clean meeting number, or URL) or prefixed with `hidden_` in legacy `interestedMeetings`.
 * **`isZoomUrl(url: string): boolean`**: Tests if a URL points to Zoom (`tau-ac-il.zoom.us`, `zoom.us`, `zoomgov.com`, etc.).
 * **`isZoomOrMeetingName(name: string): boolean`**: Tests for English and Hebrew Zoom/meeting keywords (`זום`, `מפגש מקוון`, `שיעור מקוון`, `היוועדות חזותית`, `כיתה וירטואלית`, etc.).
 * **`parseZoomUrl(rawUrl: string): { meetingUrl: string; meetingNumber?: string; password?: string }`**: Normalizes join links to `https://tau-ac-il.zoom.us/j/{id}?pwd={pwd}`.

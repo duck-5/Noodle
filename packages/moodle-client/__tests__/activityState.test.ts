@@ -4,6 +4,8 @@ import {
   isActivityCompleted,
   isMoodleActivitySubmitted,
   matchesActivityIdentifier,
+  getZoomMeetingKey,
+  isZoomMeetingHidden,
 } from '../src/activityState';
 
 describe('activityState helpers', () => {
@@ -126,5 +128,44 @@ describe('activityState helpers', () => {
       expect(isActivityCompleted(task, completedList, uncompletedList)).toBe(false);
     });
   });
-});
 
+  describe('Zoom meeting visibility & keying', () => {
+    const meeting = {
+      courseName: 'גלים אור ואופטיקה',
+      meetingNumber: '840 9026 3132',
+      title: 'תרגול שלישי רביעי 17:00-18:00',
+      meetingUrl: 'https://tau-ac-il.zoom.us/j/84090263132',
+    };
+
+    it('getZoomMeetingKey produces canonical composite key matching dashboard conventions', () => {
+      expect(getZoomMeetingKey(meeting)).toBe('גלים אור ואופטיקה:840 9026 3132תרגול שלישי רביעי 17:00-18:00');
+    });
+
+    it('isZoomMeetingHidden defaults to VISIBLE (false) when hidden lists are empty or undefined', () => {
+      expect(isZoomMeetingHidden(meeting, [], [])).toBe(false);
+      expect(isZoomMeetingHidden(meeting, null, null)).toBe(false);
+      expect(isZoomMeetingHidden(meeting)).toBe(false);
+    });
+
+    it('isZoomMeetingHidden returns true when meeting key, raw number, clean number, or url is in hiddenZoomMeetings', () => {
+      const key = getZoomMeetingKey(meeting);
+      expect(isZoomMeetingHidden(meeting, [key])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, ['840 9026 3132'])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, ['84090263132'])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, ['https://tau-ac-il.zoom.us/j/84090263132'])).toBe(true);
+
+      // Other meeting hidden does not hide this meeting
+      expect(isZoomMeetingHidden(meeting, ['some_other_key'])).toBe(false);
+    });
+
+    it('isZoomMeetingHidden supports legacy hidden_ prefix in interestedMeetings', () => {
+      expect(isZoomMeetingHidden(meeting, [], ['hidden_84090263132'])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, [], ['hidden_840 9026 3132'])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, [], ['hidden_https://tau-ac-il.zoom.us/j/84090263132'])).toBe(true);
+      expect(isZoomMeetingHidden(meeting, [], ['hidden_' + getZoomMeetingKey(meeting)])).toBe(true);
+
+      // Non-prefixed legacy items do not hide (they were allowlist entries, not denylist)
+      expect(isZoomMeetingHidden(meeting, [], ['other_allowed_meeting'])).toBe(false);
+    });
+  });
+});

@@ -12,7 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { parseTauCourseMetadata, MoodleClient, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl } from '@tautracker/moodle-client';
+import { parseTauCourseMetadata, MoodleClient, isActivityCompleted, isActivityHidden, isMoodleActivitySubmitted, matchesActivityIdentifier, isZoomUrl, isZoomJoinUrl } from '@tautracker/moodle-client';
 import { downloadMoodleFile, downloadMoodleFolderZip } from '../services/fileDownloadService';
 import { getMoodleToken } from '../services/backgroundSync';
 import { getDb, getPreference, setPreference, getCourseSections, getCourseFolders, getCourseLinks } from '../services/database';
@@ -171,7 +171,7 @@ export default function CoursesScreen({
 
   const [courses, setCourses] = useState<any[]>([]);
   const [configExpanded, setConfigExpanded] = useState<boolean>(false);
-  const [interestedMeetings, setInterestedMeetings] = useState<string[]>([]);
+  const [hiddenZoomMeetings, setHiddenZoomMeetings] = useState<string[]>([]);
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
 
   // Detail screen state
@@ -207,14 +207,14 @@ export default function CoursesScreen({
 
   function loadInterestedMeetings() {
     try {
-      const interestedStr = getPreference('interested_meetings') || '';
-      let interestedList: string[] = [];
-      if (interestedStr) {
+      const hiddenStr = getPreference('hidden_zoom_meetings') || '';
+      let hiddenList: string[] = [];
+      if (hiddenStr) {
         try {
-          interestedList = JSON.parse(interestedStr);
+          hiddenList = JSON.parse(hiddenStr);
         } catch (e) {}
       }
-      setInterestedMeetings(interestedList);
+      setHiddenZoomMeetings(hiddenList);
     } catch (e) {
       console.error(e);
     }
@@ -222,13 +222,13 @@ export default function CoursesScreen({
 
   const handleToggleMeetingInterest = (meetingId: string) => {
     let updated: string[];
-    if (interestedMeetings.includes(meetingId)) {
-      updated = interestedMeetings.filter((id) => id !== meetingId);
+    if (hiddenZoomMeetings.includes(meetingId)) {
+      updated = hiddenZoomMeetings.filter((id) => id !== meetingId);
     } else {
-      updated = [...interestedMeetings, meetingId];
+      updated = [...hiddenZoomMeetings, meetingId];
     }
-    setInterestedMeetings(updated);
-    setPreference('interested_meetings', JSON.stringify(updated));
+    setHiddenZoomMeetings(updated);
+    setPreference('hidden_zoom_meetings', JSON.stringify(updated));
   };
 
   function loadCourses() {
@@ -436,7 +436,7 @@ export default function CoursesScreen({
       );
 
       mod.isCompleted = isCompleted;
-      mod.status = isCompleted ? 'Submitted' : (rawMoodleSubmitted ? 'Assigned' : a.status);
+      mod.status = a.status;
       return mod;
     });
     const courseFiles = db.getAllSync<any>(
@@ -525,7 +525,7 @@ export default function CoursesScreen({
     // Calculate course assignment stats (exclude hidden tasks from active tracking & gaps count)
     const visibleAssignments = courseAssignments.filter((a) => !a.isHidden);
     const totalAssignments = visibleAssignments.length;
-    const submittedCount = visibleAssignments.filter((a) => a.status === 'Submitted').length;
+    const submittedCount = visibleAssignments.filter((a) => a.isCompleted).length;
     const pendingCount = Math.max(0, totalAssignments - submittedCount);
     const gradedAssignments = courseAssignments.filter(
       (a) => a.grade !== null && a.grade !== undefined && a.grade_max
@@ -543,7 +543,7 @@ export default function CoursesScreen({
     // Zoom deduplication
     const now = new Date();
     const groups = new Map<string, typeof courseMeetings>();
-    courseMeetings.filter((m: any) => m.meeting_url && isZoomUrl(m.meeting_url)).forEach((m) => {
+    courseMeetings.filter((m: any) => m.meeting_url && (isZoomJoinUrl(m.meeting_url, m.meeting_number) || isZoomUrl(m.meeting_url))).forEach((m) => {
       const key = m.meeting_number || m.meeting_url;
       if (!key) return;
       if (!groups.has(key)) groups.set(key, []);
@@ -573,7 +573,7 @@ export default function CoursesScreen({
 
     const isMarked = (m: any) => {
       const keyId = m.meeting_number || m.meeting_url;
-      return interestedMeetings.includes(keyId);
+      return !hiddenZoomMeetings.includes(keyId);
     };
     const markedMeetings = dedupedMeetings.filter(isMarked);
 
@@ -581,8 +581,9 @@ export default function CoursesScreen({
       if (!startTimeStr) return 'unknown';
       const startTime = new Date(startTimeStr);
       if (isNaN(startTime.getTime())) return 'unknown';
+      const activeStart = new Date(startTime.getTime() - 15 * 60 * 1000);
       const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-      if (now >= startTime && now <= endTime) {
+      if (now >= activeStart && now <= endTime) {
         return 'active';
       } else if (now < startTime) {
         return 'upcoming';
@@ -947,7 +948,7 @@ export default function CoursesScreen({
                               </Text>
                               {m.start_time ? (
                                 <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
-                                  📅 {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
+                                  {new Date(m.start_time).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                                 </Text>
                               ) : null}
                             </View>
@@ -1361,7 +1362,7 @@ export default function CoursesScreen({
                                     }}
                                   >
                                     <Text style={{ color: badgeFg, fontSize: 11, fontWeight: 'bold' }}>
-                                      {a.status === 'Submitted' ? t('submitted_badge') : deadlineText}
+                                      {a.status === 'Submitted' ? t('submitted_badge') : a.isCompleted ? (isRtl ? 'סומן כהושלם' : 'Marked as done') : deadlineText}
                                     </Text>
                                   </View>
                                 </View>
@@ -1387,7 +1388,7 @@ export default function CoursesScreen({
                                       marginBottom: 8,
                                     }}
                                   >
-                                    📅 {t('due_date')}:{' '}
+                                    {t('due_date')}:{' '}
                                     {new Date(a.deadline).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                                   </Text>
                                 )}
@@ -1821,7 +1822,7 @@ export default function CoursesScreen({
                 </View>
               ) : (
                 courseAssignments.map((a) => {
-                  const isSubmitted = a.status === 'Submitted';
+                  const isSubmitted = Boolean(a.isCompleted);
                   const { deadlineText, badgeClass } = getDueTextAndClass(
                     a.deadline,
                     lang,
@@ -1964,7 +1965,7 @@ export default function CoursesScreen({
                       >
                         {a.deadline ? (
                           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                            📅 {t('due_date')}:{' '}
+                            {t('due_date')}:{' '}
                             {new Date(a.deadline).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US')}
                           </Text>
                         ) : (
@@ -2071,7 +2072,7 @@ export default function CoursesScreen({
                           }}
                         >
                            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                             {a.status === 'Submitted' ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do') : (isRtl ? 'סמן כבוצע' : 'Mark Done')}
+                             {a.isCompleted ? (isRtl ? 'סמן לביצוע' : 'Mark as To Do') : (isRtl ? 'סמן כבוצע' : 'Mark Done')}
                            </Text>
                         </Pressable>
                         <Pressable
@@ -2528,7 +2529,7 @@ export default function CoursesScreen({
                         textAlign: isRtl ? 'right' : 'left',
                       }}
                     >
-                      📅 {group.label}
+                      {group.label}
                     </Text>
 
                     {/* Courses in this semester */}

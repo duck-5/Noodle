@@ -79,13 +79,34 @@ Presented immediately after successful authentication or when manually triggered
 
 ## 3. Dashboard Tab (v4 Home View)
 
-* **Header Strip**: Minimal SVG sync icon with smooth spinning animation during synchronization (`.spinning-sync-icon`). Theme controls are centralized in Settings for a clutter-free header.
+* **Header Strip & Subtle Sync Progress Window (`.sync-progress-window`)**:
+  - Minimalist SVG sync icon with smooth spinning animation during synchronization (`.spinning-sync-icon`) across both Dashboard and Extension Toolbar Popup (`Popup.tsx`), strictly adhering to zero-emoji design guidelines.
+  - Clicking the "Sync now" button (`.header-sync-btn`) triggers synchronization and toggles a subtle, non-overlapping floating progress tray (`.sync-progress-window`) docked in the bottom corner (`bottom: 1.5rem; inset-inline-end: 1.5rem; width: 248px;`).
+  - Because it is docked in the bottom viewport corner with a compact width of 248px, it never overlaps the header, search bars, assignment filters, or dashboard cards.
+  - Conforms natively to active theme styling:
+    * **Noodle Theme**: Warm cream translucent glass (`rgba(253, 246, 240, 0.96)`), warm terracotta borders (`rgba(194, 112, 68, 0.22)`), and dark text.
+    * **Coffee Theme**: Deep espresso translucent glass (`rgba(29, 23, 19, 0.96)`), amber caramel borders (`rgba(217, 160, 102, 0.24)`), and caramel accents.
+    * **Dark Theme**: Dark slate translucent glass (`rgba(24, 25, 36, 0.95)`), subtle white borders (`rgba(255, 255, 255, 0.1)`), and indigo accents.
+  - The window presents discrete, step-by-step progress tracking:
+    1. **User Information & Authentication** (`sync_task_init`)
+    2. **Enrolled Courses & Academic Routing** (`sync_task_mapping`)
+    3. **Assignments & Quizzes Global Manifest** (`sync_task_global_fetch`)
+    4. **Course Contents, Files & Media** (`sync_task_courses`) with live scanned counter (`X / Y courses scanned`)
+    5. **Activity Submissions & Attempt Statuses** (`sync_task_activities`) with live verified counter (`X / Y activities checked`)
+    6. **Panopto Recordings** (`sync_task_panopto`, conditionally rendered when Panopto integration is enabled) with live recording counter (`X / Y courses scanned`)
+    7. **Finalizing, Late-Box Heuristics & Cache** (`sync_task_finalizing`)
+  - Each task displays a state badge: pending neutral dot (`.sync-task-dot`), active spinning indicator (`.sync-task-badge.active`), completed green checkmark (`.sync-task-badge.done`), or error badge (`.sync-task-badge.failed`).
+  - Window footer displays live stage message and overall completion percentage.
+  - Automatically auto-closes 2.5 seconds after successful completion.
+  - **Anti-Jitter Stage Boundaries**: Sync results are emitted atomically at complete stage boundaries (Level 1: Course Contents Complete, Level 2: Activities & Submissions Complete, Level 3: Panopto Complete) rather than per-item. This eliminates page jitter, layout shifts, jumping assignment cards, and progress bar thrashing.
+  - **Silent Background Synchronization**: Automatic periodic syncs (triggered via alarms or extension startup) execute in the background with only the spinning sync icon animating on the header button (`.spinning-sync-icon`), keeping the `.sync-progress-window` closed unless explicitly opened by a manual user click (`handleManualSync`).
+  - Header subtitle cleanly displays the "Last synced: ..." timestamp without a countdown timer. Theme controls are centralized in Settings for a clutter-free header.
 
 ### A. Hero Action Strip
 The top of the dashboard features a focused action strip designed for rapid orientation and zero-anxiety productivity:
 1. **Upcoming To-Do Queue ("תור משימות קרובות")**:
    - Primary card listing imminent tasks with smooth internal scrollbar.
-   - **Closest Task Metallic Horizontal Glow Wave**: The single nearest pending deadline features a calm, continuous 5-second metallic horizontal glow wave (`.closest-metallic-wave`) gliding smoothly across the card without visual distraction or intrusive tags. Tasks remain collapsed by default for maximum density and clutter-free scanning.
+   - **Closest Task Flowing Edge Glow**: The single nearest pending deadline features an animated, smoothly flowing border light beam (`.closest-task-glow` / `@keyframes flow-glow-beam`) with a purple-to-orange gradient traveling continuously around the card perimeter using a masked `conic-gradient` and dual drop-shadow glow. Tasks remain collapsed by default for maximum density and clutter-free scanning.
    - **Exclusion & Sorting Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
    - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue with stable deterministic ordering.
    - **Late Submission Grace Period Clock Indicator**: If an assignment has an extended cutoff date (`hasGracePeriod(assignment) === true`), a delicate vector SVG clock icon (`.grace-period-clock-icon`) is rendered alongside the due date. Hovering reveals a localized tooltip: `"מטלות באיחור יתקבלו עד {date}"` / `"Late assignment accepted til {date}"`. (No emojis used).
@@ -103,13 +124,13 @@ The top of the dashboard features a focused action strip designed for rapid orie
 ### C. My Tracked Courses ("הקורסים שלי")
 * **Deterministic Course Order**: Predictable, clean list of tracked courses.
 * **View Options Toggle**: Segmented switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") allows toggling between a vertical rows list and a responsive card grid (`.courses-cards-grid`), persisted in local storage.
-* **Manage Courses Modal Trigger**: "⚙️ ניהול קורסים" button opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
+* **Manage Courses Modal Trigger**: A signature purple-orange gradient action button (`.manage-courses-trigger-btn`) featuring a clean `<BookOpenIcon size={13} />` opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
 * **Dual View Modes (List & Cards)**:
    - **List Mode**: Single horizontal flex row with course info, breakdown statistics, progress bar, next task, and 1-click navigation buttons ("Assignments", "Go to Course").
    - **Cards Mode**: Clean 3-row layout partitioned into maximum 3 cards per row (`repeat(3, minmax(0, 1fr))` on desktop, adapting to 2 and 1 on narrower viewports):
-     - **1st Row**: Course display title + real title/code with color indicator on the start side, paired with the primary "Go to Course" button (`.course-card-goto-btn`) on the end side.
+     - **1st Row**: Course display title + real title/code with color indicator on the start side (clicking anywhere on the card smoothly navigates to the course).
      - **2nd Row**: Next task preview with due date (`.course-card-next-task`) and secondary "Assignments" button (`.course-card-assignments-btn`).
-     - **3rd Row**: Gaps summary with "פערים:" label (`.course-gaps-label`), gap pills for assignments, lectures, and recitations (`.course-card-gaps`), and an integrated overall course progress bar with percentage (`.course-card-progress-box`).
+     - **3rd Row**: Stat breakdown pills for assignments, lectures, and recitations (`.course-card-gaps` displaying numeric counts without "gaps" text labels), and an integrated overall course progress bar with percentage (`.course-card-progress-box`).
 * **Direct Navigation**: Course cards and list rows are clean, focused overview cards with no clutter or collapse/expand accordion. Clicking anywhere on a card smoothly navigates directly to the comprehensive course detail page.
 
 ---
@@ -165,13 +186,15 @@ A dedicated full-page assignment feed providing comprehensive management of all 
 *   **Course-Level Assignment Actions**:
     - **Hide All Assignments Button**: "הסתר את כל המטלות" / "בטל הסתרת הכל" button to bulk-hide or unhide all assignments in this course.
 *   **Course Resources Tabs**:
-    1.  **Assignments**: List of assignments specific to this course with compact `.btn-xs` action buttons, unframed subject metadata text, "סומן כהושלם" status tags for manual completions, and expanded drawers displaying topic/subject files (`קבצי הנושא`), attachments, and submitted files.
+    1.  **Assignments**: List of assignments specific to this course with compact `.btn-xs` action buttons, unframed subject metadata text, dynamic threshold due date coloring (`.assign-deadline.due-green`, `.due-yellow`, `.due-red`, `.due-muted`) reflecting user urgency rules, "סומן כהושלם" status tags for manual completions, and expanded drawers displaying topic/subject files (`קבצי הנושא`), attachments, and submitted files.
     2.  **Lectures & Zoom**: Live session schedule containing:
         - Active live meeting highlights.
-        - "הצג את כל המפגשים" toggle button to show and unhide hidden Zoom meetings.
+        - Section header equipped with vector `<VideoIcon size={16} />` (zero unicode emojis).
+        - Modern action buttons (`.secondary-btn.btn-xs`) with `<EyeIcon size={12} />` and `<EyeOffIcon size={12} />` vector icons for bulk "Show all" / "Hide all" visibility management, matching the application's secondary button design language.
+        - Strict joinable meeting validation (`isZoomJoinUrl`) ensuring that only actual joinable sessions with valid meeting IDs or vanity rooms are displayed, rejecting generic portal or LTI links.
         - Zoom link button, meeting ID & passcode text fields with quick copy buttons.
     3.  **Files & Panopto Recordings (Course Card + Course Sections)**: Folder structure organizing PDF/PPT course documents and Panopto video recordings by Moodle topic section:
-        - **Course-Level Panopto Recordings Card (`.panopto-section-card`)**: Always rendered right below the Zoom card in `CourseDetailView` when `panoptoEnabled: true`. Displays the watched progress counter (`🎬 הקלטות פנופטו (X/Y נצפו)`), a direct `"פתח את Panopto ↗"` / `"Open Panopto ↗"` button, an inline Panopto Folder URL / UUID override input with `"שמור וסנכרן"` / `"Save & Sync"`, any Panopto sync diagnostic warnings, and the full list of recordings for the course.
+        - **Course-Level Panopto Recordings Card (`.panopto-section-card`)**: Always rendered right below the Zoom card in `CourseDetailView` when `panoptoEnabled: true`. Displays the watched progress counter (`🎬 הקלטות פנופטו (X/Y נצפו)`), a direct `"פתח את Panopto ↗"` / `"Open Panopto ↗"` button, an inline Panopto Folder URL / UUID override input with `"שמור וסנכרן"` / `"Save & Sync"` (guarded by the `showPanoptoFolderOverride` toggle, default off), any Panopto sync diagnostic warnings, and the full list of recordings for the course.
         - **Course Files**: Each file item is equipped with a green squircle "פתח ↗" direct open button (`border-radius: 8px`) and a squircle arrow-only SVG "הורדה" button (`<DownloadIcon size={12} />`) with the HTML `download` attribute.
         - **Panopto Recordings (Inside Course Sections)**: When Panopto tracking is enabled (`panoptoEnabled: true`), matched lecture and recitation recordings are also rendered inside each topic section (with unmatched recordings grouped under a `'הקלטות פנופטו'` / `'Panopto Recordings'` section). Each recording item displays:
           - **Watched / Unwatched Toggle (`watchedRecordings`)**: Interactive checkmark button (`נצפה ✓` when watched, `סמן כנצפה` when unwatched) that dims watched recordings (`opacity: 0.68`) and persists state in `ExtensionSettings.watchedRecordings`.
@@ -236,8 +259,8 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
 *   **Google Tasks Sync**:
     - Toggle switch to enable/disable.
     - **Connection Status Indicator**:
-        - Green pill badge (`● Connected to Google Tasks` / `מחובר ל-Google Tasks ●`) when authenticated with a valid token.
-        - Red warning pill badge (`⚠️ Not connected — Authentication required` / `לא מחובר — נדרש אימות ⚠️`) when Google Tasks is enabled but unauthenticated or token refresh failed.
+        - Green pill badge (`Connected to Google Tasks` / `מחובר ל-Google Tasks`) when authenticated with a valid token.
+        - Red warning pill badge (`Not connected — Authentication required` / `לא מחובר — נדרש אימות`) when Google Tasks is enabled but unauthenticated or token refresh failed.
     - **Unauthenticated Alert Banner**:
         - When `googleTasksEnabled === true` and unauthenticated or authentication failed, displays a prominent alert card on both the Dashboard and the Settings tab with title "Google Tasks sync is enabled but not connected" / "סנכרון Google Tasks מופעל אך החשבון אינו מחובר", explanatory text, and a 1-click "Connect Now ↗" / "התחבר עכשיו ↗" button.
     - **OAuth & Silent Re-Authentication**:
@@ -252,15 +275,15 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
         - Description: "Sync assignments without deadline to Google Tasks (Default: Off. When off, undated tasks will be pruned from Google Tasks)." / "סנכרון מטלות ללא תאריך יעד ל-Google Tasks (ברירת מחדל: כבוי. במצב כבוי, מטלות ללא מועד יוסרו מ-Google Tasks)."
     - **Hidden & Completed Task Deletion**: Tasks set as hidden or marked as done are automatically deleted from Google Tasks and never synced as active tasks. Toggling hidden or completed status triggers an immediate silent background sync if Google Tasks integration is enabled.
     - **Advanced Google OAuth Settings (Collapsible)**:
-        - Collapsible section toggled via `⚙️ הגדרות מתקדמות ל-Google Tasks` / `⚙️ Advanced Google OAuth Settings` with a rotating chevron.
-        - **Authorized Redirect URI Display**: Shows the active runtime redirect URI (`http://127.0.0.1/mozoauth2/<subdomain>` in Firefox per RFC 8252, or `https://<id>.chromiumapp.org/` in Chrome) in a read-only monospace input with a 1-click **Copy** (`📋 העתק` / `Copy`) button.
+        - Collapsible section toggled via `הגדרות מתקדמות ל-Google Tasks` / `Advanced Google OAuth Settings` with a rotating `<ChevronDownIcon />`.
+        - **Authorized Redirect URI Display**: Shows the active runtime redirect URI (`http://127.0.0.1/mozoauth2/<subdomain>` in Firefox per RFC 8252, or `https://<id>.chromiumapp.org/` in Chrome) in a read-only monospace input with a 1-click **Copy** (`העתק` / `Copy`) button.
         - **Help Guidance**: Clear instructional text explaining how to resolve `redirect_uri_mismatch (Error 400)` by registering the redirect URI in Google Cloud Console.
         - **Custom Client ID Input**: Optional input allowing self-hosters or custom GCP project owners to override the default Google OAuth 2.0 Client ID (`googleClientId`).
         - **Manual Access Token Fallback**: Secure password input field allowing direct paste of a Google OAuth access token with a **Save & Sync** button for environments where browser OAuth dialogs cannot be opened.
 *   **Automatic Sync Interval (`syncIntervalMinutes`)**:
-    - Select dropdown allowing the user to choose the periodic background sync duration: 1 minute, 5 minutes (default), 10 minutes, 15 minutes, 30 minutes, 60 minutes, or 120 minutes.
+    - Select dropdown allowing the user to choose the periodic background sync duration: 1 minute, 5 minutes, 10 minutes, 15 minutes, 30 minutes, 60 minutes (default: 1 hour), or 120 minutes.
     - Connected directly to the Moodle Storage API (`NOODLE_SYNC_DATA` private calendar storage) so the preference persists and propagates across all devices.
-    - Dynamically reschedules the browser background `periodicSync` alarm and updates the live countdown timer (`SyncCountdown`) in the dashboard header.
+    - Dynamically reschedules the browser background `periodicSync` alarm.
 
 ### D. Notification Configurations
 *   **Push Alerts**: Toggle switch to enable/disable deadline reminders.
@@ -285,11 +308,20 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
     - Default state: **OFF** (`scrapingEnabled: false`).
     - Bilingual Description: "Scrape Moodle web pages for archived assignments, Zoom links, and files unavailable via the standard API. Default: Off (may slow down sync)." / "סריקת עמודי Moodle לאיתור מטלות בארכיון, קישורי Zoom וקבצים שאינם זמינים ב-API הרגיל. ברירת מחדל: כבוי (עשוי להאט את הסנכרון)."
     - When disabled, synchronization strictly utilizes pure Moodle REST and AJAX endpoints for high-speed performance and minimal resource consumption.
+*   **Sync Archive Courses (Past Years)** (`#sync-archive-toggle`):
+    - Switch toggle to enable or disable scanning previous academic year archive portals (`moodle.tau.ac.il/${currentYear - 1}/`).
+    - Default state: **OFF** (`syncArchive: false`).
+    - Bilingual Description: "Scan and fetch courses and assignments from previous academic year archive portals (e.g. for deferred exams). Default: Off (speeds up sync)." / "סרוק ומשוך קורסים ומטלות מאתרי הארכיון של שנים קודמות במודל (למשל עבור מועדי ב' מאוחרים). ברירת מחדל: כבוי (חוסך זמן סנכרון)."
+    - When disabled (default), synchronization only queries root current-year Moodle endpoints, preventing 401/404 archive errors and saving extensive network overhead.
 *   **Panopto Lecture & Recitation Tracking** (`#panopto-enabled-toggle`):
     - Switch toggle to enable or disable automatic discovery and tracking of Panopto lecture and recitation recordings per course.
     - Default state: **OFF** (`panoptoEnabled: false`).
     - Bilingual Description: "Automatically discover and display course lecture and recitation recordings from Panopto inside each course page, with watched status tracking and manual folder override." / "איתור והצגה אוטומטית של הקלטות הרצאות ותרגולים מפנופטו בתוך עמודי הקורסים, כולל סימון הרצאות שנצפו ואפשרות להזנת קישור תיקייה ידני בניהול קורסים."
-    - When enabled, the **Manage Courses** modal (`CoursesConfigTable`) also displays a **Panopto Folder (Optional)** column allowing users to paste a custom Panopto Folder URL or Folder UUID override (`coursesPanoptoMap[courseId]`) for any course.
+    - When enabled, the **Manage Courses** modal (`CoursesConfigTable`) and `CourseDetailView` display Panopto folder inputs only if `showPanoptoFolderOverride` is enabled.
+    - **Manual Folder Override Input Toggle (`showPanoptoFolderOverride`)**:
+        - Opt-in switch toggle (default: **OFF**) labeled "Show manual Panopto folder override (URL / UUID)" / "הצגת הגדרה ידנית של תיקיית Panopto".
+        - Description: "Allows manually entering a custom Panopto folder link or UUID for courses where automatic discovery does not find recordings." / "מאפשר הזנה ידנית של קישור או מזהה UUID לתיקיית Panopto עבור קורסים שהסריקה האוטומטית לא מזהה."
+        - When disabled (default), raw UUID and folder URL override inputs in `CourseDetailView` and the Panopto column in `CoursesConfigTable` remain hidden to provide a clean, non-intimidating experience for non-technical users. When enabled, power users can supply custom folder overrides.
 
 ### G. Local Filesystem Sync Configuration (`LocalFsSettingsSection`)
 *   **Master Switch (`#local-fs-enabled-toggle`)**: Opt-in toggle (default: **OFF**) with live status pill (`Off` / `Connected` / `Syncing files...` / `Paused` / `Cooldown` / `Permission needed` / `Re-login needed`).
@@ -311,30 +343,30 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
 
 ## 7. About Tab
 
-*   **Brand Hero**: Responsive logo mark, Noodle branding badge, and version label (e.g., `Version 4.0.0 (v4 Cockpit)`).
-*   **Developer Credits**: Special recognition for developers Yuval Mantin and Michael Kushnir.
-*   **Actionable Quick-Link Grid**: High-contrast, interactive link cards:
-    - **GitHub Repository**: Direct link to source code (`https://github.com/duck-5/Noodle`).
-    - **Issues & Suggestions**: Direct link to issue tracker (`https://github.com/duck-5/Noodle/issues`).
-    - **Support Email**: Mailto shortcut to `noodle.d3v@gmail.com` with prefilled subject.
-    - **Chrome Web Store Review**: Direct link to write a review on the store (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`).
-    - **Relaunch Tour Button**: Re-triggers the 7-step interactive onboarding walkthrough.
+*   **Brand Hero**: Responsive logo mark, gradient Noodle branding heading, and active version pill badge with live status dot (`v{manifestVersion}`).
+*   **Developer Credits**: Special recognition for developers Yuval Mantin and Michael Kushnir housed in a styled accent pill (`.about-credits-author-chip`) with user avatar vector icon.
+*   **Actionable Quick-Link Grid**: High-contrast, interactive link cards with dedicated accent color styling and themed icon containers (`.about-link-icon-box`):
+    - **Official Website**: Cyan/Sky accented card (`https://noodle.mantin.dev/`).
+    - **Chrome Web Store Review**: Amber/Gold star accented card (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`).
+    - **GitHub Repository**: Purple accented card (`https://github.com/duck-5/Noodle`).
+    - **Issues & Suggestions**: Coral/Rose accented card (`https://github.com/duck-5/Noodle/issues`).
+    - **Support Email**: Emerald/Green accented mailto shortcut to `noodle.d3v@gmail.com`.
+    - **Relaunch Tour Button**: Indigo accented button that re-triggers the interactive onboarding walkthrough.
 *   **Expandable Information Accordions** (`<details className="about-accordion">`):
+    Each accordion features a category-specific SVG icon badge in the header, section title, numeric count pill badge (`7`, `5`, `4`), and smooth animated vector chevron. Content is rendered as modern, colorful item cards (`.about-item-card`) with theme-adaptive color accents instead of dense plain text:
     1. **Core Features & Cockpit (`✨ פיצ'רים עיקריים וניהול אקדמי` / `Core Features`)**:
-       - Next Task Spotlight with live countdown and topic materials.
-       - Full-page Assignments Feed with instant search and 4 filter chips ("לביצוע", "עברו", "הושלמו", "מוסתרים").
-       - Multi-modal Zoom discovery and live active meeting indicators (`● פעיל כעת`).
-       - Two-way Google Tasks synchronization.
-       - Laboratory course detection and bulk assignment hiding.
+       - 7 distinct feature cards with dedicated vector SVG icons and color accents:
+         * *2-Way Google Tasks & Calendar Sync*: Sky Blue (`accent-sky`) with calendar-check icon.
+         * *Lab Course Experiment Detection*: Purple (`accent-purple`) with chemistry flask icon.
+         * *Next Task Spotlight & Live Countdown*: Amber (`accent-amber`) with stopwatch icon.
+         * *Zoom Hub*: Emerald (`accent-emerald`) with video camera icon.
+         * *Panopto Recordings Tracking (Beta)*: Rose (`accent-rose`) with media play icon.
+         * *Fast File Browser & Attachments*: Sky Blue (`accent-sky`) with folder-download icon.
+         * *Custom Themes*: Orange (`accent-orange`) with palette icon.
     2. **Pro Tips & Shortcuts (`💡 טיפים לשימוש וקיצורי דרך` / `Pro Tips & Shortcuts`)**:
-       - Quick theme cycling (`☕ / 🍜 / 🌙`) in top header.
-       - Course-specific assignment filtering from Dashboard course rows.
-       - Keyboard navigation during onboarding walkthrough (`[←] [→] [Esc]`).
-       - One-click "Hide All" assignments toggle in Course Detail.
+       - 5 tip cards with distinct color-coded icons covering lab course filtering, deadline-less task sync, custom course colors/nicknames, cross-device configuration backup/restore, and keyboard navigation.
     3. **Privacy & Security Architecture (`🛡️ פרטיות ואבטחה` / `Privacy & Architecture`)**:
-       - 100% decentralized, client-only architecture.
-       - Zero third-party telemetry, tracking, or proxy servers.
-       - Direct client-to-TAU HTTPS requests with encrypted-at-rest token caching.
+       - 4 security principle cards with trust-focused emerald, teal, sky, and purple icons covering 100% decentralized execution, zero telemetry, secure browser-local storage, and open-source transparency.
 
 ---
 
@@ -484,12 +516,19 @@ Renders a blue accent noticeboard card at the top of the course detail page for 
 - Title: `לוח מודעות והודעות` / `Announcements & News`.
 - Direct action buttons linking straight to individual Moodle forum views.
 
-### E. Gradebook Fidelity, Bonus Badges & Feedback
-1. **Authoritative Course Total**:
-   - When Moodle's gradebook contains an official course total item (`itemtype === 'course'`), Course Detail and Grades Tab prioritize it over synthetic assignment averages.
-   - Displayed with golden trophy badge: `🏆 ציון כולל: 92.50` / `Course Total: 92.50`.
-2. **Bonus Badges**: Assignments and grade items flagged as bonus (`grademax <= 5` or `בונוס` in title) carry a yellow `✨ בונוס` / `✨ Bonus` badge.
-3. **Instructor Feedback**: Assignment and grade rows display feedback notes in an indented green callout: `💬 משוב: כל הכבוד, עבודה מצוינת!`.
+### E. Gradebook Fidelity, Bonus Badges, Feedback & Calculation Policy
+1. **Consistent Course Average Display**:
+   - Both Course Detail and Grades Tab display the consistent calculated course average (`Avg: 92.50` / `ממוצע: 92.50`) derived from published graded activities, matching the Estimated GPA formula and preventing mid-semester distortions where partial point accumulations (e.g. 16.67 or 33.33) are misinterpreted as final course totals.
+2. **Bonus Badges**: Assignments and grade items flagged as bonus (`grademax <= 5` or `בונוס` in title) carry a minimalist amber `בונוס` / `Bonus` badge without unicode emojis.
+3. **Instructor Feedback**: Assignment and grade rows display feedback notes in an indented green callout without unicode emojis.
+4. **Grades Calculation Engine & Policy Notice**:
+   - Pedagogical filtering strictly includes only activities with an official published grade in Moodle:
+     * Excludes course-level exclusions and administrative / safety tutorials (course code prefixes `5800...`, `5900...` or `isAdministrativeCourse`).
+     * Excludes hidden assignments (`isHidden` or present in `settings.hiddenAssignments`).
+     * Excludes unsubmitted assignments locally marked as done (`isCompleted && !isMoodleSubmitted`).
+     * Excludes future pending unsubmitted assignments, overdue unsubmitted assignments without a grade, and submitted assignments awaiting instructor grading (unsubmitted/overdue tasks are NOT defaulted to 0; only official grades assigned in Moodle are included).
+   - Only assignments with an official published grade are displayed in the grades list.
+   - A short, subtle explanatory notice banner (`.grades-calc-notice`) sits at the top of the Grades tab informing students of this policy across both Extension and Mobile.
 
 ### F. Local-First File Opening & PC vs Web Visual Indicators
 * **Visual Status Differentiation (`FileOpenAction`)**: Every file row across Dashboard, Assignments Tab, and Course Detail renders an immediately distinguishable action button:

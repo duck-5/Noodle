@@ -20,6 +20,46 @@ export function decodeHTMLEntities(text: string): string {
     .replace(/&amp;/g, '&');
 }
 
+export function isZoomJoinUrl(url: string, meetingNumber?: string): boolean {
+  if (!url) return false;
+  if (!isZoomUrl(url)) return false;
+
+  const rawClean = decodeHTMLEntities(url).trim();
+
+  const cleanNum = meetingNumber ? String(meetingNumber).replace(/[\s-]/g, '') : '';
+  if (cleanNum && (/^\d{5,16}$/.test(cleanNum) || /^[a-zA-Z0-9._-]{3,64}$/.test(cleanNum))) {
+    try {
+      const parsed = new URL(rawClean);
+      const path = parsed.pathname.toLowerCase();
+      if (/^\/(?:signin|signup|download|test|support|privacy|terms|resources|docs|api|lti)\b/i.test(path)) {
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  try {
+    const parsed = new URL(rawClean);
+    const path = parsed.pathname.toLowerCase();
+
+    if (/^\/(?:signin|signup|download|test|support|privacy|terms|resources|docs|api|lti)\b/i.test(path)) {
+      return false;
+    }
+
+    if (/\/(?:j|w|s)\/\d+/i.test(path)) return true;
+    if (/\/my\/[a-zA-Z0-9._-]+/i.test(path)) return true;
+
+    const confno = parsed.searchParams.get('confno');
+    if (confno && /^\d+$/.test(confno.replace(/[\s-]/g, ''))) return true;
+
+    return false;
+  } catch {
+    return /https?:\/\/[a-zA-Z0-9.\-]*zoom\.(?:us|com|gov)\/(?:(?:j|w|s)\/\d+|my\/[a-zA-Z0-9._-]+)/i.test(rawClean);
+  }
+}
+
 export function isZoomUrl(url: string): boolean {
   if (!url) return false;
   try {
@@ -56,9 +96,14 @@ export function parseZoomUrl(rawUrl: string): { meetingUrl: string; meetingNumbe
   let meetingNumber: string | undefined;
   let password: string | undefined;
 
-  const matchNum = cleanUrl.match(/\/(?:j|w|s)\/(\d+)/i) || cleanUrl.match(/\/my\/([a-zA-Z0-9._-]+)/i);
+  // Handle URL-encoded spaces (%20) or literal spaces in meeting ID
+  const decodedForRegex = cleanUrl.replace(/%20/g, ' ');
+  const matchNum =
+    decodedForRegex.match(/\/(?:j|w|s)\/([0-9\s-]+)/i) ||
+    decodedForRegex.match(/\/my\/([a-zA-Z0-9._-]+)/i) ||
+    decodedForRegex.match(/[?&]confno=([0-9\s-]+)/i);
   if (matchNum) {
-    meetingNumber = matchNum[1];
+    meetingNumber = matchNum[1].replace(/[\s-]/g, '');
   }
 
   try {
@@ -69,7 +114,11 @@ export function parseZoomUrl(rawUrl: string): { meetingUrl: string; meetingNumbe
     }
 
     const host = urlObj.hostname.toLowerCase();
-    if (meetingNumber && /^\d+$/.test(meetingNumber) && (host === 'zoom.us' || host === 'www.zoom.us' || host === 'tau.zoom.us' || host === 'tau-ac-il.zoom.us')) {
+    if (
+      meetingNumber &&
+      /^\d+$/.test(meetingNumber) &&
+      (host === 'zoom.us' || host === 'www.zoom.us' || host === 'tau.zoom.us' || host === 'tau-ac-il.zoom.us' || host.endsWith('.zoom.us'))
+    ) {
       cleanUrl = `https://tau-ac-il.zoom.us/j/${meetingNumber}${password ? `?pwd=${password}` : ''}`;
     }
   } catch {}
@@ -94,6 +143,7 @@ export function extractZoomLinksFromHtml(html: string): { url: string; title?: s
     const rawHref = decodeHTMLEntities(match[1]).trim();
     if (isZoomUrl(rawHref)) {
       const parsed = parseZoomUrl(rawHref);
+      if (!isZoomJoinUrl(parsed.meetingUrl, parsed.meetingNumber)) continue;
       const key = parsed.meetingNumber || parsed.meetingUrl;
       if (!seen.has(key)) {
         seen.add(key);
@@ -109,6 +159,7 @@ export function extractZoomLinksFromHtml(html: string): { url: string; title?: s
   while ((match = rawUrlRegex.exec(html)) !== null) {
     const rawMatch = decodeHTMLEntities(match[0]).trim();
     const parsed = parseZoomUrl(rawMatch);
+    if (!isZoomJoinUrl(parsed.meetingUrl, parsed.meetingNumber)) continue;
     const key = parsed.meetingNumber || parsed.meetingUrl;
     if (!seen.has(key)) {
       seen.add(key);
@@ -335,6 +386,7 @@ function parseLtiForm(html: string): { actionUrl: string; params: URLSearchParam
 }
 
 export function parseAppConf(html: string): any {
+  if (!html) return { ajaxHeaders: [] };
   // 1. Try matching JSON block for window.__appConf__
   const confMatch = html.match(/window\.__appConf__\s*=\s*(\{[\s\S]*?\});/);
   if (confMatch) {
@@ -348,28 +400,26 @@ export function parseAppConf(html: string): any {
 
   // 2. Extract ajaxHeaders block
   const headersBlockMatch = html.match(/ajaxHeaders\s*:\s*\[([\s\S]*?)\]/);
-  if (!headersBlockMatch) {
-    throw new Error('ajaxHeaders not found in Zoom LTI HTML');
-  }
-
-  const blockContent = headersBlockMatch[1];
-  const ajaxHeaders: { key: string; value: string }[] = [];
-  
-  const objRegex = /\{([^{}]+)\}/g;
-  let objMatch;
-  while ((objMatch = objRegex.exec(blockContent)) !== null) {
-    const item = objMatch[1];
-    const keyMatch = item.match(/["']?key["']?\s*:\s*["']([^"']+)["']/);
-    const valMatch = item.match(/["']?value["']?\s*:\s*["']([^"']+)["']/);
-    if (keyMatch && valMatch) {
-      ajaxHeaders.push({
-        key: keyMatch[1],
-        value: valMatch[1]
-      });
+  if (headersBlockMatch) {
+    const blockContent = headersBlockMatch[1];
+    const ajaxHeaders: { key: string; value: string }[] = [];
+    const objRegex = /\{([^{}]+)\}/g;
+    let objMatch;
+    while ((objMatch = objRegex.exec(blockContent)) !== null) {
+      const item = objMatch[1];
+      const keyMatch = item.match(/["']?key["']?\s*:\s*["']([^"']+)["']/);
+      const valMatch = item.match(/["']?value["']?\s*:\s*["']([^"']+)["']/);
+      if (keyMatch && valMatch) {
+        ajaxHeaders.push({
+          key: keyMatch[1],
+          value: valMatch[1]
+        });
+      }
     }
+    return { ajaxHeaders };
   }
 
-  return { ajaxHeaders };
+  return { ajaxHeaders: [] };
 }
 
 export async function scrapeZoomMeetings(
@@ -473,6 +523,153 @@ export function parseDateTimeInZone(dateStr: string): Date {
   return new Date(cleanStr.endsWith('Z') ? cleanStr : cleanStr + 'Z');
 }
 
+export function parseZoomHumanDateTime(rawStr: string, referenceDate: Date = new Date()): Date | undefined {
+  if (!rawStr) return undefined;
+  const clean = rawStr
+    .replace(/\(recurring\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Try standard parsing first if it looks like an ISO / standard format
+  if (/^\d{4}-\d{2}-\d{2}/.test(clean)) {
+    const std = parseDateTimeInZone(clean);
+    if (!isNaN(std.getTime()) && std.getTime() > 0) return std;
+  }
+
+  // Handle "Tomorrow 7:05 AM", "Tomorrow at 7:05 AM"
+  const tomorrowMatch = clean.match(/^tomorrow\s*(?:at\s*)?(\d{1,2}):(\d{2})(?:\s*(am|pm))?/i);
+  if (tomorrowMatch) {
+    const d = new Date(referenceDate);
+    d.setDate(d.getDate() + 1);
+    let hours = parseInt(tomorrowMatch[1], 10);
+    const minutes = parseInt(tomorrowMatch[2], 10);
+    const meridiem = tomorrowMatch[3]?.toLowerCase();
+    if (meridiem === 'pm' && hours < 12) hours += 12;
+    if (meridiem === 'am' && hours === 12) hours = 0;
+    d.setHours(hours, minutes, 0, 0);
+    return d;
+  }
+
+  // Handle "Today 8:05 AM"
+  const todayMatch = clean.match(/^today\s*(?:at\s*)?(\d{1,2}):(\d{2})(?:\s*(am|pm))?/i);
+  if (todayMatch) {
+    const d = new Date(referenceDate);
+    let hours = parseInt(todayMatch[1], 10);
+    const minutes = parseInt(todayMatch[2], 10);
+    const meridiem = todayMatch[3]?.toLowerCase();
+    if (meridiem === 'pm' && hours < 12) hours += 12;
+    if (meridiem === 'am' && hours === 12) hours = 0;
+    d.setHours(hours, minutes, 0, 0);
+    return d;
+  }
+
+  // Handle "Thu, Nov 12 4:00 AM" or "Mon, Nov 16 7:00 AM" or "Nov 12 4:00 AM"
+  const dateMatch = clean.match(/(?:[a-zA-Z]{3},\s*)?([a-zA-Z]{3})\s+(\d{1,2})(?:,?\s*(\d{4}))?\s*(?:at\s*)?(\d{1,2}):(\d{2})(?:\s*(am|pm))?/i);
+  if (dateMatch) {
+    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const monthIdx = monthNames.indexOf(dateMatch[1].toLowerCase());
+    if (monthIdx !== -1) {
+      const day = parseInt(dateMatch[2], 10);
+      const year = dateMatch[3] ? parseInt(dateMatch[3], 10) : referenceDate.getFullYear();
+      let hours = parseInt(dateMatch[4], 10);
+      const minutes = parseInt(dateMatch[5], 10);
+      const meridiem = dateMatch[6]?.toLowerCase();
+      if (meridiem === 'pm' && hours < 12) hours += 12;
+      if (meridiem === 'am' && hours === 12) hours = 0;
+      return new Date(year, monthIdx, day, hours, minutes, 0, 0);
+    }
+  }
+
+  const std = parseDateTimeInZone(clean);
+  if (!isNaN(std.getTime()) && std.getTime() > 0) return std;
+
+  return undefined;
+}
+
+/**
+ * Extracts Zoom meetings from server-rendered HTML tables or embedded snippets
+ * (e.g. Moodle mod_zoom / mod_lti view page or Zoom LTI HTML).
+ */
+export function extractZoomMeetingsFromHtml(html: string, referenceDate: Date = new Date()): LtiZoomMeeting[] {
+  if (!html) return [];
+  const results: LtiZoomMeeting[] = [];
+  const seenIds = new Set<string>();
+
+  const rowMatches = html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+  for (const rm of rowMatches) {
+    const row = rm[1];
+    const idMatch = row.match(/\b(\d{3}[\s-]*\d{3,4}[\s-]*\d{4})\b/) || row.match(/\b(\d{9,11})\b/);
+    if (!idMatch) continue;
+
+    const rawId = idMatch[1].replace(/[\s-]/g, '');
+    if (!/^\d{9,11}$/.test(rawId)) continue;
+    if (seenIds.has(rawId)) continue;
+
+    const cells = Array.from(row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)).map((m) =>
+      decodeHTMLEntities(
+        m[1]
+          .replace(/<br\s*\/?>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+    );
+
+    let topic = '';
+    let startTimeRaw = '';
+
+    for (const cell of cells) {
+      if (!cell) continue;
+      if (cell.includes(idMatch[1]) || cell.replace(/[\s-]/g, '').includes(rawId)) continue;
+      if (/^(?:join|invitation|delete|edit|start|details|הצטרף|הזמנה|הצטרפות)$/i.test(cell)) continue;
+
+      if (
+        /\b(?:recurring|tomorrow|yesterday|today|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(cell) ||
+        /\b\d{1,2}:\d{2}\s*(?:am|pm)\b/i.test(cell)
+      ) {
+        if (!startTimeRaw) startTimeRaw = cell;
+        continue;
+      }
+
+      if (!topic) {
+        topic = cell;
+      }
+    }
+
+    let joinUrl = '';
+    const anchorMatches = row.matchAll(/href=["']([^"']+)["']/gi);
+    for (const am of anchorMatches) {
+      const href = decodeHTMLEntities(am[1]);
+      if (isZoomJoinUrl(href, rawId)) {
+        joinUrl = href;
+        break;
+      }
+    }
+    const pwdMatch = row.match(/[?&]pwd=([a-zA-Z0-9._-]+)/i);
+    const password = pwdMatch ? pwdMatch[1] : undefined;
+
+    if (!joinUrl) {
+      joinUrl = `https://tau-ac-il.zoom.us/j/${rawId}${password ? `?pwd=${password}` : ''}`;
+    }
+
+    seenIds.add(rawId);
+    const parsedDate = startTimeRaw ? parseZoomHumanDateTime(startTimeRaw, referenceDate) : undefined;
+    const startTimeIso = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : undefined;
+
+    results.push({
+      topic: topic || `Meeting ${rawId}`,
+      meetingId: rawId,
+      meetingNumber: rawId,
+      startTime: startTimeIso,
+      joinUrl,
+      password,
+      isUpcoming: true,
+    });
+  }
+
+  return results;
+}
+
 /**
  * Normalizes and validates a Zoom meeting startTime from the LTI Rich API.
  *
@@ -523,7 +720,7 @@ export function normalizeZoomStartTime(
       const num = Number(trimmed);
       date = new Date(num < 1e11 ? num * 1000 : num);
     } else {
-      date = parseDateTimeInZone(trimmed);
+      date = parseZoomHumanDateTime(trimmed, referenceDate) || parseDateTimeInZone(trimmed);
     }
   } else if (raw instanceof Date) {
     date = raw;
@@ -556,179 +753,299 @@ export function normalizeZoomStartTime(
 export async function scrapeZoomMeetingsWithToken(
   token: string,
   instanceId: number,
-  baseUrl = 'https://moodle.tau.ac.il'
+  baseUrl = 'https://moodle.tau.ac.il',
+  cmid?: number,
+  jar?: CookieJar | null,
+  modname = 'lti'
 ): Promise<LtiZoomMeeting[]> {
-  const wsUrl = `${baseUrl}/webservice/rest/server.php`;
-  const urlParams = new URLSearchParams({
-    wstoken: token,
-    wsfunction: 'mod_lti_get_tool_launch_data',
-    moodlewsrestformat: 'json',
-    toolid: String(instanceId),
-  });
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  const meetings: LtiZoomMeeting[] = [];
+  const seenMeetingKeys = new Set<string>();
 
-  const res = await fetch(`${wsUrl}?${urlParams.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Failed to call Moodle WS API mod_lti_get_tool_launch_data: ${res.statusText}`);
-  }
-
-  const launchData = await res.json();
-  if (launchData.exception) {
-    throw new Error(`Moodle API Exception: ${launchData.message}`);
-  }
-
-  const endpoint = launchData.endpoint;
-  const ltiParams = new URLSearchParams();
-  if (Array.isArray(launchData.parameters)) {
-    launchData.parameters.forEach((p: any) => {
-      ltiParams.append(p.name, p.value);
-    });
-  }
-
-  const zoomJar = new CookieJar();
-  const zoomRes = await mfetch(zoomJar, endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    },
-    body: ltiParams.toString()
-  });
-
-  if (!zoomRes.ok) {
-    throw new Error(`Zoom LTI launch POST failed with status: ${zoomRes.status}`);
-  }
-
-  const zoomHtml = await zoomRes.text();
-  const appConf = parseAppConf(zoomHtml);
-
-  // Configure request headers for AJAX calls to Zoom API
-  const ajaxHeaders: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*'
+  const addParsedMeetings = (list: LtiZoomMeeting[]) => {
+    for (const m of list) {
+      if (!m || !m.joinUrl || !isZoomJoinUrl(m.joinUrl, m.meetingNumber)) continue;
+      const key = m.meetingNumber || m.joinUrl;
+      const uniqueKey = m.startTime ? `${key}_${m.startTime}` : key;
+      if (!seenMeetingKeys.has(uniqueKey)) {
+        seenMeetingKeys.add(uniqueKey);
+        meetings.push(m);
+      }
+    }
   };
-  if (appConf.ajaxHeaders) {
-    for (const h of appConf.ajaxHeaders) {
-      ajaxHeaders[h.key] = h.value;
+
+  const zoomJar = jar || new CookieJar();
+  const targetCmid = cmid || instanceId;
+
+  let endpoint: string | undefined;
+  const ltiParams = new URLSearchParams();
+
+  // 1. Fetch Moodle view page: /mod/${modname}/view.php?id=${targetCmid}
+  if (targetCmid) {
+    try {
+      const viewUrl = `${cleanBaseUrl}/mod/${modname}/view.php?id=${targetCmid}`;
+      const viewRes = await mfetch(zoomJar, viewUrl);
+      if (viewRes.ok) {
+        const viewHtml = await viewRes.text();
+
+        // 1a. Table rows directly on view.php (e.g. mod_zoom)
+        const tableMeetings = extractZoomMeetingsFromHtml(viewHtml);
+        if (tableMeetings.length > 0) {
+          addParsedMeetings(tableMeetings);
+        }
+
+        // 1b. Embedded Zoom URLs
+        const embeddedLinks = extractZoomLinksFromHtml(viewHtml);
+        for (const el of embeddedLinks) {
+          const parsed = parseZoomUrl(el.url);
+          if (isZoomJoinUrl(parsed.meetingUrl, parsed.meetingNumber)) {
+            addParsedMeetings([
+              {
+                topic: el.title || (parsed.meetingNumber ? `Meeting ${parsed.meetingNumber}` : 'Zoom Meeting'),
+                meetingId: parsed.meetingNumber || '',
+                meetingNumber: parsed.meetingNumber || '',
+                joinUrl: parsed.meetingUrl,
+                password: parsed.password,
+                isUpcoming: true,
+              },
+            ]);
+          }
+        }
+
+        // 1c. Check if viewHtml has an LTI launch form
+        try {
+          const parsedForm = parseLtiForm(viewHtml);
+          if (parsedForm && parsedForm.actionUrl) {
+            endpoint = parsedForm.actionUrl;
+            parsedForm.params.forEach((v, k) => ltiParams.append(k, v));
+          }
+        } catch (_) {}
+
+        // 1d. Check if viewHtml embeds an iframe (contentframe -> launch.php or applications.zoom.us)
+        const iframeMatch = viewHtml.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+        if (iframeMatch) {
+          try {
+            const rawSrc = decodeHTMLEntities(iframeMatch[1]);
+            const iframeUrl = rawSrc.startsWith('http') ? rawSrc : new URL(rawSrc, viewUrl).href;
+            const iframeRes = await mfetch(zoomJar, iframeUrl);
+            if (iframeRes.ok) {
+              const iframeHtml = await iframeRes.text();
+
+              const iframeTableMeetings = extractZoomMeetingsFromHtml(iframeHtml);
+              if (iframeTableMeetings.length > 0) {
+                addParsedMeetings(iframeTableMeetings);
+              }
+
+              const iframeLinks = extractZoomLinksFromHtml(iframeHtml);
+              for (const el of iframeLinks) {
+                const parsed = parseZoomUrl(el.url);
+                if (isZoomJoinUrl(parsed.meetingUrl, parsed.meetingNumber)) {
+                  addParsedMeetings([
+                    {
+                      topic: el.title || (parsed.meetingNumber ? `Meeting ${parsed.meetingNumber}` : 'Zoom Meeting'),
+                      meetingId: parsed.meetingNumber || '',
+                      meetingNumber: parsed.meetingNumber || '',
+                      joinUrl: parsed.meetingUrl,
+                      password: parsed.password,
+                      isUpcoming: true,
+                    },
+                  ]);
+                }
+              }
+
+              if (!endpoint) {
+                try {
+                  const parsedIframeForm = parseLtiForm(iframeHtml);
+                  if (parsedIframeForm && parsedIframeForm.actionUrl) {
+                    endpoint = parsedIframeForm.actionUrl;
+                    parsedIframeForm.params.forEach((v, k) => ltiParams.append(k, v));
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (viewErr) {
+      console.warn(`[ZoomScraper] Failed to fetch Moodle view page for cmid ${targetCmid}:`, viewErr);
     }
   }
 
-  const meetings: LtiZoomMeeting[] = [];
-  const seenUpcomingRooms = new Set<string>();
+  // 2. If endpoint not found and modname === 'lti', try WS API mod_lti_get_tool_launch_data
+  if (!endpoint && modname === 'lti') {
+    const wsUrl = `${cleanBaseUrl}/webservice/rest/server.php`;
+    const candidateToolIds = [cmid, instanceId].filter((id): id is number => typeof id === 'number' && !isNaN(id) && id > 0);
+    const uniqueCandidateIds = Array.from(new Set(candidateToolIds));
 
-  const parseAndAddMeetings = (list: any[], isUpcoming: boolean) => {
-    if (!Array.isArray(list)) return;
-
-    for (const m of list) {
-      const directJoinUrl = m.joinUrl || m.join_url || m.url || '';
-      const matchNum = directJoinUrl.match(/\/(?:j|w|s)\/(\d+)/i) || directJoinUrl.match(/\/my\/([a-zA-Z0-9._-]+)/i);
-      let meetingNumber = matchNum ? matchNum[1] : '';
-      if (!meetingNumber && (m.meetingNumber || m.meeting_number || m.meetingId || m.id || m.pmi)) {
-        meetingNumber = String(m.meetingNumber || m.meeting_number || m.meetingId || m.id || m.pmi);
-      }
-      
-      let password = '';
-      if (m.password || m.passcode || m.pwd) {
-        password = String(m.password || m.passcode || m.pwd);
-      }
+    for (const tid of uniqueCandidateIds) {
       try {
-        if (!password && directJoinUrl) {
-          const urlObj = new URL(directJoinUrl);
-          password = urlObj.searchParams.get('pwd') || '';
+        const urlParams = new URLSearchParams({
+          wstoken: token,
+          wsfunction: 'mod_lti_get_tool_launch_data',
+          moodlewsrestformat: 'json',
+          toolid: String(tid),
+        });
+
+        const res = await fetch(`${wsUrl}?${urlParams.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.exception && data.endpoint) {
+            endpoint = data.endpoint;
+            if (Array.isArray(data.parameters)) {
+              data.parameters.forEach((p: any) => {
+                if (p && p.name) ltiParams.append(p.name, p.value ?? '');
+              });
+            }
+            break;
+          }
         }
       } catch (_) {}
+    }
+  }
 
-      let directUrl = directJoinUrl;
-      if (meetingNumber && /^\d+$/.test(meetingNumber)) {
-        directUrl = `https://tau-ac-il.zoom.us/j/${meetingNumber}${password ? `?pwd=${password}` : ''}`;
-      } else if (!directUrl && meetingNumber) {
-        directUrl = `https://tau-ac-il.zoom.us/my/${meetingNumber}${password ? `?pwd=${password}` : ''}`;
+  // 3. Fallback to /mod/lti/launch.php?id={cmid}&triggerview=0 if still no endpoint
+  if (!endpoint && modname === 'lti' && targetCmid) {
+    try {
+      const launchUrl = `${cleanBaseUrl}/mod/lti/launch.php?id=${targetCmid}&triggerview=0`;
+      const launchRes = await mfetch(zoomJar, launchUrl);
+      if (launchRes.ok) {
+        const launchHtml = await launchRes.text();
+        const launchTableMeetings = extractZoomMeetingsFromHtml(launchHtml);
+        if (launchTableMeetings.length > 0) {
+          addParsedMeetings(launchTableMeetings);
+        }
+        try {
+          const parsedForm = parseLtiForm(launchHtml);
+          if (parsedForm && parsedForm.actionUrl) {
+            endpoint = parsedForm.actionUrl;
+            parsedForm.params.forEach((val, key) => ltiParams.append(key, val));
+          }
+        } catch (_) {}
       }
+    } catch (_) {}
+  }
 
-      // Strictly ensure the URL is a genuine Zoom URL
-      if (!directUrl || !isZoomUrl(directUrl)) {
-        continue;
-      }
-
-      const roomKey = meetingNumber || directUrl;
-      if (isUpcoming && roomKey) {
-        seenUpcomingRooms.add(roomKey);
-      } else if (!isUpcoming && roomKey && seenUpcomingRooms.has(roomKey)) {
-        // Room already exists in upComing list; skip redundant historical entry
-        continue;
-      }
-
-      const normalizedStartTime = normalizeZoomStartTime(m, isUpcoming);
-      console.log(
-        `[ZoomScraper] Parsed meeting "${m.topic || m.title}": raw="${m.startTime || m.start_time}", tz="${m.timezone || m.timeZone}", normalized="${normalizedStartTime}"`
-      );
-
-      meetings.push({
-        topic: m.topic || m.title || '',
-        meetingId: m.meetingId ? String(m.meetingId) : '',
-        meetingNumber,
-        startTime: normalizedStartTime,
-        joinUrl: directUrl,
-        password: password || undefined,
-        isUpcoming
+  // 4. If endpoint was found, POST to Zoom LTI endpoint and fetch LTI API
+  if (endpoint) {
+    let zoomHtml = '';
+    try {
+      const zoomRes = await mfetch(zoomJar, endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: ltiParams.toString(),
       });
-    }
-  };
-
-  // 5. Fetch upcoming meetings
-  const upcomingUrl = 'https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0';
-  try {
-    const upcomingRes = await mfetch(zoomJar, upcomingUrl, {
-      method: 'GET',
-      headers: ajaxHeaders
-    });
-    if (upcomingRes.ok) {
-      const upcomingData = await upcomingRes.json();
-      if (upcomingData.result && upcomingData.result.list) {
-        parseAndAddMeetings(upcomingData.result.list, true);
+      if (zoomRes.ok) {
+        zoomHtml = await zoomRes.text();
       }
-    } else {
-      console.warn(`[ZoomScraper] Upcoming meetings fetch failed with status ${upcomingRes.status}`);
+    } catch (postErr: any) {
+      console.warn('[ZoomScraper] POST to Zoom LTI endpoint failed:', postErr);
     }
-  } catch (err: any) {
-    console.warn(`[ZoomScraper] Upcoming meetings fetch error:`, err);
-  }
 
-  // 6. Fetch previous / recurring meetings (graceful fallback for recurring rooms without future slots)
-  try {
-    const previousUrl = 'https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0';
-    const previousRes = await mfetch(zoomJar, previousUrl, {
-      method: 'GET',
-      headers: ajaxHeaders
-    });
-    if (previousRes.ok) {
-      const previousData = await previousRes.json();
-      if (previousData.result && previousData.result.list) {
-        parseAndAddMeetings(previousData.result.list, false);
-      }
-    }
-  } catch {
-    // Non-critical: ignore 403 or network errors on /previous/
-  }
-
-  // 7. Extract any Zoom links directly from the LTI launch HTML (e.g. static links or personal rooms)
-  if (zoomHtml) {
-    const embeddedLinks = extractZoomLinksFromHtml(zoomHtml);
-    for (const el of embeddedLinks) {
-      const parsed = parseZoomUrl(el.url);
-      if (isZoomUrl(parsed.meetingUrl)) {
-        const roomKey = parsed.meetingNumber || parsed.meetingUrl;
-        if (roomKey && !seenUpcomingRooms.has(roomKey)) {
-          seenUpcomingRooms.add(roomKey);
-          meetings.push({
-            topic: el.title || 'Zoom Meeting',
-            meetingId: parsed.meetingNumber || '',
-            meetingNumber: parsed.meetingNumber || "",
-            joinUrl: parsed.meetingUrl,
-            password: parsed.password,
-            isUpcoming: false,
-          });
+    if (zoomHtml) {
+      // 4a. JSON blocks inside scripts
+      const jsonMatches = zoomHtml.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+      for (const sm of jsonMatches) {
+        const scriptContent = sm[1];
+        const listMatches = scriptContent.match(/\[\s*\{[\s\S]*?"(?:topic|meetingNumber|meetingId|joinUrl)"[\s\S]*?\}\s*\]/g);
+        if (listMatches) {
+          for (const lm of listMatches) {
+            try {
+              const parsed = JSON.parse(lm);
+              if (Array.isArray(parsed)) {
+                for (const item of parsed) {
+                  const num = String(item.meetingNumber || item.meetingId || item.id || '').replace(/[\s-]/g, '');
+                  const url = item.joinUrl || item.join_url || (num ? `https://tau-ac-il.zoom.us/j/${num}` : '');
+                  if (url && isZoomJoinUrl(url, num)) {
+                    addParsedMeetings([
+                      {
+                        topic: item.topic || item.title || (num ? `Meeting ${num}` : 'Zoom Meeting'),
+                        meetingId: num,
+                        meetingNumber: num,
+                        startTime: normalizeZoomStartTime(item, true),
+                        joinUrl: url,
+                        password: item.password,
+                        isUpcoming: true,
+                      },
+                    ]);
+                  }
+                }
+              }
+            } catch (_) {}
+          }
         }
       }
+
+      // 4b. Table rows from Zoom HTML
+      const zoomTableMeetings = extractZoomMeetingsFromHtml(zoomHtml);
+      if (zoomTableMeetings.length > 0) {
+        addParsedMeetings(zoomTableMeetings);
+      }
+
+      // 4c. Embedded Zoom links
+      const embeddedLinks = extractZoomLinksFromHtml(zoomHtml);
+      for (const el of embeddedLinks) {
+        const parsed = parseZoomUrl(el.url);
+        if (isZoomJoinUrl(parsed.meetingUrl, parsed.meetingNumber)) {
+          addParsedMeetings([
+            {
+              topic: el.title || (parsed.meetingNumber ? `Meeting ${parsed.meetingNumber}` : 'Zoom Meeting'),
+              meetingId: parsed.meetingNumber || '',
+              meetingNumber: parsed.meetingNumber || '',
+              joinUrl: parsed.meetingUrl,
+              password: parsed.password,
+              isUpcoming: true,
+            },
+          ]);
+        }
+      }
+
+      // 4d. Zoom LTI Rich API calls
+      const appConf = parseAppConf(zoomHtml);
+      const ajaxHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'application/json, text/plain, */*',
+      };
+      if (appConf?.ajaxHeaders) {
+        for (const h of appConf.ajaxHeaders) {
+          ajaxHeaders[h.key] = h.value;
+        }
+      }
+
+      const fetchLtiApi = async (apiUrl: string, isUpcoming: boolean) => {
+        try {
+          const apiRes = await mfetch(zoomJar, apiUrl, { method: 'GET', headers: ajaxHeaders });
+          if (apiRes.ok) {
+            const data = await apiRes.json();
+            if (Array.isArray(data?.result?.list)) {
+              for (const m of data.result.list) {
+                const num = String(m.meetingNumber || m.meetingId || m.id || '').replace(/[\s-]/g, '');
+                const url = m.joinUrl || m.join_url || (num ? `https://tau-ac-il.zoom.us/j/${num}` : '');
+                if (url && isZoomJoinUrl(url, num)) {
+                  addParsedMeetings([
+                    {
+                      topic: m.topic || m.title || (num ? `Meeting ${num}` : 'Zoom Meeting'),
+                      meetingId: num,
+                      meetingNumber: num,
+                      startTime: normalizeZoomStartTime(m, isUpcoming),
+                      joinUrl: url,
+                      password: m.password,
+                      isUpcoming,
+                    },
+                  ]);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      };
+
+      await fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0', true);
+      await fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0', false);
     }
   }
 

@@ -1,6 +1,7 @@
 import { runSync } from '../src/syncEngine.js';
 import {
   isZoomUrl,
+  isZoomJoinUrl,
   isZoomOrMeetingName,
   parseZoomUrl,
   extractZoomLinksFromHtml,
@@ -8,6 +9,7 @@ import {
   parseAppConf,
   normalizeZoomStartTime,
   parseDateTimeInZone,
+  scrapeZoomMeetingsWithToken,
 } from '../src/zoomScraper.js';
 
 describe('Category 5: Zoom Meetings & Live Sessions', () => {
@@ -41,6 +43,31 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(isZoomUrl('https://moodle.tau.ac.il/mod/url/view.php?id=123')).toBe(false);
       expect(isZoomUrl('https://example.com/not-zoom')).toBe(false);
       expect(isZoomUrl('')).toBe(false);
+    });
+
+    it('should distinguish joinable Zoom meeting URLs from generic portals and endpoints using isZoomJoinUrl', () => {
+      // Valid joinable meeting URLs (/j/, /w/, /s/, /my/, ?confno=)
+      expect(isZoomJoinUrl('https://tau-ac-il.zoom.us/j/86295092403')).toBe(true);
+      expect(isZoomJoinUrl('https://tau-ac-il.zoom.us/j/86295092403?pwd=secretPassword')).toBe(true);
+      expect(isZoomJoinUrl('https://zoom.us/j/81592282211')).toBe(true);
+      expect(isZoomJoinUrl('https://us02web.zoom.us/w/88182963916')).toBe(true);
+      expect(isZoomJoinUrl('https://zoom.us/s/89058095422')).toBe(true);
+      expect(isZoomJoinUrl('https://tau-ac-il.zoom.us/my/professordoe')).toBe(true);
+      expect(isZoomJoinUrl('https://zoom.us?confno=86295092403')).toBe(true);
+      expect(isZoomJoinUrl('https://tau-ac-il.zoom.us', '86295092403')).toBe(true);
+
+      // Non-joinable URLs (generic homepages, portals, LTI APIs, auth endpoints, help docs)
+      expect(isZoomJoinUrl('https://tau-ac-il.zoom.us')).toBe(false);
+      expect(isZoomJoinUrl('https://tau.zoom.us/')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us/')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us/signin')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us/join')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us/test')).toBe(false);
+      expect(isZoomJoinUrl('https://zoom.us/download')).toBe(false);
+      expect(isZoomJoinUrl('https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0')).toBe(false);
+      expect(isZoomJoinUrl('https://moodle.tau.ac.il/mod/lti/view.php?id=123')).toBe(false);
+      expect(isZoomJoinUrl('')).toBe(false);
     });
 
     it('should identify English and Hebrew Zoom/meeting keywords using isZoomOrMeetingName', () => {
@@ -81,6 +108,20 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(links[0].title).toBe('חדר הרצאה ראשי');
 
       expect(links[1].url).toContain('444555666');
+    });
+
+    it('should ignore non-joinable portal/homepage Zoom links in extractZoomLinksFromHtml', () => {
+      const html = `
+        <div>
+          <p>פורטל: <a href="https://tau-ac-il.zoom.us">כניסה לזום</a></p>
+          <p>עזרה: <a href="https://zoom.us/test">בדיקת חיבור</a></p>
+          <p>הרצאה אמיתית: <a href="https://tau-ac-il.zoom.us/j/86295092403">הרצאה שבועית</a></p>
+        </div>
+      `;
+      const links = extractZoomLinksFromHtml(html);
+      expect(links).toHaveLength(1);
+      expect(links[0].url).toContain('86295092403');
+      expect(links[0].title).toBe('הרצאה שבועית');
     });
   });
 
@@ -576,6 +617,220 @@ describe('Category 5: Zoom Meetings & Live Sessions', () => {
       expect(parseDateTimeInZone('2026-11-03T12:00:00+02:00').toISOString()).toBe('2026-11-03T10:00:00.000Z');
       // Space-separated SQL timestamp without offset -> treated as UTC as per Zoom LTI API
       expect(parseDateTimeInZone('2026-11-03 10:00:00').toISOString()).toBe('2026-11-03T10:00:00.000Z');
+    });
+
+    it('should correctly parse meeting IDs with spaces into join URLs', () => {
+      const parsedWithSpaces = parseZoomUrl('https://tau-ac-il.zoom.us/j/862 9509 2403?pwd=secretPassword');
+      expect(parsedWithSpaces.meetingNumber).toBe('86295092403');
+      expect(parsedWithSpaces.meetingUrl).toBe('https://tau-ac-il.zoom.us/j/86295092403?pwd=secretPassword');
+      expect(isZoomJoinUrl(parsedWithSpaces.meetingUrl, parsedWithSpaces.meetingNumber)).toBe(true);
+
+      const parsedEncoded = parseZoomUrl('https://tau-ac-il.zoom.us/j/862%209509%202403');
+      expect(parsedEncoded.meetingNumber).toBe('86295092403');
+      expect(parsedEncoded.meetingUrl).toBe('https://tau-ac-il.zoom.us/j/86295092403');
+    });
+
+    it('should extract Zoom meetings from LTI HTML table rows and embedded scripts (TC-ZM-05)', async () => {
+      const originalFetch = global.fetch;
+      const htmlWithTable = `
+        <html>
+          <body>
+            <table>
+              <tr>
+                <td>Tomorrow (Recurring) 5:00 AM</td>
+                <td>מכניקה אנליטית יום ד</td>
+                <td>862 9509 2403</td>
+                <td><button>Join</button></td>
+              </tr>
+              <tr>
+                <td>Tomorrow (Recurring) 8:00 AM</td>
+                <td>תרגול - יום רביעי</td>
+                <td>815 9228 2211</td>
+                <td><button>Join</button></td>
+              </tr>
+            </table>
+          </body>
+        </html>
+      `;
+
+      global.fetch = jest.fn(async (url: any, init?: any) => {
+        const urlStr = String(url);
+        if (urlStr.includes('mod_lti_get_tool_launch_data')) {
+          return {
+            ok: true,
+            json: async () => ({
+              endpoint: 'https://applications.zoom.us/lti/rich',
+              parameters: [{ name: 'oauth_consumer_key', value: 'key123' }],
+            }),
+          };
+        }
+        if (urlStr.includes('applications.zoom.us/lti/rich')) {
+          return {
+            ok: true,
+            text: async (): Promise<string> => htmlWithTable,
+            headers: new Headers(),
+          };
+        }
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '',
+        };
+      }) as any;
+
+      try {
+        const meetings = await scrapeZoomMeetingsWithToken('mock-token', 101, 'https://moodle.tau.ac.il', 202);
+        expect(meetings.length).toBe(2);
+
+        const m1 = meetings.find((m) => m.meetingNumber === '86295092403');
+        expect(m1).toBeDefined();
+        expect(m1?.topic).toBe('מכניקה אנליטית יום ד');
+        expect(m1?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/86295092403');
+
+        const m2 = meetings.find((m) => m.meetingNumber === '81592282211');
+        expect(m2).toBeDefined();
+        expect(m2?.topic).toBe('תרגול - יום רביעי');
+        expect(m2?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/81592282211');
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should collapse recurring class sessions preserving nearest active or upcoming session', () => {
+      const now = new Date('2026-11-11T02:00:00.000Z');
+      const sessions = [
+        {
+          courseId: 101,
+          courseName: 'מכניקה אנליטית',
+          title: 'מכניקה אנליטית יום ד',
+          meetingNumber: '86295092403',
+          meetingUrl: 'https://tau-ac-il.zoom.us/j/86295092403',
+          sectionName: 'General',
+          startTime: '2026-11-11T03:00:00.000Z', // Tomorrow 5 AM Israel time
+        },
+        {
+          courseId: 101,
+          courseName: 'מכניקה אנליטית',
+          title: 'מכניקה אנליטית יום ד',
+          meetingNumber: '86295092403',
+          meetingUrl: 'https://tau-ac-il.zoom.us/j/86295092403',
+          sectionName: 'General',
+          startTime: '2026-11-18T03:00:00.000Z', // Next week
+        },
+        {
+          courseId: 101,
+          courseName: 'מכניקה אנליטית',
+          title: 'תרגול - יום רביעי',
+          meetingNumber: '81592282211',
+          meetingUrl: 'https://tau-ac-il.zoom.us/j/81592282211',
+          sectionName: 'General',
+          startTime: '2026-11-11T06:00:00.000Z',
+        },
+      ];
+
+      const collapsed = collapseRecurringMeetings(sessions, now);
+      expect(collapsed.length).toBe(2);
+
+      const lecture = collapsed.find((m) => m.meetingNumber === '86295092403');
+      expect(lecture?.startTime).toBe('2026-11-11T03:00:00.000Z'); // Should pick nearest upcoming!
+    });
+
+    it('should extract all Zoom meetings from Moodle mod_zoom / mod_lti view page matching Hebrew class schedule (TC-ZM-07)', async () => {
+      const originalFetch = global.fetch;
+      const htmlFromScreenshot = `
+        <div class="page-header">
+          <h2>קישורי זום - הרצאה ותרגולים</h2>
+        </div>
+        <table class="generaltable">
+          <thead>
+            <tr>
+              <th class="header c0">Start Time</th>
+              <th class="header c1">Topic</th>
+              <th class="header c2">Meeting ID</th>
+              <th class="header c3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="cell c0">Tomorrow (Recurring)<br>7:05 AM</td>
+              <td class="cell c1">תרגול שלישי רביעי 17:00-18:00</td>
+              <td class="cell c2">840 9026 3132</td>
+              <td class="cell c3"><button>Join</button> <button>Invitation</button></td>
+            </tr>
+            <tr>
+              <td class="cell c0">Tomorrow (Recurring)<br>8:05 AM</td>
+              <td class="cell c1">תרגול רביעי 18:00-19:00</td>
+              <td class="cell c2">821 2946 9420</td>
+              <td class="cell c3"><button>Join</button> <button>Invitation</button></td>
+            </tr>
+            <tr>
+              <td class="cell c0">Thu, Nov 12 (Recurring)<br>4:00 AM</td>
+              <td class="cell c1">גלים אור ואופטיקה - הרצאה יום חמישי</td>
+              <td class="cell c2">823 0074 2209</td>
+              <td class="cell c3"><button>Join</button> <button>Invitation</button></td>
+            </tr>
+            <tr>
+              <td class="cell c0">Mon, Nov 16 (Recurring)<br>7:00 AM</td>
+              <td class="cell c1">גלים אור ואופטיקה - הרצאה יום שני</td>
+              <td class="cell c2">836 9487 3763</td>
+              <td class="cell c3"><button>Join</button> <button>Invitation</button></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      global.fetch = jest.fn(async (url: any) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/mod/zoom/view.php?id=301') || urlStr.includes('/mod/lti/view.php?id=301')) {
+          return {
+            ok: true,
+            text: async (): Promise<string> => htmlFromScreenshot,
+            headers: new Headers(),
+          };
+        }
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '',
+        };
+      }) as any;
+
+      try {
+        const meetings = await scrapeZoomMeetingsWithToken(
+          'mock-token',
+          301,
+          'https://moodle.tau.ac.il',
+          301,
+          null,
+          'zoom'
+        );
+
+        expect(meetings).toHaveLength(4);
+
+        const m1 = meetings.find((m) => m.meetingNumber === '84090263132');
+        expect(m1).toBeDefined();
+        expect(m1?.topic).toBe('תרגול שלישי רביעי 17:00-18:00');
+        expect(m1?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/84090263132');
+
+        const m2 = meetings.find((m) => m.meetingNumber === '82129469420');
+        expect(m2).toBeDefined();
+        expect(m2?.topic).toBe('תרגול רביעי 18:00-19:00');
+        expect(m2?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/82129469420');
+
+        const m3 = meetings.find((m) => m.meetingNumber === '82300742209');
+        expect(m3).toBeDefined();
+        expect(m3?.topic).toBe('גלים אור ואופטיקה - הרצאה יום חמישי');
+        expect(m3?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/82300742209');
+
+        const m4 = meetings.find((m) => m.meetingNumber === '83694873763');
+        expect(m4).toBeDefined();
+        expect(m4?.topic).toBe('גלים אור ואופטיקה - הרצאה יום שני');
+        expect(m4?.joinUrl).toBe('https://tau-ac-il.zoom.us/j/83694873763');
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 });

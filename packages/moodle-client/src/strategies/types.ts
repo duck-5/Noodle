@@ -30,6 +30,7 @@ export interface StrategyContext {
   baseUrl: string;
   devMode?: boolean;
   enableScraping?: boolean;
+  syncArchive?: boolean;
   lang?: 'he' | 'en';
 }
 

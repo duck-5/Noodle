@@ -72,13 +72,18 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
         return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
       });
   } else if (message.type === 'SYNC_NOW') {
-    promise = performBackgroundSync()
+    promise = performBackgroundSync(true)
       .then((result) => ({ success: true, result }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
   } else if (message.type === 'GET_SYNC_STATUS') {
     // Authoritative in-memory sync state (storage `isSyncing` can go stale if the
     // worker/event page was reloaded or terminated mid-sync).
-    promise = Promise.resolve({ success: true, isSyncing: activeBackgroundSyncPromise !== null });
+    promise = Promise.resolve({
+      success: true,
+      isSyncing: activeBackgroundSyncPromise !== null,
+      progressPercent: activeSyncProgressPercent,
+      syncState: activeSyncState,
+    });
   } else if (message.type === 'SYNC_SETTINGS') {
     promise = performSettingsSync()
       .then(() => ({ success: true }))
@@ -160,7 +165,7 @@ async function getSyncIntervalMinutes(): Promise<number> {
   } catch {
     // fallback
   }
-  return 5;
+  return 60;
 }
 
 // Setup alarm checking function to register the alarm on startup without resetting it if it already exists
@@ -539,15 +544,18 @@ async function performSettingsSync() {
 }
 
 let activeBackgroundSyncPromise: Promise<SyncResult> | null = null;
+let activeSyncProgressPercent = 0;
+let activeSyncState: any = null;
 
-async function performBackgroundSync(): Promise<SyncResult> {
+async function performBackgroundSync(isManual = false): Promise<SyncResult> {
   if (activeBackgroundSyncPromise) {
     console.log('[serviceWorker] Returning existing in-flight background sync promise');
     return await activeBackgroundSyncPromise;
   }
 
   activeBackgroundSyncPromise = (async () => {
-    console.log('--- STARTING SYNC (Triggered manually or via periodic alarm) ---');
+    activeSyncProgressPercent = 2;
+    console.log(`--- STARTING SYNC (Triggered ${isManual ? 'manually' : 'via periodic alarm'}) ---`);
     let token = await getStoredToken();
 
     if (!token) {
@@ -556,7 +564,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
     }
 
   await browser.storage.local.set({ isSyncing: true });
-  browser.runtime.sendMessage({ type: 'SYNC_START' }).catch(() => { });
+  browser.runtime.sendMessage({ type: 'SYNC_START', isManual }).catch(() => { });
 
   let result;
   try {
@@ -587,17 +595,40 @@ async function performBackgroundSync(): Promise<SyncResult> {
       settings.coursesPanoptoMap || {}
     );
 
+    let moodleCookiesHeader: string | undefined;
+    try {
+      const moodleCookies = await browser.cookies.getAll({ domain: 'moodle.tau.ac.il' });
+      if (moodleCookies && moodleCookies.length > 0) {
+        moodleCookiesHeader = moodleCookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      }
+    } catch (_) {}
+
     try {
       result = await runSync(
         token,
         trackedCourseIds,
-        (msg) => {
-          browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-          console.log(`[Sync Progress] ${msg}`);
+        (msg, progress) => {
+          const percent = typeof progress === 'number'
+            ? progress
+            : (progress && typeof progress.percent === 'number' ? progress.percent : undefined);
+          if (percent !== undefined) {
+            activeSyncProgressPercent = percent;
+          }
+          if (typeof progress === 'object' && progress !== null) {
+            activeSyncState = progress;
+          }
+          browser.runtime.sendMessage({
+            type: 'SYNC_PROGRESS',
+            msg,
+            percent,
+            stage: typeof progress === 'object' ? progress.stage : undefined,
+            syncState: typeof progress === 'object' ? progress : undefined,
+          }).catch(() => { });
+          console.log(`[Sync Progress${percent !== undefined ? ` ${percent}%` : ''}] ${msg}`);
         },
         undefined,
         validCreds,
-        undefined,
+        moodleCookiesHeader,
         sesskey || undefined,
         (partial) => {
           browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
@@ -606,6 +637,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
           enableScraping: settings.scrapingEnabled ?? false,
           enablePanopto: settings.panoptoEnabled ?? false,
           coursesPanoptoMap: settings.coursesPanoptoMap,
+          syncArchive: settings.syncArchive ?? false,
           lang: settings.language || 'he',
           onEnsurePanoptoAuth: (forceRefresh) =>
             ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
@@ -625,13 +657,28 @@ async function performBackgroundSync(): Promise<SyncResult> {
             result = await runSync(
               newToken,
               trackedCourseIds,
-              (msg) => {
-                browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-                console.log(`[Sync Progress Retry] ${msg}`);
+              (msg, progress) => {
+                const percent = typeof progress === 'number'
+                  ? progress
+                  : (progress && typeof progress.percent === 'number' ? progress.percent : undefined);
+                if (percent !== undefined) {
+                  activeSyncProgressPercent = percent;
+                }
+                if (typeof progress === 'object' && progress !== null) {
+                  activeSyncState = progress;
+                }
+                browser.runtime.sendMessage({
+                  type: 'SYNC_PROGRESS',
+                  msg,
+                  percent,
+                  stage: typeof progress === 'object' ? progress.stage : undefined,
+                  syncState: typeof progress === 'object' ? progress : undefined,
+                }).catch(() => { });
+                console.log(`[Sync Progress Retry${percent !== undefined ? ` ${percent}%` : ''}] ${msg}`);
               },
               undefined,
               validCreds,
-              undefined,
+              moodleCookiesHeader,
               newSesskey || undefined,
               (partial) => {
                 browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
@@ -640,6 +687,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
                 enableScraping: settings.scrapingEnabled ?? false,
                 enablePanopto: settings.panoptoEnabled ?? false,
                 coursesPanoptoMap: settings.coursesPanoptoMap,
+                syncArchive: settings.syncArchive ?? false,
                 lang: settings.language || 'he',
                 onEnsurePanoptoAuth: (forceRefresh) =>
                   ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
@@ -719,6 +767,8 @@ async function performBackgroundSync(): Promise<SyncResult> {
       (result as any).googleSyncError = googleSyncError;
     }
   } finally {
+    activeSyncProgressPercent = 0;
+    activeSyncState = null;
     // Save syncing state and notify listeners
     await browser.storage.local.set({ isSyncing: false });
     browser.runtime.sendMessage({ type: 'SYNC_COMPLETE', result }).catch(() => { });
