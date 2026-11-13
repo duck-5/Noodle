@@ -36,18 +36,18 @@ export function getDueTextAndClass(
     return { deadlineText, badgeClass, timeColorClass };
   }
 
-  if (hoursLeft <= 24) {
-    badgeClass = 'badge-danger';
-  } else if (hoursLeft <= 72) {
-    badgeClass = 'badge-warning';
-  } else {
-    badgeClass = 'badge-success';
-  }
+  const effectiveGreen = typeof greenThreshold === 'number' && !isNaN(greenThreshold) ? greenThreshold : 7;
+  const effectiveYellow = typeof yellowThreshold === 'number' && !isNaN(yellowThreshold) ? yellowThreshold : 3;
 
-  if (daysLeft > greenThreshold) {
+  if (daysLeft > effectiveGreen) {
+    badgeClass = 'badge-success';
     timeColorClass = 'due-green';
-  } else if (daysLeft > yellowThreshold) {
+  } else if (daysLeft > effectiveYellow) {
+    badgeClass = 'badge-warning';
     timeColorClass = 'due-yellow';
+  } else {
+    badgeClass = 'badge-danger';
+    timeColorClass = 'due-red';
   }
 
   if (diffDays >= 1) {

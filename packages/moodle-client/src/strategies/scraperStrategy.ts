@@ -632,20 +632,18 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     }
     targets.push({ url: '/user/profile.php' });
 
-    // Add candidate past years (unless syncArchive is explicitly false)
-    if (this.context.syncArchive !== false) {
-      for (const year of candidatePastYears) {
-        targets.push({ url: `/${year}/grade/report/overview/index.php`, year });
-        targets.push({ url: `/${year}/my/courses.php`, year });
-        targets.push({ url: `/${year}/my/`, year });
-        if (userId && userId > 1) {
-          targets.push({ url: `/${year}/user/profile.php?id=${userId}`, year });
-        }
+    // Add candidate past years
+    for (const year of candidatePastYears) {
+      targets.push({ url: `/${year}/grade/report/overview/index.php`, year });
+      targets.push({ url: `/${year}/my/courses.php`, year });
+      targets.push({ url: `/${year}/my/`, year });
+      if (userId && userId > 1) {
+        targets.push({ url: `/${year}/user/profile.php?id=${userId}`, year });
       }
     }
 
     if (this.context.devMode) {
-      console.log(`[ScraperStrategy] Fetching enrolled courses across ${targets.length} candidate URLs (including past years: ${this.context.syncArchive !== false ? candidatePastYears.join(', ') : 'disabled'})...`);
+      console.log(`[ScraperStrategy] Fetching enrolled courses across ${targets.length} candidate URLs (including past years: ${candidatePastYears.join(', ')})...`);
     }
 
     const coursesMap = new Map<number, RawMoodleCourse>();
@@ -655,12 +653,10 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     // Prime the SSO session for candidate past years.
     // If we fetch archive pages in parallel before the browser receives the MoodleSession cookie for that year,
     // we get race conditions where guest pages are returned and we extract a guest sesskey for AJAX.
-    if (this.context.syncArchive !== false) {
-      if (this.context.devMode) console.log('[ScraperStrategy] Priming SSO sessions for candidate past years...');
-      await Promise.allSettled(
-        candidatePastYears.map(year => this.performSsoLogin(year))
-      );
-    }
+    if (this.context.devMode) console.log('[ScraperStrategy] Priming SSO sessions for candidate past years...');
+    await Promise.allSettled(
+      candidatePastYears.map(year => this.performSsoLogin(year))
+    );
 
     const results = await Promise.allSettled(
       targets.map(async (target) => {
@@ -684,7 +680,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           await this.extractCoursesViaAjax(html, coursesMap, target.year);
         }
 
-        if (!target.year && this.context.syncArchive !== false) {
+        if (!target.year) {
           const foundYears = this.discoverArchiveYears(html);
           foundYears.forEach((y) => {
             if (y !== String(currentYear) && !candidatePastYears.includes(y)) {
