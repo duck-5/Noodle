@@ -183,7 +183,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await optionsPage.screenshot({ path: 'screenshots/dashboard-course-expanded.png' });
   });
 
-  test('TC-DASH-REHAUL-02: Upcoming To-Do queue excludes completed tasks and shows expandable cards', async ({ optionsPage }) => {
+  test('TC-DASH-REHAUL-02: Upcoming To-Do queue excludes completed tasks and opens split detail pane with course-colored border', async ({ optionsPage }) => {
     // 1. Check queue card exists
     const queueCard = optionsPage.locator('.queue-card');
     await expect(queueCard).toBeVisible();
@@ -195,9 +195,22 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     const queueItem = queueCard.locator('.queue-item').first();
     await expect(queueItem).toBeVisible();
 
-    // 4. Click queue item to expand
+    // 4. Click queue item to open the side-by-side split detail pane inside the queue card
     await queueItem.click();
-    await expect(queueItem.locator('.queue-item-expanded')).toHaveClass(/open/);
+    await expect(queueCard).toHaveClass(/is-split/);
+    const detailPane = queueCard.locator('.queue-detail-pane.queue-item-expanded');
+    await expect(detailPane).toBeVisible();
+    await expect(detailPane).toHaveClass(/open/);
+    await expect(detailPane.locator('.queue-detail-title')).toContainText('תרגיל בית 1 - עצי חיפוש');
+
+    // 5. Verify the detail pane has the course's color applied to its border
+    const borderColor = await detailPane.evaluate((el) => (el as HTMLElement).style.borderColor);
+    expect(borderColor).toBeTruthy();
+
+    // 6. Clicking the close button closes the detail pane
+    await detailPane.locator('.queue-detail-close-btn').click();
+    await expect(queueCard).not.toHaveClass(/is-split/);
+    await expect(detailPane).toBeHidden();
   });
 
   test('TC-DASH-REHAUL-03: Manage courses modal opens from dashboard and groups courses', async ({ optionsPage }) => {

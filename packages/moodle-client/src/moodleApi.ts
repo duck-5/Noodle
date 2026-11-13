@@ -233,6 +233,7 @@ export interface RawCourseFileContent {
   filesize: number;
   mimetype: string;
   timemodified: number;
+  content?: string;
 }
 
 export interface RawCourseModule {

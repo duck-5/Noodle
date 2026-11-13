@@ -7,13 +7,178 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## [Unreleased]
+
+### Changed
+- **Removed Quick `✓` Checkboxes from Assignment Rows (`apps/extension/src/options/App.tsx`, `apps/extension/src/popup/Popup.tsx`, `docs/UI_SPECIFICATION.md`)**:
+  - Removed the circular `.quick-check-btn` (`✓`) from collapsed assignment rows in the Dashboard Upcoming Tasks Queue and `.popup-done-btn` (`✓`) from assignment cards in the Toolbar Popup so new users rely on submitting in Moodle and syncing rather than treating the queue as a manual checklist.
+  - Updated the `"סמן כבוצע" / "Mark as Done"` button inside the Dashboard detail pane footer to be text-only (removing `<CheckIcon />`) with an explanatory hover tooltip noting that Moodle submissions update automatically on sync.
+  - Preserved the quick `✓` watched button on Panopto Catch-Up Recordings in both the Dashboard and Toolbar Popup.
+- **Unified Master–Detail Split Pane for Upcoming Tasks Queue (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/e2e/dashboard.spec.ts`, `TC-DASH-REHAUL-02`)**:
+  - Replaced the cramped inline vertical accordion inside `.queue-item` with a side-by-side split view (`.queue-card.is-split` / `.queue-split-layout`) inside the Upcoming Tasks Queue card.
+  - Clicking an assignment in the queue opens a dedicated detail pane (`.queue-detail-pane`) between the task list and the Panopto Catch-Up Queue without altering the `310px` vertical card height or causing page layout shifts.
+  - Framed the opened assignment detail pane with a border in the course's color (`border: 1.5px solid <courseColor>; border-inline-start-width: 4px`), featuring a pinned header (course name, topic pill, due badge, grace period clock, close `✕` button, and 2-line title), an independently scrollable vertical file column body, and a pinned bottom action toolbar.
+  - Preserved full independent scrolling on the Upcoming Tasks Queue so users can inspect other tasks and switch the active assignment in one click.
+
+### Added
+- **Collapsible Sync Progress Window & Floating Mini Dock (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `TC-SYNC-013`)**:
+  - Replaced the previous `✕` close button with an exclusive collapse arrow button (`.sync-window-collapse-btn`) in the sync progress window header to minimize it smoothly to the bottom viewport corner.
+  - Implemented automatic collapse on outside clicks: clicking anywhere else during sync automatically collapses the window into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying live progress percent and an expand arrow.
+  - Seamless re-expansion: clicking the collapsed pill or clicking the header "Sync" button while sync is running immediately restores the full progress window.
+  - Automatic dismissal: once synchronization completes, the entire progress UI (both expanded and collapsed states) closes automatically.
+  - Styled with full theme integration across Default Dark, Noodle (warm cream/terracotta), and Coffee (espresso/amber) themes with zero unicode emojis.
+
 ### Fixed
+- **Panopto SSO Hidden-Tab Authentication, DeclarativeNetRequest Cookie Injection & Block Cleanup (`apps/extension/src/background/serviceWorker.ts`, `packages/moodle-client/src/syncEngine.ts`, `TC-PAN-08`)**:
+  - Fixed cross-site cookie stripping in Brave browser by dynamically attaching the user's active Panopto `.ASPXAUTH` cookie via `chrome.declarativeNetRequest.updateDynamicRules` on outgoing API requests to `tau.cloud.panopto.eu`, bypassing Brave's background service worker third-party cookie restrictions at the network layer.
+  - Stopped premature cookie teardown in `ensurePanoptoAuthViaHiddenTab` when already authenticated, preventing the extension from invalidating the active session before opening the hidden tab.
+  - Removed unsupported `/blocks/panopto/ajax/load_panopto_block.php` call that returned HTTP 404 on TAU Moodle.
+  - Documented the Brave cookie-stripping root cause, the `declarativeNetRequest` fix, and debugging signals in `docs/AI_KNOWLEDGE.md` (Section 3.M).
+- **Dynamic Due Date Threshold Coloring Parity (`apps/extension/src/shared/dateUtils.ts`, `apps/mobile/src/services/dateUtils.ts`, `TC-ASN-02`, `TC-UI-04`)**:
+  - Fixed a legacy bug in `getDueTextAndClass` where countdown badges (`badgeClass`) hardcoded a 72-hour threshold instead of respecting user-configured urgency thresholds (`assignmentGreenDaysThreshold: 7`, `assignmentYellowDaysThreshold: 3`).
+  - Resolved issue where 3-day and 6-day assignment deadlines (e.g. "Lecture 3 Quiz", "Assignment 1 - Submission") were erroneously rendered with green `badge-success` pills instead of amber/yellow `badge-warning` pills.
+  - Aligned badge background and text colors to strictly evaluate: `daysLeft > greenThreshold` -> Green (`badge-success`), `daysLeft > yellowThreshold` -> Amber/Yellow (`badge-warning`), and <= `yellowThreshold` or overdue -> Red (`badge-danger`), maintaining full parity across Chromium, Firefox, and Expo React Native mobile apps.
+
+### Removed
+- **Archive Course Sync Setting & Dead REST Calls (`apps/extension/src/options/App.tsx`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/moodleApi.ts`, `packages/moodle-client/src/syncEngine.ts`)**:
+  - Removed the non-functional `syncArchive` setting and `#sync-archive-toggle` UI from extension options.
+  - Removed dead REST API calls to past-year archive endpoints (`${urlHost}/${year}/webservice/rest/server.php`). Since past academic year archive instances on TAU Moodle are separate databases that do not recognize active session REST tokens (`invalidtoken`) and do not enable mobile web services, archive courses were only ever retrievable through web scraping + SAML session initialization (`ScraperMoodleStrategy`). Because Noodle strictly operates in pure client API mode without scraping (`enableScraping: false`), archive courses cannot be retrieved via REST, making the toggle ineffective.
+
+
+## [4.0.3] - 2026-11-11
+### Added
+- **Sync Archive Courses Setting & Endpoint Suppression (`packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/strategies/scraperStrategy.ts`, `packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `apps/extension/src/options/App.tsx`, `TC-CRS-09`, `TC-CRS-10`)**:
+  - Added configurable opt-in toggle `syncArchive` (default: `false` / Off) allowing students to choose whether to scan past academic year archive portals (`moodle.tau.ac.il/${currentYear - 1}/`).
+  - When disabled (default), Moodle course enrollment and assignment queries bypass archive year domains entirely, eliminating redundant 401/404 archive errors and saving extensive network roundtrips.
+  - When enabled, students taking deferred exams (מועדי ב'/ג') or completing prior year courses can discover and track past-year course items seamlessly.
+- **Pedagogical Grades Calculation Engine & Concise Policy Notice Banner (`packages/moodle-client/src/gradesCalculation.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `apps/mobile/src/app/grades.tsx`, `apps/mobile/src/services/i18n.ts`, `packages/moodle-client/__tests__/grades.test.ts`, `TC-GRD-04`, `TC-GRD-05`, `TC-GRD-06`, `TC-GRD-07`)**:
+  - Implemented pure TypeScript calculation engine `calculateGradesSummary` in `@tautracker/moodle-client` with strict academic policies:
+    * **Published Grades Only**: Only activities with an official published grade (`grade !== null && grade !== undefined`) are displayed and calculated in GPA.
+    * **No Synthetic Zeros**: Overdue and unsubmitted assignments are never defaulted to 0 (if a score is 0, it must be the official grade assigned in Moodle).
+    * **Pending Submissions**: Submitted tasks awaiting grading are excluded until an instructor posts a score.
+    * **Exclusions**: Excludes hidden assignments (`isHidden` or present in `settings.hiddenAssignments`) and unsubmitted tasks locally marked as done (`isCompleted && !isMoodleSubmitted`).
+    * **Administrative Course Filtering**: Automatically excludes safety tutorial and administrative courses (e.g., prefix `5800...`, `5900...` via `isAdministrativeCourse`).
+    * **Consistent Course Average Display**: Eliminated raw Moodle `Course Total` (which displayed confusing partial semester point sums like 16.67 and 33.33) in favor of the actual calculated course average (`Avg: 50.00` and `Avg: 100.00`), perfectly matching the Estimated GPA formula (`75.00`).
+    * **Bonus Items**: Bonus items (`isBonus: true`) are displayed with a minimalist badge without skewing the unweighted average ratio denominator.
+  - Added a concise, subtle policy notice banner (`.grades-calc-notice`) at the top of the Grades tab informing students that only published grades in Moodle are factored into GPA.
+  - Full cross-platform parity between Chrome/Firefox extension and Expo React Native mobile app.
+  - Removed remaining unicode emojis (`✨`, `💬`) from grade tables and instructor feedback callouts in strict compliance with Rule 10 (Zero Emojis in UI / Minimalist Design).
+- **Default Visible Zoom Links, Denylist Persistence & Popup Filter Synchronization (`packages/moodle-client/src/activityState.ts`, `apps/extension/src/shared/storage.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/popup/Popup.tsx`, `apps/mobile/src/app/courses.tsx`, `apps/mobile/src/app/index.tsx`, `TC-ZM-08`)**:
+  - Transitioned Zoom visibility to a clean denylist architecture (`hiddenZoomMeetings`, default: `[]`) with pure TypeScript helper functions `getZoomMeetingKey()` and `isZoomMeetingHidden()`.
+  - Guaranteed that all detected and future course Zoom meetings default to **visible** (`isZoomMeetingHidden` returns `false` when no meeting is explicitly hidden).
+  - Synchronized live Zoom meeting detection across dashboard, extension popup, and mobile views to include a 15-minute early window (`-15m` to `+120m` from scheduled start time) so active lecture sessions appear promptly when students join early.
+  - Fixed extension popup live meeting filtering to strictly exclude hidden Zoom meetings, ensuring parity with the dashboard visibility state.
+  - Eliminated all remaining unicode emojis (`📹`, `🎉`, `📁`, `📐`, `🎬`, `⏳`, `🔄`) from `Popup.tsx` and mobile views in strict compliance with Rule 10 (Zero Emojis in UI / Minimalist Design), replacing them with accessible vector SVG icons.
+- **Comprehensive Multi-modal Zoom Meeting Detection for `mod_zoom` and LTI Pro (`packages/moodle-client/src/zoomScraper.ts`, `packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/background/serviceWorker.ts`, `TC-ZM-07`)**:
+  - Resolved critical issue where courses utilizing official Moodle Zoom activities (`mod_zoom`) or embedded LTI iframes yielded zero detected meetings during sync.
+  - Implemented resilient server-rendered HTML table parsing in `extractZoomMeetingsFromHtml` to capture spaced meeting IDs (e.g., `840 9026 3132` $\rightarrow$ `84090263132`), Hebrew class topics, start times, and direct join links directly from Moodle activity view pages (`/mod/zoom/view.php?id=...`).
+  - Added robust human-readable Zoom date-time parsing in `parseZoomHumanDateTime` supporting recurring and relative strings (`Tomorrow (Recurring) 7:05 AM`, `Today 8:05 AM`, `Thu, Nov 12 (Recurring) 4:00 AM`, etc.).
+  - Updated `getScrapeJar` so browser extension environments always initialize a valid `CookieJar` and ingest active session cookies (`moodleCookies`), ensuring meeting scraping operates reliably even when HTML fallback scraping is disabled.
+  - Updated background service worker `performBackgroundSync` to query `browser.cookies.getAll({ domain: 'moodle.tau.ac.il' })` and deliver active Moodle cookies into `runSync`.
+- **Subtle Non-Overlapping Sync Progress Window & Theme Design Language (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `TC-SYNC-013`):**
+  - Replaced bulky anchored popover with a subtle, non-overlapping floating tray window (`.sync-progress-window`) docked in the bottom corner of the viewport (`bottom: 1.5rem; inset-inline-end: 1.5rem; width: 248px;`), preventing overlap with headers, search inputs, filter pills, and upcoming tasks.
+  - Complete theme design language integration:
+    * *Noodle Theme*: Warm cream glass (`rgba(253, 246, 240, 0.96)`), terracotta borders (`rgba(194, 112, 68, 0.22)`), and warm text.
+    * *Coffee Theme*: Rich espresso glass (`rgba(29, 23, 19, 0.96)`), amber caramel borders (`rgba(217, 160, 102, 0.24)`), and caramel accents.
+    * *Dark Theme*: Dark slate glass (`rgba(24, 25, 36, 0.95)`), subtle white borders (`rgba(255, 255, 255, 0.1)`), and indigo accents.
+  - Lists discrete, sequential sync task items with live status badges:
+    * *User Information & Authentication* (`sync_task_init`)
+    * *Enrolled Courses & Academic Routing* (`sync_task_mapping`)
+    * *Assignments & Quizzes Global Manifest* (`sync_task_global_fetch`)
+    * *Course Contents, Files & Media* (`sync_task_courses`) with live scanned counter (`X / Y courses scanned`)
+    * *Activity Submissions & Attempt Statuses* (`sync_task_activities`) with live verified counter (`X / Y activities checked`)
+    * *Panopto Recordings* (`sync_task_panopto`, conditionally rendered when Panopto is enabled)
+    * *Finalizing, Late-Box Heuristics & Cache* (`sync_task_finalizing`)
+  - Dynamic visual indicators transition cleanly from pending (neutral dot) $\rightarrow$ active (monochrome spinning glyph + item counter) $\rightarrow$ done (green checkmark badge) $\rightarrow$ error (red alert badge if failed).
+  - Features a clean footer with live stage description, overall completion percentage, and 2.5-second auto-close on successful completion.
+- **Decoupled Panopto Sync Pipeline (`packages/moodle-client/src/syncEngine.ts`, `packages/moodle-client/src/syncProgress.ts`, `TC-SYNC-013`):**
+  - Fully decoupled slow Panopto LTI resolution and folder session scraping from Stage 1 course contents fetching into a dedicated Stage 3 (`panopto`).
+  - Core Moodle course contents, sections, files, Zoom links, assignments, quizzes, and submissions finish in ~2-3 seconds without waiting on Panopto.
+  - When Panopto integration is enabled, recordings are discovered and scraped in their own dedicated stage with dynamic stage progress calculation (`panoptoTarget`). When disabled, the stage is skipped entirely.
+- **Theme-by-Time Automatic Switching (`apps/extension/src/shared/storage.ts`, `apps/extension/src/shared/i18n.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/popup/Popup.tsx`)**:
+  - Added opt-in automatic theme switching (`theme: 'time'`) that uses Noodle theme during daytime hours and transitions to Coffee theme in the evening/night.
+  - Added configurable daytime start (`themeTimeDayStart`, default 7:00) and evening start (`themeTimeDayEnd`, default 17:00) with localized settings controls.
+  - Added active interval watching (every 30 seconds) in both full options dashboard and popup to dynamically update body theme classes without manual refresh.
+- **Dedicated Manage Courses Action in Settings (`apps/extension/src/options/App.tsx`)**:
+  - Lifted course management modal state to top-level `App` view, enabling course configuration to be opened directly from either the Dashboard or the newly added Settings section.
+
+### Changed
+- **Refined Signature Purple-Orange Accents for Key Action Buttons (`apps/extension/src/options/App.tsx`, `App.css`, `index.css`)**:
+  - Re-styled the "Manage Courses" button (`.manage-courses-trigger-btn`) and assignment "Go to Course" CTA buttons with Noodle's signature warm purple-orange gradient (`linear-gradient(135deg, rgba(124, 58, 237, 0.88), rgba(234, 88, 12, 0.88))`) with soft hover elevations, calibrated opacity, and full Coffee theme compatibility.
+- **Course Card Layout Streamlining & Clean Status Badging (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Removed redundant "Go to Course" buttons from course cards to reduce visual clutter, as clicking anywhere on the card or title navigates directly to the course detail view.
+  - Removed the literal word "gaps" / "פערים" from course card gap counters, displaying clean, minimal ratio pills `(X/Y)` instead.
+- **Continuous Flowing Border Beam for Imminent Task (`apps/extension/src/options/App.tsx`, `App.css`)**:
+  - Replaced the horizontal metallic sweep animation with a sleek, subtle flowing edge beam (`.closest-task-glowing-border`) using an animated conic gradient with a permanent subtle perimeter outline (`border: 1px solid var(--border)`), smoothly guiding attention to the student's next imminent deadline.
+- **Due Date Urgency Color Dynamic Mapping on Course Pages (`apps/extension/src/options/App.tsx`)**:
+  - Fixed unsubmitted assignment due dates on course detail pages that were previously hardcoded to red regardless of due date; now dynamically evaluated through `getDueDateColorClass` adhering to user-configured due date color thresholds.
+- **Suppression of Zoom Hub Fallbacks as Fake Meeting Join Links (`packages/moodle-client/src/zoomScraper.ts`, `apps/extension/src/options/App.tsx`, `TC-ZM-07`)**:
+  - Prevented generic Moodle Zoom activity portal URLs (`/mod/zoom/view.php`) from being displayed as actual joinable Zoom meetings when no specific meeting links or scheduled sessions exist.
+- **Anti-Jitter Level-Based Atomic UI Updates & Silent Background Sync (`packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/background/serviceWorker.ts`, `TC-SYNC-013`)**:
+  - Eliminated high-frequency per-item `onPartialSync` emissions in inner loops (which previously fired up to 50–100 times in 2 seconds, causing layout shifts, jumping cards, and jittering progress bars).
+  - Transitioned to clean, atomic level-based updates: Level 1 (Course Contents, Files, Folders, Links, Sections, Zoom meetings), Level 2 (Assignments, Quizzes, and Grade Summaries), and Level 3 (Panopto recordings).
+  - Background periodic syncs triggered by alarms now run silently without popping open the `.sync-progress-window` unprompted, showing only the rotating sync glyph on the header button; manual sync explicitly displays the progress window.
+- **Popup Sync Icon Upgrade to Vector SVG & Zero-Emoji Conformance (`apps/extension/src/popup/Popup.tsx`, `apps/extension/src/popup/Popup.css`, Rule 10)**:
+  - Replaced legacy unicode `{loading ? '⏳' : '🔄'}` emoji toggle in `.sync-icon-btn` with the modern vector SVG sync icon and `.spinning-sync-icon` continuous rotation animation matching the dashboard header design language.
+- **Default Automatic Sync Interval Updated to 1 Hour (`apps/extension/src/shared/storage.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/shared/i18n.ts`, `TC-SYNC-05`)**:
+  - Updated `syncIntervalMinutes` default setting and service worker fallback from 5 minutes to 60 minutes (1 hour) to reduce background network load while maintaining dependable periodic updates.
+  - Updated settings dropdown default selection and localized option strings in both Hebrew and English.
+- **Zero-Emoji Calendar Cleanup Across Dates & Badges (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/courses.tsx`, `apps/mobile/src/app/index.tsx`, `apps/mobile/src/services/notifications.ts`, Rule 10)**:
+  - Removed unicode `📅` calendar emojis from meeting datetime displays (`📅 {new Date(m.startTime).toLocaleString()}` $\rightarrow$ `{new Date(m.startTime).toLocaleString()}`), lecture recording badges, and mobile assignment due dates, adhering strictly to the zero-emoji minimalist aesthetic.
+- **Visual Reformatting & Colorful Readability Overhaul for About Page (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `TC-UI-05`)**:
+  - Replaced the plain, monochromatic bullet lists in Features, Pro Tips, and Privacy accordions with structured item cards (`.about-item-card`) featuring theme-aware pastel color accents and minimalist SVG vector icons to eliminate dense walls of plain text.
+  - Features section now highlights each capability with distinct pastel badge containers: Google Tasks/Calendar Sync (Sky Blue), Lab Course Experiment Detection (Purple), Spotlight & Countdown (Amber), Zoom Hub (Emerald), Panopto Tracking (Rose), Fast File Browser (Sky Blue), and Custom Themes (Orange).
+  - Pro Tips and Privacy accordions now feature category-specific SVG icon headers, numeric count badges (`7`, `5`, `4`), and animated vector chevrons replacing raw bullet markers.
+  - Action link cards in the top hero description now have dedicated color accents and styled icon boxes for Website (Sky), Chrome Web Store (Amber), GitHub Repository (Purple), Issue Tracker (Rose), Support Email (Emerald), and Interactive Tour (Indigo).
+  - Preserved 100% of the exact Hebrew and English content, strings, and translation keys with zero emojis added.
+- **Settings Page Hierarchy Reorganization (`apps/extension/src/options/App.tsx`)**:
+  - Prioritized user-critical controls at the top of the Settings tab: Appearance & Theme (including Theme-by-Time), Due Date Colors (urgency thresholds), Manage Tracked Courses, and Configuration Backup (Export/Import).
+  - Modernized configuration import with clean SVG vector `<UploadIcon />` and removed extraneous emojis across settings headers and buttons.
+- **Default View Mode & Calendar View Persistence (`apps/extension/src/options/App.tsx`)**:
+  - Set default courses view mode on initial load to `cards` instead of `list`.
+  - Set default calendar view state to `true` (open by default) and persisted user toggle choices in `localStorage` (`noodle_show_calendar_view`).
+- **Button Styling & Action Hierarchy Consistency (`apps/extension/src/options/App.tsx`, `apps/extension/src/index.css`)**:
+  - Standardized "Go to Course" across all views (Course Cards, Course Rows, Queue, Assignments Table) as secondary action buttons (`secondary-btn btn-sm`/`btn-xs`) with `<BookOpenIcon />`.
+  - Standardized "Submit" / "Submit in Moodle" across all views (Upcoming Queue, Assignments Table, Course Detail View) as primary submission CTAs (`primary-btn btn-xs action-submit-btn`).
+  - Removed unicode `⚙️` icon from "Manage Courses" button and modal header in compliance with Zero-Emoji minimal design rules.
+- **Coffee Theme Color Vibrancy & Custom Color Restoration (`apps/extension/src/index.css`)**:
+  - Restored student custom course colors across course cards, rows, and upcoming queue in Coffee theme by removing blanket `!important` color overrides on `h4` and `.stat-val`.
+  - Enhanced contrast and color vibrancy for urgency badges (`.badge-success`, `.badge-warning`, `.badge-danger`, `.badge-muted`) and primary action buttons.
+### Changed
+- **Zero-Emoji Design Standard & Minimalist Vector Iconography (.agents/rules/03-coding-constraints.md, docs/UI_SPECIFICATION.md, AGENTS.md, pps/extension, pps/mobile)**:
+  - Established a strict project-wide prohibition of colorful unicode emojis in user-facing components, lists, cards, badges, and file trees (e.g. 📕, 📦, 💻, 🖼️, 📄, 📁) to eliminate amateurish, 'AI-generated' visual aesthetics.
+  - Replaced file-type emojis with clean, subtle, monochrome SVG vector icons (<FileIcon />, <FolderIcon />) and clean typography across both Chrome/Firefox extension options pages and the Expo React Native mobile course browser.
+  - Removed getFileEmoji utility from pps/extension/src/shared/mimeUtils.ts.
+
+### Fixed
+- **Eliminated Duplicate "Marked as done" Badge in Assignment Cards (`apps/extension/src/options/App.tsx`, `TC-ASN-15`)**:
+  - Resolved UI redundancy where assignment cards in the Assignments Hub and Course Detail sidebar displayed duplicate "Marked as done" labels side-by-side (once as an auxiliary inline tag in the title metadata row and again as the status badge on the right).
+  - Streamlined the card header layout to display a single authoritative "Marked as done" badge on the right alongside the "Submit in Moodle" CTA and completion checkmark.
+- **Decoupled Local "Mark Done" State from Moodle Submission Status (`apps/extension/src/options/App.tsx`, `apps/mobile/src/app/index.tsx`, `apps/mobile/src/app/courses.tsx`, `TC-ASN-15`)**:
+  - Fixed a critical misbehavior where marking an assignment or quiz as "Done" on the user's personal checklist forcefully modified the assignment's official `status` property to `'Submitted'`, misleadingly rendering the green `הוגש! / Submitted!` badge on assignments that were never submitted to Moodle.
+  - Preserved authentic Moodle submission status (`a.status`: `'Assigned' | 'Submitted' | 'Not submitted'`) while tracking personal completion independently via `isCompleted`.
+  - Updated the assignments table, course detail view, and mobile app to display a distinct `סומן כהושלם / Marked as done` badge when completed locally, while keeping the "Submit in Moodle" CTA accessible whenever unsubmitted in Moodle (`!a.isMoodleSubmitted`).
+- **Two-Way "Mark Done" / "Mark as To Do" State Synchronization (`packages/moodle-client/src/activityState.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/src/background/serviceWorker.ts`, `apps/mobile/src/app/index.tsx`, `apps/mobile/src/app/courses.tsx`, `TC-ACT-02`, `TC-ASN-14`)**:
+  - Fixed an issue where the "Mark Done" and "Mark as To Do" buttons had stopped working (doing nothing when clicked) due to strict numeric-vs-string identifier comparison (`Set.has(a.id)` where `a.id` was a number while `completedAssignments` stored canonical strings like `"assign:123"`).
+  - Exported `isMoodleActivitySubmitted` from `@tautracker/moodle-client` to evaluate actual completion across grades, manual completion, finished attempts, and submission flags.
+  - Rewrote assignment list mapping and toggle handlers across the extension dashboard, course detail view, toolbar badge updater, and mobile app to use canonical `isActivityCompleted` and `matchesActivityIdentifier`, ensuring instant UI state updates and two-way toggle behavior across both Chrome/Firefox and mobile.
+- **Submitted & Graded Quiz Recognition and Google Tasks Re-Addition Fix (`packages/moodle-client/src/syncEngine.ts`, `activityState.ts`, `googleTasksSync.ts`, `TC-GT-10`)**:
+  - Fixed an issue where submitted and graded quizzes (such as Software 1 "Lecture 2 Quiz") were not removed from Google Tasks and were continuously re-added when deleted because past deadlines flipped nominally unsubmitted items to `'Not submitted'`.
+  - Added automatic activity completion detection (`completion === 2` with `completiondata.state === 1 || 2`) and gradebook score detection (`grade !== null`) in `processQuiz` and `processAssignment`, ensuring quizzes and assignments completed through automatic criteria or graded in Moodle are marked `status: 'Submitted'` and `isCompleted: true`.
+  - Updated `isActivityCompleted` in `activityState.ts` and `isAssignmentDone` in `googleTasksSync.ts` to recognize graded activities and completion flags as completed tasks.
+  - Implemented cross-portal activity deduplication in `syncAssignmentsToGoogleTasks` prioritizing completed and graded entries across sub-courses in unified multi-portal courses.
+  - Added unit and integration test suites in `quizSync.test.ts`, `activityState.test.ts`, and `googleTasks.test.ts` (`TC-GT-10`).
 - **True Deadline Calculation & Late Submission Cutoff Separation (`packages/moodle-client/src/syncEngine.ts`, `types.ts`, `apps/mobile/src/services/database.ts`)**:
   - Fixed an issue where assignments with a late submission grace period (`cutoffdate > duedate`) had their deadline erroneously pushed to the cut-off date (e.g. November 12 instead of November 9 in "תרגיל בית 1").
   - Corrected the True Deadline computation formula: individual student extensions (`extensionduedate`) take top priority, followed by nominal deadlines (`duedate`), only falling back to `cutoffdate` when no nominal deadline is configured (`duedate === 0`).
   - Added optional `cutoffDate` (ISO 8601 string) to the shared `Assignment` interface and persisted it in SQLite database tables (`assignments`, `assignments_v2`) with self-healing migration.
 
 ### Added
+- **Interactive Course Folder (`mod_folder`) Directory Browser & Single-File Access (`apps/extension`, `apps/mobile`, `packages/moodle-client`)**:
+  - Transformed Moodle folder (`mod_folder`) cards from opaque summary containers into fully interactive directory browsers with smooth expand/collapse toggles (defaulting to expanded).
+  - Exposed individual files inside course folders with extension-specific emoji icons (`getFileEmoji`), file sizes, direct single-file download buttons, and 1-click in-browser/local PC opening via `FileOpenAction`.
+  - Preserved internal nested subfolder directory hierarchies (`relativePath`) with styled subfolder container headers (`📁 <subfolder>/`).
+  - Added resilient empty folder handling in `syncEngine.ts`: folders without files (`files: []`) render an empty state notice and gracefully disable ZIP generation instead of throwing errors or dropping the folder module.
+  - Added automated Playwright E2E verification in `moodle-structures.spec.ts` (`TC-EXT-015`) validating folder file rendering, subfolder paths, and header collapse/expand toggles.
 - **Local Filesystem Sync Engine & Mirroring Architecture (`Issue #18`, `packages/moodle-client/src/localFsPlanner.ts`, `apps/extension/src/services/fs/`, `apps/extension/src/background/localFsSync.ts`, `apps/extension/src/options/LocalFsSettingsSection.tsx`)**:
   - Added opt-in Local Filesystem Sync (`enabled: false` by default) to mirror course modules (`mod_resource`, `mod_folder` preserving internal subfolders, and optional `mod_assign` attachments/submissions) to a local folder on disk with cross-platform filename/path sanitization (`sanitizePathSegment`, `sanitizeRelativePath`, Windows reserved name guarding, and path-length compaction).
   - Implemented a browser-agnostic `FileSystemProvider` strategy pattern: `ChromiumFsaProvider` (native File System Access API with `FileSystemDirectoryHandle` persisted in IndexedDB `NoodleLocalFsDB` and zero extra Chrome permissions) and `FirefoxDownloadsProvider` (`browser.downloads` using preflighted persistent HTTPS URLs rather than transient `blob:` URLs, `reconcileManifest()` / filename-based stale `downloadId` healing across restarts, `browser.downloads.open`, and `browser.downloads.search` without duplicating files in OPFS, scoping `downloads`/`downloads.open` strictly to the Firefox manifest build in `vite.config.ts`).

@@ -19,7 +19,8 @@ import {
 import { fetchCourseFormatState, fetchSesskeyFromJar, ParsedCourseFormatState } from './courseFormatState.js';
 import { buildAuthenticatedFileUrl } from './zipBuilder.js';
 import { parseTauCourseMetadata } from './courseParser.js';
-import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml, decodeHTMLEntities } from './zoomScraper.js';
+import { SmartProgressCalculator, SyncProgressState } from './syncProgress.js';
+import { CookieJar, performLogin, scrapeZoomMeetingsWithToken, isZoomUrl, isZoomJoinUrl, isZoomOrMeetingName, parseZoomUrl, extractZoomLinksFromHtml, decodeHTMLEntities } from './zoomScraper.js';
 import {
   PANOPTO_BASE_URL,
   isPanoptoUrl,
@@ -91,7 +92,7 @@ export interface RunSyncOptions {
 export async function runSync(
   token: string,
   trackedCourseIds: number[],
-  onProgress: (message: string) => void,
+  onProgress: (message: string, progress?: number | SyncProgressState) => void,
   baseUrl?: string,
   creds?: MoodleCredentials,
   moodleCookies?: string,
@@ -124,24 +125,27 @@ export async function runSync(
   let panoptoAuthPromise: Promise<boolean> | null = null;
 
   const getScrapeJar = async (): Promise<CookieJar | null> => {
-    if (!enableScraping && !enablePanopto && !creds && !moodleCookies) return null;
     if (scrapedMeetingsJar) return scrapedMeetingsJar;
 
     const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
     if (isBrowser) {
       const jar = new CookieJar();
+      if (moodleCookies) jar.ingest(moodleCookies);
       scrapedMeetingsJar = jar;
       return jar;
     }
 
-    if (didAttemptLogin) return null;
-    
     if (moodleCookies) {
       const jar = new CookieJar();
       jar.ingest(moodleCookies);
       scrapedMeetingsJar = jar;
       return jar;
-    } else if (creds) {
+    }
+
+    if (!enableScraping && !enablePanopto && !creds) return null;
+    if (didAttemptLogin) return null;
+    
+    if (creds) {
       didAttemptLogin = true;
       const jar = new CookieJar();
       try {
@@ -183,12 +187,30 @@ export async function runSync(
     return panoptoAuthPromise;
   };
 
-  onProgress('Fetching Moodle user info...');
+  const progress = new SmartProgressCalculator(
+    trackedCourseIds.length,
+    (msg, state) => {
+      onProgress(msg, state);
+    },
+    enablePanopto
+      ? {
+          initTarget: 5,
+          mappingTarget: 12,
+          globalQueriesTarget: 22,
+          coursesTarget: 55,
+          activitiesTarget: 75,
+          panoptoTarget: 95,
+          finalizingTarget: 98,
+        }
+      : undefined
+  );
+  progress.start('Fetching Moodle user info...');
   let userId: number;
 
   try {
     const siteInfo = await client.getSiteInfo();
     userId = siteInfo.userid;
+    progress.setSiteInfoDone();
   } catch (err: any) {
     if (err.errorcode || err.name === 'MoodleApiError') {
       throw err;
@@ -197,6 +219,7 @@ export async function runSync(
   }
 
   if (trackedCourseIds.length === 0) {
+    progress.complete('Sync completed.');
     return {
       assignments: [],
       files: [],
@@ -207,7 +230,7 @@ export async function runSync(
     };
   }
 
-  onProgress('Fetching course mapping...');
+  progress.setCourseMappingDone('Fetching course mapping...');
   const courseMap = new Map<number, {
     display_name: string;
     name: string;
@@ -238,6 +261,7 @@ export async function runSync(
         instanceUrl: c.instanceUrl,
       });
     }
+    progress.setCourseMappingDone('Course catalog loaded.');
   } catch (err: any) {
     errors.push({
       context: 'Fetching enrolled courses',
@@ -251,7 +275,7 @@ export async function runSync(
     return rawNameFromAssign || `Course ${moodleCourseId}`;
   };
 
-  onProgress('Fetching assignments, quizzes, and grades...');
+  progress.setGlobalQueriesDone('Fetching assignments, quizzes, and grades...');
   let rawAssignments: RawMoodleAssignment[] = [];
   let rawQuizzes: RawMoodleQuiz[] = [];
   const rawOrderMap = new Map<string, number>();
@@ -360,8 +384,8 @@ export async function runSync(
       }
     })
   ]);
-
-  onProgress(`Fetching contents and submission statuses for ${trackedCourseIds.length} courses...`);
+  progress.setGlobalQueriesDone('Global activities and grades loaded.');
+  progress.setTotalCourses(trackedCourseIds.length);
   const cmidToSectionMap = new Map<number, string>();
   const cmidToSectionIdMap = new Map<number, number>();
   const now = new Date();
@@ -408,7 +432,37 @@ export async function runSync(
       });
     }
 
-    let status: 'Assigned' | 'Submitted' | 'Not submitted' = subStatus === 'submitted' ? 'Submitted' : 'Assigned';
+    const assignCmid = assign.cmid;
+    const completionInfo = moduleCompletionMap.get(assignCmid);
+    const effectiveCompletion = completionInfo?.completion ?? assign.completion;
+    const effectiveCompletionData = completionInfo?.completiondata ?? assign.completiondata;
+    const requiresManualCompletion = effectiveCompletion === 1;
+    const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
+    const isAutomaticCompletionDone =
+      effectiveCompletion === 2 &&
+      (effectiveCompletionData?.state === 1 || effectiveCompletionData?.state === 2);
+
+    const gradeInfo = gradesByCmid.get(Number(assign.cmid));
+    let grade: number | null = null;
+    let gradeMax: number | null = null;
+    let feedback: string | undefined = undefined;
+    let isBonus = /בונוס|bonus/i.test(assign.name || '');
+
+    if (gradeInfo && !gradeInfo.gradeishidden) {
+      grade = gradeInfo.graderaw;
+      gradeMax = gradeInfo.grademax;
+      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
+      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
+        isBonus = true;
+      }
+    }
+
+    const hasGrade = grade !== null && grade !== undefined;
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' =
+      (subStatus === 'submitted' || hasGrade || isAutomaticCompletionDone || (requiresManualCompletion && isManualCompletionDone))
+        ? 'Submitted'
+        : 'Assigned';
 
     const dueTs = assign.duedate || 0;
     const cutoffTs = assign.cutoffdate || 0;
@@ -441,21 +495,6 @@ export async function runSync(
     const openedIso = assign.allowsubmissionsfromdate > 0
       ? new Date(assign.allowsubmissionsfromdate * 1000).toISOString()
       : null;
-
-    const gradeInfo = gradesByCmid.get(Number(assign.cmid));
-    let grade: number | null = null;
-    let gradeMax: number | null = null;
-    let feedback: string | undefined = undefined;
-    let isBonus = /בונוס|bonus/i.test(assign.name || '');
-
-    if (gradeInfo && !gradeInfo.gradeishidden) {
-      grade = gradeInfo.graderaw;
-      gradeMax = gradeInfo.grademax;
-      if (gradeInfo.feedback) feedback = cleanMoodleString(gradeInfo.feedback);
-      if (/בונוס|bonus/i.test(gradeInfo.itemname || '')) {
-        isBonus = true;
-      }
-    }
 
     let attachments: Attachment[] = assign.introattachments
       ? assign.introattachments.map((att) => ({
@@ -502,15 +541,16 @@ export async function runSync(
       sectionName: sectionName || cmidToSectionMap.get(Number(assign.cmid)),
       activityType: 'assign',
       uid: `assign:${assign.id}`,
+      requiresManualCompletion,
+      isManualCompletionDone: isManualCompletionDone || isAutomaticCompletionDone,
+      completionTracking: effectiveCompletion,
       isCompleted: status === 'Submitted',
       feedback,
       isBonus,
     };
 
     assignments.push(processedAssign);
-    if (onPartialSync) {
-      onPartialSync({ assignments: [...assignments] });
-    }
+    progress.activityCompleted(assign.name);
   };
 
   const processQuiz = async (quiz: RawMoodleQuiz, sectionName?: string) => {
@@ -537,26 +577,9 @@ export async function runSync(
     const effectiveCompletionData = completionInfo?.completiondata ?? quiz.completiondata;
     const requiresManualCompletion = effectiveCompletion === 1;
     const isManualCompletionDone = Boolean(effectiveCompletionData?.state === 1);
-
-    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
-    if (hasFinished) {
-      status = 'Submitted';
-    } else if (requiresManualCompletion && isManualCompletionDone) {
-      status = 'Submitted';
-    }
-
-    const closeTs = quiz.timeclose || 0;
-    let deadlineIso: string | null = null;
-    if (closeTs > 0) {
-      const closeDate = new Date(closeTs * 1000);
-      deadlineIso = closeDate.toISOString();
-      if (status !== 'Submitted' && closeDate < now) {
-        status = 'Not submitted';
-      }
-    }
-
-    const openTs = quiz.timeopen || 0;
-    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
+    const isAutomaticCompletionDone =
+      effectiveCompletion === 2 &&
+      (effectiveCompletionData?.state === 1 || effectiveCompletionData?.state === 2);
 
     const gradeInfo = gradesByCmid.get(Number(cmid));
     let grade: number | null = null;
@@ -573,6 +596,26 @@ export async function runSync(
     } else if (quiz.sumgrades !== undefined && quiz.sumgrades !== null) {
       gradeMax = quiz.sumgrades;
     }
+
+    const hasGrade = grade !== null && grade !== undefined;
+
+    let status: 'Assigned' | 'Submitted' | 'Not submitted' = 'Assigned';
+    if (hasFinished || hasGrade || isAutomaticCompletionDone || (requiresManualCompletion && isManualCompletionDone)) {
+      status = 'Submitted';
+    }
+
+    const closeTs = quiz.timeclose || 0;
+    let deadlineIso: string | null = null;
+    if (closeTs > 0) {
+      const closeDate = new Date(closeTs * 1000);
+      deadlineIso = closeDate.toISOString();
+      if (status !== 'Submitted' && closeDate < now) {
+        status = 'Not submitted';
+      }
+    }
+
+    const openTs = quiz.timeopen || 0;
+    const openedIso = openTs > 0 ? new Date(openTs * 1000).toISOString() : null;
 
     const courseInfo = courseMap.get(quiz.course);
     const quizBaseUrl = courseInfo?.instanceUrl
@@ -604,25 +647,24 @@ export async function runSync(
       attemptsAllowed: quiz.attempts > 0 ? quiz.attempts : undefined,
       hasFinishedAttempt: hasFinished,
       requiresManualCompletion,
-      isManualCompletionDone,
+      isManualCompletionDone: isManualCompletionDone || isAutomaticCompletionDone,
       completionTracking: effectiveCompletion,
       isCompleted: status === 'Submitted',
     };
 
     assignments.push(processedQuiz);
-    if (onPartialSync) {
-      onPartialSync({ assignments: [...assignments] });
-    }
+    progress.activityCompleted(quiz.name);
   };
 
-  if (enablePanopto) {
-    try {
-      const initialJar = await getScrapeJar();
-      await ensurePanoptoSession(initialJar);
-    } catch {
-      // Individual course sync will handle fallback/errors if needed
-    }
-  }
+  const coursePanoptoMetadataMap = new Map<number, {
+    courseId: number;
+    courseName: string;
+    courseBaseUrl: string;
+    courseInfo?: any;
+    discoveredPanoptoFolderIds: string[];
+    discoveredPanoptoDeliveries: { id: string; title: string; recordingUrl: string; sectionName?: string }[];
+    discoveredPanoptoLtiInstances: number[];
+  }>();
 
   // Stage 1: Fetch course contents & format state first so cmidToSectionMap,
   // cmidToSectionIdMap, moduleCompletionMap, and fallback activities are populated
@@ -665,13 +707,14 @@ export async function runSync(
       };
 
       const addMeeting = (m: ZoomMeeting) => {
+        // Strictly guarantee only real, joinable Zoom meetings are registered as Zoom meetings
+        if (!m.meetingUrl || !isZoomJoinUrl(m.meetingUrl, m.meetingNumber)) return;
         const key = m.startTime
           ? `${courseId}:${m.meetingNumber || m.meetingUrl}:${m.startTime}`
           : `${courseId}:${m.meetingNumber || m.meetingUrl}`;
         if (seenMeetingKeys.has(key)) return;
         seenMeetingKeys.add(key);
         meetings.push(m);
-        if (onPartialSync) onPartialSync({ meetings: [...meetings] });
       };
 
       try {
@@ -901,16 +944,16 @@ export async function runSync(
                     courseName,
                   };
                   files.push(newFile);
-                  if (onPartialSync) onPartialSync({ files: [...files] });
                 }
               }
             }
 
             // --- FOLDER DETECTION (mod_folder) ---
-            if (modname === 'folder' && module.contents) {
+            if (modname === 'folder') {
               const folderFiles: CourseFolderFile[] = [];
               let totalFolderSize = 0;
-              for (const c of module.contents) {
+              if (Array.isArray(module.contents)) {
+                for (const c of module.contents) {
                 if (c.type === 'file') {
                   const fileSize = c.filesize || 0;
                   totalFolderSize += fileSize;
@@ -943,6 +986,7 @@ export async function runSync(
                   });
                 }
               }
+              }
 
               const newFolder: CourseFolder = {
                 id: module.id,
@@ -958,7 +1002,6 @@ export async function runSync(
                 totalSize: totalFolderSize,
               };
               folders.push(newFolder);
-              if (onPartialSync) onPartialSync({ folders: [...folders], files: [...files] });
             }
 
             // --- EXTERNAL LINK DETECTION (mod_url) ---
@@ -982,19 +1025,100 @@ export async function runSync(
                   moodleUrl: `${courseBaseUrl}/mod/url/view.php?id=${module.id}`,
                   linkKind,
                 });
-                if (onPartialSync) onPartialSync({ links: [...links] });
               }
             }
 
             // --- ZOOM MEETING DETECTION ---
-            // A. LTI Module (e.g. Zoom LTI Pro activity)
-            if (modname === 'lti' && isZoomOrMeetingName(name)) {
-              let scrapedSuccessfully = false;
-              if (module.instance !== undefined) {
+            // A. Zoom Activity (mod_zoom or Zoom LTI Pro mod_lti)
+            const isZoomActivity = modname === 'zoom' || (modname === 'lti' && isZoomOrMeetingName(name));
+
+            if (isZoomActivity) {
+              const targetUrl = module.url || `${courseBaseUrl}/mod/${modname}/view.php?id=${module.id}`;
+              links.push({
+                id: module.id,
+                courseId,
+                courseName,
+                sectionId: section.id,
+                sectionName,
+                name: cleanMoodleString(name),
+                targetUrl,
+                moodleUrl: `${courseBaseUrl}/mod/${modname}/view.php?id=${module.id}`,
+                linkKind: 'zoom',
+              });
+
+              // 1. Direct contents or URLs
+              if (module.contents && module.contents.length > 0) {
+                for (const c of module.contents) {
+                  if (c.fileurl && isZoomUrl(c.fileurl)) {
+                    const parsed = parseZoomUrl(c.fileurl);
+                    addMeeting({
+                      title: c.filename || name,
+                      meetingUrl: parsed.meetingUrl,
+                      sectionName,
+                      courseId,
+                      courseName,
+                      meetingNumber: parsed.meetingNumber,
+                      password: parsed.password,
+                    });
+                  }
+                  if (c.content) {
+                    const extracted = extractZoomLinksFromHtml(c.content);
+                    for (const el of extracted) {
+                      const parsed = parseZoomUrl(el.url);
+                      addMeeting({
+                        title: el.title || name,
+                        meetingUrl: parsed.meetingUrl,
+                        sectionName,
+                        courseId,
+                        courseName,
+                        meetingNumber: parsed.meetingNumber,
+                        password: parsed.password,
+                      });
+                    }
+                  }
+                }
+              }
+              if (module.url && isZoomUrl(module.url)) {
+                const parsed = parseZoomUrl(module.url);
+                addMeeting({
+                  title: name,
+                  meetingUrl: parsed.meetingUrl,
+                  sectionName,
+                  courseId,
+                  courseName,
+                  meetingNumber: parsed.meetingNumber,
+                  password: parsed.password,
+                });
+              }
+              if (module.description || module.intro) {
+                const extracted = extractZoomLinksFromHtml(`${module.description || ''} ${module.intro || ''}`);
+                for (const el of extracted) {
+                  const parsed = parseZoomUrl(el.url);
+                  addMeeting({
+                    title: el.title || name,
+                    meetingUrl: parsed.meetingUrl,
+                    sectionName,
+                    courseId,
+                    courseName,
+                    meetingNumber: parsed.meetingNumber,
+                    password: parsed.password,
+                  });
+                }
+              }
+
+              // 2. Scrape activity meetings (mod_zoom view page, Zoom table, LTI launch)
+              if (module.instance !== undefined || module.id !== undefined) {
                 try {
-                  const ltiMeetings = await scrapeZoomMeetingsWithToken(token, module.instance, courseBaseUrl);
+                  const scrapeJar = await getScrapeJar();
+                  const ltiMeetings = await scrapeZoomMeetingsWithToken(
+                    token,
+                    module.instance ?? module.id,
+                    courseBaseUrl,
+                    module.id,
+                    scrapeJar,
+                    modname
+                  );
                   if (ltiMeetings.length > 0) {
-                    scrapedSuccessfully = true;
                     for (const lm of ltiMeetings) {
                       addMeeting({
                         title: lm.topic || name,
@@ -1016,43 +1140,6 @@ export async function runSync(
                   });
                 }
               }
-
-              // Fallback if scraping is disabled, returns 0 meetings, or fails:
-              if (!scrapedSuccessfully) {
-                const fallbackUrl = module.url || `${courseBaseUrl}/mod/lti/view.php?id=${module.id}`;
-                addMeeting({
-                  title: name,
-                  meetingUrl: fallbackUrl,
-                  sectionName,
-                  courseId,
-                  courseName,
-                });
-              }
-            }
-
-            // B. Official Zoom Module (mod_zoom)
-            else if (modname === 'zoom') {
-              let zoomUrl = '';
-              if (module.contents && module.contents.length > 0) {
-                const direct = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
-                if (direct?.fileurl) zoomUrl = direct.fileurl;
-              }
-              if (!zoomUrl && module.url) {
-                zoomUrl = module.url;
-              }
-              if (!zoomUrl) {
-                zoomUrl = `${courseBaseUrl}/mod/zoom/view.php?id=${module.id}`;
-              }
-              const parsed = parseZoomUrl(zoomUrl);
-              addMeeting({
-                title: name,
-                meetingUrl: parsed.meetingUrl,
-                sectionName,
-                courseId,
-                courseName,
-                meetingNumber: parsed.meetingNumber,
-                password: parsed.password,
-              });
             }
 
             // C. URL Module (mod_url)
@@ -1063,16 +1150,16 @@ export async function runSync(
                 if (zoomContent?.fileurl) {
                   directUrl = zoomContent.fileurl;
                 } else if (isZoomOrMeetingName(name)) {
-                  const firstUrl = module.contents.find(c => c.fileurl);
-                  if (firstUrl?.fileurl) directUrl = firstUrl.fileurl;
+                  const firstZoom = module.contents.find(c => c.fileurl && isZoomUrl(c.fileurl));
+                  if (firstZoom?.fileurl) directUrl = firstZoom.fileurl;
                 }
               }
 
-              if (!directUrl && (isZoomUrl(module.url || '') || isZoomOrMeetingName(name))) {
-                directUrl = module.url || `${courseBaseUrl}/mod/url/view.php?id=${module.id}`;
+              if (!directUrl && isZoomUrl(module.url || '')) {
+                directUrl = module.url!;
               }
 
-              if (directUrl) {
+              if (directUrl && isZoomUrl(directUrl)) {
                 const parsed = parseZoomUrl(directUrl);
                 addMeeting({
                   title: name,
@@ -1086,17 +1173,20 @@ export async function runSync(
               }
             }
 
-            // D. Labels, Pages, or Module Descriptions/Intros with embedded Zoom links
+            // D. Labels, Pages, Resources, or Module Descriptions/Intros with embedded Zoom links
             else {
               const htmlSources: string[] = [];
               if (module.description) htmlSources.push(module.description);
               if (module.intro) htmlSources.push(module.intro);
-              if (modname === 'label' || modname === 'page') {
+              if (modname === 'label' || modname === 'page' || modname === 'resource') {
                 if (name && isZoomUrl(name)) htmlSources.push(name);
                 if (module.contents) {
                   for (const c of module.contents) {
                     if (c.fileurl && isZoomUrl(c.fileurl)) {
                       htmlSources.push(c.fileurl);
+                    }
+                    if (c.content) {
+                      htmlSources.push(c.content);
                     }
                   }
                 }
@@ -1120,9 +1210,6 @@ export async function runSync(
             }
           }
         }
-        if (onPartialSync && sections.length > 0) {
-          onPartialSync({ sections: [...sections] });
-        }
       } catch (err: any) {
         errors.push({
           context: `Fetching contents for course ${courseName} (id: ${courseId})`,
@@ -1130,237 +1217,35 @@ export async function runSync(
         });
       }
 
-      // --- PANOPTO LECTURE & RECITATION DISCOVERY AND SYNC ---
+      // Collect discovered Panopto metadata in-memory for Stage 3 (no blocking network calls)
       if (enablePanopto) {
-        try {
-          const jar = await getScrapeJar();
-          let resolvedFolderId: string | null = null;
-          let resolutionTier = 'none';
-          const ltiRecordings: PanoptoRecording[] = [];
-
-          // Ensure Panopto SSO session is established once per sync
-          await ensurePanoptoSession(jar);
-
-          // Tier 1: Manual override in coursesPanoptoMap[courseId]
-          const rawManual =
-            coursesPanoptoMap[courseId] ??
-            (coursesPanoptoMap as Record<string, string>)[String(courseId)] ??
-            '';
-          const manualOverride = String(rawManual).trim();
-          if (manualOverride) {
-            resolvedFolderId = extractPanoptoFolderId(manualOverride);
-            if (!resolvedFolderId) {
-              const manualDeliveryId = extractPanoptoDeliveryId(manualOverride);
-              if (manualDeliveryId) {
-                resolvedFolderId = await resolveFolderIdFromDelivery(manualDeliveryId, PANOPTO_BASE_URL, jar);
-              }
-            }
-            if (resolvedFolderId) {
-              resolutionTier = 'Tier 1 (Manual Override)';
-            } else {
-              console.warn(
-                `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): Could not extract folder UUID from manual override "${manualOverride}"`
-              );
-              errors.push({
-                context: `Panopto (${courseName})`,
-                message: `Invalid Panopto folder URL or UUID: "${manualOverride}"`,
-              });
-            }
-          }
-
-          // Tier 2a: Auto-discover from Moodle course modules
-          if (!resolvedFolderId && discoveredPanoptoFolderIds.length > 0) {
-            resolvedFolderId = discoveredPanoptoFolderIds[0];
-            resolutionTier = 'Tier 2 (Moodle Course Modules)';
-          }
-
-          // Tier 3: Panopto Data.svc/GetSessions search by course code / title
-          if (!resolvedFolderId) {
-            await ensurePanoptoSession(jar);
-            resolvedFolderId = await discoverCourseFolderFromBrowse(
-              {
-                courseId,
-                courseCode: courseInfo?.courseCode,
-                displayName: courseName,
-                fullName: courseInfo?.name,
-                year: courseInfo?.year,
-              },
-              PANOPTO_BASE_URL,
-              jar
-            );
-            if (resolvedFolderId) {
-              resolutionTier = 'Tier 3 (Panopto Data.svc Search)';
-              panoptoSessionVerified = true;
-            }
-          }
-
-          // Tier 2b: Fallback to Panopto LTI launch, Moodle course blocks WS, or course HTML if Data.svc search didn't find folder
-          if (!resolvedFolderId && discoveredPanoptoLtiInstances.length > 0) {
-            for (const ltiInstanceId of discoveredPanoptoLtiInstances) {
-              const ltiResult = await resolvePanoptoViaLti(
-                token,
-                ltiInstanceId,
-                courseId,
-                courseName,
-                courseBaseUrl,
-                PANOPTO_BASE_URL,
-                jar
-              );
-              for (const fid of ltiResult.folderIds) {
-                addDiscoveredFolderId(fid);
-              }
-              ltiRecordings.push(...ltiResult.recordings);
-            }
-            if (discoveredPanoptoFolderIds.length > 0) {
-              resolvedFolderId = discoveredPanoptoFolderIds[0];
-              resolutionTier = 'Tier 2 (Moodle Course Modules / LTI)';
-            }
-          }
-
-          if (!resolvedFolderId) {
-            const wsBlockLinks = await discoverPanoptoFromMoodleBlocks(
-              token,
-              courseId,
-              courseBaseUrl,
-              PANOPTO_BASE_URL
-            );
-            for (const fid of wsBlockLinks.folderIds) {
-              addDiscoveredFolderId(fid);
-            }
-            for (const del of wsBlockLinks.deliveries) {
-              addDiscoveredDelivery(del.id, del.title, del.recordingUrl);
-            }
-            if (discoveredPanoptoFolderIds.length > 0) {
-              resolvedFolderId = discoveredPanoptoFolderIds[0];
-              resolutionTier = 'Tier 2 (Moodle core_block_get_course_blocks WS)';
-            }
-          }
-
-          if (!resolvedFolderId && discoveredPanoptoDeliveries.length > 0) {
-            for (const del of discoveredPanoptoDeliveries.slice(0, 3)) {
-              resolvedFolderId = await resolveFolderIdFromDelivery(del.id, PANOPTO_BASE_URL, jar);
-              if (resolvedFolderId) {
-                resolutionTier = 'Tier 2 (DeliveryInfo Parent Folder)';
-                break;
-              }
-            }
-          }
-
-          // If still unresolved and Panopto session has not yet been verified, force a hidden-tab re-auth check and retry Tier 3
-          if (!resolvedFolderId && options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
-            const reauthed = await ensurePanoptoSession(jar, true);
-            if (reauthed) {
-              resolvedFolderId = await discoverCourseFolderFromBrowse(
-                {
-                  courseId,
-                  courseCode: courseInfo?.courseCode,
-                  displayName: courseName,
-                  fullName: courseInfo?.name,
-                  year: courseInfo?.year,
-                },
-                PANOPTO_BASE_URL,
-                jar
-              );
-              if (resolvedFolderId) {
-                resolutionTier = 'Tier 3 (Panopto Data.svc Search after Re-Auth)';
-                panoptoSessionVerified = true;
-              }
-            }
-          }
-
-          console.log(
-            `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): resolvedFolderId=${resolvedFolderId || 'none'} via ${resolutionTier} (deliveries=${discoveredPanoptoDeliveries.length}, ltiRecs=${ltiRecordings.length})`
-          );
-
-          // Fetch recordings from the resolved Panopto folder
-          let folderRecordings: PanoptoRecording[] = [];
-          if (resolvedFolderId) {
-            await ensurePanoptoSession(jar);
-            folderRecordings = await fetchPanoptoFolderSessions(
-              resolvedFolderId,
-              courseId,
-              courseName,
-              PANOPTO_BASE_URL,
-              jar
-            );
-            if (folderRecordings.length > 0) {
-              panoptoSessionVerified = true;
-            } else if (options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
-              console.log(
-                `[SyncEngine][Panopto] 0 recordings returned for folder ${resolvedFolderId} (${courseName}); checking if Panopto session expired...`
-              );
-              const reauthed = await ensurePanoptoSession(jar, true);
-              if (reauthed) {
-                folderRecordings = await fetchPanoptoFolderSessions(
-                  resolvedFolderId,
-                  courseId,
-                  courseName,
-                  PANOPTO_BASE_URL,
-                  jar
-                );
-                if (folderRecordings.length > 0) {
-                  panoptoSessionVerified = true;
-                }
-              }
-            }
-          }
-
-          // Merge explicit section assignments from Moodle modules and fallback deliveries
-          const explicitSectionById = new Map<string, string>();
-          for (const del of discoveredPanoptoDeliveries) {
-            if (del.sectionName) {
-              explicitSectionById.set(del.id.toLowerCase(), del.sectionName);
-            }
-          }
-
-          const rawCombined: PanoptoRecording[] = [...folderRecordings, ...ltiRecordings];
-          if (rawCombined.length === 0 && discoveredPanoptoDeliveries.length > 0) {
-            for (const del of discoveredPanoptoDeliveries) {
-              rawCombined.push({
-                id: del.id,
-                title: del.title,
-                recordingUrl: del.recordingUrl,
-                publishedDate: '',
-                type: classifyRecordingType(del.title),
-                courseId,
-                courseName,
-                sectionName: del.sectionName,
-              });
-            }
-          }
-
-          const resolvedFolderUrl = resolvedFolderId
-            ? buildPanoptoFolderUrl(resolvedFolderId, PANOPTO_BASE_URL)
-            : undefined;
-
-          const finalCourseRecordings = filterAndDeduplicateRecordings(rawCombined).map(rec => ({
-            ...rec,
-            folderId: resolvedFolderId || rec.folderId,
-            folderUrl: resolvedFolderUrl || rec.folderUrl,
-            sectionName: rec.type === 'Recitation' ? 'Recitations' : 'Lectures',
-          }));
-
-          if (finalCourseRecordings.length > 0) {
-            recordings.push(...finalCourseRecordings);
-            if (onPartialSync) {
-              onPartialSync({ recordings: [...recordings] });
-            }
-          } else if (manualOverride && resolvedFolderId) {
-            errors.push({
-              context: `Panopto (${courseName})`,
-              message: `No recordings returned for folder ${resolvedFolderId}. Ensure you are signed into tau.cloud.panopto.eu in your browser or check the folder permissions.`,
-            });
-          }
-        } catch (err: any) {
-          errors.push({
-            context: `Fetching Panopto recordings for course ${courseName} (id: ${courseId})`,
-            message: err.message,
-          });
-        }
+        coursePanoptoMetadataMap.set(courseId, {
+          courseId,
+          courseName,
+          courseBaseUrl,
+          courseInfo,
+          discoveredPanoptoFolderIds,
+          discoveredPanoptoDeliveries,
+          discoveredPanoptoLtiInstances,
+        });
       }
+      progress.courseCompleted(courseName);
     });
 
+  // Level 1 Complete: Emit all course contents, files, folders, links, sections, and meetings atomically
+  if (onPartialSync) {
+    onPartialSync({
+      files: [...files],
+      folders: [...folders],
+      links: [...links],
+      meetings: [...meetings],
+      sections: [...sections],
+      announcements: [...announcements],
+    });
+  }
+
   // Stage 2: Process all assignments and quizzes now that section & completion maps are populated
+  progress.setTotalActivities(rawAssignments.length, rawQuizzes.length);
   await Promise.all([
     batchPromises(rawAssignments, 50, async (assign) => {
       await processAssignment(assign);
@@ -1375,6 +1260,263 @@ export async function runSync(
     if (!assign.sectionName) {
       const secName = cmidToSectionMap.get(Number(assign.cmid));
       if (secName) assign.sectionName = secName;
+    }
+  }
+
+  // Level 2 Complete: Emit all assignments, quizzes, and grade summaries atomically
+  if (onPartialSync) {
+    onPartialSync({
+      assignments: [...assignments],
+      gradeSummaries: { ...gradeSummaries },
+    });
+  }
+
+  // Stage 3: Dedicated Panopto Recordings Discovery & Sync (isolated from core Moodle content)
+  if (enablePanopto && trackedCourseIds.length > 0) {
+    progress.setTotalPanoptoCourses(trackedCourseIds.length);
+    try {
+      const initialJar = await getScrapeJar();
+      await ensurePanoptoSession(initialJar);
+    } catch {
+      // Individual course sync will handle fallback/errors if needed
+    }
+
+    for (const courseId of trackedCourseIds) {
+      const panoptoMeta = coursePanoptoMetadataMap.get(courseId);
+      const courseName = panoptoMeta?.courseName || getCourseDisplayName(courseId);
+      const courseInfo = panoptoMeta?.courseInfo || courseMap.get(courseId);
+      const courseBaseUrl = panoptoMeta?.courseBaseUrl || (baseUrl || 'https://moodle.tau.ac.il');
+      const discoveredPanoptoFolderIds = panoptoMeta?.discoveredPanoptoFolderIds || [];
+      const discoveredPanoptoDeliveries = panoptoMeta?.discoveredPanoptoDeliveries || [];
+      const discoveredPanoptoLtiInstances = panoptoMeta?.discoveredPanoptoLtiInstances || [];
+
+      try {
+        const jar = await getScrapeJar();
+        let resolvedFolderId: string | null = null;
+        let resolutionTier = 'none';
+        const ltiRecordings: PanoptoRecording[] = [];
+
+        await ensurePanoptoSession(jar);
+
+        const rawManual =
+          coursesPanoptoMap[courseId] ??
+          (coursesPanoptoMap as Record<string, string>)[String(courseId)] ??
+          '';
+        const manualOverride = String(rawManual).trim();
+        if (manualOverride) {
+          resolvedFolderId = extractPanoptoFolderId(manualOverride);
+          if (!resolvedFolderId) {
+            const manualDeliveryId = extractPanoptoDeliveryId(manualOverride);
+            if (manualDeliveryId) {
+              resolvedFolderId = await resolveFolderIdFromDelivery(manualDeliveryId, PANOPTO_BASE_URL, jar);
+            }
+          }
+          if (resolvedFolderId) {
+            resolutionTier = 'Tier 1 (Manual Override)';
+          } else {
+            console.warn(
+              `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): Could not extract folder UUID from manual override "${manualOverride}"`
+            );
+            errors.push({
+              context: `Panopto (${courseName})`,
+              message: `Invalid Panopto folder URL or UUID: "${manualOverride}"`,
+            });
+          }
+        }
+
+        if (!resolvedFolderId && discoveredPanoptoFolderIds.length > 0) {
+          resolvedFolderId = discoveredPanoptoFolderIds[0];
+          resolutionTier = 'Tier 2 (Moodle Course Modules)';
+        }
+
+        if (!resolvedFolderId) {
+          await ensurePanoptoSession(jar);
+          resolvedFolderId = await discoverCourseFolderFromBrowse(
+            {
+              courseId,
+              courseCode: courseInfo?.courseCode,
+              displayName: courseName,
+              fullName: courseInfo?.name,
+              year: courseInfo?.year,
+            },
+            PANOPTO_BASE_URL,
+            jar
+          );
+          if (resolvedFolderId) {
+            resolutionTier = 'Tier 3 (Panopto Data.svc Search)';
+            panoptoSessionVerified = true;
+          }
+        }
+
+        if (!resolvedFolderId && discoveredPanoptoLtiInstances.length > 0) {
+          for (const ltiInstanceId of discoveredPanoptoLtiInstances) {
+            const ltiResult = await resolvePanoptoViaLti(
+              token,
+              ltiInstanceId,
+              courseId,
+              courseName,
+              courseBaseUrl,
+              PANOPTO_BASE_URL,
+              jar
+            );
+            for (const fid of ltiResult.folderIds) {
+              if (fid && !discoveredPanoptoFolderIds.includes(fid)) {
+                discoveredPanoptoFolderIds.push(fid);
+              }
+            }
+            ltiRecordings.push(...ltiResult.recordings);
+          }
+          if (discoveredPanoptoFolderIds.length > 0) {
+            resolvedFolderId = discoveredPanoptoFolderIds[0];
+            resolutionTier = 'Tier 2 (Moodle Course Modules / LTI)';
+          }
+        }
+
+        if (!resolvedFolderId) {
+          const wsBlockLinks = await discoverPanoptoFromMoodleBlocks(
+            token,
+            courseId,
+            courseBaseUrl,
+            PANOPTO_BASE_URL
+          );
+          for (const fid of wsBlockLinks.folderIds) {
+            if (fid && !discoveredPanoptoFolderIds.includes(fid)) {
+              discoveredPanoptoFolderIds.push(fid);
+            }
+          }
+          for (const del of wsBlockLinks.deliveries) {
+            if (del.id && !discoveredPanoptoDeliveries.some(d => d.id === del.id)) {
+              discoveredPanoptoDeliveries.push({ id: del.id, title: del.title, recordingUrl: del.recordingUrl });
+            }
+          }
+          if (discoveredPanoptoFolderIds.length > 0) {
+            resolvedFolderId = discoveredPanoptoFolderIds[0];
+            resolutionTier = 'Tier 2 (Moodle core_block_get_course_blocks WS)';
+          }
+        }
+
+        if (!resolvedFolderId && discoveredPanoptoDeliveries.length > 0) {
+          for (const del of discoveredPanoptoDeliveries.slice(0, 3)) {
+            resolvedFolderId = await resolveFolderIdFromDelivery(del.id, PANOPTO_BASE_URL, jar);
+            if (resolvedFolderId) {
+              resolutionTier = 'Tier 2 (DeliveryInfo Parent Folder)';
+              break;
+            }
+          }
+        }
+
+        if (!resolvedFolderId && options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
+          const reauthed = await ensurePanoptoSession(jar, true);
+          if (reauthed) {
+            resolvedFolderId = await discoverCourseFolderFromBrowse(
+              {
+                courseId,
+                courseCode: courseInfo?.courseCode,
+                displayName: courseName,
+                fullName: courseInfo?.name,
+                year: courseInfo?.year,
+              },
+              PANOPTO_BASE_URL,
+              jar
+            );
+            if (resolvedFolderId) {
+              resolutionTier = 'Tier 3 (Panopto Data.svc Search after Re-Auth)';
+              panoptoSessionVerified = true;
+            }
+          }
+        }
+
+        console.log(
+          `[SyncEngine][Panopto] Course "${courseName}" (${courseId}): resolvedFolderId=${resolvedFolderId || 'none'} via ${resolutionTier} (deliveries=${discoveredPanoptoDeliveries.length}, ltiRecs=${ltiRecordings.length})`
+        );
+
+        let folderRecordings: PanoptoRecording[] = [];
+        if (resolvedFolderId) {
+          await ensurePanoptoSession(jar);
+          folderRecordings = await fetchPanoptoFolderSessions(
+            resolvedFolderId,
+            courseId,
+            courseName,
+            PANOPTO_BASE_URL,
+            jar
+          );
+          if (folderRecordings.length > 0) {
+            panoptoSessionVerified = true;
+          } else if (options?.onEnsurePanoptoAuth && !panoptoSessionVerified && !didForcePanoptoReauth) {
+            console.log(
+              `[SyncEngine][Panopto] 0 recordings returned for folder ${resolvedFolderId} (${courseName}); checking if Panopto session expired...`
+            );
+            const reauthed = await ensurePanoptoSession(jar, true);
+            if (reauthed) {
+              folderRecordings = await fetchPanoptoFolderSessions(
+                resolvedFolderId,
+                courseId,
+                courseName,
+                PANOPTO_BASE_URL,
+                jar
+              );
+              if (folderRecordings.length > 0) {
+                panoptoSessionVerified = true;
+              }
+            }
+          }
+        }
+
+        const explicitSectionById = new Map<string, string>();
+        for (const del of discoveredPanoptoDeliveries) {
+          if (del.sectionName) {
+            explicitSectionById.set(del.id.toLowerCase(), del.sectionName);
+          }
+        }
+
+        const rawCombined: PanoptoRecording[] = [...folderRecordings, ...ltiRecordings];
+        if (rawCombined.length === 0 && discoveredPanoptoDeliveries.length > 0) {
+          for (const del of discoveredPanoptoDeliveries) {
+            rawCombined.push({
+              id: del.id,
+              title: del.title,
+              recordingUrl: del.recordingUrl,
+              publishedDate: '',
+              type: classifyRecordingType(del.title),
+              courseId,
+              courseName,
+              sectionName: del.sectionName,
+            });
+          }
+        }
+
+        const resolvedFolderUrl = resolvedFolderId
+          ? buildPanoptoFolderUrl(resolvedFolderId, PANOPTO_BASE_URL)
+          : undefined;
+
+        const finalCourseRecordings = filterAndDeduplicateRecordings(rawCombined).map(rec => ({
+          ...rec,
+          folderId: resolvedFolderId || rec.folderId,
+          folderUrl: resolvedFolderUrl || rec.folderUrl,
+          sectionName: rec.type === 'Recitation' ? 'Recitations' : 'Lectures',
+        }));
+
+        if (finalCourseRecordings.length > 0) {
+          recordings.push(...finalCourseRecordings);
+        } else if (manualOverride && resolvedFolderId) {
+          errors.push({
+            context: `Panopto (${courseName})`,
+            message: `No recordings returned for folder ${resolvedFolderId}. Ensure you are signed into tau.cloud.panopto.eu in your browser or check the folder permissions.`,
+          });
+        }
+      } catch (err: any) {
+        errors.push({
+          context: `Fetching Panopto recordings for course ${courseName} (id: ${courseId})`,
+          message: err.message,
+        });
+      } finally {
+        progress.panoptoCourseCompleted(courseName);
+      }
+    }
+
+    // Level 3 Complete: Emit all Panopto recordings atomically
+    if (onPartialSync && recordings.length > 0) {
+      onPartialSync({ recordings: [...recordings] });
     }
   }
 
@@ -1425,6 +1567,8 @@ export async function runSync(
     }
   }
 
+  progress.finalizing('Finalizing sync results...');
+
   // Ensure assignments are deterministically ordered matching raw Moodle discovery sequence
   assignments.sort((a, b) => {
     const uidA = a.uid || `${a.activityType || 'assign'}:${a.id}`;
@@ -1434,7 +1578,7 @@ export async function runSync(
     return orderA - orderB;
   });
 
-  onProgress('Sync completed.');
+  progress.complete('Sync completed.');
   return {
     assignments,
     files,

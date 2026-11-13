@@ -11,3 +11,5 @@ export * from './courseFormatState.js';
 export * from './courseGrouping.js';
 export * from './activityState.js';
 export * from './localFsPlanner.js';
+export * from './syncProgress.js';
+export * from './gradesCalculation.js';

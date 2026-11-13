@@ -7,7 +7,7 @@ export function getDueTextAndClass(
   status?: string
 ): { deadlineText: string; badgeClass: string; timeColorClass: string } {
   let badgeClass = 'badge-muted';
-  let timeColorClass = 'due-red';
+  let timeColorClass = 'due-muted';
   let deadlineText = lang === 'he' ? (shortFormat ? 'אין מועד' : 'אין מועד הגשה') : 'No deadline';
 
   if (status === 'Submitted') {
@@ -26,7 +26,6 @@ export function getDueTextAndClass(
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const hoursLeft = diffMs / (1000 * 60 * 60);
   const daysLeft = diffMs / (1000 * 60 * 60 * 24);
 
   if (diffMs < 0) {
@@ -36,18 +35,18 @@ export function getDueTextAndClass(
     return { deadlineText, badgeClass, timeColorClass };
   }
 
-  if (hoursLeft <= 24) {
-    badgeClass = 'badge-danger';
-  } else if (hoursLeft <= 72) {
-    badgeClass = 'badge-warning';
-  } else {
-    badgeClass = 'badge-success';
-  }
+  const effectiveGreen = typeof greenThreshold === 'number' && !isNaN(greenThreshold) ? greenThreshold : 7;
+  const effectiveYellow = typeof yellowThreshold === 'number' && !isNaN(yellowThreshold) ? yellowThreshold : 3;
 
-  if (daysLeft > greenThreshold) {
+  if (daysLeft > effectiveGreen) {
+    badgeClass = 'badge-success';
     timeColorClass = 'due-green';
-  } else if (daysLeft > yellowThreshold) {
+  } else if (daysLeft > effectiveYellow) {
+    badgeClass = 'badge-warning';
     timeColorClass = 'due-yellow';
+  } else {
+    badgeClass = 'badge-danger';
+    timeColorClass = 'due-red';
   }
 
   if (diffDays >= 1) {

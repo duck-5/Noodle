@@ -43,7 +43,12 @@ export interface GroupedCoursesResult {
  * Checks whether a course is an administrative, safety, or institutional compliance tutorial
  * that belongs under the Administrative Umbrella rather than standard academic courses.
  */
-export function isAdministrativeCourse(course: MoodleCourse): boolean {
+export function isAdministrativeCourse(course: {
+  courseId?: string;
+  shortname?: string;
+  fullname?: string;
+  coursecategory?: string;
+}): boolean {
   const code = (course.courseId || '').trim();
   const shortname = (course.shortname || '').trim();
   const fullname = (course.fullname || '').trim();
@@ -265,7 +270,9 @@ export function aggregateUnifiedCourseItems(
   const seenMeetingKeys = new Set<string>();
   const meetings: ZoomMeeting[] = [];
   for (const m of rawMeetings) {
-    const key = m.meetingNumber || m.meetingUrl;
+    const key = m.startTime
+      ? `${m.meetingNumber || m.meetingUrl}_${m.startTime}`
+      : `${m.meetingNumber || m.meetingUrl}`;
     if (!seenMeetingKeys.has(key)) {
       seenMeetingKeys.add(key);
       meetings.push({

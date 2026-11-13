@@ -1,5 +1,5 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { SettingsSyncManager, SharedSettings } from '../src/settingsSync.js';
+import { SettingsSyncManager, SharedSettings, getEffectiveTheme } from '../src/settingsSync.js';
 import { MoodleClient } from '../src/moodleApi.js';
 
 describe('Category 9: Cross-Device Settings Sync (Moodle Calendar)', () => {
@@ -66,6 +66,33 @@ describe('Category 9: Cross-Device Settings Sync (Moodle Calendar)', () => {
       expect(result.theme?.value).toBe('noodle');
       // No upload needed because remote was strictly newer
       expect(mockClient.saveNoodleSettings).not.toHaveBeenCalled();
+    });
+  });
+  describe('TC-UI-06: Theme-by-Time Calculation (getEffectiveTheme)', () => {
+    it('should return static themes directly', () => {
+      expect(getEffectiveTheme('dark')).toBe('dark');
+      expect(getEffectiveTheme('coffee')).toBe('coffee');
+      expect(getEffectiveTheme('noodle')).toBe('noodle');
+      expect(getEffectiveTheme(null)).toBe('noodle');
+    });
+
+    it('should calculate daytime as noodle and nighttime as coffee for standard 7-17 range', () => {
+      // Daytime tests
+      expect(getEffectiveTheme('time', 7, 17, 7)).toBe('noodle');
+      expect(getEffectiveTheme('time', 7, 17, 12)).toBe('noodle');
+      expect(getEffectiveTheme('time', 7, 17, 16)).toBe('noodle');
+
+      // Nighttime tests
+      expect(getEffectiveTheme('time', 7, 17, 17)).toBe('coffee');
+      expect(getEffectiveTheme('time', 7, 17, 23)).toBe('coffee');
+      expect(getEffectiveTheme('time', 7, 17, 0)).toBe('coffee');
+      expect(getEffectiveTheme('time', 7, 17, 6)).toBe('coffee');
+    });
+
+    it('should handle inverted hour ranges (e.g. night owl 20 to 6)', () => {
+      expect(getEffectiveTheme('time', 20, 6, 22)).toBe('noodle');
+      expect(getEffectiveTheme('time', 20, 6, 2)).toBe('noodle');
+      expect(getEffectiveTheme('time', 20, 6, 12)).toBe('coffee');
     });
   });
 });

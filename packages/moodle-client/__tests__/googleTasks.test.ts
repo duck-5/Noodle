@@ -590,5 +590,155 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
       expect(body.due).toBeUndefined();
       expect(body.status).toBe('needsAction');
     });
+
+    it('deletes and never re-adds submitted/graded quizzes even if nominal status is Not submitted', async () => {
+      // Simulating Software 1 Lecture 2 Quiz: deadline was yesterday, student submitted and has grade,
+      // but attempts endpoint didn't set status or closeDate < now
+      const submittedQuizWithGrade: Assignment = {
+        id: 901,
+        cmid: 1901,
+        courseId: 301,
+        courseName: 'תוכנה 1',
+        name: 'Lecture 2 Quiz',
+        status: 'Not submitted',
+        deadline: '2026-11-09T21:59:00.000Z',
+        opened: '2026-11-01T08:00:00.000Z',
+        link: 'https://moodle.tau.ac.il/mod/quiz/view.php?id=1901',
+        grade: 100,
+        gradeMax: 100,
+        activityType: 'quiz',
+        uid: 'quiz:901',
+      };
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        // Simulating that the task currently exists in Google Tasks
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: 'gtask_quiz_901',
+                  title: '[תוכנה 1] Lecture 2 Quiz',
+                  status: 'needsAction',
+                  notes: 'Course: תוכנה 1\nLink: ...\nSource: Moodle (Noodle)\nNoodle:quizId:901\nNoodle:uid:quiz:901',
+                  due: '2026-11-09T21:59:00.000Z',
+                },
+              ],
+            }),
+          };
+        }
+        if (init?.method === 'DELETE') {
+          return { ok: true, status: 204 };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [submittedQuizWithGrade]
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(syncedCount).toBe(0);
+
+      // Verify that DELETE was called to remove the completed task
+      const deleteCall = fetchCalls.find((c) => c.init?.method === 'DELETE');
+      expect(deleteCall).toBeDefined();
+      expect(deleteCall.url).toContain('/tasks/gtask_quiz_901');
+
+      // Verify POST was NOT called
+      const postCall = fetchCalls.find((c) => c.init?.method === 'POST');
+      expect(postCall).toBeUndefined();
+
+      // Now verify that if the user already deleted it from Google Tasks (items: []),
+      // Noodle will NOT recreate it!
+      fetchCalls.length = 0;
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: [] }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const secondRun = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [submittedQuizWithGrade]
+      );
+
+      expect(secondRun.errors).toHaveLength(0);
+      expect(secondRun.syncedCount).toBe(0);
+      const secondPostCall = fetchCalls.find((c) => c.init?.method === 'POST');
+      expect(secondPostCall).toBeUndefined();
+    });
+
+    it('deduplicates multi-portal sub-course activities and prioritizes completed/graded entries', async () => {
+      // Portal 1 (Lecture): quiz has grade / completed
+      const portal1Quiz: Assignment = {
+        id: 901,
+        cmid: 1901,
+        courseId: 301,
+        courseName: 'תוכנה 1',
+        name: 'Lecture 2 Quiz',
+        status: 'Submitted',
+        deadline: '2026-11-09T21:59:00.000Z',
+        opened: '2026-11-01T08:00:00.000Z',
+        link: 'https://moodle.tau.ac.il/mod/quiz/view.php?id=1901',
+        grade: 100,
+        gradeMax: 100,
+        activityType: 'quiz',
+        uid: 'quiz:901',
+      };
+
+      // Portal 2 (Recitation / Umbrella): duplicate stub that is unsubmitted
+      const portal2Quiz: Assignment = {
+        id: 902,
+        cmid: 1902,
+        courseId: 302,
+        courseName: 'תוכנה 1',
+        name: 'Lecture 2 Quiz',
+        status: 'Not submitted',
+        deadline: '2026-11-09T21:59:00.000Z',
+        opened: '2026-11-01T08:00:00.000Z',
+        link: 'https://moodle.tau.ac.il/mod/quiz/view.php?id=1902',
+        grade: null,
+        gradeMax: 100,
+        activityType: 'quiz',
+        uid: 'quiz:902',
+      };
+
+      const fetchCalls: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, init });
+        if (url.includes('/tasks?')) {
+          return {
+            ok: true,
+            json: async () => ({ items: [] }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      // Pass both portal entries (unsubmitted second)
+      const res = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [portal2Quiz, portal1Quiz]
+      );
+
+      expect(res.errors).toHaveLength(0);
+      expect(res.syncedCount).toBe(0);
+      // Because portal1Quiz is graded/completed, deduplication picked the completed version and did NOT create an active task!
+      const postCall = fetchCalls.find((c) => c.init?.method === 'POST');
+      expect(postCall).toBeUndefined();
+    });
   });
 });

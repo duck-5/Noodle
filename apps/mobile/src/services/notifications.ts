@@ -68,7 +68,7 @@ export async function scheduleDeadlineNotifications(assignments: Assignment[]): 
         const triggerDate = new Date(deadline.getTime() - 24 * 60 * 60 * 1000);
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '📅 Assignment due tomorrow',
+            title: 'Assignment due tomorrow',
             body: `${assignment.name} — ${assignment.courseName}`,
             data: { assignmentId: assignment.id, link: assignment.link },
           },

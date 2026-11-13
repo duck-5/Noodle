@@ -72,13 +72,18 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
         return { success: false, error: err?.message || String(err), errorcode: err?.errorcode };
       });
   } else if (message.type === 'SYNC_NOW') {
-    promise = performBackgroundSync()
+    promise = performBackgroundSync(true)
       .then((result) => ({ success: true, result }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
   } else if (message.type === 'GET_SYNC_STATUS') {
     // Authoritative in-memory sync state (storage `isSyncing` can go stale if the
     // worker/event page was reloaded or terminated mid-sync).
-    promise = Promise.resolve({ success: true, isSyncing: activeBackgroundSyncPromise !== null });
+    promise = Promise.resolve({
+      success: true,
+      isSyncing: activeBackgroundSyncPromise !== null,
+      progressPercent: activeSyncProgressPercent,
+      syncState: activeSyncState,
+    });
   } else if (message.type === 'SYNC_SETTINGS') {
     promise = performSettingsSync()
       .then(() => ({ success: true }))
@@ -160,7 +165,7 @@ async function getSyncIntervalMinutes(): Promise<number> {
   } catch {
     // fallback
   }
-  return 5;
+  return 60;
 }
 
 // Setup alarm checking function to register the alarm on startup without resetting it if it already exists
@@ -236,20 +241,10 @@ async function updateActionBadge() {
     }
 
     const settings = await getSettings();
-    const hiddenSet = new Set(settings.hiddenAssignments || []);
-    const completedSet = new Set(settings.completedAssignments || []);
-    const uncompletedSet = new Set(settings.uncompletedAssignments || []);
-
-    const isDone = (a: any) => {
-      if (uncompletedSet.has(a.id)) return false;
-      if (completedSet.has(a.id) || a.isCompleted === true) return true;
-      return a.status === 'Submitted';
-    };
-
     const now = Date.now();
     const activeAssigns = cached.assignments.filter((a: any) => {
-      if (hiddenSet.has(a.id) || a.isHidden) return false;
-      if (isDone(a)) return false;
+      if (isActivityHidden(a, settings.hiddenAssignments)) return false;
+      if (isActivityCompleted(a, settings.completedAssignments, settings.uncompletedAssignments)) return false;
       if (!a.deadline) return true;
       // Only count upcoming/active deadlines or recently due within 24h
       return new Date(a.deadline).getTime() >= now;
@@ -549,15 +544,18 @@ async function performSettingsSync() {
 }
 
 let activeBackgroundSyncPromise: Promise<SyncResult> | null = null;
+let activeSyncProgressPercent = 0;
+let activeSyncState: any = null;
 
-async function performBackgroundSync(): Promise<SyncResult> {
+async function performBackgroundSync(isManual = false): Promise<SyncResult> {
   if (activeBackgroundSyncPromise) {
     console.log('[serviceWorker] Returning existing in-flight background sync promise');
     return await activeBackgroundSyncPromise;
   }
 
   activeBackgroundSyncPromise = (async () => {
-    console.log('--- STARTING SYNC (Triggered manually or via periodic alarm) ---');
+    activeSyncProgressPercent = 2;
+    console.log(`--- STARTING SYNC (Triggered ${isManual ? 'manually' : 'via periodic alarm'}) ---`);
     let token = await getStoredToken();
 
     if (!token) {
@@ -566,7 +564,7 @@ async function performBackgroundSync(): Promise<SyncResult> {
     }
 
   await browser.storage.local.set({ isSyncing: true });
-  browser.runtime.sendMessage({ type: 'SYNC_START' }).catch(() => { });
+  browser.runtime.sendMessage({ type: 'SYNC_START', isManual }).catch(() => { });
 
   let result;
   try {
@@ -597,17 +595,42 @@ async function performBackgroundSync(): Promise<SyncResult> {
       settings.coursesPanoptoMap || {}
     );
 
+    let moodleCookiesHeader: string | undefined;
+    try {
+      const moodleCookies = await browser.cookies.getAll({ domain: 'moodle.tau.ac.il' });
+      if (moodleCookies && moodleCookies.length > 0) {
+        moodleCookiesHeader = moodleCookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      }
+    } catch (_) {}
+
+    await syncPanoptoCookieToDnr().catch(() => {});
+
     try {
       result = await runSync(
         token,
         trackedCourseIds,
-        (msg) => {
-          browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-          console.log(`[Sync Progress] ${msg}`);
+        (msg, progress) => {
+          const percent = typeof progress === 'number'
+            ? progress
+            : (progress && typeof progress.percent === 'number' ? progress.percent : undefined);
+          if (percent !== undefined) {
+            activeSyncProgressPercent = percent;
+          }
+          if (typeof progress === 'object' && progress !== null) {
+            activeSyncState = progress;
+          }
+          browser.runtime.sendMessage({
+            type: 'SYNC_PROGRESS',
+            msg,
+            percent,
+            stage: typeof progress === 'object' ? progress.stage : undefined,
+            syncState: typeof progress === 'object' ? progress : undefined,
+          }).catch(() => { });
+          console.log(`[Sync Progress${percent !== undefined ? ` ${percent}%` : ''}] ${msg}`);
         },
         undefined,
         validCreds,
-        undefined,
+        moodleCookiesHeader,
         sesskey || undefined,
         (partial) => {
           browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
@@ -635,13 +658,28 @@ async function performBackgroundSync(): Promise<SyncResult> {
             result = await runSync(
               newToken,
               trackedCourseIds,
-              (msg) => {
-                browser.runtime.sendMessage({ type: 'SYNC_PROGRESS', msg }).catch(() => { });
-                console.log(`[Sync Progress Retry] ${msg}`);
+              (msg, progress) => {
+                const percent = typeof progress === 'number'
+                  ? progress
+                  : (progress && typeof progress.percent === 'number' ? progress.percent : undefined);
+                if (percent !== undefined) {
+                  activeSyncProgressPercent = percent;
+                }
+                if (typeof progress === 'object' && progress !== null) {
+                  activeSyncState = progress;
+                }
+                browser.runtime.sendMessage({
+                  type: 'SYNC_PROGRESS',
+                  msg,
+                  percent,
+                  stage: typeof progress === 'object' ? progress.stage : undefined,
+                  syncState: typeof progress === 'object' ? progress : undefined,
+                }).catch(() => { });
+                console.log(`[Sync Progress Retry${percent !== undefined ? ` ${percent}%` : ''}] ${msg}`);
               },
               undefined,
               validCreds,
-              undefined,
+              moodleCookiesHeader,
               newSesskey || undefined,
               (partial) => {
                 browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
@@ -729,6 +767,8 @@ async function performBackgroundSync(): Promise<SyncResult> {
       (result as any).googleSyncError = googleSyncError;
     }
   } finally {
+    activeSyncProgressPercent = 0;
+    activeSyncState = null;
     // Save syncing state and notify listeners
     await browser.storage.local.set({ isSyncing: false });
     browser.runtime.sendMessage({ type: 'SYNC_COMPLETE', result }).catch(() => { });
@@ -1224,16 +1264,59 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
     const host = window.location.hostname.toLowerCase();
     const href = window.location.href;
 
-    // 1. On Panopto login page: click #PageContentPlaceholder_loginControl_externalLoginButton
+    // 1. On Panopto domain: check if already authenticated or trigger external SSO login
     if (host.includes('panopto.eu') || host.includes('panopto.tau.ac.il')) {
+      const panoptoUser = win.Panopto?.user;
+      const isPanoptoAuthed = Boolean(
+        panoptoUser?.isAuthenticated &&
+          panoptoUser?.userId &&
+          String(panoptoUser.userId) !== '00000000-0000-0000-0000-000000000000'
+      );
+      if (isPanoptoAuthed) {
+        if (href.includes('/Auth/Login.aspx')) {
+          if (!win.__noodleAuthedRedirectAt || now - win.__noodleAuthedRedirectAt > 3000) {
+            win.__noodleAuthedRedirectAt = now;
+            window.location.href = 'https://tau.cloud.panopto.eu/Panopto/Pages/Home.aspx';
+          }
+          return `PANOPTO_ALREADY_AUTHENTICATED_REDIRECTING (${href})`;
+        }
+        return `PANOPTO_ALREADY_AUTHENTICATED (${href})`;
+      }
+
+      const providerSelect = document.querySelector<HTMLSelectElement>(
+        '#PageContentPlaceholder_loginControl_providerDropdown, select[id*="providerDropdown"]'
+      );
+      if (providerSelect && (!providerSelect.value || providerSelect.value === 'panoptointernal')) {
+        const options = Array.from(providerSelect.options);
+        const currentYear = String(new Date().getFullYear());
+        const moodleOpt =
+          options.find((o) => o.value === `Moodle${currentYear}`) ||
+          options.find((o) => o.value.toLowerCase().startsWith('moodle'));
+        if (moodleOpt) {
+          providerSelect.value = moodleOpt.value;
+          providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+
       const extBtn = document.querySelector<HTMLElement>(
         '#PageContentPlaceholder_loginControl_externalLoginButton, [id*="externalLoginButton"]'
       );
       if (extBtn) {
-        if (!win.__noodleExtLoginClickedAt || now - win.__noodleExtLoginClickedAt > 4000) {
+        if (!win.__noodleExtLoginClickedAt) {
           win.__noodleExtLoginClickedAt = now;
           extBtn.click();
           return `CLICKED_EXTERNAL_LOGIN (${href})`;
+        }
+        // Fallback for Brave hidden tabs where Panopto.Login.checkStorageAccess() stalls onclick navigation
+        if (now - win.__noodleExtLoginClickedAt > 2500 && href.includes('/Auth/Login.aspx')) {
+          win.__noodleExtLoginClickedAt = now;
+          const selectedInstance =
+            (providerSelect?.value && providerSelect.value !== 'panoptointernal'
+              ? providerSelect.value
+              : '') || `Moodle${new Date().getFullYear()}`;
+          const sep = window.location.search.indexOf('?') === -1 ? '?' : '&';
+          window.location.search += `${sep}instance=${encodeURIComponent(selectedInstance)}&AllowBounce=true`;
+          return `REDIRECTED_EXTERNAL_LOGIN_FALLBACK (${href})`;
         }
         return `WAITING_AFTER_EXTERNAL_LOGIN_CLICK (${href})`;
       }
@@ -1252,7 +1335,7 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
     }
 
     // 2. On Moodle login page (if Panopto SSO bounces via Moodle): click SAML login button
-    if (host.includes('moodle.tau.ac.il') && href.includes('/login/')) {
+    if (host.includes('moodle') && host.includes('tau.ac.il') && href.includes('/login/')) {
       const samlBtn = document.querySelector<HTMLElement>(
         'a[href*="/auth/saml2/login.php"], .login-btn, a.btn-primary'
       );
@@ -1343,9 +1426,84 @@ function injectedPanoptoLoginStep(username: string, idNumber: string, password: 
   }
 }
 
+async function getPanoptoCookies(): Promise< browser.Cookies.Cookie[] > {
+  const results: browser.Cookies.Cookie[] = [];
+  try {
+    const standard = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    results.push(...standard);
+  } catch {
+    // Ignore
+  }
+  try {
+    // Also query CHIPS / partitioned cookies in Brave & Chromium 119+
+    const partitioned = await browser.cookies.getAll({
+      domain: 'panopto.eu',
+      partitionKey: {},
+    } as any);
+    for (const c of partitioned) {
+      if (!results.some((existing) => existing.name === c.name && existing.value === c.value)) {
+        results.push(c);
+      }
+    }
+  } catch {
+    // Ignore on browsers that do not support partitionKey filter
+  }
+  return results;
+}
+
+const PANOPTO_COOKIE_DNR_RULE_ID = 2026;
+
+async function syncPanoptoCookieToDnr(): Promise<void> {
+  try {
+    const dnr =
+      (typeof chrome !== 'undefined' && (chrome as any).declarativeNetRequest) ||
+      (browser as any).declarativeNetRequest;
+    if (!dnr || typeof dnr.updateDynamicRules !== 'function') return;
+
+    const cookies = await getPanoptoCookies();
+    const aspxCookie = cookies.find((c) => c.name.toUpperCase().includes('ASPXAUTH') && Boolean(c.value));
+    if (!aspxCookie) {
+      await dnr.updateDynamicRules({ removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID] }).catch(() => {});
+      return;
+    }
+
+    const cookieHeaderValue = cookies
+      .filter((c) => Boolean(c.value))
+      .map((c) => `${c.name}=${c.value}`)
+      .join('; ');
+
+    await dnr.updateDynamicRules({
+      removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID],
+      addRules: [
+        {
+          id: PANOPTO_COOKIE_DNR_RULE_ID,
+          priority: 10,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              {
+                header: 'Cookie',
+                operation: 'set',
+                value: cookieHeaderValue,
+              },
+            ],
+          },
+          condition: {
+            urlFilter: '||tau.cloud.panopto.eu',
+            resourceTypes: ['xmlhttprequest'],
+          },
+        },
+      ],
+    });
+    console.log('[Panopto][DNR] Attached Panopto cookies via declarativeNetRequest dynamic rule.');
+  } catch (err) {
+    console.warn('[Panopto][DNR] Could not configure dynamic cookie rule:', err);
+  }
+}
+
 async function hasPanoptoAuthCookie(): Promise<boolean> {
   try {
-    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    const cookies = await getPanoptoCookies();
     const nowSec = Date.now() / 1000;
     return cookies.some(
       (c) =>
@@ -1360,12 +1518,21 @@ async function hasPanoptoAuthCookie(): Promise<boolean> {
 
 async function clearPanoptoAuthCookies(): Promise<void> {
   try {
-    const cookies = await browser.cookies.getAll({ domain: 'panopto.eu' });
+    const dnr =
+      (typeof chrome !== 'undefined' && (chrome as any).declarativeNetRequest) ||
+      (browser as any).declarativeNetRequest;
+    if (dnr && typeof dnr.updateDynamicRules === 'function') {
+      await dnr.updateDynamicRules({ removeRuleIds: [PANOPTO_COOKIE_DNR_RULE_ID] }).catch(() => {});
+    }
+    const cookies = await getPanoptoCookies();
     for (const cookie of cookies) {
       if (cookie.name.toUpperCase().includes('ASPXAUTH')) {
         const cleanDomain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
         const url = `http${cookie.secure ? 's' : ''}://${cleanDomain}${cookie.path}`;
-        await browser.cookies.remove({ url, name: cookie.name });
+        const removeDetails: any = { url, name: cookie.name };
+        if (cookie.storeId) removeDetails.storeId = cookie.storeId;
+        if ((cookie as any).partitionKey) removeDetails.partitionKey = (cookie as any).partitionKey;
+        await browser.cookies.remove(removeDetails).catch(() => {});
       }
     }
   } catch (e) {
@@ -1374,9 +1541,28 @@ async function clearPanoptoAuthCookies(): Promise<void> {
 }
 
 async function isPanoptoServerSessionAuthenticated(): Promise<boolean> {
-  if (!(await hasPanoptoAuthCookie())) {
-    return false;
+  await syncPanoptoCookieToDnr();
+  try {
+    // 1. Fast check against Panopto's REST user profile endpoint (returns 401 when unauthenticated, 200 OK when logged in)
+    const meRes = await fetch('https://tau.cloud.panopto.eu/Panopto/Api/v1/users/me', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    if (meRes.ok) {
+      const meData = await meRes.json().catch(() => null);
+      const userId = String(meData?.UserId || meData?.userId || '');
+      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
+        return true;
+      }
+    }
+  } catch {
+    // Fallback to Data.svc check below
   }
+
   try {
     const currentYear = String(new Date().getFullYear());
     const res = await fetch('https://tau.cloud.panopto.eu/Panopto/Services/Data.svc/GetSessions', {
@@ -1465,9 +1651,10 @@ async function ensurePanoptoAuthViaHiddenTab(
         }
       }
 
-      // Always remove any stale/expired .ASPXAUTH cookie before opening the login tab
-      // so we don't mistake an old cookie for a newly issued one during the polling loop
-      await clearPanoptoAuthCookies();
+      // Only clear cookies if an explicit force refresh was requested
+      if (forceRefresh && (await hasPanoptoAuthCookie())) {
+        await clearPanoptoAuthCookies();
+      }
 
       console.log('[Panopto][HiddenTab] Opening hidden background tab for Panopto SSO login...');
       const tab = await browser.tabs.create({
@@ -1539,7 +1726,7 @@ async function ensurePanoptoAuthViaHiddenTab(
           currentUrl.includes('panopto.eu/Panopto/Pages/') &&
           !currentUrl.includes('/Auth/Login.aspx')
         ) {
-          if (hasAuthCookie && (await isPanoptoServerSessionAuthenticated())) {
+          if (await isPanoptoServerSessionAuthenticated()) {
             console.log(
               `[Panopto][HiddenTab] Authenticated Panopto session at ${currentUrl} (serverReady=true)! Closing hidden tab.`
             );
@@ -1566,15 +1753,22 @@ async function ensurePanoptoAuthViaHiddenTab(
               lastLoggedStatus = summary;
               console.log(`[Panopto][HiddenTab] Step: ${summary}`);
             }
+            if (stepStates.some((s) => s.startsWith('PANOPTO_ALREADY_AUTHENTICATED ('))) {
+              const serverOk = await isPanoptoServerSessionAuthenticated();
+              console.log(
+                `[Panopto][HiddenTab] Tab confirmed authenticated Panopto session (serverOk=${serverOk}, hasAuthCookie=${hasAuthCookie}). Closing hidden tab.`
+              );
+              return true;
+            }
           } catch {
             // Tab may be mid-navigation between origins; retry on next tick
           }
         }
       }
 
-      const finalCookieCheck = await hasPanoptoAuthCookie();
+      const finalCookieCheck = (await hasPanoptoAuthCookie()) || (await isPanoptoServerSessionAuthenticated());
       console.warn(
-        `[Panopto][HiddenTab] Timed out after ${timeoutMs}ms waiting for Panopto redirect (hasAuthCookie=${finalCookieCheck}).`
+        `[Panopto][HiddenTab] Timed out after ${timeoutMs}ms waiting for Panopto redirect (authenticated=${finalCookieCheck}).`
       );
       return finalCookieCheck;
     } catch (err) {

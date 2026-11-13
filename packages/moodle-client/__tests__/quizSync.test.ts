@@ -1,4 +1,5 @@
 import { RestMoodleStrategy } from '../src/strategies/restStrategy.js';
+import { runSync } from '../src/syncEngine.js';
 import { RawMoodleQuiz, RawMoodleQuizAttempt } from '../src/moodleApi.js';
 
 describe('Quizzes & בחנים (mod_quiz) Strategy & Sync', () => {
@@ -140,5 +141,124 @@ describe('Quizzes & בחנים (mod_quiz) Strategy & Sync', () => {
     const bodyStr = fetchMock.mock.calls[0][1].body?.toString() || '';
     expect(bodyStr).toContain('completed=0');
     expect(success).toBe(true);
+  });
+
+  it('marks quiz as Submitted and completed when grade exists in gradebook or automatic completion is done', async () => {
+    // Mock getSiteInfo, enrolled courses, course contents, quizzes, grade items, etc.
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const body = init?.body?.toString() || '';
+      if (body.includes('core_webservice_get_site_info')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ userid: 1234, username: 'testuser', fullname: 'Test User' }),
+        };
+      }
+      if (body.includes('core_enrol_get_users_courses')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ([
+            { id: 301, fullname: 'תוכנה 1 - מבוא להנדסת תוכנה', shortname: '0368215701' },
+          ]),
+        };
+      }
+      if (body.includes('core_course_get_contents')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ([
+            {
+              id: 1,
+              name: 'שבוע 2',
+              modules: [
+                {
+                  id: 1901,
+                  instance: 901,
+                  name: 'Lecture 2 Quiz',
+                  modname: 'quiz',
+                  completion: 2, // Automatic completion!
+                  completiondata: { state: 1 }, // State 1: completed!
+                },
+              ],
+            },
+          ]),
+        };
+      }
+      if (body.includes('mod_quiz_get_quizzes_by_courses')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            quizzes: [
+              {
+                id: 901,
+                course: 301,
+                coursemodule: 1901,
+                name: 'Lecture 2 Quiz',
+                timeopen: 1761984000,
+                timeclose: 1762070400, // Closed in the past!
+                timelimit: 0,
+                attempts: 0,
+                completion: 2,
+                completiondata: { state: 1 },
+              },
+            ],
+          }),
+        };
+      }
+      if (body.includes('mod_quiz_get_user_attempts')) {
+        // Attempts endpoint fails or returns empty because review is restricted
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ attempts: [] }),
+        };
+      }
+      if (body.includes('gradereport_user_get_grade_items')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            usergrades: [
+              {
+                courseid: 301,
+                gradeitems: [
+                  {
+                    id: 888,
+                    itemtype: 'mod',
+                    itemmodule: 'quiz',
+                    iteminstance: 901,
+                    cmid: 1901,
+                    graderaw: 100,
+                    grademax: 100,
+                    gradeishidden: false,
+                  },
+                ],
+              },
+            ],
+          }),
+        };
+      }
+      if (body.includes('mod_assign_get_assignments')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ courses: [{ id: 301, assignments: [] }] }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+
+    const result = await runSync('test_token', [301], () => {});
+    expect(result.assignments).toHaveLength(1);
+    const quiz = result.assignments[0];
+    expect(quiz.name).toBe('Lecture 2 Quiz');
+    expect(quiz.grade).toBe(100);
+    // Even though timeclose was in the past and attempts endpoint returned [],
+    // the presence of grade / automatic completion ensures it is marked Submitted and isCompleted: true!
+    expect(quiz.status).toBe('Submitted');
+    expect(quiz.isCompleted).toBe(true);
+    expect(quiz.isManualCompletionDone).toBe(true);
   });
 });
