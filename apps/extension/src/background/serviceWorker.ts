@@ -27,9 +27,11 @@ import {
 } from '../shared/storage.js';
 import {
   LOCAL_FS_RESUME_ALARM,
+  adoptScannedDiskFiles,
   enqueueLocalFsSync,
   pauseLocalFsSync,
   processLocalFsQueue,
+  reconcileLocalFsManifest,
   recoverStaleLocalFsStateOnBoot,
   resetLocalFsState,
   resumeLocalFsSync,
@@ -127,6 +129,14 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
   } else if (message.type === 'LOCAL_FS_RESET_FOLDER') {
     promise = resetLocalFsState(false)
       .then(() => ({ success: true }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_ADOPT_SCANNED') {
+    promise = adoptScannedDiskFiles(Array.isArray(message.files) ? message.files : [])
+      .then((res) => ({ success: true, ...res }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'LOCAL_FS_RECONCILE') {
+    promise = reconcileLocalFsManifest()
+      .then((report) => ({ success: true, ...report }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 

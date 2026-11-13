@@ -3,6 +3,8 @@ import { ChromiumFsaProvider } from './ChromiumFsaProvider.js';
 import { FirefoxDownloadsProvider } from './FirefoxDownloadsProvider.js';
 
 export type SyncBackendType = 'fsa' | 'downloads';
+export type FilePresenceState = 'present' | 'missing' | 'unverifiable';
+export type SyncedFileOrigin = 'fsa' | 'download' | 'scan';
 
 export interface SyncedFileRecord {
   moodleFileId: string;
@@ -13,6 +15,16 @@ export interface SyncedFileRecord {
   syncedAt?: number;
   /** Chromium: unnecessary (resolved via DirectoryHandle). Firefox: tracks browser.downloads item ID */
   downloadId?: number;
+  origin?: SyncedFileOrigin;
+}
+
+export interface LocalAdoptionCandidate {
+  moodleFileId: string;
+  relativePath: string;
+  fileName: string;
+  fileSize: number;
+  timeModified: number;
+  canonicalUrlPath: string;
 }
 
 export interface FileSystemProvider {
@@ -40,17 +52,37 @@ export interface FileSystemProvider {
   fileExists(record: SyncedFileRecord): Promise<boolean>;
 
   /**
+   * Tri-state verification used by autoResyncMissingFiles so backends where external files
+   * cannot be verified (e.g., Firefox scanned/rclone files lacking a downloadId) return
+   * 'unverifiable' instead of triggering destructive/redundant re-downloads.
+   */
+  checkFilePresence?(record: SyncedFileRecord): Promise<FilePresenceState>;
+
+  /**
    * Writes/downloads a file into the mirrored folder structure.
    */
   writeFile(
     record: Omit<SyncedFileRecord, 'downloadId'>,
-    source: { url: string; blob?: Blob }
+    source: {
+      url: string;
+      blob?: Blob;
+      stream?: ReadableStream<Uint8Array>;
+      maxBytes?: number;
+    }
   ): Promise<SyncedFileRecord>;
 
   /**
    * Opens the locally mirrored file (#5). Must be called inside a user gesture handler (e.g. click).
    */
   openLocalFile(record: SyncedFileRecord): Promise<boolean>;
+
+  /**
+   * Checks whether previously planned files already exist locally on disk (e.g. after reinstall
+   * or switching machines) so they can be adopted into the manifest without re-downloading.
+   */
+  adoptExistingFiles?(
+    candidates: LocalAdoptionCandidate[]
+  ): Promise<Record<string, SyncedFileRecord>>;
 
   /**
    * Reveals the file in the OS file manager (Explorer / Finder / Dolphin).

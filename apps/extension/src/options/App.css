@@ -1441,6 +1441,7 @@ body.theme-noodle .card-action-btn-ghost:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
 }
 
 .toggle-label {
@@ -1452,6 +1453,7 @@ body.theme-noodle .card-action-btn-ghost:hover {
 .switch {
   position: relative;
   display: inline-block;
+  flex-shrink: 0;
   width: 50px;
   height: 26px;
 }

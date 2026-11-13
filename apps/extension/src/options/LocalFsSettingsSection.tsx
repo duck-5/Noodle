@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { sanitizeRelativePath } from '@tautracker/moodle-client';
 import {
   type LocalFsConfig,
   type LocalFsStatus,
   setLocalFsConfig,
 } from '../shared/storage.js';
 import {
+  adoptScannedLocalFilesOnBackground,
   pauseLocalFsSyncOnBackground,
   resetLocalFsFolderOnBackground,
   resumeLocalFsSyncOnBackground,
@@ -37,15 +39,28 @@ export function LocalFsSettingsSection({
 
   const [permState, setPermState] = useState<FsaPermissionState>('unselected');
   const [subfolderDraft, setSubfolderDraft] = useState<string | null>(null);
+  const [pendingSubfolderChange, setPendingSubfolderChange] = useState<string | null>(null);
   const [copiedCmd, setCopiedCmd] = useState<'unix' | 'win' | null>(null);
   const [showLogs, setShowLogs] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
+  const scanFolderInputRef = useRef<HTMLInputElement | null>(null);
 
   const subfolderInput = subfolderDraft ?? (config.rootLabel || (isFsa ? '' : 'Noodle'));
 
   useEffect(() => {
+    if (!pendingSubfolderChange || busy) return;
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && !busy) {
+        setPendingSubfolderChange(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pendingSubfolderChange, busy]);
+
+  useEffect(() => {
     if (provider instanceof ChromiumFsaProvider) {
-      provider.getPermissionState().then(setPermState).catch(() => {});
+      provider.getPermissionState().then(setPermState).catch(() => { });
     }
   }, [provider, config.enabled, config.rootLabel, status.state]);
 
@@ -108,6 +123,7 @@ export function LocalFsSettingsSection({
     if (!nextEnabled) {
       await pauseLocalFsSyncOnBackground();
       await updatePatch({ enabled: false });
+      await startLocalFsSyncOnBackground(false);
       return;
     }
 
@@ -125,30 +141,90 @@ export function LocalFsSettingsSection({
           if (!picked) return;
         }
       }
+      await updatePatch({ enabled: true }, true);
     } else {
-      const cleanSub = (subfolderInput || '').trim() || 'Noodle';
+      const cleanSub = sanitizeRelativePath((subfolderInput || '').trim() || 'Noodle', 80) || 'Noodle';
       await provider.selectRootDirectory(cleanSub);
+      // Do not start downloading immediately on Firefox so user can scan an existing/rclone folder first.
+      await updatePatch({ enabled: true }, false);
+      onShowToast?.(t('local_fs_firefox_enable_hint'), 'info');
     }
+  };
 
-    await updatePatch({ enabled: true }, true);
+  const applyFirefoxSubfolderChange = async (cleanSub: string) => {
+    setBusy(true);
+    try {
+      const prevSub = sanitizeRelativePath((config.rootLabel || 'Noodle').trim() || 'Noodle', 80) || 'Noodle';
+      const res = await provider.selectRootDirectory(cleanSub);
+      if (res.success) {
+        const normalized = res.displayPath.replace(/^Downloads\//, '');
+        setSubfolderDraft(null);
+        if (prevSub !== normalized) {
+          await resetLocalFsFolderOnBackground();
+        }
+        const nextCfg = await setLocalFsConfig({ rootLabel: normalized });
+        onConfigChanged(nextCfg);
+        onShowToast?.(res.displayPath, 'success');
+      }
+    } catch (err: unknown) {
+      onShowToast?.(err instanceof Error ? err.message : String(err), 'error');
+    } finally {
+      setPendingSubfolderChange(null);
+      setBusy(false);
+    }
   };
 
   const handleSaveFirefoxSubfolder = async () => {
-    const cleanSub = (subfolderInput || '').trim() || 'Noodle';
-    const prevSub = config.rootLabel || 'Noodle';
-    const res = await provider.selectRootDirectory(cleanSub);
-    if (res.success) {
-      const normalized = res.displayPath.replace(/^Downloads\//, '');
-      setSubfolderDraft(null);
-      if (prevSub !== normalized) {
-        await resetLocalFsFolderOnBackground();
+    const cleanSub = sanitizeRelativePath((subfolderInput || '').trim() || 'Noodle', 80) || 'Noodle';
+    const prevSub = sanitizeRelativePath((config.rootLabel || 'Noodle').trim() || 'Noodle', 80) || 'Noodle';
+    const pendingNow = status.pendingCount ?? Math.max(0, status.totalQueued - status.completedInCycle);
+    const hasTrackedState =
+      status.syncedCountTotal > 0 ||
+      pendingNow > 0 ||
+      status.state === 'syncing' ||
+      status.state === 'paused' ||
+      status.state === 'cooldown';
+
+    if (prevSub !== cleanSub && hasTrackedState) {
+      setPendingSubfolderChange(cleanSub);
+      return;
+    }
+
+    await applyFirefoxSubfolderChange(cleanSub);
+  };
+
+  const handleScanExistingFolder = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setBusy(true);
+    try {
+      const entries = Array.from(fileList)
+        .filter((f) => f.size > 0)
+        .map((f) => {
+          const rel =
+            (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+          return {
+            relativePath: rel,
+            size: f.size,
+            lastModified: f.lastModified,
+          };
+        });
+      const res = await adoptScannedLocalFilesOnBackground(entries);
+      if (res.success) {
+        const msg = t('local_fs_firefox_scan_result').replace(
+          '{count}',
+          String(res.adoptedCount ?? 0)
+        );
+        onShowToast?.(msg, 'success');
+      } else if (res.error) {
+        onShowToast?.(res.error, 'error');
       }
-      const nextCfg = await setLocalFsConfig({ rootLabel: normalized });
-      onConfigChanged(nextCfg);
-      if (nextCfg.enabled) {
-        await startLocalFsSyncOnBackground(false);
+    } catch (err: unknown) {
+      onShowToast?.(err instanceof Error ? err.message : String(err), 'error');
+    } finally {
+      if (scanFolderInputRef.current) {
+        scanFolderInputRef.current.value = '';
       }
-      onShowToast?.(res.displayPath, 'success');
+      setBusy(false);
     }
   };
 
@@ -189,6 +265,22 @@ export function LocalFsSettingsSection({
     status.totalQueued > 0
       ? Math.min(100, Math.round((status.completedInCycle / status.totalQueued) * 100))
       : 0;
+  const plannedTotal = status.plannedTotal ?? 0;
+  const pendingCount = status.pendingCount ?? Math.max(0, status.totalQueued - status.completedInCycle);
+  const showProgressStates =
+    status.state === 'syncing' ||
+    status.state === 'paused' ||
+    status.state === 'cooldown' ||
+    status.state === 'needs_permission' ||
+    status.state === 'needs_auth';
+  const lastSyncLabel = status.lastSyncAt
+    ? new Intl.DateTimeFormat(lang === 'he' ? 'he-IL' : 'en-US', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(status.lastSyncAt))
+    : t('local_fs_never_synced');
+  const shouldReplanOnOptionChange =
+    isFsa || status.syncedCountTotal > 0 || pendingCount > 0 || status.totalQueued > 0;
 
   return (
     <div className="settings-section local-fs-section">
@@ -201,7 +293,12 @@ export function LocalFsSettingsSection({
 
       <div className="toggle-row">
         <div>
-          <span className="toggle-label">{t('local_fs_enable_label')}</span>
+          <div style={{ display: 'flex-row' }}>
+            <span className="toggle-label">{t('local_fs_enable_label')}</span>
+            <span className="badge-beta" style={{ marginInlineStart: '0.5rem' }}>
+              {lang === 'he' ? 'בטא' : 'BETA'}
+            </span>
+          </div>
           <p className="subtitle">{t('local_fs_desc')}</p>
         </div>
         <label className="switch">
@@ -280,6 +377,37 @@ export function LocalFsSettingsSection({
                 {t('local_fs_firefox_target_preview')}{' '}
                 <code dir="ltr">Downloads/{activeFirefoxSub}/</code>
               </div>
+
+              <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    ref={(el) => {
+                      scanFolderInputRef.current = el;
+                      if (el) {
+                        el.setAttribute('webkitdirectory', '');
+                        el.setAttribute('directory', '');
+                      }
+                    }}
+                    type="file"
+                    multiple
+                    id="local-fs-firefox-scan-input"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleScanExistingFolder(e.target.files)}
+                  />
+                  <button
+                    type="button"
+                    id="local-fs-firefox-scan-btn"
+                    className="secondary-btn btn-sm"
+                    disabled={busy}
+                    onClick={() => scanFolderInputRef.current?.click()}
+                  >
+                    📂 {t('local_fs_firefox_scan_btn')}
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                  {t('local_fs_firefox_scan_hint')}
+                </div>
+              </div>
             </div>
 
             <details className="local-fs-symlink-details">
@@ -322,217 +450,279 @@ export function LocalFsSettingsSection({
         )}
       </div>
 
-      {config.enabled && (
-        <div className="local-fs-subsettings" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', marginTop: '1rem' }}>
-          {/* Progress & Action Bar */}
-          <div className="local-fs-status-panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.82rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                <span>{t('local_fs_synced_total_label')} <strong>{status.syncedCountTotal}</strong></span>
-                {status.failedCount > 0 && (
-                  <span style={{ color: 'var(--accent-red, #ef4444)' }}>
-                    {t('local_fs_failed_label')} <strong>{status.failedCount}</strong>
+      {
+        config.enabled && (
+          <div className="local-fs-subsettings" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', marginTop: '1rem' }}>
+            {/* Progress & Action Bar */}
+            <div className="local-fs-status-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.82rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                  <span>
+                    {t('local_fs_synced_total_label')}{' '}
+                    <strong>
+                      {plannedTotal > 0 ? `${status.syncedCountTotal} / ${plannedTotal}` : status.syncedCountTotal}
+                    </strong>
                   </span>
-                )}
-                {status.skippedTooLargeCount > 0 && (
-                  <span>{t('local_fs_skipped_label')} <strong>{status.skippedTooLargeCount}</strong></span>
-                )}
-              </div>
-
-              {status.state === 'syncing' && (
-                <span className="local-fs-mode-tag">
-                  {status.isInitialBulkMode ? t('local_fs_initial_bulk_badge') : t('local_fs_incremental_badge')}
-                </span>
-              )}
-            </div>
-
-            {status.state === 'syncing' && status.totalQueued > 0 && (
-              <div style={{ marginBottom: '0.65rem' }}>
-                <div className="local-fs-progress-track">
-                  <div className="local-fs-progress-fill" style={{ width: `${progressPct}%` }} />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.25rem', gap: '0.5rem' }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="ltr">
-                    {status.currentFilePath || ''}
-                  </span>
-                  <span style={{ flexShrink: 0 }}>
-                    {status.completedInCycle} / {status.totalQueued} ({progressPct}%)
+                  {pendingCount > 0 && status.state !== 'syncing' && (
+                    <span>
+                      {t('local_fs_pending_label')} <strong>{pendingCount}</strong>
+                    </span>
+                  )}
+                  {status.failedCount > 0 && (
+                    <span style={{ color: 'var(--accent-red, #ef4444)' }}>
+                      {t('local_fs_failed_label')} <strong>{status.failedCount}</strong>
+                    </span>
+                  )}
+                  {status.skippedTooLargeCount > 0 && (
+                    <span>{t('local_fs_skipped_label')} <strong>{status.skippedTooLargeCount}</strong></span>
+                  )}
+                  <span>
+                    {t('local_fs_last_sync_label')} <strong dir="ltr">{lastSyncLabel}</strong>
                   </span>
                 </div>
+
+                {status.state === 'syncing' && (
+                  <span className="local-fs-mode-tag">
+                    {status.isInitialBulkMode ? t('local_fs_initial_bulk_badge') : t('local_fs_incremental_badge')}
+                  </span>
+                )}
               </div>
-            )}
 
-            {status.lastError && (
-              <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: '0.6rem' }}>
-                ⚠️ {status.lastError}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                id="local-fs-sync-now-btn"
-                className="primary-btn btn-sm"
-                disabled={busy || status.state === 'syncing'}
-                onClick={() => startLocalFsSyncOnBackground(false)}
-              >
-                {status.state === 'syncing' ? t('syncing') : t('local_fs_sync_now_btn')}
-              </button>
-
-              {status.state === 'syncing' ? (
-                <button
-                  type="button"
-                  id="local-fs-pause-btn"
-                  className="secondary-btn btn-sm"
-                  onClick={() => pauseLocalFsSyncOnBackground()}
-                >
-                  {t('local_fs_pause_btn')}
-                </button>
-              ) : (status.state === 'paused' || status.state === 'cooldown') ? (
-                <button
-                  type="button"
-                  id="local-fs-resume-btn"
-                  className="secondary-btn btn-sm"
-                  onClick={() => resumeLocalFsSyncOnBackground()}
-                >
-                  {t('local_fs_resume_btn')}
-                </button>
-              ) : null}
-
-              {status.failedCount > 0 && (
-                <button
-                  type="button"
-                  id="local-fs-retry-btn"
-                  className="secondary-btn btn-sm"
-                  onClick={() => retryFailedLocalFsOnBackground()}
-                >
-                  {t('local_fs_retry_failed_btn')} ({status.failedCount})
-                </button>
-              )}
-            </div>
-
-            {status.logs.length > 0 && (
-              <div style={{ marginTop: '0.65rem' }}>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  style={{ fontSize: '0.78rem', padding: 0, cursor: 'pointer', color: 'var(--text-muted)', background: 'none', border: 'none' }}
-                  onClick={() => setShowLogs((p) => !p)}
-                >
-                  {showLogs ? '▼' : (lang === 'he' ? '◀' : '▶')} {t('local_fs_logs_toggle')} ({status.logs.length})
-                </button>
-                {showLogs && (
-                  <div className="local-fs-logs-list">
-                    {status.logs.map((log, idx) => (
-                      <div key={`${log.moodleFileId}_${idx}`} className="local-fs-log-item">
-                        <span style={{ fontWeight: 600 }} dir="ltr">{log.relativePath}</span>
-                        <span style={{ fontSize: '0.74rem', color: log.status === 'failed' ? '#fca5a5' : 'var(--text-muted)' }}>
-                          {log.message}
-                        </span>
-                      </div>
-                    ))}
+              {showProgressStates && status.totalQueued > 0 && (
+                <div style={{ marginBottom: '0.65rem' }}>
+                  <div className="local-fs-progress-track">
+                    <div className="local-fs-progress-fill" style={{ width: `${progressPct}%` }} />
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.25rem', gap: '0.5rem' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="ltr">
+                      {status.currentFilePath || ''}
+                    </span>
+                    <span style={{ flexShrink: 0 }}>
+                      {status.completedInCycle} / {status.totalQueued} ({progressPct}%)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {status.lastError && (
+                <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: '0.6rem' }}>
+                  ⚠️ {status.lastError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  id="local-fs-sync-now-btn"
+                  className="primary-btn btn-sm"
+                  disabled={busy || status.state === 'syncing'}
+                  onClick={() => startLocalFsSyncOnBackground(false)}
+                >
+                  {status.state === 'syncing' ? t('syncing') : t('local_fs_sync_now_btn')}
+                </button>
+
+                {status.state === 'syncing' ? (
+                  <button
+                    type="button"
+                    id="local-fs-pause-btn"
+                    className="secondary-btn btn-sm"
+                    onClick={() => pauseLocalFsSyncOnBackground()}
+                  >
+                    {t('local_fs_pause_btn')}
+                  </button>
+                ) : (status.state === 'paused' || status.state === 'cooldown') ? (
+                  <button
+                    type="button"
+                    id="local-fs-resume-btn"
+                    className="secondary-btn btn-sm"
+                    onClick={() => resumeLocalFsSyncOnBackground()}
+                  >
+                    {t('local_fs_resume_btn')}
+                  </button>
+                ) : null}
+
+                {status.failedCount > 0 && (
+                  <button
+                    type="button"
+                    id="local-fs-retry-btn"
+                    className="secondary-btn btn-sm"
+                    onClick={() => retryFailedLocalFsOnBackground()}
+                  >
+                    {t('local_fs_retry_failed_btn')} ({status.failedCount})
+                  </button>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Sub-Toggles */}
-          <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
-            <div>
-              <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_auto_resync_missing_title')}</span>
-              <p className="subtitle" style={{ fontSize: '0.8rem', marginTop: '0.15rem' }}>{t('local_fs_auto_resync_missing_desc')}</p>
+              {status.logs.length > 0 && (
+                <div style={{ marginTop: '0.65rem' }}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ fontSize: '0.78rem', padding: 0, cursor: 'pointer', color: 'var(--text-muted)', background: 'none', border: 'none' }}
+                    onClick={() => setShowLogs((p) => !p)}
+                  >
+                    {showLogs ? '▼' : (lang === 'he' ? '◀' : '▶')} {t('local_fs_logs_toggle')} ({status.logs.length})
+                  </button>
+                  {showLogs && (
+                    <div className="local-fs-logs-list">
+                      {status.logs.map((log, idx) => (
+                        <div key={`${log.moodleFileId}_${idx}`} className="local-fs-log-item">
+                          <span style={{ fontWeight: 600 }} dir="ltr">{log.relativePath}</span>
+                          <span style={{ fontSize: '0.74rem', color: log.status === 'failed' ? '#fca5a5' : 'var(--text-muted)' }}>
+                            {log.message}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <label className="switch">
-              <input
-                type="checkbox"
-                id="local-fs-auto-resync-toggle"
-                checked={config.autoResyncMissingFiles}
-                onChange={(e) => updatePatch({ autoResyncMissingFiles: e.target.checked }, e.target.checked)}
-              />
-              <span className="slider round"></span>
-            </label>
-          </div>
 
-          <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
-            <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_include_assignments_title')}</span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                id="local-fs-include-assignments-toggle"
-                checked={config.includeAssignments}
-                onChange={(e) => updatePatch({ includeAssignments: e.target.checked }, e.target.checked)}
-              />
-              <span className="slider round"></span>
-            </label>
-          </div>
-
-          {config.includeAssignments && (
-            <div className="toggle-row" style={{ padding: '0.15rem 0', paddingInlineStart: '1rem' }}>
-              <span className="toggle-label" style={{ fontSize: '0.88rem' }}>{t('local_fs_include_submissions_title')}</span>
+            {/* Sub-Toggles */}
+            <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
+              <div>
+                <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_auto_resync_missing_title')}</span>
+                <p className="subtitle" style={{ fontSize: '0.8rem', marginTop: '0.15rem' }}>{t('local_fs_auto_resync_missing_desc')}</p>
+              </div>
               <label className="switch">
                 <input
                   type="checkbox"
-                  id="local-fs-include-submissions-toggle"
-                  checked={config.includeSubmissions}
-                  onChange={(e) => updatePatch({ includeSubmissions: e.target.checked }, e.target.checked)}
+                  id="local-fs-auto-resync-toggle"
+                  checked={config.autoResyncMissingFiles}
+                  onChange={(e) => updatePatch({ autoResyncMissingFiles: e.target.checked }, shouldReplanOnOptionChange)}
                 />
                 <span className="slider round"></span>
               </label>
             </div>
-          )}
 
-          <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
-            <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_use_nicknames_title')}</span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                id="local-fs-use-nicknames-toggle"
-                checked={config.useCourseNicknames}
-                onChange={(e) => updatePatch({ useCourseNicknames: e.target.checked })}
-              />
-              <span className="slider round"></span>
-            </label>
-          </div>
-
-          <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
-            <div>
-              <label htmlFor="local-fs-max-size-select" style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.25rem' }}>
-                {t('local_fs_max_size_label')}
+            <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
+              <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_include_assignments_title')}</span>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  id="local-fs-include-assignments-toggle"
+                  checked={config.includeAssignments}
+                  onChange={(e) => updatePatch({ includeAssignments: e.target.checked }, shouldReplanOnOptionChange)}
+                />
+                <span className="slider round"></span>
               </label>
-              <select
-                id="local-fs-max-size-select"
-                className="settings-text-input"
-                value={config.maxFileSizeMb}
-                onChange={(e) => updatePatch({ maxFileSizeMb: Number(e.target.value) })}
-                style={{ maxWidth: '180px', cursor: 'pointer' }}
-              >
-                <option value={50}>50 MB</option>
-                <option value={100}>100 MB</option>
-                <option value={250}>250 MB</option>
-                <option value={500}>500 MB</option>
-                <option value={0}>{t('local_fs_max_size_unlimited')}</option>
-              </select>
             </div>
 
-            <div>
-              <label htmlFor="local-fs-speed-profile-select" style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.25rem' }}>
-                {t('local_fs_speed_profile_label')}
+            {config.includeAssignments && (
+              <div className="toggle-row" style={{ padding: '0.15rem 0', paddingInlineStart: '1rem' }}>
+                <span className="toggle-label" style={{ fontSize: '0.88rem' }}>{t('local_fs_include_submissions_title')}</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    id="local-fs-include-submissions-toggle"
+                    checked={config.includeSubmissions}
+                    onChange={(e) => updatePatch({ includeSubmissions: e.target.checked }, shouldReplanOnOptionChange)}
+                  />
+                  <span className="slider round"></span>
+                </label>
+              </div>
+            )}
+
+            <div className="toggle-row" style={{ padding: '0.15rem 0' }}>
+              <span className="toggle-label" style={{ fontSize: '0.9rem' }}>{t('local_fs_use_nicknames_title')}</span>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  id="local-fs-use-nicknames-toggle"
+                  checked={config.useCourseNicknames}
+                  onChange={(e) => updatePatch({ useCourseNicknames: e.target.checked }, shouldReplanOnOptionChange)}
+                />
+                <span className="slider round"></span>
               </label>
-              <select
-                id="local-fs-speed-profile-select"
-                className="settings-text-input"
-                value={config.speedProfile}
-                onChange={(e) => updatePatch({ speedProfile: e.target.value as 'safe' | 'moderate' })}
-                style={{ maxWidth: '280px', cursor: 'pointer' }}
-              >
-                <option value="safe">{t('local_fs_speed_safe')}</option>
-                <option value="moderate">{t('local_fs_speed_moderate')}</option>
-              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+              <div>
+                <label htmlFor="local-fs-max-size-select" style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.25rem' }}>
+                  {t('local_fs_max_size_label')}
+                </label>
+                <select
+                  id="local-fs-max-size-select"
+                  className="settings-text-input"
+                  value={config.maxFileSizeMb}
+                  onChange={(e) => updatePatch({ maxFileSizeMb: Number(e.target.value) }, shouldReplanOnOptionChange)}
+                  style={{ maxWidth: '180px', cursor: 'pointer' }}
+                >
+                  <option value={50}>50 MB</option>
+                  <option value={100}>100 MB</option>
+                  <option value={250}>250 MB</option>
+                  <option value={500}>500 MB</option>
+                  <option value={0}>{t('local_fs_max_size_unlimited')}</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="local-fs-speed-profile-select" style={{ display: 'block', fontSize: '0.82rem', marginBottom: '0.25rem' }}>
+                  {t('local_fs_speed_profile_label')}
+                </label>
+                <select
+                  id="local-fs-speed-profile-select"
+                  className="settings-text-input"
+                  value={config.speedProfile}
+                  onChange={(e) => updatePatch({ speedProfile: e.target.value as 'safe' | 'moderate' })}
+                  style={{ maxWidth: '280px', cursor: 'pointer' }}
+                >
+                  <option value="safe">{t('local_fs_speed_safe')}</option>
+                  <option value="moderate">{t('local_fs_speed_moderate')}</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+
+      {
+        pendingSubfolderChange && (
+          <div
+            className="modal-overlay"
+            onClick={() => !busy && setPendingSubfolderChange(null)}
+          >
+            <div
+              className="modal-content glass-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="local-fs-subfolder-modal-title"
+              style={{ maxWidth: '460px', padding: '1.75rem' }}
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <h3 id="local-fs-subfolder-modal-title" style={{ marginTop: 0 }}>
+                ⚠️ {t('local_fs_change_subfolder_modal_title')}
+              </h3>
+              <p style={{ margin: '0.9rem 0 1.4rem 0', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
+                {t('local_fs_change_subfolder_modal_desc')
+                  .replace('{path}', `Downloads/${pendingSubfolderChange}/`)
+                  .replace('{count}', String(status.syncedCountTotal))}
+              </p>
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  id="local-fs-subfolder-cancel-btn"
+                  className="secondary-btn btn-sm"
+                  disabled={busy}
+                  onClick={() => setPendingSubfolderChange(null)}
+                >
+                  {t('cancel_btn')}
+                </button>
+                <button
+                  type="button"
+                  id="local-fs-subfolder-confirm-btn"
+                  className="primary-btn btn-sm"
+                  disabled={busy}
+                  onClick={() => applyFirefoxSubfolderChange(pendingSubfolderChange)}
+                >
+                  {t('local_fs_change_subfolder_confirm_btn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 }

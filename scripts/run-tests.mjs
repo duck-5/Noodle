@@ -8,6 +8,9 @@ try {
   if (!isLiveOnly) {
     console.log('--- Running Moodle Client Tests ---');
     execSync('pnpm test:moodle-client', { stdio: 'inherit' });
+
+    console.log('\n--- Running Extension Unit Tests ---');
+    execSync('pnpm test:extension', { stdio: 'inherit' });
     
     console.log('\n--- Running Build Parity Tests ---');
     execSync('pnpm test:parity', { stdio: 'inherit' });

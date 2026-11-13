@@ -1,5 +1,10 @@
 import browser from 'webextension-polyfill';
-import type { FileSystemProvider, SyncedFileRecord } from './FileSystemProvider.js';
+import type {
+  FilePresenceState,
+  FileSystemProvider,
+  LocalAdoptionCandidate,
+  SyncedFileRecord,
+} from './FileSystemProvider.js';
 import {
   getStoredDirectoryHandle,
   saveDirectoryHandle,
@@ -16,10 +21,23 @@ interface FsaHandlePermissionExt {
 }
 
 export class LocalFsPermissionError extends Error {
-  constructor(message = 'Local directory write permission is required') {
-    super(message);
+  constructor(message = 'Local directory write permission is required', options?: ErrorOptions) {
+    super(message, options);
     this.name = 'LocalFsPermissionError';
   }
+}
+
+function isFsaPermissionError(err: unknown): boolean {
+  if (err instanceof LocalFsPermissionError) return true;
+  if (!err || typeof err !== 'object') return false;
+  const name = (err as { name?: unknown }).name;
+  return name === 'NotAllowedError' || name === 'SecurityError';
+}
+
+function isFsaNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = (err as { name?: unknown }).name;
+  return name === 'NotFoundError' || name === 'TypeMismatchError';
 }
 
 async function queryHandlePermission(
@@ -110,28 +128,40 @@ export class ChromiumFsaProvider implements FileSystemProvider {
   private async resolveFileHandle(
     relativePath: string,
     createMissing: boolean,
-    mode: 'read' | 'readwrite'
+    mode: 'read' | 'readwrite',
+    throwOnPermission = createMissing
   ): Promise<FileSystemFileHandle | null> {
     const root = await getStoredDirectoryHandle();
     if (!root) {
-      if (createMissing) {
+      if (throwOnPermission) {
         throw new LocalFsPermissionError('No root directory selected.');
       }
       return null;
     }
 
-    let perm = await queryHandlePermission(root, mode);
-    if (perm !== 'granted' && typeof window !== 'undefined' && !createMissing) {
-      // During UI user clicks (e.g. openLocalFile), requesting permission inline is valid
-      try {
-        perm = await requestHandlePermission(root, mode);
-      } catch {
-        // Ignore if called outside user activation
+    let perm: PermissionState;
+    try {
+      perm = await queryHandlePermission(root, mode);
+      if (perm !== 'granted' && typeof window !== 'undefined' && !createMissing) {
+        // During UI user clicks (e.g. openLocalFile), requesting permission inline is valid
+        try {
+          perm = await requestHandlePermission(root, mode);
+        } catch {
+          // Ignore if called outside user activation
+        }
       }
+    } catch (err) {
+      if (isFsaPermissionError(err)) {
+        if (throwOnPermission) {
+          throw new LocalFsPermissionError('Folder access permission is not granted.');
+        }
+        return null;
+      }
+      throw err;
     }
 
     if (perm !== 'granted') {
-      if (createMissing) {
+      if (throwOnPermission) {
         throw new LocalFsPermissionError('Folder access permission is not granted.');
       }
       return null;
@@ -145,24 +175,57 @@ export class ChromiumFsaProvider implements FileSystemProvider {
     for (let i = 0; i < segments.length - 1; i++) {
       try {
         currentDir = await currentDir.getDirectoryHandle(segments[i], { create: createMissing });
-      } catch {
-        if (!createMissing) return null;
-        throw new Error(`Failed to access directory segment "${segments[i]}"`);
+      } catch (err) {
+        if (isFsaPermissionError(err)) {
+          if (throwOnPermission) {
+            throw new LocalFsPermissionError(
+              `Permission denied accessing directory "${segments[i]}"`,
+              { cause: err }
+            );
+          }
+          return null;
+        }
+        if (!createMissing && isFsaNotFoundError(err)) return null;
+        if (!createMissing) {
+          throw err;
+        }
+        throw new Error(`Failed to access directory segment "${segments[i]}"`, { cause: err });
       }
     }
 
     const fileName = segments[segments.length - 1];
     try {
       return await currentDir.getFileHandle(fileName, { create: createMissing });
+    } catch (err) {
+      if (isFsaPermissionError(err)) {
+        if (throwOnPermission) {
+          throw new LocalFsPermissionError(
+            `Permission denied accessing file "${fileName}"`,
+            { cause: err }
+          );
+        }
+        return null;
+      }
+      if (!createMissing && isFsaNotFoundError(err)) return null;
+      if (!createMissing) {
+        throw err;
+      }
+      throw new Error(`Failed to access file "${fileName}"`, { cause: err });
+    }
+  }
+
+  public async checkFilePresence(record: SyncedFileRecord): Promise<FilePresenceState> {
+    try {
+      const fh = await this.resolveFileHandle(record.relativePath, false, 'read', true);
+      return fh ? 'present' : 'missing';
     } catch {
-      if (!createMissing) return null;
-      throw new Error(`Failed to access file "${fileName}"`);
+      return 'unverifiable';
     }
   }
 
   public async fileExists(record: SyncedFileRecord): Promise<boolean> {
     try {
-      const fh = await this.resolveFileHandle(record.relativePath, false, 'read');
+      const fh = await this.resolveFileHandle(record.relativePath, false, 'read', false);
       return fh !== null;
     } catch {
       return false;
@@ -171,16 +234,39 @@ export class ChromiumFsaProvider implements FileSystemProvider {
 
   public async writeFile(
     record: Omit<SyncedFileRecord, 'downloadId'>,
-    source: { url: string; blob?: Blob }
+    source: {
+      url: string;
+      blob?: Blob;
+      stream?: ReadableStream<Uint8Array>;
+      maxBytes?: number;
+    }
   ): Promise<SyncedFileRecord> {
     const cleanRel = sanitizeRelativePath(record.relativePath);
-    const fh = await this.resolveFileHandle(cleanRel, true, 'readwrite');
+    const fh = await this.resolveFileHandle(cleanRel, true, 'readwrite', true);
     if (!fh) {
       throw new LocalFsPermissionError('Failed to resolve target file handle.');
     }
 
-    const writable = await fh.createWritable();
+    let writable: FileSystemWritableFileStream;
     try {
+      writable = await fh.createWritable();
+    } catch (err) {
+      if (isFsaPermissionError(err)) {
+        throw new LocalFsPermissionError('Permission denied opening file for writing.');
+      }
+      throw err;
+    }
+
+    try {
+      if (source.stream) {
+        await source.stream.pipeTo(writable);
+        return {
+          ...record,
+          relativePath: cleanRel,
+          syncedAt: Date.now(),
+          origin: 'fsa',
+        };
+      }
       if (source.blob) {
         await writable.write(source.blob);
       } else {
@@ -194,6 +280,7 @@ export class ChromiumFsaProvider implements FileSystemProvider {
             ...record,
             relativePath: cleanRel,
             syncedAt: Date.now(),
+            origin: 'fsa',
           };
         }
         const buf = await res.arrayBuffer();
@@ -204,9 +291,13 @@ export class ChromiumFsaProvider implements FileSystemProvider {
         ...record,
         relativePath: cleanRel,
         syncedAt: Date.now(),
+        origin: 'fsa',
       };
     } catch (err) {
       await writable.abort().catch(() => {});
+      if (isFsaPermissionError(err)) {
+        throw new LocalFsPermissionError('Folder write permission revoked during write.', { cause: err });
+      }
       throw err;
     }
   }
@@ -229,6 +320,48 @@ export class ChromiumFsaProvider implements FileSystemProvider {
       console.warn('[LocalFS][Chromium] Failed to open local file, falling back to Moodle URL:', err);
       return false;
     }
+  }
+
+  public async adoptExistingFiles(
+    candidates: LocalAdoptionCandidate[]
+  ): Promise<Record<string, SyncedFileRecord>> {
+    const adopted: Record<string, SyncedFileRecord> = {};
+    if (candidates.length === 0 || !(await this.isReady())) {
+      return adopted;
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const fh = await this.resolveFileHandle(candidate.relativePath, false, 'read');
+        if (!fh) continue;
+        const diskFile = await fh.getFile();
+        if (!diskFile || diskFile.size <= 0) continue;
+
+        if (!/\.(html?|xhtml)$/i.test(candidate.fileName) && diskFile.size < 8192) {
+          const headText = (await diskFile.slice(0, 128).text()).trim().toLowerCase();
+          if (headText.startsWith('<!doctype html') || headText.startsWith('<html')) {
+            continue;
+          }
+        }
+
+        adopted[candidate.moodleFileId] = {
+          moodleFileId: candidate.moodleFileId,
+          relativePath: sanitizeRelativePath(candidate.relativePath),
+          lastModified:
+            candidate.timeModified > 0
+              ? candidate.timeModified
+              : Math.floor((diskFile.lastModified || Date.now()) / 1000),
+          size: candidate.fileSize > 0 ? candidate.fileSize : diskFile.size,
+          canonicalUrlPath: candidate.canonicalUrlPath,
+          syncedAt: Date.now(),
+          origin: 'fsa',
+        };
+      } catch {
+        // Missing or unreadable on disk -> leave queued for download
+      }
+    }
+
+    return adopted;
   }
 }
 

@@ -608,6 +608,158 @@ test.describe('Local Filesystem Sync (Issue #18)', () => {
     });
     expect(fetchedDuringLocalOpen).toEqual([]);
 
+    // --- TC-LFS-07: Existing disk adoption after simulated reinstall (zero redundant downloads) ---
+    await optionsPage.evaluate(async () => {
+      const res = await chrome.storage.local.get('cachedSyncResult');
+      const cached = res.cachedSyncResult as { files: Array<{ fileName?: string }> };
+      cached.files = cached.files.filter((f) => f.fileName !== 'UnsyncedWebOnly.pdf');
+      await chrome.storage.local.set({ cachedSyncResult: cached });
+      await chrome.storage.local.remove([
+        'localFsConfig',
+        'localFsManifest',
+        'localFsQueue',
+        'localFsStatus',
+      ]);
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.open('NoodleLocalFsDB', 1);
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains('handles')) {
+            req.result.createObjectStore('handles');
+          }
+        };
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('handles', 'readwrite');
+          tx.objectStore('handles').delete('rootDirHandle');
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => {
+            db.close();
+            resolve();
+          };
+        };
+        req.onerror = () => resolve();
+      });
+    });
+
+    // Verify scanned adoption endpoint (LOCAL_FS_ADOPT_SCANNED)
+    const scanAdoptRes = await optionsPage.evaluate(async (courseFolder) => {
+      return await new Promise<{ success?: boolean; adoptedCount?: number; totalSynced?: number }>(
+        (resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              type: 'LOCAL_FS_ADOPT_SCANNED',
+              files: [
+                {
+                  relativePath: `Noodle/${courseFolder}/Week 1_ Intro_/Lecture 1_.pdf`,
+                  size: 22,
+                  lastModified: Date.now(),
+                },
+              ],
+            },
+            resolve
+          );
+        }
+      );
+    }, EXPECTED_COURSE_FOLDER);
+    expect(scanAdoptRes.success).toBe(true);
+    expect(scanAdoptRes.adoptedCount).toBe(1);
+
+    // Wipe manifest again and reload UI to test automatic ChromiumFsaProvider.adoptExistingFiles()
+    await optionsPage.evaluate(async () => {
+      await chrome.storage.local.remove([
+        'localFsConfig',
+        'localFsManifest',
+        'localFsQueue',
+        'localFsStatus',
+      ]);
+    });
+    await background.evaluate(() => {
+      (globalThis as unknown as { __lfs_fetched_urls: string[] }).__lfs_fetched_urls = [];
+    });
+
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+    await optionsPage.locator('.nav-item').filter({ hasText: /הגדרות|Settings/ }).click();
+    await optionsPage.evaluate(async (opfsDirName) => {
+      (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> })
+        .showDirectoryPicker = async () => {
+        const root = await navigator.storage.getDirectory();
+        return await root.getDirectoryHandle(opfsDirName, { create: false });
+      };
+    }, OPFS_ROOT_NAME);
+
+    await optionsPage.locator('label.switch:has(#local-fs-enabled-toggle) .slider').click();
+
+    await expect(async () => {
+      const stateAfterReinstall = await optionsPage.evaluate(async () => {
+        const s = await chrome.storage.local.get(['localFsStatus', 'localFsManifest']);
+        return {
+          status: s.localFsStatus as { state?: string; syncedCountTotal?: number } | undefined,
+          manifestCount: Object.keys(
+            ((s.localFsManifest as { files?: Record<string, unknown> } | undefined)?.files) || {}
+          ).length,
+        };
+      });
+      expect(stateAfterReinstall.status?.state).toBe('idle');
+      expect(stateAfterReinstall.manifestCount).toBe(4);
+      expect(stateAfterReinstall.status?.syncedCountTotal).toBe(4);
+    }).toPass({ timeout: 15000 });
+
+    const fetchedAfterReinstallAdopt = await background.evaluate(() => {
+      return (globalThis as unknown as { __lfs_fetched_urls: string[] }).__lfs_fetched_urls;
+    });
+    expect(fetchedAfterReinstallAdopt).toEqual([]);
+
+    // Verify UI telemetry (`syncedCountTotal / plannedTotal` and formatted `lastSyncAt`)
+    const statusPanel = optionsPage.locator('.local-fs-status-panel');
+    await expect(statusPanel).toContainText('4 / 4');
+    await expect(statusPanel).not.toContainText(/Never|טרם בוצע/);
+    await expect(statusPanel).toContainText(/Last file sync:.*\d|סנכרון קבצים אחרון:.*\d/);
+
+    // Verify paused progress/pending UI telemetry + clean idle reset when toggling Local FS OFF
+    await optionsPage.evaluate(async () => {
+      await chrome.storage.local.set({
+        localFsStatus: {
+          state: 'paused',
+          backendType: 'fsa',
+          isInitialBulkMode: true,
+          totalQueued: 3,
+          completedInCycle: 1,
+          plannedTotal: 4,
+          pendingCount: 2,
+          failedCount: 0,
+          skippedTooLargeCount: 0,
+          syncedCountTotal: 2,
+          lastSyncAt: Date.now(),
+          currentFilePath: 'Course/Week 1/Lect.pdf',
+          pausedUntil: null,
+          lastError: null,
+          logs: [],
+        },
+      });
+    });
+    await expect(statusPanel).toContainText('1 / 3 (33%)');
+    await expect(statusPanel).toContainText(/Pending:\s*2|ממתינים בתור:\s*2/);
+    await expect(optionsPage.locator('.local-fs-status-pill')).toContainText(/Paused|מושהה/);
+
+    await optionsPage.locator('label.switch:has(#local-fs-enabled-toggle) .slider').click();
+    await expect(async () => {
+      const disabledState = await optionsPage.evaluate(async () => {
+        const s = await chrome.storage.local.get(['localFsConfig', 'localFsStatus']);
+        return {
+          enabled: (s.localFsConfig as { enabled?: boolean } | undefined)?.enabled,
+          status: s.localFsStatus as { state?: string; totalQueued?: number; pendingCount?: number } | undefined,
+        };
+      });
+      expect(disabledState.enabled).toBe(false);
+      expect(disabledState.status?.state).toBe('idle');
+      expect(disabledState.status?.totalQueued).toBe(0);
+      expect(disabledState.status?.pendingCount).toBe(0);
+    }).toPass({ timeout: 10000 });
+
     // --- TC-LFS-06: Logout Teardown preserves disk files but wipes manifest, queue & handle ---
     await optionsPage.evaluate(async () => {
       await new Promise((resolve) => {

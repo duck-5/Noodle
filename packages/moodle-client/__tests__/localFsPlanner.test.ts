@@ -381,6 +381,104 @@ describe('Local FS Planner & Path Sanitizer (#18)', () => {
         expect.objectContaining({ reason: 'updated', file: expect.objectContaining({ moodleFileId: 'res:101:4:updated_url.pdf' }) }),
       ]);
     });
+
+    it('pre-seeds usedCourseFoldersLower from existingCourseFolderNames so smaller new courseIds cannot hijack anchored names', () => {
+      const syncResult: SyncResult = {
+        files: [
+          {
+            id: 5,
+            courseId: 50,
+            courseName: 'Discrete Math',
+            sectionId: 0,
+            sectionName: 'General',
+            fileName: 'syllabus.pdf',
+            fileUrl: 'https://moodle.tau.ac.il/webservice/pluginfile.php/5/content/1/syllabus.pdf',
+            fileSize: 512,
+            mimeType: 'application/pdf',
+            timeModified: 100,
+          },
+          {
+            id: 10,
+            courseId: 100,
+            courseName: 'Algorithms',
+            sectionId: 1,
+            sectionName: 'General',
+            fileName: 'intro.pdf',
+            fileUrl: 'https://moodle.tau.ac.il/webservice/pluginfile.php/10/content/1/intro.pdf',
+            fileSize: 512,
+            mimeType: 'application/pdf',
+            timeModified: 100,
+          },
+          {
+            id: 20,
+            courseId: 200,
+            courseName: 'Algorithms Renamed',
+            sectionId: 2,
+            sectionName: 'General',
+            fileName: 'notes.pdf',
+            fileUrl: 'https://moodle.tau.ac.il/webservice/pluginfile.php/20/content/1/notes.pdf',
+            fileSize: 512,
+            mimeType: 'application/pdf',
+            timeModified: 100,
+          },
+        ],
+        folders: [],
+        sections: [],
+        assignments: [],
+        meetings: [],
+        errors: [],
+        courses: [
+          {
+            id: 50,
+            courseId: '03680500',
+            fullname: 'Discrete Math',
+            shortname: 'DM-50',
+            semester: 'SemesterA',
+            year: '2026',
+          },
+          {
+            id: 100,
+            courseId: '03681000',
+            fullname: 'Algorithms',
+            shortname: 'ALG-100',
+            semester: 'SemesterA',
+            year: '2026',
+          },
+          {
+            id: 200,
+            courseId: '03682000',
+            fullname: 'Algorithms Renamed',
+            shortname: 'ALG-200',
+            semester: 'SemesterA',
+            year: '2026',
+          },
+        ],
+        syncedAt: '2026-11-10T10:00:00Z',
+      };
+
+      const plan = buildLocalFsTreePlan(syncResult, {
+        existingCourseFolderNames: {
+          200: 'Algorithms',
+          999: 'Discrete Math',
+        },
+        trackedCourseIds: [50, 100, 200],
+      });
+
+      expect(plan.courseFolderNames[200]).toBe('Algorithms');
+      expect(plan.courseFolderNames[100]).toBe('Algorithms (100)');
+      expect(plan.courseFolderNames[999]).toBe('Discrete Math');
+      expect(plan.courseFolderNames[50]).toBe('Discrete Math (50)');
+      expect(plan.files.find((f) => f.courseId === 200)?.relativePath).toBe('Algorithms/General/notes.pdf');
+      expect(plan.files.find((f) => f.courseId === 100)?.relativePath).toBe('Algorithms (100)/General/intro.pdf');
+      expect(plan.files.find((f) => f.courseId === 50)?.relativePath).toBe('Discrete Math (50)/General/syllabus.pdf');
+
+      // Files belonging to untracked courses in a cached SyncResult must be excluded even if anchored
+      const filteredPlan = buildLocalFsTreePlan(syncResult, {
+        existingCourseFolderNames: { 200: 'Algorithms' },
+        trackedCourseIds: [100],
+      });
+      expect(filteredPlan.files.map((f) => f.courseId)).toEqual([100]);
+    });
   });
 });
 
