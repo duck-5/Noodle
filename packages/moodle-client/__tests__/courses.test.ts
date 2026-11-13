@@ -32,6 +32,54 @@ describe('Category 2: Course Management & Tracking', () => {
         expect.anything()
       );
     });
+
+    it('TC-CRS-09: should skip past academic archive years when syncArchive is false (default)', async () => {
+      const mockCoursesList: RawMoodleCourse[] = [
+        { id: 101, shortname: '0368-2154-01-2025', fullname: 'Data Structures', idnumber: '0368215401' },
+      ];
+      const fetchCalls: string[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: any) => {
+        fetchCalls.push(String(url));
+        return {
+          ok: true,
+          json: async () => mockCoursesList,
+        } as Response;
+      });
+
+      const client = new MoodleClient('VALID_TOKEN', 'https://moodle.tau.ac.il/webservice/rest/server.php', {
+        syncArchive: false,
+      });
+      await client.getEnrolledCourses(12345);
+
+      const pastYear = String(new Date().getFullYear() - 1);
+      const calledArchive = fetchCalls.some((url) => url.includes(`/${pastYear}/`));
+      expect(calledArchive).toBe(false);
+      expect(fetchCalls.length).toBe(1);
+    });
+
+    it('TC-CRS-10: should query past academic archive years when syncArchive is true', async () => {
+      const mockCoursesList: RawMoodleCourse[] = [
+        { id: 101, shortname: '0368-2154-01-2025', fullname: 'Data Structures', idnumber: '0368215401' },
+      ];
+      const fetchCalls: string[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: any) => {
+        fetchCalls.push(String(url));
+        return {
+          ok: true,
+          json: async () => mockCoursesList,
+        } as Response;
+      });
+
+      const client = new MoodleClient('VALID_TOKEN', 'https://moodle.tau.ac.il/webservice/rest/server.php', {
+        syncArchive: true,
+      });
+      await client.getEnrolledCourses(12345);
+
+      const pastYear = String(new Date().getFullYear() - 1);
+      const calledArchive = fetchCalls.some((url) => url.includes(`/${pastYear}/`));
+      expect(calledArchive).toBe(true);
+      expect(fetchCalls.length).toBeGreaterThanOrEqual(2);
+    });
   });
 
   describe('TC-CRS-02: Semester Parsing & Academic Grouping', () => {
