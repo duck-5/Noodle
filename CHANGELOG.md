@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Fixed cross-site cookie stripping in Brave browser by dynamically attaching the user's active Panopto `.ASPXAUTH` cookie via `chrome.declarativeNetRequest.updateDynamicRules` on outgoing API requests to `tau.cloud.panopto.eu`, bypassing Brave's background service worker third-party cookie restrictions at the network layer.
   - Stopped premature cookie teardown in `ensurePanoptoAuthViaHiddenTab` when already authenticated, preventing the extension from invalidating the active session before opening the hidden tab.
   - Removed unsupported `/blocks/panopto/ajax/load_panopto_block.php` call that returned HTTP 404 on TAU Moodle.
+  - Documented the Brave cookie-stripping root cause, the `declarativeNetRequest` fix, and debugging signals in `docs/AI_KNOWLEDGE.md` (Section 3.M).
 - **Dynamic Due Date Threshold Coloring Parity (`apps/extension/src/shared/dateUtils.ts`, `apps/mobile/src/services/dateUtils.ts`, `TC-ASN-02`, `TC-UI-04`)**:
   - Fixed a legacy bug in `getDueTextAndClass` where countdown badges (`badgeClass`) hardcoded a 72-hour threshold instead of respecting user-configured urgency thresholds (`assignmentGreenDaysThreshold: 7`, `assignmentYellowDaysThreshold: 3`).
   - Resolved issue where 3-day and 6-day assignment deadlines (e.g. "Lecture 3 Quiz", "Assignment 1 - Submission") were erroneously rendered with green `badge-success` pills instead of amber/yellow `badge-warning` pills.
