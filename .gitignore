@@ -92,3 +92,4 @@ playwright-report/
 test-results/
 moodle_test_credentials.env
 temp_redesign/
+extension/artifacts/
