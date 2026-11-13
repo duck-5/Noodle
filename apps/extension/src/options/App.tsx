@@ -319,6 +319,9 @@ function FileOpenAction({
 
 function SyncProgressWindow({
   isOpen,
+  isCollapsed,
+  onCollapse,
+  onExpand,
   onClose,
   isSyncing,
   syncState,
@@ -328,6 +331,9 @@ function SyncProgressWindow({
   lang,
 }: {
   isOpen: boolean;
+  isCollapsed: boolean;
+  onCollapse: () => void;
+  onExpand: () => void;
   onClose: () => void;
   isSyncing: boolean;
   syncState: SyncProgressState | null;
@@ -337,21 +343,78 @@ function SyncProgressWindow({
   lang: 'he' | 'en';
 }) {
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isCollapsed) return;
     const handleClickOutside = (ev: MouseEvent) => {
       const target = ev.target as HTMLElement | null;
-      if (target && !target.closest('.sync-progress-window') && !target.closest('.header-sync-btn')) {
-        onClose();
+      if (
+        target &&
+        !target.closest('.sync-progress-window') &&
+        !target.closest('.sync-progress-collapsed') &&
+        !target.closest('.header-sync-btn')
+      ) {
+        onCollapse();
       }
     };
     window.addEventListener('mousedown', handleClickOutside);
     return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
+  }, [isOpen, isCollapsed, onCollapse]);
 
   if (!isOpen) return null;
 
   const currentStage = syncState?.stage || (isSyncing ? 'init' : 'idle');
   const isComplete = currentStage === 'complete' || (!isSyncing && !syncError && syncState?.percent === 100);
+
+  if (isCollapsed) {
+    return (
+      <div
+        className="sync-progress-collapsed"
+        onClick={onExpand}
+        title={t('sync_expand')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onExpand();
+        }}
+      >
+        <div className="sync-collapsed-icon-wrap">
+          {isComplete ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : syncError ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isSyncing ? 'spinning-sync-icon' : ''}>
+              <path d="M21 2v6h-6"></path>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+              <path d="M3 22v-6h6"></path>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+            </svg>
+          )}
+        </div>
+        <span className="sync-collapsed-label">
+          {isComplete ? t('sync_success') : `${syncState?.percent || (isSyncing ? 2 : 0)}%`}
+        </span>
+        <button
+          className="sync-collapsed-arrow-btn"
+          aria-label={t('sync_expand')}
+          title={t('sync_expand')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
 
   const STAGE_ORDER: Record<string, number> = {
     idle: 0,
@@ -452,12 +515,24 @@ function SyncProgressWindow({
             {isComplete ? t('sync_success') : syncError ? t('sync_failed') : t('sync_window_title')}
           </span>
         </div>
-        <button className="sync-window-close-btn" onClick={onClose} aria-label="Close">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <div className="sync-window-header-actions">
+          <button
+            className="sync-window-collapse-btn"
+            onClick={onCollapse}
+            aria-label={t('sync_collapse')}
+            title={t('sync_collapse')}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <button className="sync-window-close-btn" onClick={onClose} aria-label="Close" title={lang === 'he' ? 'סגור' : 'Close'}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="sync-tasks-list">
@@ -806,6 +881,7 @@ export default function App() {
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [showSyncWindow, setShowSyncWindow] = useState<boolean>(false);
+  const [isSyncWindowCollapsed, setIsSyncWindowCollapsed] = useState<boolean>(false);
   const [syncState, setSyncState] = useState<SyncProgressState | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -935,6 +1011,7 @@ export default function App() {
         setIsSyncing(true);
         if (msg.isManual) {
           setShowSyncWindow(true);
+          setIsSyncWindowCollapsed(false);
         }
         setSyncError(null);
       }
@@ -993,6 +1070,7 @@ export default function App() {
         }, 500);
         setTimeout(() => {
           setShowSyncWindow(false);
+          setIsSyncWindowCollapsed(false);
         }, 2500);
         // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
         Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
@@ -1524,6 +1602,7 @@ export default function App() {
   async function handleManualSync() {
     setLoading(true);
     setShowSyncWindow(true);
+    setIsSyncWindowCollapsed(false);
     setSyncError(null);
     try {
       const res = await syncNowOnBackground();
@@ -2525,7 +2604,14 @@ export default function App() {
                   className={`primary-btn btn-sm header-sync-btn ${tourStep === 1 ? 'tour-highlight' : ''}`}
                   onClick={() => {
                     if (loading || isSyncing) {
-                      setShowSyncWindow((prev) => !prev);
+                      if (!showSyncWindow) {
+                        setShowSyncWindow(true);
+                        setIsSyncWindowCollapsed(false);
+                      } else if (isSyncWindowCollapsed) {
+                        setIsSyncWindowCollapsed(false);
+                      } else {
+                        setIsSyncWindowCollapsed(true);
+                      }
                     } else {
                       handleManualSync();
                     }
@@ -2562,7 +2648,13 @@ export default function App() {
 
                 <SyncProgressWindow
                   isOpen={showSyncWindow}
-                  onClose={() => setShowSyncWindow(false)}
+                  isCollapsed={isSyncWindowCollapsed}
+                  onCollapse={() => setIsSyncWindowCollapsed(true)}
+                  onExpand={() => setIsSyncWindowCollapsed(false)}
+                  onClose={() => {
+                    setShowSyncWindow(false);
+                    setIsSyncWindowCollapsed(false);
+                  }}
                   isSyncing={loading || isSyncing}
                   syncState={syncState}
                   syncError={syncError}

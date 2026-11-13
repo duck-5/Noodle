@@ -1885,8 +1885,12 @@ graph LR
   3. Clicking "Sync now" (`.header-sync-btn`) displays a subtle floating progress window (`.sync-progress-window`) docked in the bottom corner (`bottom: 1.5rem; inset-inline-end: 1.5rem; width: 248px;`) that never overlaps headers, search bars, filter buttons, or dashboard cards.
   4. Fully adheres to active theme styling: light warm cream with terracotta borders in `theme-noodle`, rich espresso with amber borders in `theme-coffee`, and slate with indigo borders in `theme-dark`.
   5. Task status badges transition accurately between `pending` (subtle dot), `active` (spinning icon), `done` (green checkmark), and `failed` (red cross icon).
-  6. Clicking outside the window or clicking the close button (`✕`) dismisses the window, while clicking the sync button while active toggles window visibility.
-  7. On completion (`SYNC_COMPLETE`), all items mark done, title indicates success, and the window auto-closes after 2.5 seconds.
+  6. **Collapsible Mini Dock & Outside-Click Collapse**:
+     * In the expanded window header, a collapse arrow button (`.sync-window-collapse-btn`) collapses the window to the bottom corner.
+     * Clicking anywhere outside the window automatically collapses it into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying the spinning sync glyph, live progress percentage, and an expand arrow.
+     * Clicking anywhere on the collapsed pill or on the header "Sync" button while sync is running expands it back to the full progress window.
+  7. **Automatic Dismissal on Completion**:
+     * On completion (`SYNC_COMPLETE`), all items mark done, title indicates success, and the entire sync progress UI (whether expanded or collapsed) automatically closes after 2.5 seconds.
   8. **Anti-Jitter Level-Based Atomic Updates**: Instead of emitting `onPartialSync` on every single assignment, file, or folder in loops (which causes high-frequency React re-renders, jumping layout, and progress bar jitter), `runSync` buffers items in memory and emits atomic updates strictly at stage boundaries: Level 1 (Course Contents Complete), Level 2 (Assignments & Quizzes Complete), and Level 3 (Panopto Complete).
   9. **Silent Background Sync vs. Interactive Manual Sync**: Periodic background syncs (triggered via alarms) run silently without popping open `.sync-progress-window` unprompted, displaying only the spinning sync glyph on the header button; manual sync explicitly displays the progress window.
 * **Verification**: `pnpm --filter @tautracker/moodle-client test` (`__tests__/syncProgress.test.ts`), `pnpm --filter extension run build:chrome`, and `pnpm --filter extension run build:firefox`.

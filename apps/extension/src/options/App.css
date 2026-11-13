@@ -5468,12 +5468,19 @@ body.theme-noodle .local-fs-perm-warning-banner {
   color: var(--text-primary, #f1f5f9);
 }
 
+.sync-window-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.sync-window-collapse-btn,
 .sync-window-close-btn {
   background: transparent;
   border: none;
   color: var(--text-secondary, rgba(255, 255, 255, 0.45));
   cursor: pointer;
-  padding: 0.15rem;
+  padding: 0.18rem;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -5481,6 +5488,7 @@ body.theme-noodle .local-fs-perm-warning-banner {
   transition: all 0.15s ease;
 }
 
+.sync-window-collapse-btn:hover,
 .sync-window-close-btn:hover {
   color: var(--text-primary, #fff);
   background: rgba(255, 255, 255, 0.08);
@@ -5598,6 +5606,76 @@ body.theme-noodle .local-fs-perm-warning-banner {
   font-variant-numeric: tabular-nums;
 }
 
+/* ==========================================================================
+   Sync Progress Collapsed Pill / Mini Dock
+   ========================================================================== */
+.sync-progress-collapsed {
+  position: fixed;
+  bottom: 1.5rem;
+  inset-inline-end: 1.5rem;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(24, 25, 36, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  cursor: pointer;
+  animation: syncCollapsedSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.sync-progress-collapsed:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes syncCollapsedSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sync-collapsed-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sync-collapsed-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sync-collapsed-arrow-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+  cursor: pointer;
+  padding: 0.1rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.sync-progress-collapsed:hover .sync-collapsed-arrow-btn {
+  color: var(--text-primary, #fff);
+}
+
 /* --------------------------------------------------------------------------
    Theme-Specific Overrides for Sync Window
    -------------------------------------------------------------------------- */
@@ -5618,13 +5696,30 @@ body.theme-noodle .sync-window-title {
   color: #2d2b2a !important;
 }
 
+body.theme-noodle .sync-window-collapse-btn,
 body.theme-noodle .sync-window-close-btn {
   color: rgba(45, 43, 42, 0.5) !important;
 }
 
+body.theme-noodle .sync-window-collapse-btn:hover,
 body.theme-noodle .sync-window-close-btn:hover {
   color: #2d2b2a !important;
   background: rgba(194, 112, 68, 0.1) !important;
+}
+
+body.theme-noodle .sync-progress-collapsed {
+  background: rgba(253, 246, 240, 0.96) !important;
+  border: 1px solid rgba(194, 112, 68, 0.25) !important;
+  box-shadow: 0 6px 20px rgba(194, 112, 68, 0.18), 0 2px 6px rgba(194, 112, 68, 0.08) !important;
+  color: #2d2b2a !important;
+}
+
+body.theme-noodle .sync-collapsed-arrow-btn {
+  color: #c27044 !important;
+}
+
+body.theme-noodle .sync-collapsed-label {
+  color: #2d2b2a !important;
 }
 
 body.theme-noodle .sync-task-item.status-active {
@@ -5696,13 +5791,30 @@ body.theme-coffee .sync-window-title {
   color: #f5ede6 !important;
 }
 
+body.theme-coffee .sync-window-collapse-btn,
 body.theme-coffee .sync-window-close-btn {
   color: rgba(245, 237, 230, 0.5) !important;
 }
 
+body.theme-coffee .sync-window-collapse-btn:hover,
 body.theme-coffee .sync-window-close-btn:hover {
   color: #f5ede6 !important;
   background: rgba(217, 160, 102, 0.12) !important;
+}
+
+body.theme-coffee .sync-progress-collapsed {
+  background: rgba(29, 23, 19, 0.96) !important;
+  border: 1px solid rgba(217, 160, 102, 0.28) !important;
+  box-shadow: 0 8px 24px rgba(15, 11, 8, 0.65), 0 0 1px 1px rgba(217, 160, 102, 0.1) !important;
+  color: #f5ede6 !important;
+}
+
+body.theme-coffee .sync-collapsed-arrow-btn {
+  color: #d9a066 !important;
+}
+
+body.theme-coffee .sync-collapsed-label {
+  color: #f5ede6 !important;
 }
 
 body.theme-coffee .sync-task-item.status-active {

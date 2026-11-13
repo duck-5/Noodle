@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- **Collapsible Sync Progress Window & Floating Mini Dock (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `TC-SYNC-013`)**:
+  - Added a collapse arrow button (`.sync-window-collapse-btn`) in the sync progress window header to minimize it to the bottom viewport corner.
+  - Implemented automatic collapse on outside clicks: clicking anywhere else during sync automatically collapses the window into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying live progress percent and an expand arrow.
+  - Seamless re-expansion: clicking the collapsed pill or clicking the header "Sync" button while sync is running immediately restores the full progress window.
+  - Automatic dismissal: once synchronization completes, the entire progress UI (both expanded and collapsed states) closes automatically.
+  - Styled with full theme integration across Default Dark, Noodle (warm cream/terracotta), and Coffee (espresso/amber) themes with zero unicode emojis.
+
 ### Fixed
 - **Dynamic Due Date Threshold Coloring Parity (`apps/extension/src/shared/dateUtils.ts`, `apps/mobile/src/services/dateUtils.ts`, `TC-ASN-02`, `TC-UI-04`)**:
   - Fixed a legacy bug in `getDueTextAndClass` where countdown badges (`badgeClass`) hardcoded a 72-hour threshold instead of respecting user-configured urgency thresholds (`assignmentGreenDaysThreshold: 7`, `assignmentYellowDaysThreshold: 3`).
