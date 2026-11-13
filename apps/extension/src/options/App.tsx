@@ -322,7 +322,6 @@ function SyncProgressWindow({
   isCollapsed,
   onCollapse,
   onExpand,
-  onClose,
   isSyncing,
   syncState,
   syncError,
@@ -334,7 +333,6 @@ function SyncProgressWindow({
   isCollapsed: boolean;
   onCollapse: () => void;
   onExpand: () => void;
-  onClose: () => void;
   isSyncing: boolean;
   syncState: SyncProgressState | null;
   syncError?: string | null;
@@ -515,24 +513,16 @@ function SyncProgressWindow({
             {isComplete ? t('sync_success') : syncError ? t('sync_failed') : t('sync_window_title')}
           </span>
         </div>
-        <div className="sync-window-header-actions">
-          <button
-            className="sync-window-collapse-btn"
-            onClick={onCollapse}
-            aria-label={t('sync_collapse')}
-            title={t('sync_collapse')}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-          <button className="sync-window-close-btn" onClick={onClose} aria-label="Close" title={lang === 'he' ? 'סגור' : 'Close'}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+        <button
+          className="sync-window-collapse-btn"
+          onClick={onCollapse}
+          aria-label={t('sync_collapse')}
+          title={t('sync_collapse')}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
       </div>
 
       <div className="sync-tasks-list">
@@ -2651,10 +2641,6 @@ export default function App() {
                   isCollapsed={isSyncWindowCollapsed}
                   onCollapse={() => setIsSyncWindowCollapsed(true)}
                   onExpand={() => setIsSyncWindowCollapsed(false)}
-                  onClose={() => {
-                    setShowSyncWindow(false);
-                    setIsSyncWindowCollapsed(false);
-                  }}
                   isSyncing={loading || isSyncing}
                   syncState={syncState}
                   syncError={syncError}
@@ -3990,6 +3976,40 @@ function DashboardTab({
 
   // All actionable upcoming tasks (excluding hero)
   const upcomingTasks = pendingTasks;
+  const selectedUpcomingTask = upcomingTasks.find((task) => task.id === expandedUpcomingId) || null;
+  const isTaskSplitOpen = Boolean(selectedUpcomingTask);
+  const selectedTaskColor = selectedUpcomingTask ? getCourseColor(selectedUpcomingTask.courseId) : 'var(--primary)';
+  const selectedTaskCourseName = selectedUpcomingTask
+    ? getCourseDisplayName(selectedUpcomingTask.courseId, selectedUpcomingTask.courseName)
+    : '';
+  const selectedTaskDueInfo = selectedUpcomingTask
+    ? getDueTextAndClass(
+        selectedUpcomingTask.deadline || null,
+        lang,
+        settings?.assignmentGreenDaysThreshold,
+        settings?.assignmentYellowDaysThreshold,
+        false,
+        selectedUpcomingTask.status
+      )
+    : null;
+  const selectedTaskSubjectFiles = selectedUpcomingTask
+    ? (syncResult?.files || []).filter(
+        (f) =>
+          f.courseId === selectedUpcomingTask.courseId &&
+          f.sectionName &&
+          selectedUpcomingTask.sectionName &&
+          f.sectionName.trim().toLowerCase() === selectedUpcomingTask.sectionName.trim().toLowerCase()
+      )
+    : [];
+  const isSelectedTaskHidden = selectedUpcomingTask
+    ? isActivityHidden(selectedUpcomingTask, settings?.hiddenAssignments)
+    : false;
+  const isSelectedTaskCompleted = selectedUpcomingTask ? Boolean(selectedUpcomingTask.isCompleted) : false;
+  const hasAnySelectedTaskFiles = Boolean(
+    (selectedUpcomingTask?.attachments && selectedUpcomingTask.attachments.length > 0) ||
+      selectedTaskSubjectFiles.length > 0 ||
+      (selectedUpcomingTask?.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0)
+  );
 
   // Active Zoom meetings right now (excluding hidden meetings, default is visible)
   const isMeetingVisible = (m: ZoomMeeting) => {
@@ -4137,264 +4157,332 @@ function DashboardTab({
       )}
 
       {/* 1. Hero Action Strip: Upcoming To-Do Queue + Catch-Up Queue */}
-      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''}`}>
-        {/* Upcoming To-Do Queue (Closest task expanded by default with urgent flare) */}
-        <div className={`queue-card glass-panel ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
-          <div className="queue-header">
-            <div className="queue-title">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-              <span>{t('upcoming_tasks')}</span>
-            </div>
-            <span className="queue-count">{upcomingTasks.length} {t('tasks_count')}</span>
-          </div>
-
-          <div className="queue-list">
-            {upcomingTasks.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
-                🎉 {t('all_caught_up')}
+      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''} ${isTaskSplitOpen ? 'has-expanded-task' : ''}`}>
+        {/* Upcoming To-Do Queue (Splits horizontally into Master List + Course-Bordered Detail Pane when a task is selected) */}
+        <div className={`queue-card glass-panel ${isTaskSplitOpen ? 'is-split' : ''} ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
+          <div className="queue-split-layout">
+            <div className="queue-master-pane">
+              <div className="queue-header">
+                <div className="queue-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                  <span>{t('upcoming_tasks')}</span>
+                </div>
+                <span className="queue-count">{upcomingTasks.length} {t('tasks_count')}</span>
               </div>
-            ) : (
-              upcomingTasks.map((task) => {
-                const color = getCourseColor(task.courseId);
-                const courseName = getCourseDisplayName(task.courseId, task.courseName);
-                const isExpanded = expandedUpcomingId === task.id;
-                const isClosestTask = pendingTasks.length > 0 && task.id === pendingTasks[0].id;
-                const { badgeClass, deadlineText } = getDueTextAndClass(
-                  task.deadline || null,
-                  lang,
-                  settings?.assignmentGreenDaysThreshold,
-                  settings?.assignmentYellowDaysThreshold,
-                  false,
-                  task.status
-                );
 
-                const taskSubjectFiles = (syncResult?.files || []).filter(
-                  (f) =>
-                    f.courseId === task.courseId &&
-                    f.sectionName &&
-                    task.sectionName &&
-                    f.sectionName.trim().toLowerCase() === task.sectionName.trim().toLowerCase()
-                );
-                const isTaskHidden = isActivityHidden(task, settings?.hiddenAssignments);
-                const isTaskCompleted = Boolean(task.isCompleted);
+              <div className="queue-list">
+                {upcomingTasks.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
+                    {t('all_caught_up')}
+                  </div>
+                ) : (
+                  upcomingTasks.map((task) => {
+                    const color = getCourseColor(task.courseId);
+                    const courseName = getCourseDisplayName(task.courseId, task.courseName);
+                    const isExpanded = expandedUpcomingId === task.id;
+                    const isClosestTask = pendingTasks.length > 0 && task.id === pendingTasks[0].id;
+                    const { badgeClass, deadlineText } = getDueTextAndClass(
+                      task.deadline || null,
+                      lang,
+                      settings?.assignmentGreenDaysThreshold,
+                      settings?.assignmentYellowDaysThreshold,
+                      false,
+                      task.status
+                    );
 
-                return (
-                  <div
-                    key={task.id}
-                    className={`queue-item ${isClosestTask ? 'closest-task-glow closest-metallic-wave' : ''} ${isExpanded ? 'is-expanded' : ''}`}
-                    onClick={() => setExpandedUpcomingId(isExpanded ? null : task.id)}
-                  >
-                    <div className="queue-item-main-row">
-                      <div className="queue-item-left">
-                        <button
-                          className="quick-check-btn"
-                          title={t('mark_done')}
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            onToggleCompleted && onToggleCompleted(task.uid || getActivityUid(task));
-                          }}
-                        >
-                          <CheckIcon size={12} />
-                        </button>
-                        <span className="course-color-dot" style={{ backgroundColor: color }} />
-                        <div className="queue-item-texts">
-                          <div className="queue-item-course" style={{ color }}>{courseName}</div>
-                          <div className="queue-item-name" title={task.name}>{task.name}</div>
+                    return (
+                      <div
+                        key={task.id}
+                        className={`queue-item ${isClosestTask ? 'closest-task-glow closest-metallic-wave' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                        style={isExpanded ? { borderColor: color, boxShadow: `inset 0 0 0 1px ${color}40` } : undefined}
+                        onClick={() => setExpandedUpcomingId(isExpanded ? null : task.id)}
+                      >
+                        <div className="queue-item-main-row">
+                          <div className="queue-item-left">
+                            <button
+                              className="quick-check-btn"
+                              title={t('mark_done')}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                onToggleCompleted && onToggleCompleted(task.uid || getActivityUid(task));
+                              }}
+                            >
+                              <CheckIcon size={12} />
+                            </button>
+                            <span className="course-color-dot" style={{ backgroundColor: color }} />
+                            <div className="queue-item-texts">
+                              <div className="queue-item-course" style={{ color }}>{courseName}</div>
+                              <div className="queue-item-name" title={task.name}>{task.name}</div>
+                            </div>
+                          </div>
+
+                          <div className="queue-item-meta">
+                            <span className={`badge ${badgeClass}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                              {deadlineText}
+                            </span>
+                            {task.cutoffDate && hasGracePeriod(task) && (
+                              <span
+                                className="grace-period-clock-icon"
+                                title={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                                aria-label={formatGracePeriodTooltip(task.cutoffDate, lang)}
+                              >
+                                <ClockIcon size={12} />
+                              </span>
+                            )}
+                            <span
+                              className="queue-item-chevron"
+                              style={{
+                                fontSize: '0.75rem',
+                                color: isExpanded ? color : 'var(--text-muted)',
+                                transform: isExpanded ? (lang === 'he' ? 'rotate(90deg)' : 'rotate(-90deg)') : 'none',
+                                transition: 'transform 0.2s, color 0.2s',
+                                display: 'inline-block',
+                              }}
+                            >
+                              ▼
+                            </span>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
 
-                      <div className="queue-item-meta">
-                        <span className={`badge ${badgeClass}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                          {deadlineText}
+            {selectedUpcomingTask && (
+              <div
+                className="queue-detail-pane queue-item-expanded open"
+                style={{
+                  borderColor: selectedTaskColor,
+                  borderInlineStartColor: selectedTaskColor,
+                  '--detail-course-color': selectedTaskColor,
+                } as React.CSSProperties}
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                {/* 1. Pinned Detail Header */}
+                <div className="queue-detail-header">
+                  <div className="queue-detail-top-bar">
+                    <div className="queue-detail-course-group">
+                      <span className="course-color-dot" style={{ backgroundColor: selectedTaskColor }} />
+                      <span className="queue-detail-course-name" style={{ color: selectedTaskColor }} title={selectedTaskCourseName}>
+                        {selectedTaskCourseName}
+                      </span>
+                      <span className="subject-pill">
+                        <FolderIcon size={11} />
+                        <span style={{ fontSize: '0.72rem' }}>
+                          {selectedUpcomingTask.sectionName || (lang === 'he' ? 'כללי' : 'General')}
                         </span>
-                        {task.cutoffDate && hasGracePeriod(task) && (
-                          <span
-                            className="grace-period-clock-icon"
-                            title={formatGracePeriodTooltip(task.cutoffDate, lang)}
-                            aria-label={formatGracePeriodTooltip(task.cutoffDate, lang)}
-                          >
-                            <ClockIcon size={12} />
-                          </span>
-                        )}
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>
-                          ▼
-                        </span>
-                      </div>
+                      </span>
                     </div>
 
-                    <div className={`queue-item-expanded ${isExpanded ? 'open' : ''}`} onClick={(ev) => ev.stopPropagation()}>
-                      {/* Attachments */}
-                      {task.attachments && task.attachments.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {t('attachments')}:
-                          </span>
-                          <div className="files-column-list">
-                            {task.attachments.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FileIcon size={12} />{att.name}</span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={att.url}
-                                      openUrl={openUrl}
-                                      fileName={att.name}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={att.name}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Subject Files */}
-                      {taskSubjectFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {t('subject_files')}:
-                          </span>
-                          <div className="files-column-list">
-                            {taskSubjectFiles.map((sf, sfIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                              const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                              return (
-                                <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={sf.fileUrl}
-                                      openUrl={openUrl}
-                                      fileName={sf.fileName}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={sf.fileName}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Submitted Files */}
-                      {task.submittedFiles && task.submittedFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
-                          <span className="files-column-label">
-                            {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                          </span>
-                          <div className="files-column-list">
-                            {task.submittedFiles.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
-                                  <CheckIcon size={11} />
-                                  <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
-                                    <FileOpenAction
-                                      rawUrl={att.url}
-                                      openUrl={openUrl}
-                                      fileName={att.name}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={att.name}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Actions Toolbar */}
-                      <div className="card-expanded-toolbar" style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        <span className="subject-pill">
-                          <FolderIcon size={12} />
-                          <span style={{ fontSize: '0.75rem' }}>{task.sectionName || (lang === 'he' ? 'כללי' : 'General')}</span>
+                    <div className="queue-detail-meta-right">
+                      {selectedTaskDueInfo && (
+                        <span className={`badge ${selectedTaskDueInfo.badgeClass}`} style={{ fontSize: '0.72rem', padding: '0.18rem 0.45rem' }}>
+                          {selectedTaskDueInfo.deadlineText}
                         </span>
-                        <div className="toolbar-buttons-group" style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                          <button
-                            className="btn-go-to-course btn-xs"
-                            onClick={() => onGoToCourse(task.courseId)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <BookOpenIcon size={11} />
-                            <span>{t('go_to_course')}</span>
-                          </button>
-                          <button
-                            className="secondary-btn btn-xs"
-                            onClick={() => onToggleCompleted && onToggleCompleted(task.uid || getActivityUid(task))}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            <CheckIcon size={11} />
-                            <span>{isTaskCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                          </button>
-                          <button
-                            className="secondary-btn btn-xs"
-                            onClick={() => onToggleHidden && onToggleHidden(task.uid || getActivityUid(task))}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            {isTaskHidden ? <EyeIcon size={11} /> : <EyeOffIcon size={11} />}
-                            <span>{isTaskHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
-                          </button>
-                          {task.link && (
-                            <a
-                              href={task.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="primary-btn btn-xs action-submit-btn"
-                              data-moodle-link="true"
-                            >
-                              <span>{t('submit_assignment')}</span>
-                            </a>
-                          )}
-                        </div>
-                      </div>
+                      )}
+                      {selectedUpcomingTask.cutoffDate && hasGracePeriod(selectedUpcomingTask) && (
+                        <span
+                          className="grace-period-clock-icon"
+                          title={formatGracePeriodTooltip(selectedUpcomingTask.cutoffDate, lang)}
+                          aria-label={formatGracePeriodTooltip(selectedUpcomingTask.cutoffDate, lang)}
+                        >
+                          <ClockIcon size={12} />
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="queue-detail-close-btn"
+                        onClick={() => setExpandedUpcomingId(null)}
+                        title={lang === 'he' ? 'סגור' : 'Close'}
+                        aria-label={lang === 'he' ? 'סגור' : 'Close'}
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
-                );
-              })
+
+                  <div className="queue-detail-title" title={selectedUpcomingTask.name}>
+                    {selectedUpcomingTask.name}
+                  </div>
+                </div>
+
+                {/* 2. Scrollable Middle Body (Files) */}
+                <div className="queue-detail-body">
+                  {/* Attachments */}
+                  {selectedUpcomingTask.attachments && selectedUpcomingTask.attachments.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {t('attachments')}:
+                      </span>
+                      <div className="files-column-list">
+                        {selectedUpcomingTask.attachments.map((att, attIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(att.url, token);
+                          const openUrl = buildFileOpenUrl(att.url, token);
+                          return (
+                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FileIcon size={12} />{att.name}</span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={att.name}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subject Files */}
+                  {selectedTaskSubjectFiles.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {t('subject_files')}:
+                      </span>
+                      <div className="files-column-list">
+                        {selectedTaskSubjectFiles.map((sf, sfIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                          const openUrl = buildFileOpenUrl(sf.fileUrl, token);
+                          return (
+                            <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={sf.fileUrl}
+                                  openUrl={openUrl}
+                                  fileName={sf.fileName}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={sf.fileName}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Submitted Files */}
+                  {selectedUpcomingTask.submittedFiles && selectedUpcomingTask.submittedFiles.length > 0 && (
+                    <div className="files-column-group" style={{ marginBottom: '0.5rem' }}>
+                      <span className="files-column-label">
+                        {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                      </span>
+                      <div className="files-column-list">
+                        {selectedUpcomingTask.submittedFiles.map((att, attIdx) => {
+                          const downloadUrl = buildFileDownloadUrl(att.url, token);
+                          const openUrl = buildFileOpenUrl(att.url, token);
+                          return (
+                            <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'var(--border)' }}>
+                              <CheckIcon size={11} />
+                              <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
+                              <div className="file-actions-group" style={{ display: 'flex', gap: '0.3rem', marginInlineStart: 'auto' }}>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a
+                                  href={downloadUrl}
+                                  download={att.name}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="file-action-btn file-download-btn"
+                                  title={t('download_file')}
+                                  aria-label={t('download_file')}
+                                >
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {!hasAnySelectedTaskFiles && (
+                    <div className="queue-detail-empty-files">
+                      <FileIcon size={13} />
+                      <span>{lang === 'he' ? 'אין קבצים מצורפים למטלה זו' : 'No attached files for this assignment'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Pinned Action Footer */}
+                <div className="card-expanded-toolbar queue-detail-footer">
+                  <div className="toolbar-buttons-group" style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn-go-to-course btn-xs"
+                      onClick={() => onGoToCourse(selectedUpcomingTask.courseId)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <BookOpenIcon size={11} />
+                      <span>{t('go_to_course')}</span>
+                    </button>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleCompleted && onToggleCompleted(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <CheckIcon size={11} />
+                      <span>{isSelectedTaskCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                    </button>
+                    <button
+                      className="secondary-btn btn-xs"
+                      onClick={() => onToggleHidden && onToggleHidden(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      {isSelectedTaskHidden ? <EyeIcon size={11} /> : <EyeOffIcon size={11} />}
+                      <span>{isSelectedTaskHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                    </button>
+                    {selectedUpcomingTask.link && (
+                      <a
+                        href={selectedUpcomingTask.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="primary-btn btn-xs action-submit-btn"
+                        data-moodle-link="true"
+                      >
+                        <span>{t('submit_assignment')}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>

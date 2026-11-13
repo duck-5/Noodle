@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 - **Collapsible Sync Progress Window & Floating Mini Dock (`apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `TC-SYNC-013`)**:
-  - Added a collapse arrow button (`.sync-window-collapse-btn`) in the sync progress window header to minimize it to the bottom viewport corner.
+  - Replaced the previous `✕` close button with an exclusive collapse arrow button (`.sync-window-collapse-btn`) in the sync progress window header to minimize it smoothly to the bottom viewport corner.
   - Implemented automatic collapse on outside clicks: clicking anywhere else during sync automatically collapses the window into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying live progress percent and an expand arrow.
   - Seamless re-expansion: clicking the collapsed pill or clicking the header "Sync" button while sync is running immediately restores the full progress window.
   - Automatic dismissal: once synchronization completes, the entire progress UI (both expanded and collapsed states) closes automatically.

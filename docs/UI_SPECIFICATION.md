@@ -98,7 +98,7 @@ Presented immediately after successful authentication or when manually triggered
   - Each task displays a state badge: pending neutral dot (`.sync-task-dot`), active spinning indicator (`.sync-task-badge.active`), completed green checkmark (`.sync-task-badge.done`), or error badge (`.sync-task-badge.failed`).
   - Window footer displays live stage message and overall completion percentage.
   - **Collapsible Mini Dock & Outside-Click Collapse**:
-    * An arrow button (`.sync-window-collapse-btn`) in the header allows collapsing the progress window to the bottom corner.
+    * An exclusive chevron arrow button (`.sync-window-collapse-btn`) in the header (without an X close button) allows collapsing the progress window to the bottom corner.
     * Clicking anywhere outside the window automatically collapses it into a compact, minimal floating pill (`.sync-progress-collapsed`) displaying the spinning sync icon, live progress percentage, and an expand arrow.
     * Clicking anywhere on the collapsed pill or on the header "Sync" button while sync is in progress expands it back to the full progress window.
   - **Automatic Dismissal on Completion**: Both the expanded window and collapsed dock automatically close 2.5 seconds after synchronization finishes.

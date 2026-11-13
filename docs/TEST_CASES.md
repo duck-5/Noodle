@@ -1886,7 +1886,7 @@ graph LR
   4. Fully adheres to active theme styling: light warm cream with terracotta borders in `theme-noodle`, rich espresso with amber borders in `theme-coffee`, and slate with indigo borders in `theme-dark`.
   5. Task status badges transition accurately between `pending` (subtle dot), `active` (spinning icon), `done` (green checkmark), and `failed` (red cross icon).
   6. **Collapsible Mini Dock & Outside-Click Collapse**:
-     * In the expanded window header, a collapse arrow button (`.sync-window-collapse-btn`) collapses the window to the bottom corner.
+     * In the expanded window header, an exclusive collapse arrow button (`.sync-window-collapse-btn`) collapses the window to the bottom corner (with no close `✕` button).
      * Clicking anywhere outside the window automatically collapses it into a sleek, minimal floating pill (`.sync-progress-collapsed`) displaying the spinning sync glyph, live progress percentage, and an expand arrow.
      * Clicking anywhere on the collapsed pill or on the header "Sync" button while sync is running expands it back to the full progress window.
   7. **Automatic Dismissal on Completion**:
