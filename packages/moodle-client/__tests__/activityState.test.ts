@@ -37,9 +37,10 @@ describe('activityState helpers', () => {
     expect(matchesActivityIdentifier('assign:12', quiz1)).toBe(false);
   });
 
-  it('isActivityHidden detects auto-suppression or explicit user setting (uid and legacy)', () => {
+  it('isActivityHidden detects auto-suppression or explicit user setting (uid and legacy), and allows unhiding auto-hidden items', () => {
     const autoHidden = { id: 30, activityType: 'assign' as const, status: 'Submitted', isHidden: true };
     expect(isActivityHidden(autoHidden, [])).toBe(true);
+    expect(isActivityHidden(autoHidden, ['unhidden:assign:30'])).toBe(false);
 
     expect(isActivityHidden(assign1, [12])).toBe(true);
     expect(isActivityHidden(quiz1, [12])).toBe(false); // numeric 12 doesn't hide quiz 12

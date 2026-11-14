@@ -183,7 +183,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await optionsPage.screenshot({ path: 'screenshots/dashboard-course-expanded.png' });
   });
 
-  test('TC-DASH-REHAUL-02: Upcoming To-Do queue excludes completed tasks and opens split detail pane with course-colored border', async ({ optionsPage }) => {
+  test('TC-DASH-REHAUL-02: Upcoming To-Do queue excludes completed tasks, opens split detail pane with course-colored border, and dismisses tasks to hidden list', async ({ optionsPage }) => {
     // 1. Check queue card exists
     const queueCard = optionsPage.locator('.queue-card');
     await expect(queueCard).toBeVisible();
@@ -191,15 +191,13 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // 2. The completed assignment (מטלה 0 - חזרה על C++) must NOT be in the queue
     await expect(queueCard).not.toContainText('מטלה 0 - חזרה על C++');
 
-    // 3. Pending assignment should be visible in the queue with a Trash UI placeholder button
+    // 3. Pending assignment should be visible in the queue with a Trash dismiss button
     const queueItem = queueCard.locator('.queue-item').first();
     await expect(queueItem).toBeVisible();
 
     const deleteBtn = queueItem.locator('.queue-delete-btn');
     await expect(deleteBtn).toBeVisible();
     await expect(deleteBtn.locator('svg')).toBeVisible();
-    await deleteBtn.click();
-    await expect(queueCard).not.toHaveClass(/is-split/);
 
     // 4. Click queue item to open the side-by-side split detail pane inside the queue card
     await queueItem.click();
@@ -217,6 +215,11 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await detailPane.locator('.queue-detail-close-btn').click();
     await expect(queueCard).not.toHaveClass(/is-split/);
     await expect(detailPane).toBeHidden();
+
+    // 7. Clicking the Trash button dismisses the task from the queue without opening the split pane
+    await deleteBtn.click();
+    await expect(queueCard).not.toHaveClass(/is-split/);
+    await expect(queueCard).not.toContainText('תרגיל בית 1 - עצי חיפוש');
   });
 
   test('TC-DASH-REHAUL-03: Manage courses modal opens from dashboard and groups courses', async ({ optionsPage }) => {
@@ -505,6 +508,52 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
           courseId: 2,
           courseName: 'אלגוריתמים',
           host: 'TA Levi',
+  test('TC-DASH-REHAUL-07: Assignment delete button, locked assignment auto-dismissal, and Panopto recording dismissal move items to hidden lists (including per-section hidden list on Course page)', async ({ optionsPage }) => {
+    // Seed sectionName 'שבוע 02' on assignment 101, a locked auto-hidden assignment (תרגיל בית 2 - קבוצה 4) in 'שבוע 02', a section file, and a Panopto recording
+    await optionsPage.evaluate(async () => {
+      const localData = await chrome.storage.local.get('cachedSyncResult');
+      const syncResult = localData.cachedSyncResult || {};
+      syncResult.assignments = (syncResult.assignments || []).map((a: any) =>
+        a.id === 101 ? { ...a, sectionName: 'שבוע 02' } : a
+      );
+      syncResult.assignments.push({
+        id: 504,
+        cmid: 1504,
+        uid: 'assign:504',
+        courseId: 1,
+        courseName: 'מבני נתונים',
+        sectionName: 'שבוע 02',
+        name: 'תרגיל בית 2 - קבוצה 4',
+        status: 'Assigned',
+        deadline: '2026-11-10T11:00:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1504',
+        grade: null,
+        gradeMax: 100,
+        isHidden: true,
+      });
+      syncResult.files = [
+        {
+          id: 901,
+          courseId: 1,
+          courseName: 'מבני נתונים',
+          sectionName: 'שבוע 02',
+          fileName: 'תרגול 2.pdf',
+          fileUrl: 'https://moodle.tau.ac.il/pluginfile.php/901/mod_resource/content/1/tirgul2.pdf',
+          fileSize: 102400,
+          fileType: 'application/pdf',
+        },
+      ];
+      syncResult.recordings = [
+        {
+          id: 'rec-ds-01',
+          title: 'הרצאה 01 - מבוא למבני נתונים',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-01',
+          publishedDate: '2026-11-01',
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+          durationSeconds: 3600,
         },
       ];
       await chrome.storage.local.set({ cachedSyncResult: syncResult });
@@ -516,6 +565,10 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
       settings.hiddenRecordings = [];
       await chrome.storage.sync.set({ settings });
     }, todayIso);
+      settings.hiddenAssignments = [];
+      settings.hiddenRecordings = [];
+      await chrome.storage.sync.set({ settings });
+    });
 
     await optionsPage.reload();
     await optionsPage.waitForLoadState('domcontentloaded');
@@ -596,5 +649,89 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
       (el) => getComputedStyle(el).accentColor
     );
     expect(sliderAccent).toBe('rgb(212, 163, 115)');
+    // 1. Locked assignment "תרגיל בית 2 - קבוצה 4" must NOT appear in the Dashboard Upcoming To-Do queue
+    const queueCard = optionsPage.locator('.queue-card').first();
+    await expect(queueCard).not.toContainText('תרגיל בית 2 - קבוצה 4');
+
+    // 2. Navigate to Assignments tab: locked assignment is in the collapsible Hidden Assignments drawer, not the active feed
+    await optionsPage.locator('.sidebar-nav .nav-item').nth(1).click();
+    const assignmentsFeed = optionsPage.locator('.assignments-feed');
+    await expect(assignmentsFeed).toBeVisible();
+    const hiddenDrawerWrapper = assignmentsFeed.locator('.hidden-assignments-drawer-wrapper');
+    await expect(hiddenDrawerWrapper).toBeVisible();
+
+    // Dismiss active assignment "תרגיל בית 1 - עצי חיפוש" via its card delete button
+    const treeCard = assignmentsFeed.locator('.assignment-card').filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' });
+    await expect(treeCard).toBeVisible();
+    await treeCard.locator('.queue-delete-btn').click();
+    await expect(treeCard).toHaveCount(0);
+
+    // Open Hidden Assignments drawer on Assignments tab -> both "תרגיל בית 1 - עצי חיפוש" and locked "תרגיל בית 2 - קבוצה 4" appear
+    await hiddenDrawerWrapper.locator('.panopto-toggle-hidden-btn').click();
+    const hiddenDrawer = hiddenDrawerWrapper.locator('.hidden-assignments-drawer');
+    await expect(hiddenDrawer).toBeVisible();
+    await expect(hiddenDrawer).toContainText('תרגיל בית 1 - עצי חיפוש');
+    await expect(hiddenDrawer).toContainText('תרגיל בית 2 - קבוצה 4');
+
+    // Restore "תרגיל בית 1 - עצי חיפוש" from the hidden drawer
+    await hiddenDrawer.locator('.assignment-card').filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' }).locator('.queue-delete-btn').click();
+    await expect(assignmentsFeed.locator('> .assignment-card').filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' })).toBeVisible();
+
+    // 3. Navigate back to Dashboard and open Course 1 ("מבני נתונים")
+    await optionsPage.locator('.sidebar-nav .nav-item').first().click();
+    await optionsPage.locator('.course-row-card').filter({ hasText: 'מבני נתונים' }).first().click();
+    const detailView = optionsPage.locator('.course-detail-view');
+    await expect(detailView).toBeVisible();
+
+    // Inside section "שבוע 02", "תרגיל בית 1 - עצי חיפוש" is visible and locked "תרגיל בית 2 - קבוצה 4" is in the section's hidden assignments drawer
+    const week2Section = detailView.locator('.section-node').filter({ hasText: 'שבוע 02' });
+    await expect(week2Section).toBeVisible();
+    await expect(week2Section.locator('> .section-node-body > .section-assignments-list')).toContainText('תרגיל בית 1 - עצי חיפוש');
+    await expect(week2Section.locator('> .section-node-body > .section-assignments-list')).not.toContainText('תרגיל בית 2 - קבוצה 4');
+
+    const sectionHiddenWrapper = week2Section.locator('.section-hidden-assignments-wrapper');
+    await expect(sectionHiddenWrapper).toBeVisible();
+    const sectionHiddenToggle = sectionHiddenWrapper.locator('.section-hidden-assignments-toggle');
+    await expect(sectionHiddenToggle).toContainText('(1)');
+
+    // Dismiss "תרגיל בית 1 - עצי חיפוש" directly inside the "שבוע 02" section card
+    await week2Section
+      .locator('> .section-node-body > .section-assignments-list .section-assignment-item')
+      .filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' })
+      .locator('.queue-delete-btn')
+      .click();
+    await expect(sectionHiddenToggle).toContainText('(2)');
+
+    // Expand the section's hidden assignments drawer at the bottom of "שבוע 02" -> both assignments appear
+    await sectionHiddenToggle.click();
+    const sectionHiddenDrawer = sectionHiddenWrapper.locator('.section-hidden-assignments-drawer');
+    await expect(sectionHiddenDrawer).toBeVisible();
+    await expect(sectionHiddenDrawer).toContainText('תרגיל בית 1 - עצי חיפוש');
+    await expect(sectionHiddenDrawer).toContainText('תרגיל בית 2 - קבוצה 4');
+
+    // Unhide "תרגיל בית 1 - עצי חיפוש" from the section's hidden drawer -> returns to the active section card
+    await sectionHiddenDrawer
+      .locator('.section-assignment-item')
+      .filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' })
+      .locator('.queue-delete-btn')
+      .click();
+    await expect(week2Section.locator('> .section-node-body > .section-assignments-list')).toContainText('תרגיל בית 1 - עצי חיפוש');
+    await expect(sectionHiddenToggle).toContainText('(1)');
+
+    // 4. Dismiss Panopto recording "הרצאה 01 - מבוא למבני נתונים" via its delete button -> moves into hidden recordings drawer
+    const panoptoCard = detailView.locator('.panopto-section-card');
+    await expect(panoptoCard).toBeVisible();
+    const recRow = panoptoCard.locator('.section-recording-item').filter({ hasText: 'הרצאה 01 - מבוא למבני נתונים' });
+    await expect(recRow).toBeVisible();
+    await recRow.locator('.queue-delete-btn').click();
+
+    await expect(panoptoCard.locator('.panopto-toggle-hidden-btn')).toContainText('(1)');
+    await panoptoCard.locator('.panopto-toggle-hidden-btn').click();
+    const panoptoHiddenDrawer = panoptoCard.locator('.panopto-hidden-recordings-drawer');
+    await expect(panoptoHiddenDrawer).toContainText('הרצאה 01 - מבוא למבני נתונים');
+
+    // Restore Panopto recording from hidden drawer
+    await panoptoHiddenDrawer.locator('.section-recording-item').locator('.queue-delete-btn').click();
+    await expect(panoptoCard.locator('.section-recordings-list .section-recording-item')).toContainText('הרצאה 01 - מבוא למבני נתונים');
   });
 });

@@ -740,5 +740,79 @@ describe('Category 8: Google Tasks Two-Way Sync Integration', () => {
       const postCall = fetchCalls.find((c) => c.init?.method === 'POST');
       expect(postCall).toBeUndefined();
     });
+
+    it('should sync auto-hidden tasks when unhidden via unhidden:<uid> and prefer unlocked duplicate over locked duplicate', async () => {
+      const lockedGroupAssign: Assignment = {
+        id: 14,
+        cmid: 1014,
+        courseId: 101,
+        courseName: 'מבני נתונים',
+        name: 'תרגיל בית 2',
+        status: 'Assigned',
+        deadline: '2026-11-10T11:00:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1014',
+        grade: null,
+        gradeMax: 100,
+        uid: 'assign:14',
+        isHidden: true,
+      };
+      const unlockedGroupAssign: Assignment = {
+        id: 15,
+        cmid: 1015,
+        courseId: 101,
+        courseName: 'מבני נתונים',
+        name: 'תרגיל בית 2',
+        status: 'Assigned',
+        deadline: '2026-11-10T11:00:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1015',
+        grade: null,
+        gradeMax: 100,
+        uid: 'assign:15',
+      };
+      const unhiddenLockedAssign: Assignment = {
+        id: 16,
+        cmid: 1016,
+        courseId: 101,
+        courseName: 'מבני נתונים',
+        name: 'תרגיל בית 3 - קבוצה 4',
+        status: 'Assigned',
+        deadline: '2026-11-17T11:00:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1016',
+        grade: null,
+        gradeMax: 100,
+        uid: 'assign:16',
+        isHidden: true,
+      };
+
+      const postBodies: any[] = [];
+      global.fetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes('/tasks?')) {
+          return { ok: true, json: async () => ({ items: [] }) };
+        }
+        if (init?.method === 'POST') {
+          const body = JSON.parse(String(init.body));
+          postBodies.push(body);
+          return { ok: true, json: async () => ({ id: `new_${postBodies.length}` }) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      const res = await syncAssignmentsToGoogleTasks(
+        'VALID_TOKEN',
+        'tasklist_123',
+        [lockedGroupAssign, unlockedGroupAssign, unhiddenLockedAssign],
+        {
+          hiddenAssignmentIds: ['unhidden:assign:16'],
+        }
+      );
+
+      expect(res.errors).toHaveLength(0);
+      expect(res.syncedCount).toBe(2);
+      expect(postBodies.some((b) => b.notes.includes('Noodle:uid:assign:15'))).toBe(true);
+      expect(postBodies.some((b) => b.notes.includes('Noodle:uid:assign:16'))).toBe(true);
+    });
   });
 });

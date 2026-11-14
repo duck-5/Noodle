@@ -1,3 +1,9 @@
+/**
+ * @deprecated Legacy v3 standalone Courses screen (`CoursesScreen`) for the React Native / Expo mobile app.
+ * In the v4 architecture (implemented in `apps/extension/src/options/App.tsx`), the standalone Courses tab
+ * was deprecated and replaced by the Dashboard's "My Tracked Courses" section, the "Manage Courses" modal,
+ * and `CourseDetailView`. Active feature development targets `apps/extension/`.
+ */
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
@@ -149,6 +155,11 @@ interface EditingCourseState {
   is_active: number;
 }
 
+/**
+ * @deprecated Legacy v3 standalone Courses screen (`CoursesScreen`).
+ * Superseded in v4 by the Dashboard's "My Tracked Courses" section, `CoursesConfigTable` modal,
+ * and `CourseDetailView` in `apps/extension/src/options/App.tsx`.
+ */
 export default function CoursesScreen({
   activeCourseId: propActiveCourseId,
   setActiveCourseId: propSetActiveCourseId,

@@ -182,11 +182,12 @@ export default function Popup() {
   }
 
   const watchedSet = new Set<string>(settings?.watchedRecordings || []);
+  const hiddenRecordingsSet = new Set<string>(settings?.hiddenRecordings || []);
 
   const unwatchedRecordings = settings?.panoptoEnabled
     ? [...(syncResult?.recordings || [])]
       .filter((r: any) => {
-        if (!r?.id || watchedSet.has(r.id)) return false;
+        if (!r?.id || watchedSet.has(r.id) || hiddenRecordingsSet.has(r.id)) return false;
         const staffEntries =
           settings?.coursesPanoptoStaff?.[r.courseId] ||
           (settings?.coursesPanoptoStaff as Record<string, typeof settings.coursesPanoptoStaff[number]> | undefined)?.[String(r.courseId)];

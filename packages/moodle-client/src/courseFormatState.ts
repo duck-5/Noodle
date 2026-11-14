@@ -8,6 +8,7 @@ export interface ParsedSectionState {
 
 export interface ParsedCourseFormatState {
   sections: Map<number, ParsedSectionState>;
+  lockedCmids?: Set<number>;
 }
 
 export async function fetchSesskeyFromJar(jar: CookieJar, instanceBaseUrl: string): Promise<string | null> {
@@ -17,7 +18,7 @@ export async function fetchSesskeyFromJar(jar: CookieJar, instanceBaseUrl: strin
     if (!response.ok) return null;
     const html = await response.text();
     const match = html.match(/["']sesskey["']\s*:\s*["']([A-Za-z0-9]+)["']/i) ||
-                  html.match(/sesskey=([A-Za-z0-9]+)/i);
+      html.match(/sesskey=([A-Za-z0-9]+)/i);
     return match ? match[1] : null;
   } catch {
     return null;
@@ -147,7 +148,22 @@ export async function fetchCourseFormatState(options: {
       }
     }
 
-    return { sections: sectionMap };
+    const lockedCmids = new Set<number>();
+    if (Array.isArray(data.cm)) {
+      for (const cm of data.cm) {
+        const cmid = Number(cm.id);
+        if (isNaN(cmid)) continue;
+        if (
+          cm.uservisible === false ||
+          (cm.visible === false && cm.uservisible !== true) ||
+          (typeof cm.accessvisible === 'boolean' && cm.accessvisible === false)
+        ) {
+          lockedCmids.add(cmid);
+        }
+      }
+    }
+
+    return { sections: sectionMap, lockedCmids };
   } catch {
     return null;
   }

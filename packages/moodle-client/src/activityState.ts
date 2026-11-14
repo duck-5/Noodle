@@ -52,6 +52,10 @@ export function isActivityHidden(
   activity: { id: number; activityType?: string; uid?: string; isHidden?: boolean },
   hiddenIdentifiers?: Array<string | number> | null
 ): boolean {
+  const uid = getActivityUid(activity);
+  if (hiddenIdentifiers && hiddenIdentifiers.includes(`unhidden:${uid}`)) {
+    return false;
+  }
   if (activity.isHidden) return true;
   if (!hiddenIdentifiers || hiddenIdentifiers.length === 0) return false;
   return hiddenIdentifiers.some((storedId) => matchesActivityIdentifier(storedId, activity));

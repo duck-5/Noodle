@@ -60,8 +60,8 @@ export function calculateGradesSummary({
       continue;
     }
 
-    // 2. Exclude hidden assignments (auto-suppressed late submission boxes or user-hidden)
-    const isHidden = Boolean(a.isHidden) || isActivityHidden(a, hiddenIdentifiers);
+    // 2. Exclude hidden assignments (auto-suppressed late submission boxes, locked tasks, or user-hidden, respecting unhidden:<uid> overrides)
+    const isHidden = isActivityHidden(a, hiddenIdentifiers);
     if (isHidden) {
       continue;
     }

@@ -24,7 +24,7 @@ export async function getOrCreateTaskList(
         if (errJson?.error?.message) {
           errMsg += ` - ${errJson.error.message}`;
         }
-      } catch {}
+      } catch { }
       throw new Error(errMsg);
     }
 
@@ -56,7 +56,7 @@ export async function getOrCreateTaskList(
         if (errJson?.error?.message) {
           errMsg += ` - ${errJson.error.message}`;
         }
-      } catch {}
+      } catch { }
       throw new Error(errMsg);
     }
 
@@ -160,24 +160,24 @@ export async function syncAssignmentsToGoogleTasks(
     Array.isArray(options?.hiddenAssignmentIds)
       ? options.hiddenAssignmentIds
       : options?.hiddenAssignmentIds instanceof Set
-      ? Array.from(options.hiddenAssignmentIds)
-      : []
+        ? Array.from(options.hiddenAssignmentIds)
+        : []
   );
 
   const completedIds = new Set<number | string>(
     Array.isArray(options?.completedAssignmentIds)
       ? options.completedAssignmentIds
       : options?.completedAssignmentIds instanceof Set
-      ? Array.from(options.completedAssignmentIds)
-      : []
+        ? Array.from(options.completedAssignmentIds)
+        : []
   );
 
   const uncompletedIds = new Set<number | string>(
     Array.isArray(options?.uncompletedAssignmentIds)
       ? options.uncompletedAssignmentIds
       : options?.uncompletedAssignmentIds instanceof Set
-      ? Array.from(options.uncompletedAssignmentIds)
-      : []
+        ? Array.from(options.uncompletedAssignmentIds)
+        : []
   );
 
   const getActivityUid = (assign: Assignment): string => {
@@ -209,6 +209,8 @@ export async function syncAssignmentsToGoogleTasks(
 
   // Helper to check if an assignment is hidden
   const isAssignmentHidden = (assign: Assignment): boolean => {
+    const uid = getActivityUid(assign);
+    if (hiddenIds.has(`unhidden:${uid}`)) return false;
     return setMatchesActivity(hiddenIds, assign) || assign.isHidden === true;
   };
 
@@ -222,7 +224,7 @@ export async function syncAssignmentsToGoogleTasks(
     }
   }
 
-  // Deduplicate activities across courses/portals (e.g. multi-portal courses) prioritizing completed/submitted/graded versions
+  // Deduplicate activities across courses/portals (e.g. multi-portal courses) prioritizing completed/submitted/graded or visible versions
   const deduplicatedAssignments: Assignment[] = [];
   const seenAssignMap = new Map<string, Assignment>();
 
@@ -238,7 +240,9 @@ export async function syncAssignmentsToGoogleTasks(
     } else {
       const isCurrentDone = isAssignmentDone(assign);
       const isExistingDone = isAssignmentDone(existing);
-      if (isCurrentDone && !isExistingDone) {
+      const isCurrentHidden = isAssignmentHidden(assign);
+      const isExistingHidden = isAssignmentHidden(existing);
+      if ((isCurrentDone && !isExistingDone) || (!isCurrentHidden && isExistingHidden && !isExistingDone)) {
         const idx = deduplicatedAssignments.indexOf(existing);
         if (idx !== -1) {
           deduplicatedAssignments[idx] = assign;

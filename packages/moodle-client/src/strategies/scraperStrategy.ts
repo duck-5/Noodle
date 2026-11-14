@@ -44,15 +44,15 @@ export function parseMoodleDate(str: string): number {
     'מאי': 'May', 'יוני': 'June', 'יולי': 'July', 'אוגוסט': 'August',
     'ספטמבר': 'September', 'אוקטובר': 'October', 'נובמבר': 'November', 'דצמבר': 'December'
   };
-  
+
   let cleanStr = str.trim();
   cleanStr = cleanStr.replace(/^יום [א-ת]+,\s*/, '');
   cleanStr = cleanStr.replace(/^[A-Za-z]+,\s*/, '');
-  
+
   for (const [heb, eng] of Object.entries(hebrewMonths)) {
     cleanStr = cleanStr.replace(heb, eng);
   }
-  
+
   const ts = Math.floor(Date.parse(cleanStr) / 1000);
   return isNaN(ts) ? 0 : ts;
 }
@@ -66,7 +66,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   private courseYearMap = new Map<number, string>();
   private assignYearMap = new Map<number, string>();
 
-  constructor(private context: StrategyContext) {}
+  constructor(private context: StrategyContext) { }
 
   public setToken(token: string): void {
     this.context.token = token;
@@ -145,21 +145,21 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   private async performSsoLogin(year: string): Promise<void> {
     const root = this.getRootUrl();
     const loginUrl = `${root}/${year}/login/index.php`;
-    
+
     let html = await this.fetchHtml(`/${year}/login/index.php`);
-    
+
     const samlMatch = html.match(/<form[^>]+action=["']([^"']+)["']/i);
     const samlValMatch = html.match(/<input[^>]+name=["']SAMLResponse["'][^>]+value=["']([^"']+)["']/i);
-    
+
     if (samlMatch && samlValMatch) {
       const entities: { [key: string]: string } = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&#x27;': "'" };
       const decodeHtmlEntities = (text: string) => text.replace(/&[#\w]+;/g, (m) => entities[m] || m);
-      
+
       const actionUrl = decodeHtmlEntities(samlMatch[1]);
       const samlResponse = decodeHtmlEntities(samlValMatch[1]);
       const body = new URLSearchParams();
       body.append('SAMLResponse', samlResponse);
-      
+
       await fetch(actionUrl, {
         method: 'POST',
         credentials: 'include',
@@ -172,16 +172,16 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
   public async getMobileToken(): Promise<string> {
     const root = this.getRootUrl();
     const html = await this.fetchHtml('/user/managetoken.php');
-    
+
     const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
     if (!sesskeyMatch) throw new Error('Could not find sesskey for token reset');
     const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
 
     const trs = html.split(/<tr/i);
     const targetTr = trs.find(t => /moodle\s+mobile\s+web\s+service/i.test(t) || /moodle_mobile_app/i.test(t))
-                  || trs.find(t => /mobile/i.test(t));
+      || trs.find(t => /mobile/i.test(t));
     const tokenMatch = targetTr ? targetTr.match(/action=resetwstoken(?:&amp;|&)tokenid=(\d+)/i) : null;
-    
+
     const allTokens = tokenMatch ? [tokenMatch[1]] : [];
     if (allTokens.length === 0) throw new Error('No tokens found to reset');
 
@@ -200,14 +200,14 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       });
 
       if (!response.ok) continue;
-      
+
       const resetHtml = await response.text();
       const finalTokenMatch = resetHtml.match(/id="copytoclipboardtoken"[^>]*>([^<]+)<\/div>/i);
       if (finalTokenMatch) {
         return finalTokenMatch[1].trim();
       }
     }
-    
+
     throw new Error('Failed to find or parse the new token HTML');
   }
 
@@ -321,13 +321,13 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       return;
     }
     const sesskey = sesskeyMatch[1] || sesskeyMatch[2];
-    
+
     const prefix = yearContext ? `/${yearContext}` : '';
     const root = this.getRootUrl();
     const endpoint = `${root}${prefix}/lib/ajax/service.php?sesskey=${sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification`;
 
     if (this.context.devMode) {
-      console.log(`[ScraperStrategy] extractCoursesViaAjax(${yearContext || 'root'}): using sesskey=${sesskey.substring(0,4)}..., endpoint=${endpoint}`);
+      console.log(`[ScraperStrategy] extractCoursesViaAjax(${yearContext || 'root'}): using sesskey=${sesskey.substring(0, 4)}..., endpoint=${endpoint}`);
     }
 
     const classifications = ['all', 'inprogress', 'future', 'past', 'favourites'];
@@ -677,7 +677,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
       if (res.status === 'fulfilled' && res.value?.html) {
         const { target, html } = res.value;
         this.parseCoursesFromHtml(html, coursesMap, target.year);
-        
+
         const effectiveYear = target.year || 'root';
         if (!ajaxYearsDone.has(effectiveYear)) {
           ajaxYearsDone.add(effectiveYear);
@@ -727,7 +727,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
         if (res.status === 'fulfilled' && res.value?.html) {
           const { target, html } = res.value;
           this.parseCoursesFromHtml(html, coursesMap, target.year);
-          
+
           const effectiveYear = target.year || 'root';
           if (!ajaxYearsDone.has(effectiveYear)) {
             ajaxYearsDone.add(effectiveYear);
@@ -744,7 +744,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     return Array.from(coursesMap.values());
   }
 
-  
+
   public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
     if (this.courseYearMap.size === 0) {
       try {
@@ -760,21 +760,21 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     // Fetch assignments from the Grade Report since course pages on TAU Moodle often omit assignment links
     for (const [courseId, year] of this.courseYearMap.entries()) {
       if (courseId <= 1) continue;
-      
+
       const prefix = year ? '/' + year : '';
       const reportUrl = `${prefix}/grade/report/user/index.php?id=${courseId}`;
-      
+
       try {
         const html = await this.fetchHtml(reportUrl);
         const assignMatchCount = html.match(/mod\/assign\/view\.php/g)?.length || 0;
         if (this.context.devMode) console.log("[ScraperStrategy] Fetching course assignments (from grades) for ID:", courseId, "Matches:", assignMatchCount);
-        
+
         let courseName = 'Course ' + courseId;
         const nameMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title>([^<]*)<\/title>/i);
         if (nameMatch) {
           courseName = decodeHtmlEntities(nameMatch[1].replace(/<[^>]+>/g, '').trim());
         }
-        
+
         let sesskey = '';
         const sesskeyMatch = html.match(/(?:"sesskey":"([^"]+)"|name="sesskey" value="([^"]+)")/);
         if (sesskeyMatch) {
@@ -793,11 +793,11 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           const cmid = parseInt(assignLinkMatch[1], 10);
           let name = assignLinkMatch[2];
           name = decodeHtmlEntities(name.replace(/<[^>]+>/g, '').trim());
-          
+
           if (year) {
             this.assignYearMap.set(cmid, year);
           }
-          
+
           assignments.push({
             id: cmid, // Using cmid as id for scraper compatibility
             cmid,
@@ -815,7 +815,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
           shortname: courseName,
           assignments
         });
-        
+
       } catch (err: any) {
         if (this.context.devMode) {
           console.warn(`[ScraperStrategy] Failed fetching grade report for course ${courseId}:`, err?.message || err);
@@ -828,7 +828,7 @@ export class ScraperMoodleStrategy implements IMoodleStrategy {
     };
   }
 
-public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
+  public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
     const targetId = cmid || assignId;
     const year = this.assignYearMap.get(targetId) || this.assignYearMap.get(assignId);
     let html = '';
@@ -851,7 +851,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
             this.assignYearMap.set(targetId, String(candidateYear));
             found = true;
             break;
-          } catch {}
+          } catch { }
         }
         if (!found) throw err;
       }
@@ -893,7 +893,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
 
 
     const _scraperIntroAttachments = [];
-    
+
     const introBlockMatch = html.match(/<div[^>]*id="intro"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|<div)/i);
     if (introBlockMatch) {
       const introHtml = introBlockMatch[1];
@@ -966,7 +966,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
             this.courseYearMap.set(courseId, String(candidateYear));
             found = true;
             break;
-          } catch {}
+          } catch { }
         }
         if (!found) throw err;
       }
@@ -1033,7 +1033,7 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
             this.courseYearMap.set(courseId, effectiveYear);
             found = true;
             break;
-          } catch {}
+          } catch { }
         }
         if (!found) throw err;
       }
@@ -1103,13 +1103,22 @@ public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSu
         }
 
         const yearPrefix = effectiveYear ? `/${effectiveYear}` : '';
+        const availabilityMatch =
+          modHtml.match(/<div[^>]+class="[^"]*(?:availabilityinfo|isrestricted)[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+          modHtml.match(/<span[^>]+class="[^"]*badge[^"]*"[^>]*>([\s\S]*?(?:זמין רק למי|Restricted|Not available)[\s\S]*?)<\/span>/i);
+        const availabilityText = availabilityMatch ? stripHtmlTags(availabilityMatch[1]).trim() : '';
+        const hasActivityLink = new RegExp(`href="[^"]*\\/mod\\/${modname}\\/view\\.php\\?id=${moduleId}\\b`, 'i').test(modHtml);
+        const isLockedInHtml = Boolean(availabilityText) && !hasActivityLink;
+
         modules.push({
           id: moduleId,
           name: modName,
           modname,
-          url: `${this.getRootUrl()}${yearPrefix}/mod/${modname}/view.php?id=${moduleId}`,
+          url: isLockedInHtml ? undefined : `${this.getRootUrl()}${yearPrefix}/mod/${modname}/view.php?id=${moduleId}`,
           instance: moduleId,
           description: modHtml,
+          uservisible: isLockedInHtml ? false : true,
+          availabilityinfo: isLockedInHtml ? availabilityText : undefined,
           contents: contents.length > 0 ? contents : undefined,
         });
       }

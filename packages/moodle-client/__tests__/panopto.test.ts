@@ -1232,6 +1232,36 @@ describe('Panopto Lecture & Recitation Tracking', () => {
       expect(untoggled).toEqual([{ panoptoName: 'Yoav Lahini', role: 'Lecture' }]);
     });
 
+    it('partitions manually dismissed recordings into hidden even when no staff filter is active', () => {
+      const recs: PanoptoRecording[] = [
+        {
+          id: 'rec-a',
+          courseId: 705,
+          courseName: 'Physics C',
+          title: 'Lecture 1',
+          type: 'Lecture',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-a',
+          publishedDate: '2026-11-01',
+          host: 'Yoav Lahini',
+        },
+        {
+          id: 'rec-b',
+          courseId: 705,
+          courseName: 'Physics C',
+          title: 'Lecture 2',
+          type: 'Lecture',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-b',
+          publishedDate: '2026-11-08',
+          host: 'Yoav Lahini',
+        },
+      ];
+
+      const partitioned = partitionPanoptoRecordingsByTrackedHosts(recs, [], ['rec-a']);
+      expect(partitioned.isFilteringActive).toBe(true);
+      expect(partitioned.visible.map((r) => r.id)).toEqual(['rec-b']);
+      expect(partitioned.hidden.map((r) => r.id)).toEqual(['rec-a']);
+    });
+
     it('runSync reuses cachedCourseStaff and avoids re-fetching Moodle staff on subsequent syncs', async () => {
       const origFetch = global.fetch;
       let enrolledUsersFetchCount = 0;

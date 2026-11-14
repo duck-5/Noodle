@@ -794,15 +794,42 @@ export interface PartitionedPanoptoRecordings {
 }
 
 /**
+ * Determines whether a Panopto recording is hidden, either because its ID is
+ * explicitly dismissed by the user in `hiddenRecordingIds`, or because host
+ * filtering is active for the course and the recording does not match tracked staff.
+ */
+export function isPanoptoRecordingHidden(
+  recording: PanoptoRecording,
+  hiddenRecordingIds?: Iterable<string> | null,
+  staffEntries?: CoursePanoptoStaffEntry[]
+): boolean {
+  if (hiddenRecordingIds) {
+    for (const hid of hiddenRecordingIds) {
+      if (hid === recording.id) return true;
+    }
+  }
+  if (staffEntries && staffEntries.length > 0) {
+    return !doesRecordingMatchStaffEntries(recording, staffEntries);
+  }
+  return false;
+}
+
+/**
  * Partitions a course's recordings into exclusively visible recordings (matching
- * user-picked lecturers/TAs) and hidden recordings. When no lecturers/TAs are
- * configured (`staffEntries` empty), nothing is hidden.
+ * user-picked lecturers/TAs and not manually dismissed) and hidden recordings.
+ * When no lecturers/TAs are configured (`staffEntries` empty) and no recordings
+ * are manually hidden, nothing is hidden.
  */
 export function partitionPanoptoRecordingsByTrackedHosts(
   recordings: PanoptoRecording[],
-  staffEntries?: CoursePanoptoStaffEntry[]
+  staffEntries?: CoursePanoptoStaffEntry[],
+  hiddenRecordingIds?: Iterable<string> | null
 ): PartitionedPanoptoRecordings {
-  if (!staffEntries || staffEntries.length === 0) {
+  const hiddenIdSet = hiddenRecordingIds ? new Set(hiddenRecordingIds) : null;
+  const hasStaffFilter = Boolean(staffEntries && staffEntries.length > 0);
+  const hasManualHidden = Boolean(hiddenIdSet && hiddenIdSet.size > 0);
+
+  if (!hasStaffFilter && !hasManualHidden) {
     return {
       visible: recordings,
       hidden: [],
@@ -813,7 +840,9 @@ export function partitionPanoptoRecordingsByTrackedHosts(
   const visible: PanoptoRecording[] = [];
   const hidden: PanoptoRecording[] = [];
   for (const rec of recordings) {
-    if (doesRecordingMatchStaffEntries(rec, staffEntries)) {
+    const isManuallyHidden = Boolean(hiddenIdSet && hiddenIdSet.has(rec.id));
+    const matchesStaff = !hasStaffFilter || doesRecordingMatchStaffEntries(rec, staffEntries!);
+    if (!isManuallyHidden && matchesStaff) {
       visible.push(rec);
     } else {
       hidden.push(rec);
@@ -822,7 +851,7 @@ export function partitionPanoptoRecordingsByTrackedHosts(
   return {
     visible,
     hidden,
-    isFilteringActive: true,
+    isFilteringActive: hasStaffFilter || hidden.length > 0,
   };
 }
 
@@ -1356,7 +1385,7 @@ export async function fetchCourseStaffFromParticipantsPage(
           staff = await extractFromPage(heHtml);
         }
       } finally {
-        await panoptoFetch(`${cleanMoodle}/my/?lang=en`, { method: 'GET' }, jar).catch(() => {});
+        await panoptoFetch(`${cleanMoodle}/my/?lang=en`, { method: 'GET' }, jar).catch(() => { });
       }
     }
 
@@ -1445,9 +1474,9 @@ export function filterAndDeduplicateRecordings(
       rec.type && rec.classificationSource
         ? { type: rec.type, source: rec.classificationSource }
         : classifyRecordingWithSource(rec.title, {
-            ...classificationOptions,
-            host: rec.host,
-          });
+          ...classificationOptions,
+          host: rec.host,
+        });
 
     const normalized: PanoptoRecording = {
       ...rec,
@@ -2058,24 +2087,24 @@ export async function resolvePanoptoViaLti(
       (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
     const ltiRes = isBrowser
       ? await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: ltiParams.toString(),
+      })
+      : await panoptoFetch(
+        endpoint,
+        {
           method: 'POST',
-          credentials: 'omit',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: ltiParams.toString(),
-        })
-      : await panoptoFetch(
-          endpoint,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: ltiParams.toString(),
-          },
-          jar
-        );
+        },
+        jar
+      );
 
     if (ltiRes.url) {
       const redirectedFolder = extractPanoptoFolderId(ltiRes.url);
