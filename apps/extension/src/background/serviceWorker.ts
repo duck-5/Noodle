@@ -5,7 +5,10 @@ import {
   syncAssignmentsToGoogleTasks,
   MoodleClient,
   SettingsSyncManager,
+  CookieJar,
+  fetchCourseStaffFromParticipantsPage,
   type SyncResult,
+  type CourseStaffMember,
   getActivityUid,
   isActivityHidden,
   isActivityCompleted,
@@ -21,10 +24,19 @@ import {
   getSettings,
   setSettings,
   getCachedSyncResult,
+  getCachedCourseStaff,
+  mergeCachedCourseStaff,
   getMoodleCredentials,
   getGoogleOAuthRedirectUrl,
   getLocalFsStatus,
+  getStoreUpdateStatus,
+  setStoreUpdateStatus,
 } from '../shared/storage.js';
+import {
+  checkExtensionUpdate,
+  type StoreVersionCheckResult,
+} from '../shared/versionChecker.js';
+import { isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
 import {
   LOCAL_FS_RESUME_ALARM,
   adoptScannedDiskFiles,
@@ -37,6 +49,57 @@ import {
   resumeLocalFsSync,
   teardownLocalFsOnLogout,
 } from './localFsSync.js';
+
+const STORE_UPDATE_ALARM = 'storeUpdateCheck';
+let activeStoreUpdateCheckPromise: Promise<StoreVersionCheckResult> | null = null;
+
+async function checkForStoreUpdate(force = false): Promise<StoreVersionCheckResult> {
+  if (activeStoreUpdateCheckPromise) {
+    return activeStoreUpdateCheckPromise;
+  }
+
+  activeStoreUpdateCheckPromise = (async () => {
+    const startedAt = Date.now();
+    const currentVersion = browser.runtime.getManifest()?.version || '0.0.0';
+    const isFirefox = isFirefoxExtensionRuntime();
+    const cachedResult = await getStoreUpdateStatus();
+
+    const chromeRuntimeUpdateCheck =
+      !isFirefox && typeof chrome !== 'undefined' && typeof chrome.runtime?.requestUpdateCheck === 'function'
+        ? () =>
+            new Promise<{ status: string; version?: string }>((resolve) => {
+              try {
+                chrome.runtime.requestUpdateCheck((status, details) => {
+                  resolve({ status, version: details?.version });
+                });
+              } catch {
+                resolve({ status: 'no_update' });
+              }
+            })
+        : undefined;
+
+    const result = await checkExtensionUpdate({
+      currentVersion,
+      isFirefox,
+      cachedResult,
+      force,
+      chromeRuntimeUpdateCheck,
+    });
+
+    if (result.latestVersion) {
+      const latestInStorage = await getStoreUpdateStatus();
+      if (!force && latestInStorage && latestInStorage.checkedAt > startedAt) {
+        return latestInStorage;
+      }
+      await setStoreUpdateStatus(result);
+    }
+    return result;
+  })().finally(() => {
+    activeStoreUpdateCheckPromise = null;
+  });
+
+  return activeStoreUpdateCheckPromise;
+}
 
 async function reauthenticateForLocalFs(): Promise<string | null> {
   const creds = await getMoodleCredentials();
@@ -143,6 +206,18 @@ const messageHandler = (message: any, _sender: any, sendResponse?: (res?: any) =
     promise = reconcileLocalFsManifest()
       .then((report) => ({ success: true, ...report }))
       .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'FETCH_COURSE_STAFF') {
+    promise = fetchCourseStaffHandler(
+      Array.isArray(message.courseIds) ? message.courseIds : [],
+      message.courseBaseUrls && typeof message.courseBaseUrls === 'object' ? message.courseBaseUrls : undefined,
+      Boolean(message.forceRefresh)
+    )
+      .then((byCourseId) => ({ success: true, byCourseId }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
+  } else if (message.type === 'CHECK_STORE_UPDATE') {
+    promise = checkForStoreUpdate(Boolean(message.force))
+      .then((result) => ({ success: true, result }))
+      .catch((err) => ({ success: false, error: err?.message || String(err) }));
   }
 
   if (promise) {
@@ -189,6 +264,10 @@ async function setupAlarm(forceRecreate = false) {
     } else {
       console.log(`periodicSync alarm already exists with ${periodInMinutes} minutes`);
     }
+    const updateAlarm = await browser.alarms.get(STORE_UPDATE_ALARM);
+    if (!updateAlarm) {
+      await browser.alarms.create(STORE_UPDATE_ALARM, { periodInMinutes: 360 });
+    }
   } catch (e) {
     console.warn('Non-fatal: Failed to check/create periodicSync alarm:', e);
   }
@@ -201,15 +280,18 @@ browser.runtime.onInstalled.addListener(async () => {
     const periodInMinutes = await getSyncIntervalMinutes();
     await browser.alarms.create('periodicSync', { periodInMinutes });
     console.log(`Forced creation of periodicSync alarm for ${periodInMinutes} minutes onInstalled`);
+    await browser.alarms.create(STORE_UPDATE_ALARM, { periodInMinutes: 360 });
   } catch (e) {
     console.warn('Non-fatal: Failed to create periodicSync alarm onInstalled:', e);
   }
   updateActionBadge().catch(() => {});
+  checkForStoreUpdate(true).catch(() => {});
 });
 
 browser.runtime.onStartup.addListener(() => {
   setupAlarm().catch(() => {});
   updateActionBadge().catch(() => {});
+  checkForStoreUpdate(false).catch(() => {});
 });
 
 // Update toolbar badge and re-arm alarm whenever cachedSyncResult or settings change
@@ -306,6 +388,8 @@ browser.alarms.onAlarm.addListener(async (alarm: any) => {
     } catch (e) {
       console.error('[LocalFS] Error during resume alarm:', e);
     }
+  } else if (alarm.name === STORE_UPDATE_ALARM) {
+    checkForStoreUpdate(false).catch(() => {});
   }
 });
 
@@ -376,9 +460,8 @@ async function clearUserSession(): Promise<void> {
     'sesskey',
     'moodleCredentials',
     'cachedSyncResult',
+    'cachedCourseStaff',
     'enrolledCoursesCache',
-
-
   ];
   await browser.storage.local.remove(userLocalKeys);
 
@@ -400,11 +483,10 @@ async function clearUserSession(): Promise<void> {
 
 async function validateToken(token: string) {
   const sesskey = await getStoredSesskey();
-  const settings = await getSettings();
   const client = new MoodleClient(token, undefined, {
     sesskey: sesskey || undefined,
     devMode: true,
-    enableScraping: settings.scrapingEnabled ?? false
+    enableScraping: false // Legacy Web Scraping fallback disabled
   });
   return await client.getSiteInfo();
 }
@@ -420,11 +502,10 @@ async function fetchEnrolledCourses(token: string) {
   activeFetchEnrolledCoursesPromise = (async () => {
     try {
       const sesskey = await getStoredSesskey();
-      const settings = await getSettings();
       const client = new MoodleClient(token, undefined, {
         sesskey: sesskey || undefined,
         devMode: true,
-        enableScraping: settings.scrapingEnabled ?? false
+        enableScraping: false
       });
       console.log('[serviceWorker] fetchEnrolledCourses called with sesskey:', sesskey ? `${sesskey.substring(0, 4)}...` : 'none');
       let userid = 0;
@@ -441,11 +522,10 @@ async function fetchEnrolledCourses(token: string) {
               const newToken = await loginTauSso(creds.username, creds.idNumber, creds.password, false);
               console.log('Automatic re-login successful! Retrying fetchEnrolledCourses...');
               const newSesskey = await getStoredSesskey();
-              const newSettings = await getSettings();
               const newClient = new MoodleClient(newToken, undefined, {
                 sesskey: newSesskey || undefined,
                 devMode: true,
-                enableScraping: newSettings.scrapingEnabled ?? false
+                enableScraping: false
               });
               const newInfo = await newClient.getSiteInfo();
               return await newClient.getEnrolledCourses(newInfo.userid);
@@ -481,7 +561,7 @@ async function performSettingsSync() {
   const client = new MoodleClient(token, undefined, {
     sesskey: sesskey || undefined,
     devMode: true,
-    enableScraping: settings.scrapingEnabled ?? false
+    enableScraping: false
   });
   const syncManager = new SettingsSyncManager(client, 'chrome-extension');
 
@@ -553,6 +633,126 @@ async function performSettingsSync() {
   console.log('[SettingsSync] Successfully synced settings with Moodle.');
 }
 
+async function fetchCourseStaffHandler(
+  courseIds: number[],
+  courseBaseUrls?: Record<number, string>,
+  forceRefresh = false
+): Promise<Record<number, CourseStaffMember[]>> {
+  const uniqueIds = Array.from(new Set(courseIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  if (uniqueIds.length === 0) return {};
+
+  const storedCache = await getCachedCourseStaff();
+  const cachedSync = await getCachedSyncResult();
+  const combinedCache: Record<number, CourseStaffMember[]> = {
+    ...(cachedSync?.courseStaff || {}),
+    ...storedCache,
+  };
+
+  const byCourseId: Record<number, CourseStaffMember[]> = {};
+  const idsToFetch: number[] = [];
+  for (const cid of uniqueIds) {
+    const cachedList =
+      combinedCache[cid] ??
+      (combinedCache as Record<string, CourseStaffMember[] | undefined>)[String(cid)];
+    if (!forceRefresh && Array.isArray(cachedList) && cachedList.length > 0) {
+      byCourseId[cid] = cachedList;
+    } else {
+      idsToFetch.push(cid);
+    }
+  }
+
+  if (idsToFetch.length === 0) {
+    return byCourseId;
+  }
+
+  const token = await getStoredToken();
+  const sesskey = await getStoredSesskey();
+  const settings = await getSettings();
+  const storedCreds = await getMoodleCredentials();
+  const validCreds =
+    storedCreds && storedCreds.username && storedCreds.idNumber && storedCreds.password
+      ? {
+          username: storedCreds.username,
+          idNumber: storedCreds.idNumber,
+          password: storedCreds.password,
+        }
+      : undefined;
+
+  const jar = new CookieJar();
+  try {
+    const moodleCookies = await browser.cookies.getAll({ domain: 'moodle.tau.ac.il' });
+    if (moodleCookies && moodleCookies.length > 0) {
+      jar.ingest(moodleCookies.map((c) => `${c.name}=${c.value}`).join('; '));
+    }
+  } catch {
+    // Ignore cookie access errors
+  }
+
+  const client = token
+    ? new MoodleClient(token, 'https://moodle.tau.ac.il', {
+        sesskey: sesskey || undefined,
+        devMode: false,
+        enableScraping: false,
+        lang: settings.language || 'he',
+      })
+    : null;
+
+  const normalizeMoodleBase = (raw?: string): string => {
+    if (!raw) return 'https://moodle.tau.ac.il';
+    try {
+      const parsed = new URL(raw);
+      const yearMatch = parsed.pathname.match(/^\/(20\d{2})(?:\/|$)/);
+      return yearMatch ? `${parsed.origin}/${yearMatch[1]}` : parsed.origin;
+    } catch {
+      return 'https://moodle.tau.ac.il';
+    }
+  };
+
+  const newlyFetched: Record<number, CourseStaffMember[]> = {};
+  for (const cid of idsToFetch) {
+    const courseBase = normalizeMoodleBase(courseBaseUrls?.[cid] ?? (courseBaseUrls as Record<string, string> | undefined)?.[String(cid)]);
+    let staff: CourseStaffMember[] = [];
+    if (client && courseBase === 'https://moodle.tau.ac.il') {
+      try {
+        staff = await client.getCourseStaff(cid);
+      } catch {
+        staff = [];
+      }
+    }
+    if (staff.length === 0) {
+      try {
+        staff = await fetchCourseStaffFromParticipantsPage(
+          cid,
+          courseBase,
+          sesskey || undefined,
+          jar,
+          validCreds
+        );
+      } catch {
+        staff = [];
+      }
+    }
+    if (staff.length > 0) {
+      byCourseId[cid] = staff;
+      newlyFetched[cid] = staff;
+    }
+  }
+
+  if (Object.keys(newlyFetched).length > 0) {
+    try {
+      await mergeCachedCourseStaff(newlyFetched);
+      if (cachedSync) {
+        cachedSync.courseStaff = { ...(cachedSync.courseStaff || {}), ...newlyFetched };
+        await setCachedSyncResult(cachedSync);
+      }
+    } catch (e) {
+      console.warn('[serviceWorker] Failed to persist fetched courseStaff to cache:', e);
+    }
+  }
+
+  return byCourseId;
+}
+
 let activeBackgroundSyncPromise: Promise<SyncResult> | null = null;
 let activeSyncProgressPercent = 0;
 let activeSyncState: any = null;
@@ -589,6 +789,11 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
     const trackedCourseIds = await getTrackedCourseIds();
     const settings = await getSettings();
     const prevResult = await getCachedSyncResult();
+    const storedCourseStaffCache = await getCachedCourseStaff();
+    const combinedCachedCourseStaff: Record<number, CourseStaffMember[]> = {
+      ...(prevResult?.courseStaff || {}),
+      ...storedCourseStaffCache,
+    };
     const sesskey = await getStoredSesskey();
     const storedCreds = await getMoodleCredentials();
     const validCreds =
@@ -601,7 +806,7 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
         : undefined;
 
     console.log(
-      `[serviceWorker] Sync config: panoptoEnabled=${settings.panoptoEnabled ?? false}, scrapingEnabled=${settings.scrapingEnabled ?? false}, coursesPanoptoMap=`,
+      `[serviceWorker] Sync config: panoptoEnabled=${settings.panoptoEnabled ?? false}, scrapingEnabled=false (legacy), coursesPanoptoMap=`,
       settings.coursesPanoptoMap || {}
     );
 
@@ -643,12 +848,17 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
         moodleCookiesHeader,
         sesskey || undefined,
         (partial) => {
+          if (partial.courseStaff && Object.keys(partial.courseStaff).length > 0) {
+            mergeCachedCourseStaff(partial.courseStaff).catch(() => {});
+          }
           browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
         },
         {
-          enableScraping: settings.scrapingEnabled ?? false,
+          enableScraping: false,
           enablePanopto: settings.panoptoEnabled ?? false,
           coursesPanoptoMap: settings.coursesPanoptoMap,
+          coursesPanoptoStaff: settings.coursesPanoptoStaff,
+          cachedCourseStaff: combinedCachedCourseStaff,
           lang: settings.language || 'he',
           onEnsurePanoptoAuth: (forceRefresh) =>
             ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
@@ -692,12 +902,17 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
               moodleCookiesHeader,
               newSesskey || undefined,
               (partial) => {
+                if (partial.courseStaff && Object.keys(partial.courseStaff).length > 0) {
+                  mergeCachedCourseStaff(partial.courseStaff).catch(() => {});
+                }
                 browser.runtime.sendMessage({ type: 'SYNC_PARTIAL', partial }).catch(() => { });
               },
               {
-                enableScraping: settings.scrapingEnabled ?? false,
+                enableScraping: false,
                 enablePanopto: settings.panoptoEnabled ?? false,
                 coursesPanoptoMap: settings.coursesPanoptoMap,
+                coursesPanoptoStaff: settings.coursesPanoptoStaff,
+                cachedCourseStaff: combinedCachedCourseStaff,
                 lang: settings.language || 'he',
                 onEnsurePanoptoAuth: (forceRefresh) =>
                   ensurePanoptoAuthViaHiddenTab(validCreds, Boolean(forceRefresh)),
@@ -729,6 +944,9 @@ async function performBackgroundSync(isManual = false): Promise<SyncResult> {
     }
 
     // Save results to storage
+    if (result.courseStaff && Object.keys(result.courseStaff).length > 0) {
+      await mergeCachedCourseStaff(result.courseStaff);
+    }
     await setCachedSyncResult(result);
     await updateActionBadge();
 

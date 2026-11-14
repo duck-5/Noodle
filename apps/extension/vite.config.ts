@@ -15,12 +15,18 @@ export default defineConfig(({ mode }) => {
           const manifestStr = fs.readFileSync(path.resolve(__dirname, 'src/manifest.json'), 'utf-8');
           const manifest = JSON.parse(manifestStr);
           
+          const hostPerms = new Set<string>(
+            Array.isArray(manifest.host_permissions) ? manifest.host_permissions : []
+          );
+
           if (targetBrowser === 'firefox') {
             delete manifest.key;
             const perms = new Set<string>(Array.isArray(manifest.permissions) ? manifest.permissions : []);
             perms.add('downloads');
             perms.add('downloads.open');
             manifest.permissions = Array.from(perms);
+            hostPerms.add('https://addons.mozilla.org/*');
+            manifest.host_permissions = Array.from(hostPerms);
             manifest.browser_specific_settings = {
               gecko: {
                 id: 'noodle@tau',
@@ -36,6 +42,9 @@ export default defineConfig(({ mode }) => {
             }
           } else {
             delete manifest.browser_specific_settings;
+            hostPerms.add('https://chromewebstore.google.com/*');
+            hostPerms.add('https://clients2.google.com/*');
+            manifest.host_permissions = Array.from(hostPerms);
           }
           return manifest;
         },

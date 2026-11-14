@@ -191,9 +191,15 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // 2. The completed assignment (מטלה 0 - חזרה על C++) must NOT be in the queue
     await expect(queueCard).not.toContainText('מטלה 0 - חזרה על C++');
 
-    // 3. Pending assignment should be visible in the queue
+    // 3. Pending assignment should be visible in the queue with a Trash UI placeholder button
     const queueItem = queueCard.locator('.queue-item').first();
     await expect(queueItem).toBeVisible();
+
+    const deleteBtn = queueItem.locator('.queue-delete-btn');
+    await expect(deleteBtn).toBeVisible();
+    await expect(deleteBtn.locator('svg')).toBeVisible();
+    await deleteBtn.click();
+    await expect(queueCard).not.toHaveClass(/is-split/);
 
     // 4. Click queue item to open the side-by-side split detail pane inside the queue card
     await queueItem.click();
@@ -309,5 +315,161 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     const listBtn = viewModeGroup.locator('.view-mode-btn').filter({ hasText: /רשימה|List/ });
     await listBtn.click();
     await expect(coursesContainer).not.toHaveClass(/courses-cards-grid/);
+  });
+
+  test('TC-EXT-03: 10-step Interactive Onboarding Tour walks all slides with SVG icons and highlights targets without auto-opening modal', async ({ optionsPage }) => {
+    const emojiRegex = /[\p{Extended_Pictographic}]/u;
+
+    // 1. Verify the Take Tour button sits directly below Collapse Sidebar in the sidebar nav and launches the tour
+    const collapseBtn = optionsPage.locator('.sidebar-nav .collapse-toggle-btn');
+    const sidebarTourBtn = optionsPage.locator('.sidebar-nav .sidebar-tour-btn');
+    await expect(collapseBtn).toBeVisible();
+    await expect(sidebarTourBtn).toBeVisible();
+
+    const collapseIndex = await optionsPage.locator('.sidebar-nav .nav-item').evaluateAll((els) => {
+      const collapseIdx = els.findIndex((el) => el.classList.contains('collapse-toggle-btn'));
+      const tourIdx = els.findIndex((el) => el.classList.contains('sidebar-tour-btn'));
+      return { collapseIdx, tourIdx };
+    });
+    expect(collapseIndex.collapseIdx).toBeGreaterThanOrEqual(0);
+    expect(collapseIndex.tourIdx).toBe(collapseIndex.collapseIdx + 1);
+
+    await sidebarTourBtn.click();
+
+    const tourCard = optionsPage.locator('.tour-card');
+    await expect(tourCard).toBeVisible();
+    await optionsPage.locator('.tour-card .tour-close-btn').click();
+    await expect(tourCard).toBeHidden();
+
+    // 2. Also verify relaunching from About tab's Interactive Tour card works
+    await optionsPage.locator('.sidebar-nav .nav-item').nth(4).click();
+    const tourLaunchCard = optionsPage.locator('.card-accent-tour');
+    await expect(tourLaunchCard).toBeVisible();
+    await tourLaunchCard.click();
+
+    await expect(tourCard).toBeVisible();
+
+    const stepIndicator = tourCard.locator('.tour-step-indicator');
+    const nextBtn = tourCard.locator('.tour-footer .primary-btn');
+
+    const assertNoEmojiAndSvgBadge = async (expectedStep: number) => {
+      await expect(stepIndicator).toHaveText(`${expectedStep} / 10`);
+      await expect(tourCard.locator('.tour-icon-badge svg')).toBeVisible();
+      const cardText = (await tourCard.textContent()) || '';
+      expect(emojiRegex.test(cardText)).toBe(false);
+    };
+
+    // Step 1 (index 0): Welcome
+    await assertNoEmojiAndSvgBadge(1);
+    await nextBtn.click();
+
+    // Step 2 (index 1): Header Sync
+    await assertNoEmojiAndSvgBadge(2);
+    await expect(optionsPage.locator('.header-sync-btn.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 3 (index 2): Action Strip (To-Do Queue, Split Pane & Catch-Up)
+    await assertNoEmojiAndSvgBadge(3);
+    await expect(optionsPage.locator('.hero-action-strip.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 4 (index 3): Active Zoom & Dashboard Cards/Gaps
+    await assertNoEmojiAndSvgBadge(4);
+    await expect(optionsPage.locator('.course-row-card.tour-highlight, .multi-zoom-strip.tour-highlight').first()).toBeVisible();
+    await nextBtn.click();
+
+    // Step 5 (index 4): Manage Courses & Staff Mapping (highlight button only, NO modal auto-open)
+    await assertNoEmojiAndSvgBadge(5);
+    await expect(optionsPage.locator('.courses-list-header.tour-highlight')).toBeVisible();
+    await expect(optionsPage.locator('.manage-courses-trigger-btn.pulse-btn')).toBeVisible();
+    await expect(optionsPage.locator('.manage-courses-modal')).toHaveCount(0);
+    await nextBtn.click();
+
+    // Step 6 (index 5): Course Hub, ZIP Folders & Host Tracking
+    await assertNoEmojiAndSvgBadge(6);
+    await expect(optionsPage.locator('.course-detail-view.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 7 (index 6): Assignments Hub
+    await assertNoEmojiAndSvgBadge(7);
+    await expect(optionsPage.locator('.tab-assignments .filter-bar.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 8 (index 7): Grades & GPA Tracker
+    await assertNoEmojiAndSvgBadge(8);
+    await expect(optionsPage.locator('.tab-grades .stat-card.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 9 (index 8): Local Folder Sync, Google Tasks & Settings
+    await assertNoEmojiAndSvgBadge(9);
+    await expect(optionsPage.locator('.google-tasks-section.tour-highlight')).toBeVisible();
+    await expect(optionsPage.locator('.local-fs-section.tour-highlight')).toBeVisible();
+    await nextBtn.click();
+
+    // Step 10 (index 9): Finish on About tab
+    await assertNoEmojiAndSvgBadge(10);
+    await expect(optionsPage.locator('.tab-about.tour-highlight')).toBeVisible();
+
+    // Finish tour -> closes overlay and returns to Dashboard
+    await nextBtn.click();
+    await expect(tourCard).toBeHidden();
+    await expect(optionsPage.locator('.tab-dashboard')).toBeVisible();
+  });
+
+  test('TC-EXT-05: Sidebar new-version banner pops up when store has newer version, adapts on collapse, and persists dismiss', async ({ optionsPage }) => {
+    // Wait for initial Dashboard boot & drain any in-flight store check (on online CI,
+    // initial CHECK_STORE_UPDATE fetches the live store and would otherwise race with seeding).
+    await expect(optionsPage.locator('.collapse-toggle-btn')).toBeVisible();
+
+    // Seed a store update check result with a version higher than the current manifest version
+    await optionsPage.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        try {
+          chrome.runtime.sendMessage({ type: 'CHECK_STORE_UPDATE', force: false }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+
+      const currentVersion = chrome.runtime.getManifest().version;
+      await chrome.storage.local.remove('dismissedUpdateVersion');
+      await chrome.storage.local.set({
+        storeUpdateStatus: {
+          store: 'chrome',
+          storeUrl: 'https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope',
+          currentVersion,
+          latestVersion: '99.0.0',
+          updateAvailable: true,
+          checkedAt: Date.now(),
+          checkedForVersion: currentVersion,
+          source: 'cws-crx',
+        },
+      });
+    });
+
+    const banner = optionsPage.locator('.sidebar-update-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner.locator('.sidebar-update-versions')).toContainText('v99.0.0');
+
+    const ctaLink = banner.locator('a.sidebar-update-cta');
+    await expect(ctaLink).toBeVisible();
+    await expect(ctaLink).toHaveAttribute(
+      'href',
+      'https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope'
+    );
+
+    // Collapsing sidebar switches banner into compact circular link mode
+    await optionsPage.locator('.collapse-toggle-btn').click();
+    await expect(banner.locator('a.sidebar-update-compact')).toBeVisible();
+    await optionsPage.locator('.collapse-toggle-btn').click();
+    await expect(ctaLink).toBeVisible();
+
+    // Dismissing banner hides it and persists across reloads
+    await banner.locator('.sidebar-update-dismiss').click();
+    await expect(banner).toBeHidden();
+
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+    await expect(optionsPage.locator('.sidebar-update-banner')).toBeHidden();
   });
 });

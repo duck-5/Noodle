@@ -1,4 +1,10 @@
-import { MoodleCredentials, PanoptoRecording } from './types.js';
+import {
+  CoursePanoptoStaffEntry,
+  CourseStaffMember,
+  MoodleCredentials,
+  PanoptoRecording,
+  PanoptoRecordingType,
+} from './types.js';
 import { CookieJar, decodeHTMLEntities } from './zoomScraper.js';
 
 export const PANOPTO_BASE_URL = 'https://tau.cloud.panopto.eu';
@@ -231,17 +237,1134 @@ export function isValidPanoptoRecording(title: string, durationSeconds?: number)
 }
 
 /**
- * Classifies a recording as 'Recitation' or 'Lecture' based on Hebrew and English keywords.
+ * Extracts the Zoom / session Host name from Panopto's `SessionRow.Abstract`
+ * (e.g. `Zoom Meeting ID: ...\r\n• Host: Yoav Lahini\r\n• Meeting Start: ...`),
+ * with fallback to explicit host/presenter fields when present.
  */
-export function classifyRecordingType(title: string): 'Lecture' | 'Recitation' {
+export function extractPanoptoHostFromAbstract(
+  abstractText?: unknown,
+  fallbackHost?: unknown
+): string | undefined {
+  const decodeNumericEntities = (str: string): string =>
+    decodeHTMLEntities(str)
+      .replace(/&#(\d+);/g, (_, dec) => {
+        const cp = Number(dec);
+        return Number.isFinite(cp) ? String.fromCodePoint(cp) : _;
+      })
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+        const cp = parseInt(hex, 16);
+        return Number.isFinite(cp) ? String.fromCodePoint(cp) : _;
+      });
+
+  if (abstractText && typeof abstractText === 'string') {
+    const cleaned = decodeNumericEntities(abstractText)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(?:p|div|li|tr)>/gi, '\n')
+      .replace(/<[^>]+>/g, '');
+    const hostMatch = cleaned.match(
+      /(?:^|\r?\n|[•|])\s*(?:[•*\-–—]\s*)?(?:Host|מארח)\s*:\s*([^\r\n•|]+)/i
+    );
+    if (hostMatch && hostMatch[1]) {
+      const candidate = hostMatch[1].replace(/\s+/g, ' ').trim();
+      if (candidate && !/^(-|n\/a|none|unknown)$/i.test(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  if (fallbackHost && typeof fallbackHost === 'string') {
+    const candidate = decodeNumericEntities(fallbackHost).replace(/\s+/g, ' ').trim();
+    if (candidate && !/^(-|n\/a|none|unknown)$/i.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+const PERSON_TITLE_PREFIX_REGEX = /^(?:prof\.?|professor|dr\.?|mr\.?|ms\.?|mrs\.?|פרופ['׳"]?|ד["׳']?ר|דר['׳]?|מר|גב['׳]?|גברת)\s+/i;
+
+/**
+ * Normalizes a person's display name for comparison (strips titles, parenthetical email/notes,
+ * punctuation, extra whitespace, and lowercases).
+ */
+export function normalizePersonName(name: string): string {
+  if (!name) return '';
+  let cleaned = decodeHTMLEntities(name)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\([^)]*@[^)]*\)|<[^>]*@[^>]*>/g, ' ')
+    .replace(/["'׳״.,/\\|\-–—]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Strip up to 2 honorific prefixes (e.g. "Prof. Dr. ...")
+  for (let i = 0; i < 2; i++) {
+    const next = cleaned.replace(PERSON_TITLE_PREFIX_REGEX, '').trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+
+  return cleaned.toLowerCase();
+}
+
+/**
+ * Generates an editable English transliteration suggestion from a Hebrew person name
+ * (e.g. "יואב לחיני" -> "Yoav Lhini", "אדם חיטין ביאלוס" -> "Adam Hitin Bialos").
+ */
+export function transliterateHebrewNameToEnglish(name: string): string {
+  const clean = decodeHTMLEntities(name || '').replace(/["'׳״]+/g, '').trim();
+  if (!clean || !/[\u0590-\u05FF]/.test(clean)) return clean;
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  const mappedWords = words.map((rawWord) => {
+    if (!/[\u0590-\u05FF]/.test(rawWord)) {
+      return rawWord.charAt(0).toUpperCase() + rawWord.slice(1);
+    }
+
+    let out = '';
+    for (let i = 0; i < rawWord.length; i++) {
+      const ch = rawWord[i];
+      const next = rawWord[i + 1] || '';
+      const prev = rawWord[i - 1] || '';
+      const isStart = i === 0;
+      const isEnd = i === rawWord.length - 1;
+
+      if (isStart && ch === 'י' && next === 'ו') {
+        out += 'Yo';
+        i++;
+        continue;
+      }
+      if (isStart && ch === 'י' && next === 'א') {
+        out += 'Ya';
+        i++;
+        continue;
+      }
+      if (isStart && ch === 'א' && next === 'י' && rawWord[i + 2] === 'י') {
+        out += 'Ei';
+        i += 2;
+        continue;
+      }
+      if (isStart && ch === 'א' && next === 'י') {
+        out += rawWord.length <= 3 ? 'E' : 'Ei';
+        i++;
+        continue;
+      }
+      if (isStart && ch === 'א' && next === 'ו') {
+        out += 'O';
+        i++;
+        continue;
+      }
+      if (ch === 'ו' && next === 'ו') {
+        out += isStart ? 'V' : 'v';
+        i++;
+        continue;
+      }
+      if (ch === 'י' && next === 'י') {
+        out += isStart ? 'Y' : 'i';
+        i++;
+        continue;
+      }
+
+      switch (ch) {
+        case 'א':
+          out += isStart ? 'A' : prev === 'י' ? 'a' : '';
+          break;
+        case 'ב':
+          out += isStart || prev === 'מ' || prev === 'נ' || prev === 'ל' ? 'b' : isEnd ? 'v' : 'b';
+          break;
+        case 'ג':
+          out += 'g';
+          break;
+        case 'ד':
+          out += 'd';
+          break;
+        case 'ה':
+          out += isStart ? 'h' : isEnd ? 'a' : 'h';
+          break;
+        case 'ו':
+          out += isStart ? 'v' : 'o';
+          break;
+        case 'ז':
+          out += 'z';
+          break;
+        case 'ח':
+          out += 'h';
+          break;
+        case 'ט':
+        case 'ת':
+          out += 't';
+          break;
+        case 'י':
+          out += isStart ? 'y' : isEnd ? 'i' : 'i';
+          break;
+        case 'כ':
+        case 'ך':
+          out += isEnd ? 'kh' : 'k';
+          break;
+        case 'ל':
+          out += 'l';
+          break;
+        case 'מ':
+        case 'ם':
+          out += 'm';
+          break;
+        case 'נ':
+        case 'ן':
+          out += 'n';
+          break;
+        case 'ס':
+          out += 's';
+          break;
+        case 'ע':
+          out += isStart ? 'a' : '';
+          break;
+        case 'פ':
+          out += isStart ? 'p' : 'f';
+          break;
+        case 'ף':
+          out += 'f';
+          break;
+        case 'צ':
+        case 'ץ':
+          out += 'tz';
+          break;
+        case 'ק':
+          out += 'k';
+          break;
+        case 'ר':
+          out += 'r';
+          break;
+        case 'ש':
+          out += 'sh';
+          break;
+        default:
+          out += ch;
+      }
+    }
+
+    return out ? out.charAt(0).toUpperCase() + out.slice(1) : rawWord;
+  });
+
+  return mappedWords.join(' ');
+}
+
+/**
+ * Converts a single normalized name token (Hebrew or Latin) into a phonetic consonant skeleton
+ * so Hebrew Moodle names (e.g. "יואב לחיני") can match English Panopto hosts (e.g. "Yoav Lahini").
+ */
+function toPhoneticTokenSkeleton(rawToken: string): string {
+  const token = rawToken.toLowerCase().trim();
+  if (!token) return '';
+
+  if (/[\u0590-\u05FF]/.test(token)) {
+    let sk = '';
+    for (let i = 0; i < token.length; i++) {
+      const ch = token[i];
+      const isStart = i === 0;
+      const isEnd = i === token.length - 1;
+      const next = token[i + 1] || '';
+
+      if (isStart && (ch === 'א' || ch === 'ע')) {
+        sk += 'V';
+        continue;
+      }
+      if (ch === 'א' || ch === 'ע') continue;
+
+      if (ch === 'ו' && next === 'ו') {
+        sk += 'b'; // v/b unified
+        i++;
+        continue;
+      }
+      if (ch === 'י' && next === 'י') {
+        if (isStart) sk += 'y';
+        i++;
+        continue;
+      }
+
+      switch (ch) {
+        case 'ב':
+          sk += 'b';
+          break;
+        case 'ג':
+          sk += 'g';
+          break;
+        case 'ד':
+          sk += 'd';
+          break;
+        case 'ה':
+          if (!isEnd) sk += 'h';
+          break;
+        case 'ו':
+          if (isStart) sk += 'b';
+          break;
+        case 'ז':
+          sk += 's'; // s/z unified for names like אייזנברג / Eisenberg
+          break;
+        case 'ח':
+          sk += 'h';
+          break;
+        case 'ט':
+        case 'ת':
+          sk += 't';
+          break;
+        case 'י':
+          if (isStart) sk += 'y';
+          break;
+        case 'כ':
+        case 'ך':
+        case 'ק':
+          sk += 'k';
+          break;
+        case 'ל':
+          sk += 'l';
+          break;
+        case 'מ':
+        case 'ם':
+          sk += 'm';
+          break;
+        case 'נ':
+        case 'ן':
+          sk += 'n';
+          break;
+        case 'ס':
+        case 'ש':
+          sk += 's';
+          break;
+        case 'פ':
+        case 'ף':
+          sk += 'p';
+          break;
+        case 'צ':
+        case 'ץ':
+          sk += 'ts';
+          break;
+        case 'ר':
+          sk += 'r';
+          break;
+        default:
+          if (/[a-z0-9]/.test(ch)) sk += ch;
+      }
+    }
+    return sk.replace(/(.)\1+/g, '$1');
+  }
+
+  // Latin token
+  let sk = '';
+  for (let i = 0; i < token.length; i++) {
+    const ch = token[i];
+    const next = token[i + 1] || '';
+    const isStart = i === 0;
+    const isEnd = i === token.length - 1;
+
+    if (isStart && 'aeiou'.includes(ch)) {
+      sk += 'V';
+      continue;
+    }
+    if ('aeiou'.includes(ch)) continue;
+    if (ch === 'y') {
+      if (isStart) sk += 'y';
+      continue;
+    }
+    if ((ch === 'c' || ch === 'k') && next === 'h') {
+      sk += 'h';
+      i++;
+      continue;
+    }
+    if (ch === 's' && next === 'h') {
+      sk += 's';
+      i++;
+      continue;
+    }
+    if ((ch === 't' || ch === 'd') && (next === 'z' || next === 's')) {
+      sk += 'ts';
+      i++;
+      continue;
+    }
+    if (ch === 't' && next === 'h') {
+      sk += 't';
+      i++;
+      continue;
+    }
+    if (ch === 'p' && next === 'h') {
+      sk += 'p';
+      i++;
+      continue;
+    }
+    if (ch === 'c') {
+      sk += 'eiy'.includes(next) ? 's' : 'k';
+      continue;
+    }
+    if (ch === 'q' || ch === 'k') {
+      sk += 'k';
+      continue;
+    }
+    if (ch === 'v' || ch === 'w' || ch === 'b') {
+      sk += 'b';
+      continue;
+    }
+    if (ch === 'f' || ch === 'p') {
+      sk += 'p';
+      continue;
+    }
+    if (ch === 'z' || ch === 's') {
+      sk += 's';
+      continue;
+    }
+    if (ch === 'j') {
+      sk += 'g';
+      continue;
+    }
+    if (ch === 'h') {
+      if (!isEnd) sk += 'h';
+      continue;
+    }
+    if (/[a-z0-9]/.test(ch)) {
+      sk += ch;
+    }
+  }
+  return sk.replace(/(.)\1+/g, '$1');
+}
+
+function phoneticSkeletonsMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 3 && b.length >= 3 && a.replace(/k/g, 'h') === b.replace(/k/g, 'h')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether a Panopto Host string matches a reference person name (exact, token-order-insensitive,
+ * or cross-script Hebrew<->English phonetic token match).
+ */
+export function doesHostMatchPersonName(
+  host: string,
+  candidateName: string,
+  allowPhonetic = true
+): boolean {
+  const normHost = normalizePersonName(host);
+  const normCand = normalizePersonName(candidateName);
+  if (!normHost || !normCand) return false;
+  if (normHost === normCand) return true;
+
+  const hostTokens = normHost.split(/\s+/).filter(t => t.length >= 2);
+  const candTokens = normCand.split(/\s+/).filter(t => t.length >= 2);
+  if (hostTokens.length === 0 || candTokens.length === 0) return false;
+
+  // Token-set match (order-insensitive, e.g. "Lahini Yoav" === "Yoav Lahini")
+  const [shorter, longer] = hostTokens.length <= candTokens.length ? [hostTokens, candTokens] : [candTokens, hostTokens];
+  if (shorter.every(st => longer.includes(st))) {
+    return true;
+  }
+
+  if (!allowPhonetic) return false;
+
+  const hostSkels = hostTokens.map(toPhoneticTokenSkeleton).filter(Boolean);
+  const candSkels = candTokens.map(toPhoneticTokenSkeleton).filter(Boolean);
+  if (hostSkels.length === 0 || candSkels.length === 0) return false;
+
+  // Require at least 2 matching tokens (or 1 token with skeleton >= 3 chars for single-word names)
+  const [shortSkels, longSkels] = hostSkels.length <= candSkels.length ? [hostSkels, candSkels] : [candSkels, hostSkels];
+  if (shortSkels.length === 1 && shortSkels[0].length < 3) return false;
+
+  return shortSkels.every(st => longSkels.some(lt => phoneticSkeletonsMatch(st, lt)));
+}
+
+export interface ClassifyRecordingOptions {
+  host?: string;
+  staffEntries?: CoursePanoptoStaffEntry[];
+  moodleStaff?: CourseStaffMember[];
+}
+
+export interface ClassifiedRecordingResult {
+  type: PanoptoRecordingType;
+  source: 'staff' | 'moodle_staff' | 'title';
+}
+
+/**
+ * Classifies a recording as 'Lecture' or 'Recitation' using:
+ * 1. User-configured course staff mapping matched against the recording's Panopto `Host`
+ * 2. Explicit title keywords (`הרצאה`/`lecture` vs `תרגול`/`recitation`/`tirgul`/`tutorial`)
+ * 3. Moodle course staff phonetic match (for ambiguous titles when unconfigured)
+ * 4. Default `'Lecture'`
+ */
+export function classifyRecordingWithSource(
+  title: string,
+  options?: ClassifyRecordingOptions
+): ClassifiedRecordingResult {
+  const host = (options?.host || '').trim();
+  const staffEntries = options?.staffEntries || [];
+  const moodleStaff = options?.moodleStaff || [];
+
+  // 1. User-configured staff mapping (highest priority)
+  if (host && staffEntries.length > 0) {
+    // 1a. Exact / token match against explicit panoptoName first
+    const exactMatches = staffEntries.filter(
+      entry =>
+        (entry.panoptoName && doesHostMatchPersonName(host, entry.panoptoName, false)) ||
+        (entry.moodleName && doesHostMatchPersonName(host, entry.moodleName, false))
+    );
+    if (exactMatches.length > 0) {
+      const uniqueRoles = new Set(exactMatches.map(m => m.role));
+      if (uniqueRoles.size === 1) {
+        return { type: exactMatches[0].role, source: 'staff' };
+      }
+    }
+
+    // 1b. Phonetic match against configured entries (panoptoName or moodleName)
+    const phoneticMatches = staffEntries.filter(
+      entry =>
+        (entry.panoptoName && doesHostMatchPersonName(host, entry.panoptoName, true)) ||
+        (entry.moodleName && doesHostMatchPersonName(host, entry.moodleName, true))
+    );
+    if (phoneticMatches.length > 0) {
+      const uniqueRoles = new Set(phoneticMatches.map(m => m.role));
+      if (uniqueRoles.size === 1) {
+        return { type: phoneticMatches[0].role, source: 'staff' };
+      }
+    }
+  }
+
+  // 2. Title keyword classification
   const lower = (title || '').toLowerCase();
   const recitationKeywords = ['tirgul', 'recitation', 'תרגול', 'תרגיל', 'tutorial'];
   for (const kw of recitationKeywords) {
     if (lower.includes(kw)) {
-      return 'Recitation';
+      return { type: 'Recitation', source: 'title' };
     }
   }
-  return 'Lecture';
+
+  const explicitLectureKeywords = ['הרצאה', 'lecture'];
+  const hasExplicitLectureKeyword = explicitLectureKeywords.some(kw => lower.includes(kw));
+  if (hasExplicitLectureKeyword) {
+    return { type: 'Lecture', source: 'title' };
+  }
+
+  // 3. Fallback to Moodle-discovered course staff when title has no explicit keyword
+  if (host && moodleStaff.length > 0) {
+    const moodleMatches = moodleStaff.filter(
+      member =>
+        (member.englishName && doesHostMatchPersonName(host, member.englishName, true)) ||
+        doesHostMatchPersonName(host, member.fullName, true)
+    );
+    if (moodleMatches.length > 0) {
+      const uniqueRoles = new Set(moodleMatches.map(m => m.role));
+      if (uniqueRoles.size === 1) {
+        return { type: moodleMatches[0].role, source: 'moodle_staff' };
+      }
+    }
+  }
+
+  return { type: 'Lecture', source: 'title' };
+}
+
+/**
+ * Classifies a recording as 'Recitation' or 'Lecture' based on optional host/staff mapping
+ * and Hebrew/English title keywords.
+ */
+export function classifyRecordingType(
+  title: string,
+  options?: ClassifyRecordingOptions
+): 'Lecture' | 'Recitation' {
+  return classifyRecordingWithSource(title, options).type;
+}
+
+/**
+ * Returns true if the recording's extracted Panopto `Host` matches at least one
+ * configured lecturer / TA entry (exact or cross-script phonetic match).
+ */
+export function doesRecordingMatchStaffEntries(
+  rec: Pick<PanoptoRecording, 'host'>,
+  staffEntries?: CoursePanoptoStaffEntry[]
+): boolean {
+  const host = (rec.host || '').trim();
+  if (!host || !staffEntries || staffEntries.length === 0) return false;
+  return staffEntries.some(
+    (entry) =>
+      (entry.panoptoName && doesHostMatchPersonName(host, entry.panoptoName, true)) ||
+      (entry.moodleName && doesHostMatchPersonName(host, entry.moodleName, true))
+  );
+}
+
+export interface PartitionedPanoptoRecordings {
+  visible: PanoptoRecording[];
+  hidden: PanoptoRecording[];
+  isFilteringActive: boolean;
+}
+
+/**
+ * Partitions a course's recordings into exclusively visible recordings (matching
+ * user-picked lecturers/TAs) and hidden recordings. When no lecturers/TAs are
+ * configured (`staffEntries` empty), nothing is hidden.
+ */
+export function partitionPanoptoRecordingsByTrackedHosts(
+  recordings: PanoptoRecording[],
+  staffEntries?: CoursePanoptoStaffEntry[]
+): PartitionedPanoptoRecordings {
+  if (!staffEntries || staffEntries.length === 0) {
+    return {
+      visible: recordings,
+      hidden: [],
+      isFilteringActive: false,
+    };
+  }
+
+  const visible: PanoptoRecording[] = [];
+  const hidden: PanoptoRecording[] = [];
+  for (const rec of recordings) {
+    if (doesRecordingMatchStaffEntries(rec, staffEntries)) {
+      visible.push(rec);
+    } else {
+      hidden.push(rec);
+    }
+  }
+  return {
+    visible,
+    hidden,
+    isFilteringActive: true,
+  };
+}
+
+/**
+ * Toggles a recording's Panopto host in the configured staff entries for a course.
+ * When adding a host, assigns `recordingType` ('Lecture' or 'Recitation') and
+ * attaches a matching `moodleName` when discovered in cached Moodle staff.
+ */
+export function toggleTrackedHostEntry(
+  entries: CoursePanoptoStaffEntry[],
+  hostName: string,
+  recordingType: PanoptoRecordingType,
+  moodleStaff?: CourseStaffMember[]
+): CoursePanoptoStaffEntry[] {
+  const trimmedHost = (hostName || '').trim();
+  if (!trimmedHost) return entries;
+
+  const isAlreadyTracked = entries.some(
+    (e) =>
+      (e.panoptoName && doesHostMatchPersonName(trimmedHost, e.panoptoName, true)) ||
+      (e.moodleName && doesHostMatchPersonName(trimmedHost, e.moodleName, true))
+  );
+
+  if (isAlreadyTracked) {
+    return entries.filter(
+      (e) =>
+        !(e.panoptoName && doesHostMatchPersonName(trimmedHost, e.panoptoName, true)) &&
+        !(e.moodleName && doesHostMatchPersonName(trimmedHost, e.moodleName, true))
+    );
+  }
+
+  const matchedMoodle = (moodleStaff || []).find(
+    (m) =>
+      (m.englishName && doesHostMatchPersonName(trimmedHost, m.englishName, true)) ||
+      doesHostMatchPersonName(trimmedHost, m.fullName, true)
+  );
+
+  const nextEntry: CoursePanoptoStaffEntry = {
+    ...(matchedMoodle?.fullName ? { moodleName: matchedMoodle.fullName } : {}),
+    panoptoName: trimmedHost,
+    role: recordingType,
+  };
+  return [...entries, nextEntry];
+}
+
+/**
+ * Re-classifies cached Panopto recordings in-memory when user-configured course staff mappings
+ * are edited, without requiring a full network re-sync.
+ */
+export function reclassifyPanoptoRecordings(
+  recordings: PanoptoRecording[],
+  coursesPanoptoStaff?: Record<number, CoursePanoptoStaffEntry[]>,
+  courseStaffMap?: Record<number, CourseStaffMember[]>,
+  courseIdAliases?: Map<number, number[]>
+): PanoptoRecording[] {
+  if (!Array.isArray(recordings) || recordings.length === 0) return recordings;
+
+  return recordings.map((rec) => {
+    const candidateIds = new Set<number>([rec.courseId]);
+    if (rec.sourceCourseId) candidateIds.add(rec.sourceCourseId);
+    const aliases = courseIdAliases?.get(rec.courseId);
+    if (aliases) aliases.forEach(id => candidateIds.add(id));
+
+    const staffEntries: CoursePanoptoStaffEntry[] = [];
+    const moodleStaff: CourseStaffMember[] = [];
+    for (const cid of candidateIds) {
+      const configured =
+        coursesPanoptoStaff?.[cid] ??
+        (coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(cid)];
+      if (Array.isArray(configured)) staffEntries.push(...configured);
+
+      const discovered =
+        courseStaffMap?.[cid] ??
+        (courseStaffMap as Record<string, CourseStaffMember[]> | undefined)?.[String(cid)];
+      if (Array.isArray(discovered)) moodleStaff.push(...discovered);
+    }
+
+    const classified = classifyRecordingWithSource(rec.title, {
+      host: rec.host,
+      staffEntries,
+      moodleStaff,
+    });
+
+    return {
+      ...rec,
+      type: classified.type,
+      classificationSource: classified.source,
+      sectionName: classified.type === 'Recitation' ? 'Recitations' : 'Lectures',
+    };
+  });
+}
+
+/**
+ * Maps a Moodle role shortname/label to 'Lecture' (Teacher/Lecturer) or 'Recitation' (TA),
+ * or returns null for non-staff roles (Student, Guest, etc.).
+ */
+export function parseCourseStaffRole(
+  roleShortname?: string,
+  roleName?: string
+): PanoptoRecordingType | null {
+  const combined = `${roleShortname || ''} ${roleName || ''}`.toLowerCase().trim();
+  if (!combined) return null;
+
+  // Check Teaching Assistant / Recitation roles FIRST so "teaching assistant" / "non-editing teacher"
+  // is never misclassified by the generic "teacher" / "מורה" substring.
+  if (
+    /non[-_\s]*editing\s*teacher|noneditingteacher|teaching[_\s-]*assistant|assistant|tutor|practitioner|recitation|מורה\s+(?:ללא\s+הרשאות\s+עריכה|ללא\s+עריכה|שאינ[וה]\s+עור[ךכ]|לא\s+עור[ךכ])|מתרגל|מתרגלת|עוזר[ת]?\s*הוראה|מדריך|מדריכה|\bta\b/i.test(
+      combined
+    )
+  ) {
+    return 'Recitation';
+  }
+
+  if (
+    /editingteacher|\bteacher\b|lecturer|instructor|professor|coordinator|coursecreator|מרצה|מורה|רכז|רכזת/i.test(
+      combined
+    )
+  ) {
+    return 'Lecture';
+  }
+
+  return null;
+}
+
+/**
+ * Extracts Hebrew and English spans from a Moodle multilang string if present,
+ * or cleans plain text.
+ */
+export function extractMultilangPersonNames(raw: string): { primary: string; english?: string } {
+  if (!raw) return { primary: '' };
+  const strippedInitials = raw.replace(
+    /<span[^>]*class=["'][^"']*userinitials[^"']*["'][^>]*>[\s\S]*?<\/span>/gi,
+    ' '
+  );
+
+  if (/class=["'][^"']*multilang/i.test(strippedInitials)) {
+    const heMatch = strippedInitials.match(/<span[^>]*\blang=["']he(?:[_-][^"']*)?["'][^>]*>([\s\S]*?)<\/span>/i);
+    const enMatch = strippedInitials.match(/<span[^>]*\blang=["']en(?:[_-][^"']*)?["'][^>]*>([\s\S]*?)<\/span>/i);
+    const cleanHe = heMatch ? decodeHTMLEntities(heMatch[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() : '';
+    const cleanEn = enMatch ? decodeHTMLEntities(enMatch[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() : '';
+    if (cleanHe || cleanEn) {
+      return {
+        primary: cleanHe || cleanEn,
+        english: cleanEn && cleanEn !== cleanHe ? cleanEn : undefined,
+      };
+    }
+  }
+
+  if (/\{mlang\s+/i.test(strippedInitials)) {
+    const heMatch = strippedInitials.match(/\{mlang\s+he(?:[_-][^}\s]*)?\}([\s\S]*?)\{mlang\}/i);
+    const enMatch = strippedInitials.match(/\{mlang\s+en(?:[_-][^}\s]*)?\}([\s\S]*?)\{mlang\}/i);
+    const cleanHe = heMatch ? decodeHTMLEntities(heMatch[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() : '';
+    const cleanEn = enMatch ? decodeHTMLEntities(enMatch[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() : '';
+    if (cleanHe || cleanEn) {
+      return {
+        primary: cleanHe || cleanEn,
+        english: cleanEn && cleanEn !== cleanHe ? cleanEn : undefined,
+      };
+    }
+  }
+
+  const plain = decodeHTMLEntities(strippedInitials.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+  return { primary: plain };
+}
+
+interface ParsedTableCell {
+  tag: 'td' | 'th';
+  colIndex: number;
+  span: number;
+  fullHtml: string;
+  innerHtml: string;
+}
+
+const ROLES_HEADER_REGEX = /\broles?\b|תפקיד(?:ים)?/i;
+const NON_STAFF_ROLE_ONLY_REGEX =
+  /^(?:students?|סטודנט(?:ים|ית)?|תלמיד(?:ה|ים)?|guests?|אורח(?:ת|ים)?|auditors?|מאזין(?:ים|ה)?|no\s+roles?|אין\s+תפקיד(?:ים)?|participants?|משתתף(?:ת|ים)?|authenticated\s+users?|משתמש(?:ת|ים)?\s+מאומת(?:ת|ים)?|none|[-–—]+)$/i;
+const NON_ROLE_CELL_TEXT_REGEX =
+  /\b(?:no\s+groups?|groups?|tutor\s+group|tutorial\s+group|(?:recitation|tutorial|tirgul|lecture|lab|section|seminar|tutor(?:ing)?|ta|assistant|lecturer)\s*[#:\-–—]?\s*(?:\d+|[a-z]\b)|never|now|active|suspended|\d+\s*(?:secs?|seconds?|mins?|minutes?|hours?|days?|weeks?|months?|years?))\b|^\s*(?:(?:recitation|tutorial|tirgul|lecture|lab|section|seminar)\b|(?:תרגול|הרצאה|מעבדה)(?=$|[\s,/\-|()[\]"':\d]))(?![^,]*(?:\b(?:teacher|assistant|ta|instructor|tutor|lecturer|coordinator|practitioner)\b|מורה|מתרגל|עוזר|מרצה|מדריך|רכז))|(?:^|[\s"'(\[])(?:קבוצ(?:ה|ות|ת)|אין\s+קבוצות|אף\s+פעם|גישה\s+אחרונה|תרגול\s*[#:\-–—]?\s*(?:\d+|[א-ת](?:\s|$))|הרצאה\s*[#:\-–—]?\s*(?:\d+|[א-ת](?:\s|$))|מעבדה\s*[#:\-–—]?\s*(?:\d+|[א-ת](?:\s|$)))|(?:לפני|שניות|דקות|שעות|שעתיים|ימים|יומיים|חודשים|פעיל|מושעה)/i;
+
+function extractParticipantsScopeHtml(rawHtml: string): string {
+  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '');
+  const idMatch = html.match(
+    /<table\b[^>]*id=["'][^"']*participants[^"']*["'][^>]*>([\s\S]*?)<\/table>/i
+  );
+  if (idMatch) return idMatch[1];
+
+  const tableRegex = /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+  let tableMatch: RegExpExecArray | null;
+  while ((tableMatch = tableRegex.exec(html)) !== null) {
+    if (/\/user\/(?:view|profile)\.php\?/i.test(tableMatch[1])) {
+      return tableMatch[1];
+    }
+  }
+
+  return html;
+}
+
+function extractRowCells(rowHtml: string): ParsedTableCell[] {
+  const cells: ParsedTableCell[] = [];
+  const cellRegex = /<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  let colIndex = 0;
+
+  while ((match = cellRegex.exec(rowHtml)) !== null) {
+    const tag = match[1].toLowerCase() as 'td' | 'th';
+    const attrs = match[2] || '';
+    const innerHtml = match[3] || '';
+    const colspanMatch = attrs.match(/\bcolspan\s*=\s*["']?(\d+)["']?/i);
+    const span = colspanMatch ? Math.max(1, parseInt(colspanMatch[1], 10)) : 1;
+
+    cells.push({
+      tag,
+      colIndex,
+      span,
+      fullHtml: match[0],
+      innerHtml,
+    });
+    colIndex += span;
+  }
+
+  return cells;
+}
+
+function stripCellText(html: string): string {
+  return decodeHTMLEntities(html.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Parses Moodle's `/user/index.php` Participants table HTML (including dynamic table AJAX HTML)
+ * and returns only Teachers (Lecturers) and Teaching Assistants.
+ */
+export function parseParticipantsHtml(html: string): CourseStaffMember[] {
+  if (!html) return [];
+  const staff: CourseStaffMember[] = [];
+  const seenKeys = new Set<string>();
+
+  const scopeHtml = extractParticipantsScopeHtml(html);
+  const tbodyMatches = [...scopeHtml.matchAll(/<tbody\b[^>]*>([\s\S]*?)<\/tbody>/gi)];
+  const rowsHtml = tbodyMatches.length > 0 ? tbodyMatches.map((m) => m[1]).join('\n') : scopeHtml;
+
+  // Locate the Roles column index when <thead> or a header <tr>...<th> row is present
+  let hasHeaderRow = false;
+  let rolesColIndex = -1;
+
+  const findRolesColIndexInHeaderHtml = (headerHtml: string): { foundHeader: boolean; rolesIdx: number } => {
+    const headerTrRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let headerTrMatch: RegExpExecArray | null;
+    let foundHeader = false;
+    let rolesIdx = -1;
+
+    while ((headerTrMatch = headerTrRegex.exec(headerHtml)) !== null) {
+      const cells = extractRowCells(headerTrMatch[1]);
+      if (cells.length === 0) continue;
+      foundHeader = true;
+
+      for (const cell of cells) {
+        const headerText = stripCellText(cell.innerHtml);
+        if (ROLES_HEADER_REGEX.test(headerText)) {
+          rolesIdx = cell.colIndex;
+          break;
+        }
+      }
+      if (rolesIdx !== -1) break;
+    }
+
+    return { foundHeader, rolesIdx };
+  };
+
+  const theadMatch = scopeHtml.match(/<thead\b[^>]*>([\s\S]*?)<\/thead>/i);
+  if (theadMatch) {
+    const theadInfo = findRolesColIndexInHeaderHtml(theadMatch[1]);
+    hasHeaderRow = theadInfo.foundHeader;
+    rolesColIndex = theadInfo.rolesIdx;
+  }
+
+  if (!hasHeaderRow) {
+    const headerScanRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let headerScanMatch: RegExpExecArray | null;
+    while ((headerScanMatch = headerScanRegex.exec(scopeHtml)) !== null) {
+      const candidateRowHtml = headerScanMatch[1];
+      if (/\/user\/(?:view|profile)\.php\?/i.test(candidateRowHtml)) continue;
+      if (/<th\b[^>]*scope=["']row["']/i.test(candidateRowHtml)) continue;
+      const cells = extractRowCells(candidateRowHtml);
+      const thCount = cells.filter(c => c.tag === 'th').length;
+      const hasColScope = /<th\b[^>]*scope=["']col["']/i.test(candidateRowHtml);
+      const allTh = cells.length >= 2 && thCount === cells.length;
+      if (thCount > 0 && (hasColScope || allTh || thCount >= 2)) {
+        hasHeaderRow = true;
+        for (const cell of cells) {
+          if (ROLES_HEADER_REGEX.test(stripCellText(cell.innerHtml))) {
+            rolesColIndex = cell.colIndex;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  const trRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let trMatch: RegExpExecArray | null;
+
+  while ((trMatch = trRegex.exec(rowsHtml)) !== null) {
+    const rowHtml = trMatch[1];
+    if (/<th\b[^>]*scope=["']col["']/i.test(rowHtml)) continue;
+
+    // Extract user link (name + userId)
+    const userAnchorMatch = rowHtml.match(
+      /<a\b[^>]*href=["'][^"']*\/user\/(?:view|profile)\.php\?[^"']*\bid=(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/i
+    );
+    if (!userAnchorMatch) continue;
+
+    const userId = Number(userAnchorMatch[1]);
+    const names = extractMultilangPersonNames(userAnchorMatch[2]);
+    if (!names.primary) continue;
+
+    const cells = extractRowCells(rowHtml);
+    const nonUserCells = cells.filter(c => !/\/user\/(?:view|profile)\.php\?/i.test(c.innerHtml));
+    const explicitRoleCells = nonUserCells.filter(c => /\bdata-itemtype=["']roles["']/i.test(c.fullHtml));
+
+    let cellsToInspect: ParsedTableCell[] = [];
+    if (hasHeaderRow) {
+      if (rolesColIndex !== -1) {
+        const colCell = nonUserCells.find(
+          c => c.colIndex <= rolesColIndex && rolesColIndex < c.colIndex + c.span
+        );
+        if (colCell) {
+          cellsToInspect = [colCell];
+        }
+        for (const roleCell of explicitRoleCells) {
+          if (!cellsToInspect.includes(roleCell)) {
+            cellsToInspect.push(roleCell);
+          }
+        }
+      } else if (explicitRoleCells.length > 0) {
+        cellsToInspect = explicitRoleCells;
+      }
+    } else if (explicitRoleCells.length > 0) {
+      cellsToInspect = explicitRoleCells;
+    } else {
+      // Headerless table fragment without data-itemtype="roles": exclude non-role cells (groups, access, emails, user cell)
+      const candidateCells = nonUserCells.filter(c => {
+        if (c.tag !== 'td') return false;
+        if (/\bdata-itemtype=["'](?!roles["'])[^"']+["']/i.test(c.fullHtml)) return false;
+        const text = stripCellText(c.innerHtml);
+        if (!text) return false;
+        if (text.includes('@')) return false;
+        if (NON_ROLE_CELL_TEXT_REGEX.test(text)) return false;
+        return true;
+      });
+
+      const hasPureNonStaffRoleCell = candidateCells.some(c => {
+        const text = stripCellText(c.innerHtml);
+        const parts = text.split(/[,/\n|]+/).map(s => s.trim()).filter(Boolean);
+        return (
+          parts.length > 0 &&
+          parts.every(p => NON_STAFF_ROLE_ONLY_REGEX.test(p)) &&
+          parts.every(p => parseCourseStaffRole(undefined, p) === null)
+        );
+      });
+
+      cellsToInspect = hasPureNonStaffRoleCell ? [] : candidateCells;
+    }
+
+    let detectedRole: PanoptoRecordingType | null = null;
+    let rawRoleText = '';
+
+    for (const cell of cellsToInspect) {
+      const cellText = stripCellText(cell.innerHtml);
+      if (!cellText) continue;
+
+      const roleParts = cellText.split(/[,/\n|]+/).map(s => s.trim()).filter(Boolean);
+      for (const part of roleParts) {
+        const parsed = parseCourseStaffRole(undefined, part);
+        if (parsed) {
+          // Prefer Lecture if both somehow appear, otherwise take first staff role
+          if (!detectedRole || parsed === 'Lecture') {
+            detectedRole = parsed;
+            rawRoleText = part;
+          }
+        }
+      }
+    }
+
+    if (!detectedRole) continue;
+
+    const dedupKey = userId > 0 ? `id:${userId}` : `name:${normalizePersonName(names.primary)}`;
+    if (seenKeys.has(dedupKey)) continue;
+    seenKeys.add(dedupKey);
+
+    staff.push({
+      userId: userId > 0 ? userId : undefined,
+      fullName: names.primary,
+      ...(names.english ? { englishName: names.english } : {}),
+      role: detectedRole,
+      rawRole: rawRoleText || undefined,
+    });
+  }
+
+  return staff;
+}
+
+/**
+ * Fetches Teachers and Teaching Assistants from Moodle's Participants page (`/user/index.php?id={courseId}`)
+ * with Moodle 4.x `core_table_get_dynamic_table_content` AJAX fallback when the table is dynamically rendered.
+ */
+export async function fetchCourseStaffFromParticipantsPage(
+  courseId: number,
+  courseBaseUrl = 'https://moodle.tau.ac.il',
+  fallbackSesskey?: string,
+  jar?: CookieJar | null,
+  creds?: MoodleCredentials
+): Promise<CourseStaffMember[]> {
+  if (!courseId || courseId <= 0) return [];
+  const cleanMoodle = courseBaseUrl.replace(/\/+$/, '');
+  const participantsUrl = `${cleanMoodle}/user/index.php?id=${courseId}&perpage=5000`;
+
+  const extractFromPage = async (pageHtml: string): Promise<CourseStaffMember[]> => {
+    const ssrStaff = parseParticipantsHtml(pageHtml);
+
+    // Check if Moodle 4.x dynamic table needs an AJAX query (e.g., paginated or empty SSR tbody)
+    const handlerMatch = pageHtml.match(/data-table-handler=["']([^"']+)["']/i);
+    const uniqueIdMatch = pageHtml.match(/data-table-uniqueid=["']([^"']+)["']/i);
+    const sesskeyMatch =
+      pageHtml.match(/"sesskey"\s*:\s*"([^"]+)"/i) || pageHtml.match(/sesskey=([a-zA-Z0-9]+)/i);
+    const activeSesskey = sesskeyMatch ? sesskeyMatch[1] : fallbackSesskey;
+
+    if (handlerMatch && uniqueIdMatch && activeSesskey) {
+      try {
+        const ajaxUrl = `${cleanMoodle}/lib/ajax/service.php?sesskey=${encodeURIComponent(
+          activeSesskey
+        )}&info=core_table_get_dynamic_table_content`;
+
+        const filtersAttrMatch = pageHtml.match(/data-table-filters=["']([^"']+)["']/i);
+        let baseFilters: Record<string, any> = {
+          courseid: { name: 'courseid', jointype: 1, values: [courseId] },
+        };
+        if (filtersAttrMatch) {
+          try {
+            const parsed = JSON.parse(decodeHTMLEntities(filtersAttrMatch[1]));
+            if (parsed && typeof parsed === 'object') {
+              baseFilters = parsed;
+            }
+          } catch {
+            // keep default courseid filter
+          }
+        }
+
+        const ajaxRes = await panoptoFetch(
+          ajaxUrl,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([
+              {
+                index: 0,
+                methodname: 'core_table_get_dynamic_table_content',
+                args: {
+                  component: 'core_user',
+                  handler: handlerMatch[1],
+                  uniqueid: uniqueIdMatch[1],
+                  sortdata: [],
+                  filters: baseFilters,
+                  jointype: 2,
+                  firstinitial: '',
+                  lastinitial: '',
+                  page: 0,
+                  pagesize: 5000,
+                  hiddencolumns: [],
+                  resetpreferences: false,
+                },
+              },
+            ]),
+          },
+          jar
+        );
+
+        if (ajaxRes.ok) {
+          const json = await ajaxRes.json();
+          const dynamicHtml = json?.[0]?.data?.html;
+          if (typeof dynamicHtml === 'string' && dynamicHtml.length > 0) {
+            const dynamicStaff = parseParticipantsHtml(dynamicHtml);
+            if (dynamicStaff.length >= ssrStaff.length && dynamicStaff.length > 0) {
+              return dynamicStaff;
+            }
+          }
+        }
+      } catch {
+        // Fallback to SSR results
+      }
+    }
+
+    return ssrStaff;
+  };
+
+  try {
+    let res = await panoptoFetch(participantsUrl, { method: 'GET' }, jar);
+    let html = await res.text();
+    let landedUrl = res.url || participantsUrl;
+
+    if (
+      (landedUrl.includes('nidp.tau.ac.il') ||
+        landedUrl.includes('/login/index.php') ||
+        landedUrl.includes('/auth/saml2/login.php') ||
+        /id=["']login["']|name=["']logintoken["']/i.test(html)) &&
+      creds?.username &&
+      creds?.idNumber &&
+      creds?.password
+    ) {
+      const rootMoodle = cleanMoodle.replace(/\/\d{4}$/, '');
+      const ok = await ensureMoodleWebSessionWithCreds(rootMoodle, creds, jar);
+      if (ok) {
+        res = await panoptoFetch(participantsUrl, { method: 'GET' }, jar);
+        html = await res.text();
+      }
+    }
+
+    if (!res.ok) return [];
+
+    let staff = await extractFromPage(html);
+
+    // If Moodle is rendered in English and multilang-filtered Hebrew-only staff names disappeared,
+    // temporarily query with &lang=he and restore &lang=en so the user's Moodle session stays in English.
+    if (staff.length === 0 && /<html[^>]*\blang=["']en/i.test(html)) {
+      try {
+        const heRes = await panoptoFetch(`${participantsUrl}&lang=he`, { method: 'GET' }, jar);
+        if (heRes.ok) {
+          const heHtml = await heRes.text();
+          staff = await extractFromPage(heHtml);
+        }
+      } finally {
+        await panoptoFetch(`${cleanMoodle}/my/?lang=en`, { method: 'GET' }, jar).catch(() => {});
+      }
+    }
+
+    return staff;
+  } catch (err) {
+    console.warn(`[Panopto][Staff] Failed to fetch participants page for course ${courseId}:`, err);
+    return [];
+  }
 }
 
 /**
@@ -302,7 +1425,10 @@ export function parsePanoptoDate(rawDate: unknown): string {
  * When multiple recordings exist for the same recitation (e.g. "תרגול 3 חלק 1", "תרגול 3 חלק 2"
  * across different dates or semesters), keeps all parts belonging to the most recent `publishedDate`.
  */
-export function filterAndDeduplicateRecordings(recordings: PanoptoRecording[]): PanoptoRecording[] {
+export function filterAndDeduplicateRecordings(
+  recordings: PanoptoRecording[],
+  classificationOptions?: ClassifyRecordingOptions
+): PanoptoRecording[] {
   const seenIds = new Set<string>();
   const lectures: PanoptoRecording[] = [];
   const recitations: PanoptoRecording[] = [];
@@ -315,11 +1441,20 @@ export function filterAndDeduplicateRecordings(recordings: PanoptoRecording[]): 
     if (seenIds.has(key)) continue;
     seenIds.add(key);
 
+    const classified =
+      rec.type && rec.classificationSource
+        ? { type: rec.type, source: rec.classificationSource }
+        : classifyRecordingWithSource(rec.title, {
+            ...classificationOptions,
+            host: rec.host,
+          });
+
     const normalized: PanoptoRecording = {
       ...rec,
       title: rec.title.trim(),
       publishedDate: parsePanoptoDate(rec.publishedDate) || rec.publishedDate || '',
-      type: rec.type || classifyRecordingType(rec.title),
+      type: rec.type || classified.type,
+      classificationSource: rec.classificationSource || classified.source,
     };
 
     if (normalized.type === 'Recitation') {
@@ -1174,7 +2309,8 @@ export async function fetchPanoptoFolderSessions(
   courseName: string,
   baseUrl = PANOPTO_BASE_URL,
   jar?: CookieJar | null,
-  depth = 0
+  depth = 0,
+  classificationOptions?: ClassifyRecordingOptions
 ): Promise<PanoptoRecording[]> {
   const cleanFolderId = extractPanoptoFolderId(folderId);
   if (!cleanFolderId) {
@@ -1244,13 +2380,23 @@ export async function fetchPanoptoFolderSessions(
             (vidId ? buildPanoptoViewerUrl(vidId, cleanBase) : buildPanoptoFolderUrl(cleanFolderId, cleanBase));
           const rawDate = item.StartTime || item.Date || item.CreatedDate || '';
           const durationSeconds = typeof item.Duration === 'number' ? item.Duration : undefined;
+          const host = extractPanoptoHostFromAbstract(
+            item.Abstract ?? item.Description,
+            item.Host ?? item.HostName ?? item.Presenter ?? item.Creator
+          );
+          const classified = classifyRecordingWithSource(title, {
+            ...classificationOptions,
+            host,
+          });
 
           rawRecordings.push({
             id: vidId || recordingUrl,
             title,
             recordingUrl,
             publishedDate: parsePanoptoDate(rawDate),
-            type: classifyRecordingType(title),
+            type: classified.type,
+            host,
+            classificationSource: classified.source,
             courseId,
             courseName,
             folderId: cleanFolderId,
@@ -1258,7 +2404,7 @@ export async function fetchPanoptoFolderSessions(
             durationSeconds,
           });
         }
-        const filtered = filterAndDeduplicateRecordings(rawRecordings);
+        const filtered = filterAndDeduplicateRecordings(rawRecordings, classificationOptions);
         console.log(
           `[Panopto] Data.svc/GetSessions for folder ${cleanFolderId} (${courseName}): ${resultsList.length} raw (${rawRecordings.map(r => `"${r.title}"`).join(', ')}) -> ${filtered.length} valid recordings (subfolders: ${subfolderIds.length})`
         );
@@ -1268,10 +2414,18 @@ export async function fetchPanoptoFolderSessions(
         if (filtered.length > 0 && depth === 0 && subfolderIds.length > 0) {
           const childRecordings: PanoptoRecording[] = [...filtered];
           for (const sfId of subfolderIds.slice(0, 8)) {
-            const recs = await fetchPanoptoFolderSessions(sfId, courseId, courseName, cleanBase, jar, depth + 1);
+            const recs = await fetchPanoptoFolderSessions(
+              sfId,
+              courseId,
+              courseName,
+              cleanBase,
+              jar,
+              depth + 1,
+              classificationOptions
+            );
             childRecordings.push(...recs);
           }
-          return filterAndDeduplicateRecordings(childRecordings);
+          return filterAndDeduplicateRecordings(childRecordings, classificationOptions);
         }
       } else {
         console.log(
@@ -1292,11 +2446,19 @@ export async function fetchPanoptoFolderSessions(
   if (depth === 0 && subfolderIds.length > 0) {
     const childRecordings: PanoptoRecording[] = [];
     for (const sfId of subfolderIds.slice(0, 8)) {
-      const recs = await fetchPanoptoFolderSessions(sfId, courseId, courseName, cleanBase, jar, depth + 1);
+      const recs = await fetchPanoptoFolderSessions(
+        sfId,
+        courseId,
+        courseName,
+        cleanBase,
+        jar,
+        depth + 1,
+        classificationOptions
+      );
       childRecordings.push(...recs);
     }
     if (childRecordings.length > 0) {
-      return filterAndDeduplicateRecordings(childRecordings);
+      return filterAndDeduplicateRecordings(childRecordings, classificationOptions);
     }
   }
 
@@ -1311,7 +2473,20 @@ export async function fetchPanoptoFolderSessions(
         console.log(
           `[Panopto] List.aspx HTML fallback for folder ${cleanFolderId} (${courseName}): ${parsedHtml.length} recordings`
         );
-        return parsedHtml;
+        return filterAndDeduplicateRecordings(
+          parsedHtml.map((rec) => {
+            const classified = classifyRecordingWithSource(rec.title, {
+              ...classificationOptions,
+              host: rec.host,
+            });
+            return {
+              ...rec,
+              type: classified.type,
+              classificationSource: classified.source,
+            };
+          }),
+          classificationOptions
+        );
       }
     }
   } catch {

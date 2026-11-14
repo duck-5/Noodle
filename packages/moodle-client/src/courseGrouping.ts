@@ -351,6 +351,7 @@ export function aggregateUnifiedCourseItems(
       seenRecIds.add(rec.id);
       recordings.push({
         ...rec,
+        sourceCourseId: rec.sourceCourseId ?? rec.courseId,
         courseId: unifiedCourse.id,
       });
     }

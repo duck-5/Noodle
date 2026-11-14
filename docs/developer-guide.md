@@ -83,3 +83,24 @@ pnpm test:e2e:headed
 - **Logs Captured**: Intercepts UI console logs, unhandled page errors, Service Worker lifecycle events, and Moodle network fetch traffic.
 - **Screenshots Saved**: Visual captures of the Options Dashboard (`options-dashboard.png`) and Toolbar Popup (`toolbar-popup.png`) are saved directly to `apps/extension/screenshots/`.
 - For comprehensive agent implementation patterns, see [`docs/AGENT_BROWSER_EXECUTION.md`](file:///d:/ProgramFiles/Projects/Noodle/docs/AGENT_BROWSER_EXECUTION.md).
+
+---
+
+## 6. Automated GitHub Releases (Tag Push)
+
+Tag pushes matching `v*` (e.g., `git tag v4.0.4 && git push origin v4.0.4`) trigger [`.github/workflows/release-extension.yml`](file:///home/excustic/Code/Noodle/.github/workflows/release-extension.yml), while regular branch pushes and PRs run [`.github/workflows/build-extension.yml`](file:///home/excustic/Code/Noodle/.github/workflows/build-extension.yml) (with `tags-ignore: ['v*']` to avoid duplicate runs).
+
+### Pre-Release Checklist
+1. Bump `version` in both `apps/extension/src/manifest.json` and `apps/extension/package.json` to match `<version>` (`X.Y.Z`).
+2. Move release notes in `CHANGELOG.md` under `## [<version>] - YYYY-MM-DD` (if omitted, `scripts/verify-release.mjs` falls back to `## [Unreleased]` with a warning).
+3. Ensure repository Actions secrets are configured for Mozilla AMO signing:
+   - `WEB_EXT_API_KEY`: AMO JWT issuer (`user:...`)
+   - `WEB_EXT_API_SECRET`: AMO JWT secret
+   - Optional repository variable `AMO_CHANNEL`: defaults to `listed` (submits `releases/noodle-v<version>-source-code.zip` via `--upload-source-code`); set to `unlisted` for self-distributed `.xpi` releases.
+
+### Generated Release Assets
+- `noodle-v<version>-chrome.zip` — Chrome MV3 package (`manifest.json` `"key"` stripped for Chrome Web Store compliance)
+- `noodle-v<version>-firefox.zip` — Firefox MV3 package (`dist-firefox/`)
+- `noodle-v<version>-firefox.xpi` — AMO-signed Firefox package (`web-ext sign`)
+- `noodle-v<version>-source-code.zip` — AMO reviewer source archive (`scripts/package-source.py`)
+- `SHA256SUMS.txt` — SHA-256 checksums for all release archives

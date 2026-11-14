@@ -57,6 +57,10 @@ export function parseMoodleDate(str: string): number {
   return isNaN(ts) ? 0 : ts;
 }
 
+/**
+ * @deprecated Legacy HTML Web Scraping fallback strategy. Removed from the extension Settings UI
+ * in favor of pure REST/AJAX API synchronization; retained solely for legacy reference and tests.
+ */
 export class ScraperMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'Scraper';
   private courseYearMap = new Map<number, string>();

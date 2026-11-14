@@ -1,4 +1,5 @@
-import type { SyncResult } from '@tautracker/moodle-client';
+import type { SyncResult, CourseStaffMember } from '@tautracker/moodle-client';
+import type { StoreVersionCheckResult } from './versionChecker.js';
 import browser from 'webextension-polyfill';
 
 function rawSendMessage(msg: unknown): Promise<any> {
@@ -130,4 +131,24 @@ export async function reconcileLocalFsOnBackground(): Promise<{
   error?: string;
 }> {
   return sendMessageToBackground({ type: 'LOCAL_FS_RECONCILE' });
+}
+
+export async function fetchCourseStaffOnBackground(
+  courseIds: number[],
+  courseBaseUrls?: Record<number, string>,
+  forceRefresh = false
+): Promise<{
+  success: boolean;
+  byCourseId?: Record<number, CourseStaffMember[]>;
+  error?: string;
+}> {
+  return sendMessageToBackground({ type: 'FETCH_COURSE_STAFF', courseIds, courseBaseUrls, forceRefresh });
+}
+
+export async function checkStoreUpdateOnBackground(force = false): Promise<{
+  success: boolean;
+  result?: StoreVersionCheckResult;
+  error?: string;
+}> {
+  return sendMessageToBackground({ type: 'CHECK_STORE_UPDATE', force });
 }

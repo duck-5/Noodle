@@ -24,15 +24,26 @@ include_dirs = [
 exclude_dirs = {
     'node_modules',
     'dist',
+    'dist-firefox',
+    '.dev-profile',
+    'playwright-report',
+    'test-results',
+    'screenshots',
+    'releases',
+    'coverage',
+    '__pycache__',
+    '.pytest_cache',
     '.git',
     '.turbo',
-    '__pycache__',
     '.idea',
     '.vscode',
 }
 
 exclude_extensions = {
     '.zip',
+    '.xpi',
+    '.crx',
+    '.pem',
     '.log',
 }
 
@@ -72,9 +83,9 @@ with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
    pnpm install
    ```
 
-2. Run the fully automated release build:
+2. Run the automated release build:
    ```bash
-   pnpm run release
+   python3 scripts/build-releases.py
    ```
 
 3. The generated release archives will be located in the `releases/` directory at the project root:

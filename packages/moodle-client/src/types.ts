@@ -172,18 +172,37 @@ export interface CourseGradeSummary {
   items: CourseGradeItem[];
 }
 
+export type PanoptoRecordingType = 'Lecture' | 'Recitation';
+
+export interface CourseStaffMember {
+  userId?: number;
+  fullName: string;              // Display name from Moodle (typically Hebrew, e.g. "יואב לחיני")
+  englishName?: string;          // Optional English name when Moodle multilang provides both spans
+  role: PanoptoRecordingType;    // 'Lecture' for Teacher/Lecturer, 'Recitation' for Teaching Assistant
+  rawRole?: string;              // Raw role shortname/label from Moodle (e.g. "Teacher", "Teaching Assistant")
+}
+
+export interface CoursePanoptoStaffEntry {
+  moodleName?: string;           // Original Moodle name (e.g. "יואב לחיני"), optional for manually added hosts
+  panoptoName: string;           // Panopto Host name (e.g. "Yoav Lahini")
+  role: PanoptoRecordingType;    // 'Lecture' | 'Recitation'
+}
+
 export interface PanoptoRecording {
   id: string;
   title: string;
   recordingUrl: string;
   publishedDate: string; // YYYY-MM-DD or empty string
-  type: 'Lecture' | 'Recitation';
+  type: PanoptoRecordingType;
   courseId: number;
+  sourceCourseId?: number;
   courseName: string;
   folderId?: string;
   folderUrl?: string;
   sectionName?: string;
   durationSeconds?: number;
+  host?: string; // Extracted from Panopto SessionRow Abstract ("• Host: Yoav Lahini")
+  classificationSource?: 'staff' | 'moodle_staff' | 'title';
 }
 
 export interface SyncResult {
@@ -197,6 +216,7 @@ export interface SyncResult {
   files: CourseFile[];
   meetings: ZoomMeeting[];
   recordings?: PanoptoRecording[];
+  courseStaff?: Record<number, CourseStaffMember[]>;
   errors: SyncError[];
   syncedAt: string; // ISO 8601
 }

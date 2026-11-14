@@ -24,6 +24,7 @@ interface LocalFsSettingsSectionProps {
   onShowToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
   t: (key: keyof (typeof translations)['en']) => string;
   lang: 'he' | 'en';
+  highlightForTour?: boolean;
 }
 
 export function LocalFsSettingsSection({
@@ -33,6 +34,7 @@ export function LocalFsSettingsSection({
   onShowToast,
   t,
   lang,
+  highlightForTour = false,
 }: LocalFsSettingsSectionProps) {
   const provider = useMemo(() => createFileSystemProvider(), []);
   const isFsa = provider.backendType === 'fsa';
@@ -283,7 +285,7 @@ export function LocalFsSettingsSection({
     isFsa || status.syncedCountTotal > 0 || pendingCount > 0 || status.totalQueued > 0;
 
   return (
-    <div className="settings-section local-fs-section">
+    <div className={`settings-section local-fs-section ${highlightForTour ? 'tour-highlight' : ''}`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
         <h4 style={{ margin: 0 }}>{t('local_fs_title')}</h4>
         <span className={`local-fs-status-pill tone-${badge.tone}`}>

@@ -10,6 +10,7 @@ import {
   isZoomJoinUrl,
   isZoomMeetingHidden,
   collapseRecurringMeetings,
+  doesRecordingMatchStaffEntries,
 } from '@tautracker/moodle-client';
 import {
   getStoredToken,
@@ -184,7 +185,16 @@ export default function Popup() {
 
   const unwatchedRecordings = settings?.panoptoEnabled
     ? [...(syncResult?.recordings || [])]
-      .filter((r: any) => r?.id && !watchedSet.has(r.id))
+      .filter((r: any) => {
+        if (!r?.id || watchedSet.has(r.id)) return false;
+        const staffEntries =
+          settings?.coursesPanoptoStaff?.[r.courseId] ||
+          (settings?.coursesPanoptoStaff as Record<string, typeof settings.coursesPanoptoStaff[number]> | undefined)?.[String(r.courseId)];
+        if (Array.isArray(staffEntries) && staffEntries.length > 0) {
+          return doesRecordingMatchStaffEntries(r, staffEntries);
+        }
+        return true;
+      })
       .sort((a: any, b: any) => (b.publishedDate || '').localeCompare(a.publishedDate || ''))
     : [];
 

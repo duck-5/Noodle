@@ -253,23 +253,21 @@ The `IMoodleStrategy` interface defines common operations across REST, AJAX, and
 
 ---
 
-## 6. Optional Web Scraping Strategy Configuration
+## 6. Legacy Web Scraping Strategy Configuration (`@deprecated`)
 
-To optimize sync performance and ensure compliance with pure API standards, all web scraping functionality is optional and **default OFF**:
+To optimize sync performance and ensure compliance with pure API standards, the HTML web scraping fallback option has been **removed from the extension Settings UI** and marked as `@deprecated` legacy code:
 
-### Client Core Options
-* **`MoodleClientOptions.enableScraping`** (`boolean`, default: `false`):
-  * When `false`: `MoodleClient` initializes only `RestMoodleStrategy` and `AjaxMoodleStrategy`. HTML scraper fallback execution is completely bypassed.
-  * When `true`: `ScraperMoodleStrategy` is appended to the fallback chain.
-* **`RunSyncOptions.enableScraping`** (`boolean`, default: `false`):
+### Client Core Options (`@deprecated` Legacy)
+* **`MoodleClientOptions.enableScraping`** (`boolean`, default: `false`, `@deprecated`):
+  * When `false` (default and always forced by the extension): `MoodleClient` initializes only `RestMoodleStrategy` and `AjaxMoodleStrategy`. HTML scraper fallback execution is completely bypassed.
+  * When `true`: `ScraperMoodleStrategy` (legacy `@deprecated` class) is appended to the fallback chain in standalone client tests.
+* **`RunSyncOptions.enableScraping`** (`boolean`, default: `false`, `@deprecated`):
   * Passed to `runSync(token, trackedCourseIds, onProgress, baseUrl, creds, moodleCookies, sesskey, onPartialSync, options)`.
-  * When `false`, HTML web scraping and headless cookie-jar authentication are skipped, executing only standard Moodle API operations. Note: Zoom LTI discovery (`mod_lti_get_tool_launch_data`) runs via Moodle REST WS and does not require HTML scraping.
+  * When `false`, HTML web scraping is skipped, executing only standard Moodle API operations. Note: Zoom LTI discovery (`mod_lti_get_tool_launch_data`) runs via Moodle REST WS and does not require HTML scraping.
 
-### Extension Storage & UI
-* **`ExtensionSettings.scrapingEnabled`** (`boolean`, default: `false`):
-  * Persisted in `browser.storage.local.get('settings')`.
-  * User-configurable via the `#scraping-enabled-toggle` switch on the extension Settings page.
-  * Forwarded to background service worker synchronization and Moodle client instances.
+### Extension Storage (`@deprecated` Legacy)
+* **`ExtensionSettings.scrapingEnabled`** (`boolean`, default: `false`, `@deprecated`):
+  * Retained only for backwards compatibility with older saved settings objects; removed from Settings UI (`#scraping-enabled-toggle` removed) and background service worker synchronization always passes `enableScraping: false`.
 
 ---
 
@@ -321,6 +319,7 @@ Communication between the UI frontends (Options Page, Popup) and the background 
 * **`LOCAL_FS_RESET_FOLDER`**: Clears Local FS queue and manifest when switching target folders (without deleting files on disk). Returns `{ success: true }`.
 * **`LOCAL_FS_ADOPT_SCANNED`**: Receives `{ files: ScannedLocalFileMetadata[] }` from Firefox's `<input webkitdirectory>` folder scan, adopts matching pre-existing files on disk into `localFsManifest` (`origin: 'scan'`, attaching matching Firefox `downloadId`s when available) and removes them from `localFsQueue`. Returns `{ success: true, adoptedCount: number, totalSynced: number }`.
 * **`LOCAL_FS_RECONCILE`**: Triggers background-serialized manifest reconciliation (`reconcileLocalFsManifest()`) inside the service worker's `withStateLock` mutex instead of mutating `localFsManifest` directly from UI tabs. Returns `{ success: true, changed: boolean }`.
+* **`FETCH_COURSE_STAFF`**: Accepts `{ courseIds: number[], courseBaseUrls?: Record<number, string>, forceRefresh?: boolean }`. Reuses `cachedCourseStaff` (`browser.storage.local`) / `cachedSyncResult.courseStaff` for courses already fetched unless `forceRefresh: true`, queries `MoodleClient.getCourseStaff(courseId)` (`core_enrol_get_enrolled_users` with `moodlewssettingfilter: 'false'`) with `fetchCourseStaffFromParticipantsPage()` (`/user/index.php`) fallback for missing courses, persists newly discovered staff in `cachedCourseStaff` and `cachedSyncResult.courseStaff`, and returns `{ success: true, byCourseId: Record<number, CourseStaffMember[]> }`.
 
 ### MV3 Service Worker Protocol
 * **Synchronous Registration**: The listener is registered unconditionally at the top level of `serviceWorker.ts` before alarms or async operations.
@@ -344,13 +343,16 @@ When `enablePanopto: true` (`ExtensionSettings.panoptoEnabled`) is enabled, Nood
    * Fetches `/course/view.php?id={courseId}` and invokes `extractPanoptoFromCourseHtml(html)` to extract folder UUIDs and delivery IDs from course links.
    * If only a session delivery ID (`Viewer.aspx?id={deliveryId}`) is found on the course page, calls `resolveFolderIdFromDelivery(deliveryId)` (`POST /Panopto/Pages/Viewer/DeliveryInfo.aspx` with `deliveryId` and `responseType=json`) to read `Delivery.SessionGroupPublicID` / `Delivery.FolderId` and fetch the entire course folder.
 
-### Session Fetching, Deduplication & Section Matching
-* **`fetchPanoptoFolderSessions(folderId, courseId, panoptoBaseUrl)`**:
+### Session Fetching, Deduplication & Host-Based Classification
+* **`fetchPanoptoFolderSessions(folderId, courseId, courseName, panoptoBaseUrl, jar, depth, classificationOptions)`**:
   * Primary: `POST /Panopto/Services/Data.svc/GetSessions` with `queryParameters` (`folderID`, `sortColumn: 1`, `sortAscending: false`, `maxResults: 250`).
+  * Extracts `host` from `SessionRow.Abstract` (`extractPanoptoHostFromAbstract`, e.g. `• Host: Yoav Lahini`) or fallback metadata fields, then runs `classifyRecordingWithSource(title, { host, staffEntries, moodleStaff })`.
   * Fallback: `GET /Panopto/Pages/Sessions/List.aspx?folderID={folderId}` parsed via `parsePanoptoListHtml`.
-* **`filterAndDeduplicateRecordings(recordings)`**:
+* **`classifyRecordingWithSource(title, { host, staffEntries, moodleStaff })` & `reclassifyPanoptoRecordings(...)`**:
+  * Classification priority: (1) explicit user staff entries (`coursesPanoptoStaff`), (2) Moodle course staff (`Teacher` -> `'Lecture'`, `Teaching Assistant` -> `'Recitation'`), matching Hebrew Moodle names phonetically/via transliteration against English Panopto hosts (`doesHostMatchPersonName`), (3) title keyword regex fallback (`classifyRecordingType`).
+* **`filterAndDeduplicateRecordings(recordings, classificationOptions)`**:
   * Filters out invalid/garbage titles (`len < 5` or lacking alphabetical/Hebrew characters) and accidental short clips (`durationSeconds < 60`).
-  * Classifies each recording into `'lecture'`, `'recitation'`, or `'general'` (`classifyRecordingType`).
+  * Preserves `host`, resolved `type`, and `classificationSource`.
   * Deduplicates recitation series by stripping part suffixes (`חלק 1`, `part 2`, `a-c`), grouping by base recitation title, and keeping all parts from the most recent `publishedDate`.
 * **`matchRecordingToSection(recording, courseSectionNames)`**:
   * Associates each recording with a Moodle course section by matching lecture/recitation/week numbers or title keyword overlap, falling back to `'הקלטות פנופטו'`.

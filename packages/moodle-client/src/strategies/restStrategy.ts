@@ -10,6 +10,12 @@ import {
   RawMoodleQuizAttempt,
 } from '../moodleApi.js';
 import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
+import type { CourseStaffMember, PanoptoRecordingType } from '../types.js';
+import {
+  extractMultilangPersonNames,
+  normalizePersonName,
+  parseCourseStaffRole,
+} from '../panoptoScraper.js';
 
 export class RestMoodleStrategy implements IMoodleStrategy {
   public readonly name = 'REST';
@@ -94,13 +100,13 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       throw new UnsupportedStrategyError('REST', wsfunction, 'No wstoken provided');
     }
 
-    const allParams = {
+    const allParams: Record<string, any> = {
       wstoken: token,
       wsfunction,
       moodlewsrestformat: 'json',
       ...params,
-      moodlewssettingfilter: 'true',
-      moodlewssettinglang: this.lang,
+      moodlewssettingfilter: params?.moodlewssettingfilter ?? 'true',
+      moodlewssettinglang: params?.moodlewssettinglang ?? this.lang,
     };
 
     let url = baseUrlOverride || this.getRestEndpoint();
@@ -467,5 +473,74 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       console.warn('[RestMoodleStrategy] Malformed JSON in NOODLE_SYNC_DATA calendar event:', parseErr);
       return null;
     }
+  }
+
+  public async getCourseStaff(courseId: number): Promise<CourseStaffMember[]> {
+    const currentYear = new Date().getFullYear();
+    const year = this.courseYearMap.get(courseId);
+    const urlHost = new URL(this.context.baseUrl).origin;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
+    const tokenOverride = year && year !== currentYear ? this.archiveTokens.get(year) : undefined;
+
+    const users = await this.apiCall(
+      'core_enrol_get_enrolled_users',
+      {
+        courseid: courseId,
+        // Keep raw multilang blocks so Hebrew names remain accessible even when Moodle UI lang is 'en'
+        moodlewssettingfilter: 'false',
+      },
+      'POST',
+      baseUrlOverride,
+      tokenOverride
+    );
+
+    if (!Array.isArray(users)) {
+      return [];
+    }
+
+    const staff: CourseStaffMember[] = [];
+    const seen = new Set<string>();
+
+    for (const u of users) {
+      const roles: any[] = Array.isArray(u?.roles) ? u.roles : [];
+      let resolvedRole: PanoptoRecordingType | null = null;
+      let rawRoleLabel = '';
+
+      for (const r of roles) {
+        const parsed = parseCourseStaffRole(r?.shortname, r?.name);
+        if (parsed === 'Lecture') {
+          resolvedRole = 'Lecture';
+          rawRoleLabel = String(r?.name || r?.shortname || '');
+          break;
+        }
+        if (parsed === 'Recitation' && !resolvedRole) {
+          resolvedRole = 'Recitation';
+          rawRoleLabel = String(r?.name || r?.shortname || '');
+        }
+      }
+
+      if (!resolvedRole) continue;
+
+      const rawFullname =
+        String(u?.fullname || '').trim() ||
+        `${String(u?.firstname || '').trim()} ${String(u?.lastname || '').trim()}`.trim();
+      if (!rawFullname) continue;
+
+      const { primary, english } = extractMultilangPersonNames(rawFullname);
+      const displayName = primary || english || rawFullname;
+      const dedupeKey = normalizePersonName(displayName) || String(u?.id || '');
+      if (!dedupeKey || seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      staff.push({
+        userId: typeof u?.id === 'number' ? u.id : undefined,
+        fullName: displayName,
+        englishName: english,
+        role: resolvedRole,
+        rawRole: rawRoleLabel || undefined,
+      });
+    }
+
+    return staff;
   }
 }

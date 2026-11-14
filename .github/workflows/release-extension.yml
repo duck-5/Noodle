@@ -1,0 +1,105 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Verify, Package, Sign & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Mozilla AMO signing secrets
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          if [ -z "$WEB_EXT_API_KEY" ] || [ -z "$WEB_EXT_API_SECRET" ]; then
+            echo "::error::Missing required repository secrets WEB_EXT_API_KEY and/or WEB_EXT_API_SECRET for Mozilla AMO signing (web-ext sign)."
+            exit 1
+          fi
+
+      - name: Verify tag matches manifest/package versions & extract changelog notes
+        id: meta
+        run: node scripts/verify-release.mjs --tag "${{ github.ref_name }}" --output "${{ runner.temp }}/release-notes.md"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package Chrome, Firefox & AMO source ZIP archives
+        run: python3 scripts/build-releases.py --version "${{ steps.meta.outputs.version }}"
+
+      - name: Verify Chrome & Firefox manifest build parity
+        run: pnpm test:parity
+
+      - name: Sign Firefox extension (.xpi) via Mozilla AMO
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+          AMO_CHANNEL: ${{ vars.AMO_CHANNEL || 'listed' }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir -p releases/xpi-tmp
+          EXTRA_ARGS=()
+          if [ "$AMO_CHANNEL" = "listed" ]; then
+            EXTRA_ARGS+=(--upload-source-code "releases/noodle-v${VERSION}-source-code.zip")
+          fi
+          pnpm dlx web-ext sign \
+            --source-dir apps/extension/dist-firefox \
+            --artifacts-dir releases/xpi-tmp \
+            --channel="$AMO_CHANNEL" \
+            --approval-timeout=900000 \
+            "${EXTRA_ARGS[@]}"
+
+          XPI_FILE="$(find releases/xpi-tmp -maxdepth 1 -type f -name '*.xpi' | head -n 1)"
+          if [ -z "$XPI_FILE" ]; then
+            echo "::error::web-ext sign did not produce an .xpi file in releases/xpi-tmp"
+            exit 1
+          fi
+          mv "$XPI_FILE" "releases/noodle-v${VERSION}-firefox.xpi"
+          rm -rf releases/xpi-tmp
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd releases
+          sha256sum *.zip *.xpi > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload workflow release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: noodle-release-v${{ steps.meta.outputs.version }}
+          path: releases/
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "releases/noodle-v${VERSION}-chrome.zip" \
+            "releases/noodle-v${VERSION}-firefox.zip" \
+            "releases/noodle-v${VERSION}-firefox.xpi" \
+            "releases/noodle-v${VERSION}-source-code.zip" \
+            "releases/SHA256SUMS.txt" \
+            --title "Noodle ${{ github.ref_name }}" \
+            --notes-file "${{ runner.temp }}/release-notes.md" \
+            --verify-tag

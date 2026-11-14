@@ -107,7 +107,7 @@ Noodle/
 
 ### B. Chrome Extension (`apps/extension`)
 *   **Bundler:** Vite paired with the CRXJS plugin, which parses `manifest.json` to automatically compile background service worker files, assets, and popup HTML pages.
-*   **CORS Bypass:** Bypasses Moodle's lack of CORS headers by declaring `*://moodle.tau.ac.il/*` in the manifest's `host_permissions` block. This elevates network requests originating from the **Service Worker** background context.
+*   **CORS Bypass:** Bypasses Moodle's lack of CORS headers by declaring `*://moodle.tau.ac.il/*` in the manifest's `host_permissions` block. Target-specific store update check origins (`https://chromewebstore.google.com/*` + `https://clients2.google.com/*` for Chrome; `https://addons.mozilla.org/*` for Firefox) are scoped per target build in `apps/extension/vite.config.ts` so `src/shared/versionChecker.ts` can inspect store versions cleanly from the background worker.
 *   **Ephemeral Service Worker Lifecycle & Message Passing:** Chrome MV3 Service Workers are designed to shut down after 30 seconds of inactivity. To prevent data corruption and connection drops:
     1.  No in-memory state is maintained globally across worker lifecycles.
     2.  State is fully restored from `chrome.storage.local` at the beginning of any event handler (alarm or message).
