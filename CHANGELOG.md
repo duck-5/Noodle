@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-14
+
 ### Added
 - **Dedicated Recordings Tab (`הקלטות`) & Weekly/Monthly Calendar Modes (`apps/extension`, `TC-REC-TAB-01`)**:
   - Added a dedicated **Recordings** (`הקלטות`) sidebar tab (`RecordingsTab`) using inline SVG vector icons (zero unicode emojis), featuring search by title/host/course, course filter `<select>`, status/type filter checkboxes (`Unwatched`, `Watched`, `Lectures`, `Recitations`, `Hidden`), inline `Track host` toggling via `partitionPanoptoRecordingsByTrackedHosts` / `doesRecordingMatchStaffEntries`, watched toggles, dismiss/restore via `ExtensionSettings.hiddenRecordings` and collapsible `.panopto-hidden-recordings-drawer`, plus disabled/permission CTA banners.
