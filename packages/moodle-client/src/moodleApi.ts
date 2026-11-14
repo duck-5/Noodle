@@ -89,6 +89,7 @@ export interface RawMoodleAssignment {
   visible?: number;
   uservisible?: boolean;
   visibleoncoursepage?: number;
+  availabilityinfo?: string;
   customdata?: string;
   completion?: number;
   completiondata?: {
@@ -138,6 +139,10 @@ export interface RawMoodleQuiz {
   grademethod?: number;
   grade?: number;
   sumgrades?: number;
+  visible?: number;
+  uservisible?: boolean;
+  visibleoncoursepage?: number;
+  availabilityinfo?: string;
   completion?: number;
   completiondata?: {
     state?: number;
@@ -248,6 +253,7 @@ export interface RawCourseModule {
   visible?: number;
   uservisible?: boolean;
   visibleoncoursepage?: number;
+  availabilityinfo?: string;
   customdata?: string;
   completion?: number;
   completiondata?: {
@@ -272,6 +278,7 @@ export interface RawCourseSection {
   section?: number;
   visible?: number;
   uservisible?: boolean;
+  availabilityinfo?: string;
   summary?: string;
   summaryformat?: number;
   component?: string;

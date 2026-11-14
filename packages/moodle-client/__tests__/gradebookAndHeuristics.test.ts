@@ -346,4 +346,166 @@ describe('Gradebook Fidelity & Heuristics (Phase 4)', () => {
     expect(result.links).toHaveLength(1);
     expect(result.links![0].linkKind).toBe('github');
   });
+
+  it('auto-dismisses locked/restricted assignments and quizzes while keeping unlocked or submitted items visible', async () => {
+    fetchMock.mockImplementation(async (url: string | URL, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const body = init?.body?.toString() || '';
+
+      if (body.includes('wsfunction=core_webservice_get_site_info') || urlStr.includes('wsfunction=core_webservice_get_site_info')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ userid: 42, fullname: 'Test User' }),
+        };
+      }
+      if (body.includes('wsfunction=core_enrol_get_users_courses') || urlStr.includes('wsfunction=core_enrol_get_users_courses')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            { id: 101, shortname: '0321-3300-01 - גלים אור ואופטיקה', fullname: 'גלים אור ואופטיקה' },
+          ],
+        };
+      }
+      if (body.includes('wsfunction=mod_assign_get_assignments') || urlStr.includes('wsfunction=mod_assign_get_assignments')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            courses: [
+              {
+                id: 101,
+                fullname: 'גלים אור ואופטיקה',
+                shortname: '0321-3300-01',
+                assignments: [
+                  {
+                    id: 15,
+                    cmid: 1015,
+                    course: 101,
+                    name: 'תרגיל בית 2 - קבוצה 5',
+                    duedate: 1800000000,
+                    cutoffdate: 0,
+                    allowsubmissionsfromdate: 1700000000,
+                  },
+                ],
+              },
+            ],
+          }),
+        };
+      }
+      if (body.includes('wsfunction=mod_quiz_get_quizzes_by_courses') || urlStr.includes('wsfunction=mod_quiz_get_quizzes_by_courses')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ quizzes: [] }),
+        };
+      }
+      if (body.includes('wsfunction=gradereport_user_get_grade_items') || urlStr.includes('wsfunction=gradereport_user_get_grade_items')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ usergrades: [{ courseid: 101, userid: 42, gradeitems: [] }] }),
+        };
+      }
+      if (body.includes('wsfunction=core_course_get_contents') || urlStr.includes('wsfunction=core_course_get_contents')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 500,
+              name: 'תרגילי בית',
+              section: 1,
+              modules: [
+                {
+                  id: 1014,
+                  instance: 14,
+                  name: 'תרגיל בית 2 - קבוצה 4',
+                  modname: 'assign',
+                  uservisible: false,
+                  availabilityinfo: 'זמין רק למי ש: שייך ל <strong>קבוצה 4</strong>',
+                  dates: [
+                    {
+                      label: 'מסתיים:',
+                      timestamp: 1794308400,
+                      dataid: 'duedate',
+                    },
+                  ],
+                },
+                {
+                  id: 1015,
+                  instance: 15,
+                  name: 'תרגיל בית 2 - קבוצה 5',
+                  modname: 'assign',
+                  uservisible: true,
+                  url: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1015',
+                  availabilityinfo: 'זמין למי ששייך לקבוצה 5 (גלוי לך)',
+                },
+                {
+                  id: 1016,
+                  instance: 16,
+                  name: 'בוחן קבוצה 4 נעול',
+                  modname: 'quiz',
+                  uservisible: false,
+                  availabilityinfo: 'זמין רק למי ש: שייך ל קבוצה 4',
+                  dates: [
+                    {
+                      label: 'נסגר:',
+                      timestamp: 1794308400,
+                      dataid: 'timeclose',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (body.includes('wsfunction=mod_assign_get_submission_status') || urlStr.includes('wsfunction=mod_assign_get_submission_status')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ lastattempt: { submission: { status: 'new' } } }),
+        };
+      }
+      if (body.includes('wsfunction=mod_quiz_get_user_attempts') || urlStr.includes('wsfunction=mod_quiz_get_user_attempts')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ attempts: [] }),
+        };
+      }
+
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+
+    const result = await runSync(
+      'fake-token',
+      [101],
+      () => {},
+      'https://moodle.tau.ac.il',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { enableScraping: false }
+    );
+
+    const lockedAssign = result.assignments.find((a) => a.cmid === 1014);
+    expect(lockedAssign).toBeDefined();
+    expect(lockedAssign?.name).toBe('תרגיל בית 2 - קבוצה 4');
+    expect(lockedAssign?.isHidden).toBe(true);
+    expect(lockedAssign?.deadline).toBe(new Date(1794308400 * 1000).toISOString());
+
+    const unlockedAssign = result.assignments.find((a) => a.cmid === 1015);
+    expect(unlockedAssign).toBeDefined();
+    expect(unlockedAssign?.name).toBe('תרגיל בית 2 - קבוצה 5');
+    expect(unlockedAssign?.isHidden).toBeUndefined();
+
+    const lockedQuiz = result.assignments.find((a) => a.cmid === 1016);
+    expect(lockedQuiz).toBeDefined();
+    expect(lockedQuiz?.isHidden).toBe(true);
+    expect(lockedQuiz?.deadline).toBe(new Date(1794308400 * 1000).toISOString());
+  });
 });

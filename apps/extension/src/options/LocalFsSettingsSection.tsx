@@ -27,6 +27,40 @@ interface LocalFsSettingsSectionProps {
   highlightForTour?: boolean;
 }
 
+const FolderIcon = ({ size = 14 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0 }}
+  >
+    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+  </svg>
+);
+
+const WarningTriangleIcon = ({ size = 14 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0 }}
+  >
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
 export function LocalFsSettingsSection({
   config,
   status,
@@ -321,8 +355,9 @@ export function LocalFsSettingsSection({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontSize: '0.84rem', fontWeight: 600 }}>{t('local_fs_root_folder_label')}</div>
-              <div className="local-fs-path-chip" dir="ltr">
-                📁 {config.rootLabel || t('local_fs_no_folder_selected')}
+              <div className="local-fs-path-chip" dir="ltr" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FolderIcon size={13} />
+                <span>{config.rootLabel || t('local_fs_no_folder_selected')}</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -402,8 +437,10 @@ export function LocalFsSettingsSection({
                     className="secondary-btn btn-sm"
                     disabled={busy}
                     onClick={() => scanFolderInputRef.current?.click()}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
                   >
-                    📂 {t('local_fs_firefox_scan_btn')}
+                    <FolderIcon size={13} />
+                    <span>{t('local_fs_firefox_scan_btn')}</span>
                   </button>
                 </div>
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
@@ -507,8 +544,9 @@ export function LocalFsSettingsSection({
               )}
 
               {status.lastError && (
-                <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: '0.6rem' }}>
-                  ⚠️ {status.lastError}
+                <div style={{ fontSize: '0.78rem', color: '#fca5a5', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <WarningTriangleIcon size={13} />
+                  <span>{status.lastError}</span>
                 </div>
               )}
 
@@ -693,8 +731,9 @@ export function LocalFsSettingsSection({
               style={{ maxWidth: '460px', padding: '1.75rem' }}
               onClick={(ev) => ev.stopPropagation()}
             >
-              <h3 id="local-fs-subfolder-modal-title" style={{ marginTop: 0 }}>
-                ⚠️ {t('local_fs_change_subfolder_modal_title')}
+              <h3 id="local-fs-subfolder-modal-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <WarningTriangleIcon size={18} />
+                <span>{t('local_fs_change_subfolder_modal_title')}</span>
               </h3>
               <p style={{ margin: '0.9rem 0 1.4rem 0', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
                 {t('local_fs_change_subfolder_modal_desc')

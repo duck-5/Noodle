@@ -232,6 +232,7 @@ export function aggregateUnifiedCourseItems(
   // Assignments & Quizzes
   const rawAssigns = (syncResult.assignments || []).filter((a) => memberCourseIds.has(a.courseId));
   const seenAssignKeys = new Set<string>();
+  const seenAssignByNameKey = new Map<string, number>();
   const assignments: Assignment[] = [];
   for (const a of rawAssigns) {
     const key = a.uid || `${a.activityType || 'assign'}:${a.id}`;
@@ -241,11 +242,24 @@ export function aggregateUnifiedCourseItems(
       seenAssignKeys.add(key);
       if (cmidKey) seenAssignKeys.add(cmidKey);
       seenAssignKeys.add(nameKey);
+      seenAssignByNameKey.set(nameKey, assignments.length);
       assignments.push({
         ...a,
         sourceCourseId: a.courseId,
         courseId: unifiedCourse.id,
       });
+    } else if (!seenAssignKeys.has(key) && (!cmidKey || !seenAssignKeys.has(cmidKey)) && seenAssignByNameKey.has(nameKey)) {
+      const existingIdx = seenAssignByNameKey.get(nameKey)!;
+      const existing = assignments[existingIdx];
+      if (existing && existing.isHidden && !a.isHidden) {
+        seenAssignKeys.add(key);
+        if (cmidKey) seenAssignKeys.add(cmidKey);
+        assignments[existingIdx] = {
+          ...a,
+          sourceCourseId: a.courseId,
+          courseId: unifiedCourse.id,
+        };
+      }
     }
   }
 

@@ -204,6 +204,30 @@ describe('Category 7 & 4: Grades, Progress & Course Statistics', () => {
       expect(result.calculatedItems[0].id).toBe(1);
       expect(result.overallGpa).toBe('90.00');
       expect(result.courseGroups[101].average).toBe('90.00');
+
+      // If an auto-hidden assignment (isHidden: true) has a published grade and is explicitly unhidden via unhidden:<uid>, it must be included
+      const withUnhiddenAutoHidden = calculateGradesSummary({
+        assignments: [
+          ...mockAssignments,
+          createMockAssignment({
+            id: 6,
+            courseId: 101,
+            courseName: 'CS 101',
+            name: 'Auto-Hidden But Unhidden Graded HW 6',
+            isHidden: true,
+            grade: 80,
+            gradeMax: 100,
+            status: 'Submitted',
+          }),
+        ],
+        hiddenIdentifiers: ['unhidden:assign:6'],
+        completedIdentifiers: [3],
+        uncompletedIdentifiers: [],
+        now: fixedNow,
+      });
+
+      expect(withUnhiddenAutoHidden.totalCalculatedItems).toBe(2);
+      expect(withUnhiddenAutoHidden.overallGpa).toBe('85.00');
     });
   });
 

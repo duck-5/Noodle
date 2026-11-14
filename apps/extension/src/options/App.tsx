@@ -2260,6 +2260,17 @@ export default function App() {
     await setSettings(updated);
   }
 
+  async function handleToggleRecordingHidden(recordingId: string) {
+    if (!settings || !recordingId) return;
+    const currentHidden = settings.hiddenRecordings || [];
+    const updatedHidden = currentHidden.includes(recordingId)
+      ? currentHidden.filter((id) => id !== recordingId)
+      : [...currentHidden, recordingId];
+    const updated = { ...settings, hiddenRecordings: updatedHidden };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
   async function handleToggleCompleted(assignmentId: number | string) {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
@@ -2323,6 +2334,7 @@ export default function App() {
       (x) => matchesActivityIdentifier(assignmentId, x) || x.uid === assignmentId || getActivityUid(x) === String(assignmentId) || x.id === assignmentId || x.id === Number(assignmentId)
     );
     const targetKey = assign ? getActivityUid(assign) : String(assignmentId);
+    const unhiddenKey = `unhidden:${targetKey}`;
     const currentHidden = settings.hiddenAssignments || [];
 
     const isCurrentlyHidden = isActivityHidden(
@@ -2331,10 +2343,16 @@ export default function App() {
     );
 
     let updatedHidden = currentHidden.filter(
-      (id) => !matchesActivityIdentifier(id, assign || { id: Number(assignmentId) })
+      (id) =>
+        id !== unhiddenKey &&
+        !matchesActivityIdentifier(id, assign || { id: Number(assignmentId) })
     );
     if (!isCurrentlyHidden) {
-      updatedHidden.push(targetKey);
+      if (!assign?.isHidden) {
+        updatedHidden.push(targetKey);
+      }
+    } else if (assign?.isHidden) {
+      updatedHidden.push(unhiddenKey);
     }
 
     const updated = { ...settings, hiddenAssignments: updatedHidden };
@@ -2345,15 +2363,32 @@ export default function App() {
     }
   }
 
-  async function handleToggleHideAllCourse(courseAssignIds: number[], shouldHideAll: boolean) {
+  async function handleToggleHideAllCourse(courseAssignIds: Array<number | string>, shouldHideAll: boolean) {
     if (!settings) return;
-    const currentHidden = new Set(settings.hiddenAssignments || []);
-    if (shouldHideAll) {
-      courseAssignIds.forEach((id) => currentHidden.add(id));
-    } else {
-      courseAssignIds.forEach((id) => currentHidden.delete(id));
+    const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
+    let updatedHidden = [...(settings.hiddenAssignments || [])];
+
+    for (const rawId of courseAssignIds) {
+      const assign = rawAssignments.find(
+        (x) => matchesActivityIdentifier(rawId, x) || x.uid === rawId || getActivityUid(x) === String(rawId) || x.id === rawId || x.id === Number(rawId)
+      );
+      const targetKey = assign ? getActivityUid(assign) : String(rawId);
+      const unhiddenKey = `unhidden:${targetKey}`;
+      updatedHidden = updatedHidden.filter(
+        (id) =>
+          id !== unhiddenKey &&
+          !matchesActivityIdentifier(id, assign || { id: Number(rawId) })
+      );
+      if (shouldHideAll) {
+        if (!assign?.isHidden) {
+          updatedHidden.push(targetKey);
+        }
+      } else if (assign?.isHidden) {
+        updatedHidden.push(unhiddenKey);
+      }
     }
-    const updated = { ...settings, hiddenAssignments: Array.from(currentHidden) };
+
+    const updated = { ...settings, hiddenAssignments: Array.from(new Set(updatedHidden)) };
     setSettingsState(updated);
     await setSettings(updated);
     if (updated.googleTasksEnabled) {
@@ -2365,7 +2400,7 @@ export default function App() {
     const mockCourseId = 9999;
     const mockCourseName = '0368-2161 מבני נתונים (קורס לדוגמה)';
     const mockColor = '#8b5cf6';
-    const mockCustomName = 'מבני נתונים 📚';
+    const mockCustomName = 'מבני נתונים';
     const nowTime = Date.now();
 
     const mockMeetings: ZoomMeeting[] = [
@@ -3147,6 +3182,7 @@ export default function App() {
                     onToggleHidden={handleToggleHidden}
                     onToggleHideAllCourse={handleToggleHideAllCourse}
                     onToggleRecordingWatched={handleToggleRecordingWatched}
+                    onToggleRecordingHidden={handleToggleRecordingHidden}
                     onToggleTrackHost={handleToggleTrackHost}
                     onUpdatePanopto={handleUpdateCoursePanopto}
                     onUpdatePanoptoStaff={handleUpdateCoursePanoptoStaff}
@@ -3194,6 +3230,7 @@ export default function App() {
                     onSyncGoogle={handleSyncGoogleTasks}
                     googleSyncLoading={googleSyncLoading}
                     onToggleRecordingWatched={handleToggleRecordingWatched}
+                    onToggleRecordingHidden={handleToggleRecordingHidden}
                     groupedCoursesResult={groupedCoursesResult}
                     hasPanoptoPermission={hasPanoptoPermission}
                     onRequestPanoptoPermission={handleRequestPanoptoPermission}
@@ -3460,7 +3497,10 @@ export default function App() {
         {showDisconnectModal && (
           <div className="modal-overlay">
             <div className="modal-content glass-panel" style={{ maxWidth: '450px', padding: '2rem' }}>
-              <h3 style={{ marginTop: 0 }}>⚠️ {t('disconnect_account')}</h3>
+              <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <WarningTriangleIcon size={18} style={{ color: 'var(--error-color, #ef4444)' }} />
+                <span>{t('disconnect_account')}</span>
+              </h3>
               <p style={{ margin: '1rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.4' }}>
                 {t('disconnect_warning')}
               </p>
@@ -3496,7 +3536,7 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <span style={{ fontSize: '2rem' }}>🧪</span>
+                <FlaskIcon size={26} style={{ color: 'var(--primary)' }} />
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{t('lab_detected_title')}</h3>
                   <span style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>{labModalCourse.name}</span>
@@ -3849,6 +3889,221 @@ const ExitIcon = ({ size = 16 }: { size?: number }) => (
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
     <polyline points="16 17 21 12 16 7" />
     <line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+);
+
+const LinkIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+
+const WarningTriangleIcon = ({ size = 16, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+const ShieldIcon = ({ size = 15, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
+
+const FlaskIcon = ({ size = 20, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="M10 2v7.31" />
+    <path d="M14 9.3V1.99" />
+    <path d="M8.5 2h7" />
+    <path d="M14 9.3a6.5 6.5 0 1 1-4 0" />
+    <path d="M5.52 16h12.96" />
+  </svg>
+);
+
+const MegaphoneIcon = ({ size = 16, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="m3 11 18-5v12L3 14v-3z" />
+    <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+  </svg>
+);
+
+const QuestionCircleIcon = ({ size = 12, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
+const StarIcon = ({ size = 13, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+  </svg>
+);
+
+const MessageSquareIcon = ({ size = 13, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+const GitHubIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+    <path d="M9 18c-4.51 2-5-2-7-2" />
+  </svg>
+);
+
+const BugIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <path d="m8 2 1.88 1.88" />
+    <path d="M14.12 3.88 16 2" />
+    <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
+    <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6" />
+    <path d="M12 20v-9" />
+    <path d="M6.53 9C4.6 8.8 3 7.1 3 5" />
+    <path d="M6 13H2" />
+    <path d="M3 21c0-2.1 1.7-3.9 3.8-4" />
+    <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
+    <path d="M22 13h-4" />
+    <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4" />
+  </svg>
+);
+
+const MailIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <rect width="20" height="16" x="2" y="4" rx="2" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+  </svg>
+);
+
+const PlusIcon = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ verticalAlign: 'middle', flexShrink: 0, ...style }}
+  >
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
 
@@ -4301,7 +4556,10 @@ function CoursesConfigTable({
                       textAlign: lang === 'he' ? 'right' : 'left',
                     }}
                   >
-                    🛡️ {lang === 'he' ? 'הדרכות בטיחות ומנהלה' : 'Safety & Administrative Tutorials'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <ShieldIcon size={15} />
+                      <span>{lang === 'he' ? 'הדרכות בטיחות ומנהלה' : 'Safety & Administrative Tutorials'}</span>
+                    </span>
                   </h4>
                   <div className={`courses-settings-table${showPanoptoCol ? ' with-panopto-col' : ''}`}>
                     <div className="table-header">
@@ -4548,6 +4806,7 @@ function DashboardTab({
   onSyncGoogle,
   googleSyncLoading,
   onToggleRecordingWatched,
+  onToggleRecordingHidden,
   groupedCoursesResult,
   hasPanoptoPermission = true,
   onRequestPanoptoPermission,
@@ -4582,6 +4841,7 @@ function DashboardTab({
   onSyncGoogle?: () => void;
   googleSyncLoading?: boolean;
   onToggleRecordingWatched?: (recordingId: string) => void;
+  onToggleRecordingHidden?: (recordingId: string) => void;
   groupedCoursesResult?: GroupedCoursesResult;
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
@@ -4699,9 +4959,11 @@ function DashboardTab({
   // Panopto catch-up recordings (unwatched recordings for tracked courses, oldest first)
   const isPanoptoActive = !!settings?.panoptoEnabled;
   const watchedRecordingsSet = new Set(settings?.watchedRecordings || []);
+  const hiddenRecordingsSet = new Set(settings?.hiddenRecordings || []);
   const trackedSet = new Set(trackedCourseIds);
   const allTrackedRecordings = (syncResult?.recordings || []).filter((r) => {
     if (!trackedSet.has(r.courseId)) return false;
+    if (hiddenRecordingsSet.has(r.id)) return false;
     const configuredStaff =
       settings?.coursesPanoptoStaff?.[r.courseId] ||
       (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(r.courseId)];
@@ -4737,7 +4999,7 @@ function DashboardTab({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+            <WarningTriangleIcon size={20} style={{ color: 'var(--accent-red, #ef4444)' }} />
             <div>
               <div style={{ fontWeight: 600, color: 'var(--accent-red, #ef4444)' }}>
                 {t('google_tasks_auth_warning_title')}
@@ -4777,7 +5039,7 @@ function DashboardTab({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <span style={{ fontSize: '1.4rem' }}>🎬</span>
+            <VideoIcon size={20} />
             <div>
               <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)' }}>
                 {t('panopto_perm_needed_title')}
@@ -4816,7 +5078,7 @@ function DashboardTab({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <span style={{ fontSize: '1.4rem' }}>📁</span>
+            <FolderIcon size={20} style={{ color: 'var(--accent-orange, #f59e0b)' }} />
             <div>
               <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)' }}>
                 {t('local_fs_perm_banner_title')}
@@ -4902,19 +5164,23 @@ function DashboardTab({
                                 <ClockIcon size={12} />
                               </span>
                             )}
-                            {/* TODO(hide-task-button): Wire up click handler to hide/dismiss irrelevant or bonus tasks (e.g. via onToggleHidden / hiddenAssignments). */}
-                            <button
-                              type="button"
-                              className="queue-delete-btn"
-                              title={t('queue_delete_task_tooltip')}
-                              aria-label={t('queue_delete_task_tooltip')}
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                // TODO(hide-task-button): Dismiss/hide task on click instead of no-op once irrelevant-task hiding behavior is implemented.
-                              }}
-                            >
-                              <TrashIcon size={13} />
-                            </button>
+                            {onToggleHidden && (
+                              <button
+                                type="button"
+                                className="queue-delete-btn"
+                                title={t('queue_delete_task_tooltip')}
+                                aria-label={t('queue_delete_task_tooltip')}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  if (expandedUpcomingId === task.id) {
+                                    setExpandedUpcomingId(null);
+                                  }
+                                  onToggleHidden(task.uid || getActivityUid(task));
+                                }}
+                              >
+                                <TrashIcon size={13} />
+                              </button>
+                            )}
                             <span
                               className="queue-item-chevron"
                               style={{
@@ -5153,7 +5419,10 @@ function DashboardTab({
                     </button>
                     <button
                       className="secondary-btn btn-xs"
-                      onClick={() => onToggleHidden && onToggleHidden(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask))}
+                      onClick={() => {
+                        onToggleHidden && onToggleHidden(selectedUpcomingTask.uid || getActivityUid(selectedUpcomingTask));
+                        setExpandedUpcomingId(null);
+                      }}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                     >
                       {isSelectedTaskHidden ? <EyeIcon size={11} /> : <EyeOffIcon size={11} />}
@@ -5192,8 +5461,9 @@ function DashboardTab({
 
             <div className="queue-list">
               {unwatchedCatchUpRecordings.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
-                  🎉 {t('all_recordings_watched')}
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                  <CheckIcon size={14} />
+                  <span>{t('all_recordings_watched')}</span>
                 </div>
               ) : (
                 unwatchedCatchUpRecordings.map((rec) => {
@@ -5246,6 +5516,20 @@ function DashboardTab({
                             >
                               {t('Watch now')}
                             </a>
+                          )}
+                          {onToggleRecordingHidden && (
+                            <button
+                              type="button"
+                              className="queue-delete-btn"
+                              title={t('hide_recording')}
+                              aria-label={t('hide_recording')}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                onToggleRecordingHidden(rec.id);
+                              }}
+                            >
+                              <TrashIcon size={13} />
+                            </button>
                           )}
                         </div>
                       </div>
@@ -5383,7 +5667,8 @@ function DashboardTab({
                 EMPTY_STAFF_ENTRIES;
               const courseRecordings = partitionPanoptoRecordingsByTrackedHosts(
                 rawCourseRecordings,
-                courseStaffEntries
+                courseStaffEntries,
+                settings?.hiddenRecordings
               ).visible;
               const courseLectures = courseRecordings.filter((r) => r.type === 'Lecture');
               const totalLectures = courseLectures.length;
@@ -5652,6 +5937,7 @@ function AssignmentsTab({
   const [filterPast, setFilterPast] = useState<boolean>(false);
   const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
   const [filterHidden, setFilterHidden] = useState<boolean>(false);
+  const [showHiddenAssigns, setShowHiddenAssigns] = useState<boolean>(false);
   const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
   const [showCalendarView, setShowCalendarView] = useState<boolean>(() => {
     try {
@@ -5682,8 +5968,10 @@ function AssignmentsTab({
           setFilterPending(true);
         }
       }
+    } else if (expandedAssignId === targetAssign.id) {
+      setExpandedAssignId(null);
     }
-    onToggleHidden?.(targetAssign.id);
+    onToggleHidden?.(targetAssign.uid || getActivityUid(targetAssign));
   };
 
   // Sort assignments by due date ascending
@@ -5696,7 +5984,7 @@ function AssignmentsTab({
     return a.id - b.id;
   });
 
-  const filteredAssigns = sortedAssigns.filter((a) => {
+  const courseAndSearchMatchedAssigns = sortedAssigns.filter((a) => {
     if (filterCourseId && a.courseId !== filterCourseId) return false;
 
     const courseDisplayName = getCourseDisplayName(a.courseId, a.courseName).toLowerCase();
@@ -5706,6 +5994,14 @@ function AssignmentsTab({
       return false;
     }
 
+    return true;
+  });
+
+  const hiddenFeedAssigns = courseAndSearchMatchedAssigns.filter((a) =>
+    isActivityHidden(a, settings?.hiddenAssignments)
+  );
+
+  const filteredAssigns = courseAndSearchMatchedAssigns.filter((a) => {
     const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
     const isCompleted = Boolean(a.isCompleted);
     const hasDeadlinePassed = a.deadline ? new Date(a.deadline) < now : false;
@@ -5923,12 +6219,8 @@ function AssignmentsTab({
       <div className={`assignments-workspace ${showCalendarView ? 'calendar-open' : ''}`}>
         {/* Assignments Feed */}
         <div className="assignments-feed assignments-list">
-          {filteredAssigns.length === 0 ? (
-            <div className="glass-panel empty-state" style={{ padding: '2.5rem', textAlign: 'center' }}>
-              {t('no_assignments_match')}
-            </div>
-          ) : (
-            filteredAssigns.map((a) => {
+          {(() => {
+            const renderAssignmentCard = (a: EnhancedAssignment) => {
               const color = getCourseColor(a.courseId);
               const { badgeClass, deadlineText } = getDueTextAndClass(
                 a.deadline || null,
@@ -6020,6 +6312,20 @@ function AssignmentsTab({
                       )}
                       {isCompleted && (
                         <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>✓</span>
+                      )}
+                      {onToggleHidden && (
+                        <button
+                          type="button"
+                          className="queue-delete-btn"
+                          title={isHidden ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                          aria-label={isHidden ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            handleToggleHiddenWithFilter(a);
+                          }}
+                        >
+                          {isHidden ? <EyeIcon size={13} /> : <TrashIcon size={13} />}
+                        </button>
                       )}
                       <button
                         className="card-chevron-btn btn-ghost"
@@ -6226,8 +6532,47 @@ function AssignmentsTab({
                   </div>
                 </div>
               );
-            })
-          )}
+            };
+
+            return (
+              <>
+                {filteredAssigns.length === 0 ? (
+                  <div className="glass-panel empty-state" style={{ padding: '2.5rem', textAlign: 'center' }}>
+                    {t('no_assignments_match')}
+                  </div>
+                ) : (
+                  filteredAssigns.map((a) => renderAssignmentCard(a))
+                )}
+
+                {!filterHidden && hiddenFeedAssigns.length > 0 && (
+                  <div className="panopto-hidden-recordings-wrapper hidden-assignments-drawer-wrapper" style={{ marginTop: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="secondary-btn btn-xs panopto-toggle-hidden-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowHiddenAssigns((prev) => !prev);
+                      }}
+                      style={{ alignSelf: 'flex-start' }}
+                    >
+                      {showHiddenAssigns ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+                      <span>
+                        {showHiddenAssigns
+                          ? `${t('hide_hidden_assignments')} (${hiddenFeedAssigns.length})`
+                          : `${t('show_hidden_assignments')} (${hiddenFeedAssigns.length})`}
+                      </span>
+                    </button>
+
+                    {showHiddenAssigns && (
+                      <div className="panopto-hidden-recordings-drawer hidden-assignments-drawer" style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {hiddenFeedAssigns.map((a) => renderAssignmentCard(a))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {/* Interactive Calendar Side Pane */}
@@ -7110,8 +7455,9 @@ function SettingsTab({
             }}
           >
             <div>
-              <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem' }}>
-                ⚠️ {t('panopto_perm_needed_title')}
+              <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <WarningTriangleIcon size={15} />
+                <span>{t('panopto_perm_needed_title')}</span>
               </div>
               <div style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.2rem' }}>
                 {t('panopto_perm_needed_desc')}
@@ -7162,7 +7508,7 @@ function SettingsTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1.2rem' }}>🎓</span>
+                <GradesIcon size={18} />
                 <strong>{lang === 'he' ? 'חשבון מודל מחובר' : 'Connected Moodle Account'}</strong>
                 <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>
                   ● {lang === 'he' ? 'פעיל' : 'Active'}
@@ -7191,7 +7537,7 @@ function SettingsTab({
                 className="secondary-btn btn-xs"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
-                <span>🐙</span>
+                <GitHubIcon size={14} />
                 <span>{t('github_repo_link')}</span>
               </a>
               <a
@@ -7201,7 +7547,7 @@ function SettingsTab({
                 className="secondary-btn btn-xs"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
-                <span>🐛</span>
+                <BugIcon size={14} />
                 <span>{t('github_issues_link')}</span>
               </a>
               <a
@@ -7209,7 +7555,7 @@ function SettingsTab({
                 className="secondary-btn btn-xs"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
-                <span>✉️</span>
+                <MailIcon size={14} />
                 <span>noodle.d3v@gmail.com</span>
               </a>
               <a
@@ -7219,7 +7565,7 @@ function SettingsTab({
                 className="primary-btn btn-xs"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
-                <span>⭐</span>
+                <StarIcon size={14} />
                 <span>{t('review_extension_label')}</span>
               </a>
             </div>
@@ -7243,7 +7589,7 @@ function SettingsTab({
           onClick={onAddMockCourse}
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          <span>➕</span>
+          <PlusIcon size={14} />
           <span>{t('add_mock_course')}</span>
         </button>
       </div>
@@ -7281,6 +7627,7 @@ function CourseDetailView({
   onToggleHidden,
   onToggleHideAllCourse,
   onToggleRecordingWatched,
+  onToggleRecordingHidden,
   onToggleTrackHost,
   onUpdatePanopto,
   onUpdatePanoptoStaff,
@@ -7314,8 +7661,9 @@ function CourseDetailView({
   onToggleShowHiddenPanopto?: (courseId: number) => void;
   onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number | string) => void;
-  onToggleHideAllCourse?: (courseAssignIds: number[], shouldHideAll: boolean) => void;
+  onToggleHideAllCourse?: (courseAssignIds: Array<number | string>, shouldHideAll: boolean) => void;
   onToggleRecordingWatched?: (recordingId: string) => void;
+  onToggleRecordingHidden?: (recordingId: string) => void;
   onToggleTrackHost?: (courseId: number, hostName: string, recordingType: PanoptoRecordingType) => void;
   onUpdatePanopto?: (courseId: number, panoptoVal: string, triggerSync?: boolean) => void;
   onUpdatePanoptoStaff?: (courseId: number, entries: CoursePanoptoStaffEntry[]) => void;
@@ -7334,6 +7682,19 @@ function CourseDetailView({
     ''
   );
   const [expandedDetailAssignId, setExpandedDetailAssignId] = useState<number | null>(null);
+  const [showHiddenSidebarAssigns, setShowHiddenSidebarAssigns] = useState<boolean>(false);
+  const [expandedHiddenSectionKeys, setExpandedHiddenSectionKeys] = useState<Set<string>>(() => new Set());
+  const toggleHiddenSectionAssigns = (secKey: string) => {
+    setExpandedHiddenSectionKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(secKey)) {
+        next.delete(secKey);
+      } else {
+        next.add(secKey);
+      }
+      return next;
+    });
+  };
   const [activeSectionName, setActiveSectionName] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string> | null>(null);
   const [activeTopSectionId, setActiveTopSectionId] = useState<number | null>(null);
@@ -7438,16 +7799,19 @@ function CourseDetailView({
   const courseDisplayName = getCourseDisplayName(courseId, rawCourseName);
 
   // Filter items for this course
-  const allCourseAssignments = assignments.filter((a) => a.courseId === courseId);
+  const allCourseAssignments = useMemo(
+    () => assignments.filter((a) => a.courseId === courseId),
+    [assignments, courseId]
+  );
   const courseAssignments = allCourseAssignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
   const courseGradeSummary = useMemo(() => {
     return calculateGradesSummary({
-      assignments: courseAssignments,
+      assignments: allCourseAssignments,
       hiddenIdentifiers: settings?.hiddenAssignments,
       completedIdentifiers: settings?.completedAssignments,
       uncompletedIdentifiers: settings?.uncompletedAssignments,
     });
-  }, [courseAssignments, settings?.hiddenAssignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
+  }, [allCourseAssignments, settings?.hiddenAssignments, settings?.completedAssignments, settings?.uncompletedAssignments]);
   const thisCourseGroup = courseGradeSummary.courseGroups[courseId];
   const courseFiles = files.filter((f) => f.courseId === courseId);
   const courseRecordings = (settings?.panoptoEnabled ? (recordings || []) : []).filter((r) => r.courseId === courseId);
@@ -7457,13 +7821,16 @@ function CourseDetailView({
     EMPTY_STAFF_ENTRIES;
   const partitionedCourseRecordings = partitionPanoptoRecordingsByTrackedHosts(
     courseRecordings,
-    coursePanoptoStaffEntries
+    coursePanoptoStaffEntries,
+    settings?.hiddenRecordings
   );
   const isHiddenPanoptoOpen = showHiddenPanoptoCourseIds?.has(courseId) ?? false;
   const watchedSet = new Set(settings?.watchedRecordings || []);
+  const hiddenRecordingsSet = new Set(settings?.hiddenRecordings || []);
 
   const renderRecordingRow = (rec: PanoptoRecording, rIdx: number, isHiddenRow = false) => {
     const isWatched = watchedSet.has(rec.id);
+    const isManuallyHidden = hiddenRecordingsSet.has(rec.id);
     const isRecitation = rec.type === 'Recitation';
     const isHostTracked =
       Boolean(rec.host) &&
@@ -7477,8 +7844,10 @@ function CourseDetailView({
         <div className="recording-left-info">
           <span
             className={`item-type-tag recording-type-tag ${isRecitation ? 'recitation-tag' : 'lecture-tag'}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
           >
-            {isRecitation ? `📐 ${t('panopto_recitation_badge')}` : `🎬 ${t('panopto_lecture_badge')}`}
+            {isRecitation ? <BookOpenIcon size={11} /> : <VideoIcon size={11} />}
+            <span>{isRecitation ? t('panopto_recitation_badge') : t('panopto_lecture_badge')}</span>
           </span>
           <span className="item-name recording-title-span">{rec.title}</span>
           {rec.host && (
@@ -7551,6 +7920,20 @@ function CourseDetailView({
           >
             {t('watch_recording')}
           </a>
+          {onToggleRecordingHidden && (!isHiddenRow || isManuallyHidden) && (
+            <button
+              type="button"
+              className="queue-delete-btn"
+              title={isHiddenRow ? t('unhide_recording') : t('hide_recording')}
+              aria-label={isHiddenRow ? t('unhide_recording') : t('hide_recording')}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onToggleRecordingHidden(rec.id);
+              }}
+            >
+              {isHiddenRow ? <EyeIcon size={12} /> : <TrashIcon size={12} />}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -7562,14 +7945,17 @@ function CourseDetailView({
   ) => {
     const { visible: visibleRecs, hidden: hiddenRecs } = partitionPanoptoRecordingsByTrackedHosts(
       listRecordings,
-      coursePanoptoStaffEntries
+      coursePanoptoStaffEntries,
+      settings?.hiddenRecordings
     );
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {visibleRecs.length === 0 && hiddenRecs.length > 0 ? (
           <div className="panopto-all-hidden-notice">
-            {t('panopto_all_recordings_hidden_by_host')}
+            {coursePanoptoStaffEntries.length > 0 && hiddenRecs.some((r) => !hiddenRecordingsSet.has(r.id))
+              ? t('panopto_all_recordings_hidden_by_host')
+              : t('panopto_all_recordings_hidden')}
           </div>
         ) : (
           <div
@@ -7631,7 +8017,7 @@ function CourseDetailView({
     if (f.sectionId) sectionIdsWithContent.add(f.sectionId);
     if (f.sectionName) sectionNamesWithContent.add(f.sectionName);
   });
-  courseAssignments.forEach((a) => {
+  allCourseAssignments.forEach((a) => {
     if (a.sectionId) sectionIdsWithContent.add(a.sectionId);
     if (a.sectionName) sectionNamesWithContent.add(a.sectionName);
   });
@@ -7728,7 +8114,7 @@ function CourseDetailView({
     }
   });
 
-  courseAssignments.forEach((a) => {
+  allCourseAssignments.forEach((a) => {
     getSection(a.sectionName || 'General', a.sectionName || 'General', false, a.sectionId).assignments.push(a);
   });
 
@@ -7861,7 +8247,7 @@ function CourseDetailView({
                 background: 'rgba(59, 130, 246, 0.08)',
                 border: '1px solid rgba(59, 130, 246, 0.25)',
               }}>
-                <span style={{ fontSize: '1.2rem' }}>📢</span>
+                <MegaphoneIcon size={18} style={{ color: '#60a5fa' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#60a5fa' }}>
                     {lang === 'he' ? 'לוח מודעות והודעות' : 'Announcements & News'}
@@ -8227,7 +8613,10 @@ function CourseDetailView({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>🎬 {t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <VideoIcon size={16} />
+                        <span>{t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
+                      </span>
                       <span className="badge-beta">{lang === 'he' ? 'בטא' : 'BETA'}</span>
                     </h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -8288,8 +8677,9 @@ function CourseDetailView({
                         }}
                       >
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem' }}>
-                            ⚠️ {t('panopto_perm_needed_title')}
+                          <div style={{ fontWeight: 600, color: 'var(--accent-orange, #f59e0b)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <WarningTriangleIcon size={15} />
+                            <span>{t('panopto_perm_needed_title')}</span>
                           </div>
                           <div style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.2rem' }}>
                             {t('panopto_perm_needed_desc')}
@@ -8381,9 +8771,13 @@ function CourseDetailView({
                           border: '1px solid rgba(239, 68, 68, 0.3)',
                           borderRadius: '6px',
                           padding: '0.5rem 0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
                         }}
                       >
-                        ⚠️ {coursePanoptoError.message}
+                        <WarningTriangleIcon size={14} />
+                        <span>{coursePanoptoError.message}</span>
                       </div>
                     )}
 
@@ -8476,7 +8870,10 @@ function CourseDetailView({
                     fontSize: '0.8rem'
                   }}
                 >
-                  {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <GlobeIcon size={12} />
+                    <span>{lang === 'he' ? 'הכל' : 'All'}</span>
+                  </span>
                 </button>
                 {visibleTopSections.map((sec) => {
                   const isActive = activeTopSectionId === sec.id;
@@ -8559,7 +8956,10 @@ function CourseDetailView({
                       fontSize: '0.8rem'
                     }}
                   >
-                    🎥 {t('panopto_lectures_section')}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <VideoIcon size={12} />
+                      <span>{t('panopto_lectures_section')}</span>
+                    </span>
                   </button>
                 )}
                 {sectionsMap.has('__panopto_recitations__') && (
@@ -8577,7 +8977,10 @@ function CourseDetailView({
                       fontSize: '0.8rem'
                     }}
                   >
-                    🎥 {t('panopto_recitations_section')}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <VideoIcon size={12} />
+                      <span>{t('panopto_recitations_section')}</span>
+                    </span>
                   </button>
                 )}
                 {sectionsList.length > 0 && (
@@ -8701,7 +9104,10 @@ function CourseDetailView({
                   fontSize: '0.8rem'
                 }}
               >
-                {lang === 'he' ? 'הכל 🌐' : 'All 🌐'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <GlobeIcon size={12} />
+                  <span>{lang === 'he' ? 'הכל' : 'All'}</span>
+                </span>
               </button>
               {visibleSectionsList.map(([secName, secContent]) => {
                 const isActive = activeSectionName === secName;
@@ -8848,7 +9254,178 @@ function CourseDetailView({
                       </span>
                     </h5>
 
-                    {!isCollapsed && (
+                    {!isCollapsed && (() => {
+                      const visibleSecAssigns = content.assignments.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
+                      const hiddenSecAssigns = content.assignments.filter((a) => isActivityHidden(a, settings?.hiddenAssignments));
+                      const isSecHiddenAssignsOpen = expandedHiddenSectionKeys.has(secName);
+
+                      const renderSectionAssignmentItem = (a: Assignment, isHiddenItem = false) => {
+                        const { badgeClass, deadlineText } = getDueTextAndClass(
+                          a.deadline || null,
+                          lang,
+                          settings?.assignmentGreenDaysThreshold,
+                          settings?.assignmentYellowDaysThreshold,
+                          false,
+                          a.status
+                        );
+
+                        return (
+                          <div key={a.id} className="section-assignment-item" style={isHiddenItem ? { opacity: 0.75 } : undefined}>
+                            <div className="item-meta-row">
+                              <span
+                                className={`item-type-tag ${a.activityType === 'quiz' ? 'quiz-tag' : 'assign-tag'}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                              >
+                                {a.activityType === 'quiz' ? <QuestionCircleIcon size={11} /> : <AssignmentsIcon size={11} />}
+                                <span>{a.activityType === 'quiz' ? (lang === 'he' ? 'בוחן' : 'Quiz') : (lang === 'he' ? 'מטלה' : 'Assignment')}</span>
+                              </span>
+                              {isHiddenItem && (
+                                <span
+                                  className="assignment-tag tag-hidden"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    color: 'var(--danger)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    padding: '0.15rem 0.45rem',
+                                    borderRadius: '4px',
+                                    fontSize: '0.72rem',
+                                  }}
+                                >
+                                  {t('hidden_tag')}
+                                </span>
+                              )}
+                              {a.timeLimitSeconds ? (
+                                <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <ClockIcon size={11} />
+                                  <span>{Math.round(a.timeLimitSeconds / 60)} {lang === 'he' ? "דק'" : 'min'}</span>
+                                </span>
+                              ) : null}
+                              {a.isBonus && (
+                                <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <StarIcon size={11} />
+                                  <span>{lang === 'he' ? 'בונוס' : 'Bonus'}</span>
+                                </span>
+                              )}
+                              {a.isLateSubmissionBox && (
+                                <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', borderColor: 'rgba(249, 115, 22, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <ClockIcon size={11} />
+                                  <span>{lang === 'he' ? 'הגשה באיחור' : 'Late Box'}</span>
+                                </span>
+                              )}
+                              {a.status === 'Submitted' ? (
+                                <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
+                              ) : (a as any).isCompleted ? (
+                                <span
+                                  className="badge badge-success"
+                                  style={{
+                                    background: 'rgba(16, 185, 129, 0.15)',
+                                    color: '#10b981',
+                                    borderColor: 'rgba(16, 185, 129, 0.3)',
+                                  }}
+                                >
+                                  {t('marked_as_done')}
+                                </span>
+                              ) : (
+                                <span className={`badge ${badgeClass}`}>{deadlineText}</span>
+                              )}
+                              {a.cutoffDate && hasGracePeriod(a) && (
+                                <span
+                                  className="grace-period-clock-icon"
+                                  title={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                                  aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                                >
+                                  <ClockIcon size={12} />
+                                </span>
+                              )}
+                            </div>
+                            <span className="item-name">
+                              {a.name}
+                              {a.feedback && (
+                                <div style={{ marginTop: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.3rem 0.55rem', borderRadius: '4px', borderInlineStart: '3px solid #10b981', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <MessageSquareIcon size={12} style={{ color: '#10b981' }} />
+                                  <span><strong>{lang === 'he' ? 'משוב:' : 'Feedback:'}</strong> {a.feedback}</span>
+                                </div>
+                              )}
+                              {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
+                                <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
+                                  {t('not_submitted_tag')}
+                                </span>
+                              )}
+                              {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
+                                <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                                  {t('submitted_tag')}
+                                </span>
+                              )}
+                            </span>
+                            <div className="item-actions" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.45rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
+                                  {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
+                                </a>
+                                {onToggleCompleted && (
+                                  <button
+                                    type="button"
+                                    className="secondary-btn btn-sm"
+                                    onClick={() => onToggleCompleted(a.uid || getActivityUid(a))}
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      padding: '0.2rem 0.55rem',
+                                      borderRadius: '6px',
+                                      background: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                      color: (a as any).isCompleted ? '#10b981' : 'var(--text-primary)',
+                                      borderColor: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    {(a as any).isCompleted ? '✓ ' + (lang === 'he' ? 'בוצע' : 'Done') : (lang === 'he' ? 'סמן כבוצע' : 'Mark as done')}
+                                  </button>
+                                )}
+                                {onToggleHidden && (
+                                  <button
+                                    type="button"
+                                    className="queue-delete-btn"
+                                    title={isHiddenItem ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                                    aria-label={isHiddenItem ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                                    onClick={(ev) => {
+                                      ev.stopPropagation();
+                                      if (expandedDetailAssignId === a.id) setExpandedDetailAssignId(null);
+                                      onToggleHidden(a.uid || getActivityUid(a));
+                                    }}
+                                  >
+                                    {isHiddenItem ? <EyeIcon size={13} /> : <TrashIcon size={13} />}
+                                  </button>
+                                )}
+                              </div>
+                              {a.attachments && a.attachments.length > 0 && (
+                                <div className="files-column-list">
+                                  {a.attachments.map((att, attIdx) => {
+                                    const downloadUrl = buildFileDownloadUrl(att.url, token);
+                                    const openUrl = buildFileOpenUrl(att.url, token);
+                                    return (
+                                      <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                        <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
+                                        <FileOpenAction
+                                          rawUrl={att.url}
+                                          openUrl={openUrl}
+                                          fileName={att.name}
+                                          token={token}
+                                          t={t}
+                                          lang={lang}
+                                        />
+                                        <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                          <DownloadIcon size={12} />
+                                        </a>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      };
+
+                      return (
                       <div className="section-node-body" style={{ marginTop: '1rem' }}>
                         {isSectionContentEmpty(content) && (
                           <div
@@ -8884,135 +9461,9 @@ function CourseDetailView({
                             {content.summaryHtml}
                           </div>
                         )}
-                        {content.assignments.length > 0 && (
+                        {visibleSecAssigns.length > 0 && (
                           <div className="section-assignments-list">
-                            {content.assignments.map((a) => {
-                              const { badgeClass, deadlineText } = getDueTextAndClass(
-                                a.deadline || null,
-                                lang,
-                                settings?.assignmentGreenDaysThreshold,
-                                settings?.assignmentYellowDaysThreshold,
-                                false,
-                                a.status
-                              );
-
-                              return (
-                                <div key={a.id} className="section-assignment-item">
-                                  <div className="item-meta-row">
-                                    <span className={`item-type-tag ${a.activityType === 'quiz' ? 'quiz-tag' : 'assign-tag'}`}>
-                                      {a.activityType === 'quiz' ? `❓ ${lang === 'he' ? 'בוחן' : 'Quiz'}` : `📝 ${lang === 'he' ? 'מטלה' : 'Assignment'}`}
-                                    </span>
-                                    {a.timeLimitSeconds ? (
-                                      <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', borderColor: 'rgba(99, 102, 241, 0.3)' }}>
-                                        ⏱️ {Math.round(a.timeLimitSeconds / 60)} {lang === 'he' ? "דק'" : 'min'}
-                                      </span>
-                                    ) : null}
-                                    {a.isBonus && (
-                                      <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', borderColor: 'rgba(234, 179, 8, 0.3)' }}>
-                                        ✨ {lang === 'he' ? 'בונוס' : 'Bonus'}
-                                      </span>
-                                    )}
-                                    {a.isLateSubmissionBox && (
-                                      <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', borderColor: 'rgba(249, 115, 22, 0.3)' }}>
-                                        ⏳ {lang === 'he' ? 'הגשה באיחור' : 'Late Box'}
-                                      </span>
-                                    )}
-                                    {a.status === 'Submitted' ? (
-                                      <span className="badge badge-success">{lang === 'he' ? 'הוגש!' : 'Submitted!'}</span>
-                                    ) : (a as any).isCompleted ? (
-                                      <span
-                                        className="badge badge-success"
-                                        style={{
-                                          background: 'rgba(16, 185, 129, 0.15)',
-                                          color: '#10b981',
-                                          borderColor: 'rgba(16, 185, 129, 0.3)',
-                                        }}
-                                      >
-                                        {t('marked_as_done')}
-                                      </span>
-                                    ) : (
-                                      <span className={`badge ${badgeClass}`}>{deadlineText}</span>
-                                    )}
-                                    {a.cutoffDate && hasGracePeriod(a) && (
-                                      <span
-                                        className="grace-period-clock-icon"
-                                        title={formatGracePeriodTooltip(a.cutoffDate, lang)}
-                                        aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
-                                      >
-                                        <ClockIcon size={12} />
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="item-name">
-                                    {a.name}
-                                    {a.feedback && (
-                                      <div style={{ marginTop: '0.35rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.3rem 0.55rem', borderRadius: '4px', borderInlineStart: '3px solid #10b981' }}>
-                                        💬 <strong>{lang === 'he' ? 'משוב:' : 'Feedback:'}</strong> {a.feedback}
-                                      </div>
-                                    )}
-                                    {(a as any).isCompleted && !(a as any).isMoodleSubmitted && (
-                                      <span className="assignment-tag tag-not-submitted" title={lang === 'he' ? 'הושלם ידנית - לא הוגש במודל' : 'Manually completed - not submitted in Moodle'}>
-                                        {t('not_submitted_tag')}
-                                      </span>
-                                    )}
-                                    {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
-                                      <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
-                                        {t('submitted_tag')}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <div className="item-actions" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.45rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                                      <a href={a.link} target="_blank" rel="noreferrer" className="action-link-btn" data-moodle-link="true">
-                                        {lang === 'he' ? 'פתח במודל ↗' : 'Open in Moodle ↗'}
-                                      </a>
-                                      {onToggleCompleted && (
-                                        <button
-                                          type="button"
-                                          className="secondary-btn btn-sm"
-                                          onClick={() => onToggleCompleted(a.uid || getActivityUid(a))}
-                                          style={{
-                                            fontSize: '0.75rem',
-                                            padding: '0.2rem 0.55rem',
-                                            borderRadius: '6px',
-                                            background: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                            color: (a as any).isCompleted ? '#10b981' : 'var(--text-primary)',
-                                            borderColor: (a as any).isCompleted ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                                            cursor: 'pointer'
-                                          }}
-                                        >
-                                          {(a as any).isCompleted ? '✓ ' + (lang === 'he' ? 'בוצע' : 'Done') : (lang === 'he' ? 'סמן כבוצע' : 'Mark as done')}
-                                        </button>
-                                      )}
-                                    </div>
-                                    {a.attachments && a.attachments.length > 0 && (
-                                      <div className="files-column-list">
-                                        {a.attachments.map((att, attIdx) => {
-                                          const downloadUrl = buildFileDownloadUrl(att.url, token);
-                                          const openUrl = buildFileOpenUrl(att.url, token);
-                                          return (
-                                            <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                              <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
-                                              <FileOpenAction
-                                                rawUrl={att.url}
-                                                openUrl={openUrl}
-                                                fileName={att.name}
-                                                token={token}
-                                                t={t}
-                                                lang={lang}
-                                              />
-                                              <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                                <DownloadIcon size={12} />
-                                              </a>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            {visibleSecAssigns.map((a) => renderSectionAssignmentItem(a, false))}
                           </div>
                         )}
 
@@ -9334,11 +9785,11 @@ function CourseDetailView({
                         {content.links && content.links.length > 0 && (
                           <div className="section-links-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
                             {content.links.map((lnk) => {
-                              let icon = '🔗';
-                              if (lnk.linkKind === 'drive') icon = '📁';
-                              else if (lnk.linkKind === 'github') icon = '💻';
-                              else if (lnk.linkKind === 'zoom') icon = '📹';
-                              else if (lnk.linkKind === 'panopto') icon = '🎬';
+                              let linkIconNode: React.ReactNode = <LinkIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                              if (lnk.linkKind === 'drive') linkIconNode = <FolderIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                              else if (lnk.linkKind === 'github') linkIconNode = <GitHubIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                              else if (lnk.linkKind === 'zoom') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                              else if (lnk.linkKind === 'panopto') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
 
                               return (
                                 <div
@@ -9356,7 +9807,7 @@ function CourseDetailView({
                                   }}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                    <span>{icon}</span>
+                                    {linkIconNode}
                                     <span style={{ fontWeight: 500 }}>{lnk.name}</span>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -9378,8 +9829,50 @@ function CourseDetailView({
 
                         {content.recordings.length > 0 && renderPanoptoRecordingsBlock(content.recordings)}
 
+                        {hiddenSecAssigns.length > 0 && (
+                          <div
+                            className="panopto-hidden-recordings-wrapper hidden-assignments-drawer-wrapper section-hidden-assignments-wrapper"
+                            style={{
+                              marginTop:
+                                visibleSecAssigns.length > 0 ||
+                                content.files.length > 0 ||
+                                content.folders.length > 0 ||
+                                content.links.length > 0 ||
+                                content.recordings.length > 0
+                                  ? '0.75rem'
+                                  : '0',
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="secondary-btn btn-xs panopto-toggle-hidden-btn section-hidden-assignments-toggle"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleHiddenSectionAssigns(secName);
+                              }}
+                              style={{ alignSelf: 'flex-start' }}
+                            >
+                              {isSecHiddenAssignsOpen ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+                              <span>
+                                {isSecHiddenAssignsOpen
+                                  ? `${t('hide_hidden_assignments')} (${hiddenSecAssigns.length})`
+                                  : `${t('show_hidden_assignments')} (${hiddenSecAssigns.length})`}
+                              </span>
+                            </button>
+
+                            {isSecHiddenAssignsOpen && (
+                              <div
+                                className="panopto-hidden-recordings-drawer hidden-assignments-drawer section-hidden-assignments-drawer section-assignments-list"
+                                style={{ marginTop: '0.5rem' }}
+                              >
+                                {hiddenSecAssigns.map((a) => renderSectionAssignmentItem(a, true))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -9391,240 +9884,303 @@ function CourseDetailView({
         <div className="detail-sidebar">
           {(() => {
             const allHidden = sortedCourseAssigns.length > 0 && sortedCourseAssigns.every((a) => isActivityHidden(a, settings?.hiddenAssignments));
-            return (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <h4 style={{ margin: 0 }}>{t('all_assignments_label')}</h4>
-                {sortedCourseAssigns.length > 0 && onToggleHideAllCourse && (
-                  <button
-                    className="secondary-btn btn-xs"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                    onClick={() => onToggleHideAllCourse(sortedCourseAssigns.map((a) => a.id), !allHidden)}
-                  >
-                    {allHidden ? <EyeIcon /> : <EyeOffIcon />}
-                    <span>{allHidden ? t('unhide_all_assignments') : t('hide_all_assignments')}</span>
-                  </button>
-                )}
-              </div>
-            );
-          })()}
-          {sortedCourseAssigns.length === 0 ? (
-            <div className="empty-state">{lang === 'he' ? 'לא נמצאו מטלות.' : 'No assignments found.'}</div>
-          ) : (
-            <div className="sidebar-assignments-list">
-              {sortedCourseAssigns.map((a) => {
-                const isExpanded = expandedDetailAssignId === a.id;
-                const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
-                const assignSubjectFiles = (files || []).filter(
-                  (f) =>
-                    f.courseId === courseId &&
-                    f.sectionName &&
-                    a.sectionName &&
-                    f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
-                );
+            const visibleSidebarAssigns = sortedCourseAssigns.filter((a) => !isActivityHidden(a, settings?.hiddenAssignments));
+            const hiddenSidebarAssigns = sortedCourseAssigns.filter((a) => isActivityHidden(a, settings?.hiddenAssignments));
 
-                return (
-                  <div
-                    key={a.id}
-                    className="sidebar-assign-card"
-                    style={{
-                      borderLeft: lang !== 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
-                      borderRight: lang === 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => setExpandedDetailAssignId(isExpanded ? null : a.id)}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                      <h6 style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap', margin: 0 }}>
-                        {a.name}
-                        {isHidden && (
-                          <span className="assignment-tag tag-hidden" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontSize: '0.72rem' }}>
-                            {t('hidden_tag')}
-                          </span>
-                        )}
-                        {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
-                          <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
-                            {t('submitted_tag')}
-                          </span>
-                        )}
-                      </h6>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+            const renderSidebarAssignCard = (a: Assignment) => {
+              const isExpanded = expandedDetailAssignId === a.id;
+              const isHidden = isActivityHidden(a, settings?.hiddenAssignments);
+              const assignSubjectFiles = (files || []).filter(
+                (f) =>
+                  f.courseId === courseId &&
+                  f.sectionName &&
+                  a.sectionName &&
+                  f.sectionName.trim().toLowerCase() === a.sectionName.trim().toLowerCase()
+              );
+
+              return (
+                <div
+                  key={a.id}
+                  className="sidebar-assign-card"
+                  style={{
+                    borderLeft: lang !== 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
+                    borderRight: lang === 'he' ? `3px solid ${(a as any).isCompleted || a.status === 'Submitted' ? '#10b981' : '#f59e0b'}` : undefined,
+                    cursor: 'pointer',
+                    opacity: isHidden ? 0.72 : 1,
+                  }}
+                  onClick={() => setExpandedDetailAssignId(isExpanded ? null : a.id)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <h6 style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap', margin: 0 }}>
+                      {a.name}
+                      {isHidden && (
+                        <span className="assignment-tag tag-hidden" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontSize: '0.72rem' }}>
+                          {t('hidden_tag')}
+                        </span>
+                      )}
+                      {!(a as any).isCompleted && (a as any).isMoodleSubmitted && (
+                        <span className="assignment-tag tag-submitted" title={lang === 'he' ? 'הוגש במודל - סומן לביצוע' : 'Submitted in Moodle - marked as To Do'}>
+                          {t('submitted_tag')}
+                        </span>
+                      )}
+                    </h6>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                      {onToggleHidden && (
+                        <button
+                          type="button"
+                          className="queue-delete-btn"
+                          title={isHidden ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                          aria-label={isHidden ? t('unhide_assignment') : t('queue_delete_task_tooltip')}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            if (expandedDetailAssignId === a.id) setExpandedDetailAssignId(null);
+                            onToggleHidden(a.uid || getActivityUid(a));
+                          }}
+                        >
+                          {isHidden ? <EyeIcon size={13} /> : <TrashIcon size={13} />}
+                        </button>
+                      )}
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
                         ▼
                       </span>
                     </div>
+                  </div>
 
-                    <p className="assign-status" style={{ margin: '0.35rem 0' }}>
-                      {t('status_label')}: {(a as any).isCompleted && !(a as any).isMoodleSubmitted ? t('marked_as_done') : lang === 'he' ? (a.status === 'Submitted' ? 'הוגש' : a.status === 'Not submitted' ? 'טרם הוגש' : a.status === 'Assigned' ? 'הוקצה' : a.status) : a.status}
+                  <p className="assign-status" style={{ margin: '0.35rem 0' }}>
+                    {t('status_label')}: {(a as any).isCompleted && !(a as any).isMoodleSubmitted ? t('marked_as_done') : lang === 'he' ? (a.status === 'Submitted' ? 'הוגש' : a.status === 'Not submitted' ? 'טרם הוגש' : a.status === 'Assigned' ? 'הוקצה' : a.status) : a.status}
+                  </p>
+                  {a.status === 'Submitted' ? (
+                    <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
+                      {lang === 'he' ? 'הוגש!' : 'Submitted!'} {a.grade !== null && a.gradeMax ? `(${a.grade}/${a.gradeMax})` : ''}
                     </p>
-                    {a.status === 'Submitted' ? (
-                      <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
-                        {lang === 'he' ? 'הוגש!' : 'Submitted!'} {a.grade !== null && a.gradeMax ? `(${a.grade}/${a.gradeMax})` : ''}
-                      </p>
-                    ) : (a as any).isCompleted ? (
-                      <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
-                        {t('marked_as_done')}
-                      </p>
-                    ) : a.deadline && (() => {
-                      const { timeColorClass } = getDueTextAndClass(
-                        a.deadline,
-                        lang,
-                        settings?.assignmentGreenDaysThreshold,
-                        settings?.assignmentYellowDaysThreshold,
-                        false,
-                        a.status
-                      );
-                      return (
-                        <p className={`assign-deadline ${timeColorClass}`} style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span>{lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}</span>
-                          {a.cutoffDate && hasGracePeriod(a) && (
-                            <span
-                              className="grace-period-clock-icon"
-                              title={formatGracePeriodTooltip(a.cutoffDate, lang)}
-                              aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
-                            >
-                              <ClockIcon size={13} />
-                            </span>
-                          )}
-                        </p>
-                      );
-                    })()}
-
-                    {/* Smoothly expandable body */}
-                    <div
-                      style={{
-                        maxHeight: isExpanded ? '650px' : '0px',
-                        opacity: isExpanded ? 1 : 0,
-                        overflow: 'hidden',
-                        transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin 0.2s ease',
-                        marginTop: isExpanded ? '0.75rem' : '0px',
-                        paddingTop: isExpanded ? '0.75rem' : '0px',
-                        borderTop: isExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {a.attachments && a.attachments.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
-                          <div className="files-column-list">
-                            {a.attachments.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
-                                  <FileOpenAction
-                                    rawUrl={att.url}
-                                    openUrl={openUrl}
-                                    fileName={att.name}
-                                    token={token}
-                                    t={t}
-                                    lang={lang}
-                                  />
-                                  <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                    <DownloadIcon size={12} />
-                                  </a>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Subject Files */}
-                      {assignSubjectFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
-                          <span className="files-column-label" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
-                            {t('subject_files')}:
-                          </span>
-                          <div className="files-column-list">
-                            {assignSubjectFiles.map((sf, sfIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
-                              const openUrl = buildFileOpenUrl(sf.fileUrl, token);
-                              return (
-                                <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
-                                  <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
-                                  <FileOpenAction
-                                    rawUrl={sf.fileUrl}
-                                    openUrl={openUrl}
-                                    fileName={sf.fileName}
-                                    token={token}
-                                    t={t}
-                                    lang={lang}
-                                  />
-                                  <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                    <DownloadIcon size={12} />
-                                  </a>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {a.submittedFiles && a.submittedFiles.length > 0 && (
-                        <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
-                          <span className="files-column-label" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
-                            {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
-                          </span>
-                          <div className="files-column-list">
-                            {a.submittedFiles.map((att, attIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(att.url, token);
-                              const openUrl = buildFileOpenUrl(att.url, token);
-                              return (
-                                <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item">
-                                  <CheckIcon size={11} />
-                                  <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
-                                  <FileOpenAction
-                                    rawUrl={att.url}
-                                    openUrl={openUrl}
-                                    fileName={att.name}
-                                    token={token}
-                                    t={t}
-                                    lang={lang}
-                                  />
-                                  <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
-                                    <DownloadIcon size={12} />
-                                  </a>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                        <button
-                          className="secondary-btn btn-xs"
-                          onClick={() => onToggleCompleted && onToggleCompleted(a.uid || getActivityUid(a))}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <CheckIcon size={12} />
-                          <span>{(a as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
-                        </button>
-                        <button
-                          className="secondary-btn btn-xs"
-                          onClick={() => onToggleHidden && onToggleHidden(a.uid || getActivityUid(a))}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          {isHidden ? <EyeIcon /> : <EyeOffIcon />}
-                          <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
-                        </button>
-                        {a.link && (
-                          <a
-                            href={a.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="primary-btn btn-xs action-submit-btn"
-                            data-moodle-link="true"
+                  ) : (a as any).isCompleted ? (
+                    <p className="assign-deadline due-green" style={{ color: '#10b981', margin: 0 }}>
+                      {t('marked_as_done')}
+                    </p>
+                  ) : a.deadline && (() => {
+                    const { timeColorClass } = getDueTextAndClass(
+                      a.deadline,
+                      lang,
+                      settings?.assignmentGreenDaysThreshold,
+                      settings?.assignmentYellowDaysThreshold,
+                      false,
+                      a.status
+                    );
+                    return (
+                      <p className={`assign-deadline ${timeColorClass}`} style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>{lang === 'he' ? 'מועד הגשה:' : 'Due:'} {new Date(a.deadline).toLocaleString()}</span>
+                        {a.cutoffDate && hasGracePeriod(a) && (
+                          <span
+                            className="grace-period-clock-icon"
+                            title={formatGracePeriodTooltip(a.cutoffDate, lang)}
+                            aria-label={formatGracePeriodTooltip(a.cutoffDate, lang)}
                           >
-                            <span>{t('submit_assignment')}</span>
-                          </a>
+                            <ClockIcon size={13} />
+                          </span>
                         )}
+                      </p>
+                    );
+                  })()}
+
+                  {/* Smoothly expandable body */}
+                  <div
+                    style={{
+                      maxHeight: isExpanded ? '650px' : '0px',
+                      opacity: isExpanded ? 1 : 0,
+                      overflow: 'hidden',
+                      transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin 0.2s ease',
+                      marginTop: isExpanded ? '0.75rem' : '0px',
+                      paddingTop: isExpanded ? '0.75rem' : '0px',
+                      borderTop: isExpanded ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {a.attachments && a.attachments.length > 0 && (
+                      <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
+                        <div className="files-column-list">
+                          {a.attachments.map((att, attIdx) => {
+                            const downloadUrl = buildFileDownloadUrl(att.url, token);
+                            const openUrl = buildFileOpenUrl(att.url, token);
+                            return (
+                              <div key={attIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{att.name}</span></span>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
+                    )}
+
+                    {/* Subject Files */}
+                    {assignSubjectFiles.length > 0 && (
+                      <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
+                        <span className="files-column-label" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                          {t('subject_files')}:
+                        </span>
+                        <div className="files-column-list">
+                          {assignSubjectFiles.map((sf, sfIdx) => {
+                            const downloadUrl = buildFileDownloadUrl(sf.fileUrl, token);
+                            const openUrl = buildFileOpenUrl(sf.fileUrl, token);
+                            return (
+                              <div key={sfIdx} className="submitted-file-chip file-column-item" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'var(--border)' }}>
+                                <span style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FolderIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{sf.fileName}</span></span>
+                                <FileOpenAction
+                                  rawUrl={sf.fileUrl}
+                                  openUrl={openUrl}
+                                  fileName={sf.fileName}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a href={downloadUrl} download={sf.fileName} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {a.submittedFiles && a.submittedFiles.length > 0 && (
+                      <div className="files-column-group" style={{ marginBottom: '0.6rem' }}>
+                        <span className="files-column-label" style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                          {lang === 'he' ? 'קבצים שהוגשו:' : 'Submitted files:'}
+                        </span>
+                        <div className="files-column-list">
+                          {a.submittedFiles.map((att, attIdx) => {
+                            const downloadUrl = buildFileDownloadUrl(att.url, token);
+                            const openUrl = buildFileOpenUrl(att.url, token);
+                            return (
+                              <div key={`sub-${attIdx}`} className="submitted-file-chip file-column-item">
+                                <CheckIcon size={11} />
+                                <span style={{ fontSize: '0.75rem' }}>{att.name}</span>
+                                <FileOpenAction
+                                  rawUrl={att.url}
+                                  openUrl={openUrl}
+                                  fileName={att.name}
+                                  token={token}
+                                  t={t}
+                                  lang={lang}
+                                />
+                                <a href={downloadUrl} download={att.name} target="_blank" rel="noreferrer" className="file-action-btn file-download-btn" title={t('download_file')} aria-label={t('download_file')}>
+                                  <DownloadIcon size={12} />
+                                </a>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        className="secondary-btn btn-xs"
+                        onClick={() => onToggleCompleted && onToggleCompleted(a.uid || getActivityUid(a))}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <CheckIcon size={12} />
+                        <span>{(a as any).isCompleted ? t('mark_incomplete') : t('mark_done')}</span>
+                      </button>
+                      <button
+                        className="secondary-btn btn-xs"
+                        onClick={() => {
+                          if (expandedDetailAssignId === a.id) setExpandedDetailAssignId(null);
+                          onToggleHidden && onToggleHidden(a.uid || getActivityUid(a));
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        {isHidden ? <EyeIcon /> : <EyeOffIcon />}
+                        <span>{isHidden ? t('unhide_assignment') : t('hide_assignment')}</span>
+                      </button>
+                      {a.link && (
+                        <a
+                          href={a.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="primary-btn btn-xs action-submit-btn"
+                          data-moodle-link="true"
+                        >
+                          <span>{t('submit_assignment')}</span>
+                        </a>
+                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              );
+            };
+
+            return (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <h4 style={{ margin: 0 }}>{t('all_assignments_label')}</h4>
+                  {sortedCourseAssigns.length > 0 && onToggleHideAllCourse && (
+                    <button
+                      className="secondary-btn btn-xs"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => onToggleHideAllCourse(sortedCourseAssigns.map((a) => a.uid || getActivityUid(a)), !allHidden)}
+                    >
+                      {allHidden ? <EyeIcon /> : <EyeOffIcon />}
+                      <span>{allHidden ? t('unhide_all_assignments') : t('hide_all_assignments')}</span>
+                    </button>
+                  )}
+                </div>
+                {sortedCourseAssigns.length === 0 ? (
+                  <div className="empty-state">{lang === 'he' ? 'לא נמצאו מטלות.' : 'No assignments found.'}</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {visibleSidebarAssigns.length > 0 ? (
+                      <div className="sidebar-assignments-list">
+                        {visibleSidebarAssigns.map((a) => renderSidebarAssignCard(a))}
+                      </div>
+                    ) : (
+                      <div className="empty-state" style={{ padding: '0.85rem', fontSize: '0.82rem' }}>
+                        {t('no_pending_assignments')}
+                      </div>
+                    )}
+
+                    {hiddenSidebarAssigns.length > 0 && (
+                      <div className="panopto-hidden-recordings-wrapper" style={{ marginTop: '0.25rem' }}>
+                        <button
+                          type="button"
+                          className="secondary-btn btn-xs panopto-toggle-hidden-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowHiddenSidebarAssigns((prev) => !prev);
+                          }}
+                          style={{ alignSelf: 'flex-start' }}
+                        >
+                          {showHiddenSidebarAssigns ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+                          <span>
+                            {showHiddenSidebarAssigns
+                              ? `${t('hide_hidden_assignments')} (${hiddenSidebarAssigns.length})`
+                              : `${t('show_hidden_assignments')} (${hiddenSidebarAssigns.length})`}
+                          </span>
+                        </button>
+
+                        {showHiddenSidebarAssigns && (
+                          <div className="panopto-hidden-recordings-drawer sidebar-assignments-list" style={{ marginTop: '0.5rem' }}>
+                            {hiddenSidebarAssigns.map((a) => renderSidebarAssignCard(a))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

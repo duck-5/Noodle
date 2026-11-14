@@ -120,7 +120,7 @@ graph LR
 | **TC-ASN-02** | Proximity Urgency Badges & Colors | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-03** | Submission Status & Grade Pill | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
 | **TC-ASN-04** | Manual Completion Toggle (Override) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
-| **TC-ASN-05** | Hide & Unhide Assignments | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard |
+| **TC-ASN-05** | Hide, Dismiss & Unhide Assignments Across All Views (Queue, Assignments Tab, Course Page & Locked Auto-Dismissal) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Dashboard, Assignments & Course Detail |
 | **TC-ASN-06** | Status Filter Tabs (Pending/Past/Done/Hidden) | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
 | **TC-ASN-07** | Global Assignment & Course Text Search | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
 | **TC-ASN-08** | In-Place Subject & Material Accordion | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Assignments |
