@@ -12,6 +12,9 @@ import type {
   CourseAnnouncement,
   ZoomMeeting,
   PanoptoRecording,
+  CourseStaffMember,
+  CoursePanoptoStaffEntry,
+  PanoptoRecordingType,
   GroupedCoursesResult,
   SyncProgressState,
 } from '@tautracker/moodle-client';
@@ -26,6 +29,11 @@ import {
   collapseRecurringMeetings,
   extractPanoptoFolderId,
   buildPanoptoFolderUrl,
+  reclassifyPanoptoRecordings,
+  doesRecordingMatchStaffEntries,
+  partitionPanoptoRecordingsByTrackedHosts,
+  toggleTrackedHostEntry,
+  normalizePersonName,
   downloadFolderAsZip,
   groupEnrolledCourses,
   expandTrackedCourseIds,
@@ -48,6 +56,8 @@ import {
   setTrackedCourseIds,
   getCachedSyncResult,
   setCachedSyncResult,
+  getCachedCourseStaff,
+  mergeCachedCourseStaff,
   getSettings,
   setSettings,
   getMoodleCredentials,
@@ -60,6 +70,11 @@ import {
   DEFAULT_LOCAL_FS_CONFIG,
   DEFAULT_LOCAL_FS_STATUS,
   getEffectiveTheme,
+  getStoreUpdateStatus,
+  getDismissedUpdateVersion,
+  setDismissedUpdateVersion,
+  STORE_UPDATE_STATUS_KEY,
+  DISMISSED_UPDATE_VERSION_KEY,
 } from '../shared/storage.js';
 import type {
   ExtensionSettings,
@@ -76,7 +91,11 @@ import {
   logoutOnBackground,
   resumeLocalFsSyncOnBackground,
   reconcileLocalFsOnBackground,
+  fetchCourseStaffOnBackground,
+  checkStoreUpdateOnBackground,
 } from '../shared/messaging.js';
+import { compareVersions, type StoreVersionCheckResult } from '../shared/versionChecker.js';
+import { PanoptoStaffEditor, CourseStaffHostColumnCell } from './PanoptoStaffEditor.js';
 import { getDueTextAndClass, formatGracePeriodTooltip } from '../shared/dateUtils.js';
 import { getInlineMimeType } from '../shared/mimeUtils.js';
 import { createFileSystemProvider, isFirefoxExtensionRuntime } from '../services/fs/FileSystemProvider.js';
@@ -86,6 +105,8 @@ import { translations } from '../shared/i18n';
 
 import './App.css';
 import logoImg from '../assets/logo.png';
+
+const EMPTY_STAFF_ENTRIES: CoursePanoptoStaffEntry[] = [];
 
 interface GroupedCourses {
   semesterKey: string;
@@ -706,11 +727,27 @@ export default function App() {
   const [assignmentFilterCourseId, setAssignmentFilterCourseId] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [showHiddenZoomCourseIds, setShowHiddenZoomCourseIds] = useState<Set<number>>(new Set());
+  const [showHiddenPanoptoCourseIds, setShowHiddenPanoptoCourseIds] = useState<Set<number>>(new Set());
+  const [cachedCourseStaff, setCachedCourseStaff] = useState<Record<number, CourseStaffMember[]>>({});
+  const [loadingStaffCourseIds, setLoadingStaffCourseIds] = useState<Set<number>>(new Set());
+  const autoFetchedStaffCourseIdsRef = useRef<Set<number>>(new Set());
   const [labModalCourse, setLabModalCourse] = useState<{ id: number; name: string } | null>(null);
   const [pendingLabHideCourseIds, setPendingLabHideCourseIds] = useState<number[]>([]);
 
   const handleToggleShowHiddenZoom = (courseId: number) => {
     setShowHiddenZoomCourseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleShowHiddenPanopto = (courseId: number) => {
+    setShowHiddenPanoptoCourseIds((prev) => {
       const next = new Set(prev);
       if (next.has(courseId)) {
         next.delete(courseId);
@@ -788,10 +825,16 @@ export default function App() {
     }
   }, [toast]);
 
+  const trackedCourseIdsRef = useRef(trackedCourseIds);
+  trackedCourseIdsRef.current = trackedCourseIds;
+
   useEffect(() => {
-    if (tourStep >= 0 && tourStep <= 5) {
+    if (tourStep >= 0 && tourStep <= 4) {
       setActiveTab('dashboard');
       setSelectedCourseId(null);
+    } else if (tourStep === 5) {
+      setActiveTab('dashboard');
+      setSelectedCourseId(trackedCourseIdsRef.current[0] ?? null);
     } else if (tourStep === 6) {
       setActiveTab('assignments');
       setSelectedCourseId(null);
@@ -807,6 +850,13 @@ export default function App() {
     }
   }, [tourStep]);
 
+  const handleStartTour = () => {
+    setSelectedCourseId(null);
+    setActiveTab('dashboard');
+    setShowTour(true);
+    setTourStep(0);
+  };
+
   const handleCloseTour = async () => {
     setShowTour(false);
     setTourStep(-1);
@@ -814,6 +864,56 @@ export default function App() {
     setSelectedCourseId(null);
     await browser.storage.local.set({ hasSeenTour: true });
   };
+
+  // Store Version Checker States
+  const [storeUpdateStatus, setStoreUpdateStatus] = useState<StoreVersionCheckResult | null>(null);
+  const [dismissedUpdateVersion, setDismissedUpdateVersionState] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [cached, dismissed] = await Promise.all([
+        getStoreUpdateStatus(),
+        getDismissedUpdateVersion(),
+      ]);
+      if (!active) return;
+      if (cached) setStoreUpdateStatus(cached);
+      if (dismissed) setDismissedUpdateVersionState(dismissed);
+
+      const res = await checkStoreUpdateOnBackground(false);
+      if (!active) return;
+      if (res?.success && res.result?.latestVersion) {
+        setStoreUpdateStatus(res.result);
+      }
+    })();
+
+    const onStorageChange = (changes: Record<string, browser.Storage.StorageChange>, areaName: string) => {
+      if (areaName !== 'local') return;
+      if (changes[STORE_UPDATE_STATUS_KEY]) {
+        setStoreUpdateStatus((changes[STORE_UPDATE_STATUS_KEY].newValue as StoreVersionCheckResult) || null);
+      }
+      if (changes[DISMISSED_UPDATE_VERSION_KEY]) {
+        setDismissedUpdateVersionState((changes[DISMISSED_UPDATE_VERSION_KEY].newValue as string) || null);
+      }
+    };
+    browser.storage.onChanged.addListener(onStorageChange);
+    return () => {
+      active = false;
+      browser.storage.onChanged.removeListener(onStorageChange);
+    };
+  }, []);
+
+  const handleDismissStoreUpdate = async (version: string) => {
+    setDismissedUpdateVersionState(version);
+    await setDismissedUpdateVersion(version);
+  };
+
+  const currentManifestVersion = browser.runtime.getManifest()?.version || '0.0.0';
+  const showSidebarUpdateBanner = Boolean(
+    storeUpdateStatus?.latestVersion &&
+    dismissedUpdateVersion !== storeUpdateStatus.latestVersion &&
+    compareVersions(storeUpdateStatus.latestVersion, currentManifestVersion) > 0
+  );
 
   // Onboarding States
   const [moodleUsername, setMoodleUsername] = useState<string>('');
@@ -1038,6 +1138,9 @@ export default function App() {
       }
       if (msg.type === 'SYNC_PARTIAL') {
         if (msg.partial && typeof msg.partial === 'object') {
+          if (msg.partial.courseStaff && Object.keys(msg.partial.courseStaff).length > 0) {
+            setCachedCourseStaff((prev) => ({ ...prev, ...msg.partial.courseStaff }));
+          }
           setSyncResult((prev) => ({
             ...prev,
             syncedAt: msg.partial.syncedAt || prev?.syncedAt || new Date().toISOString(),
@@ -1050,6 +1153,9 @@ export default function App() {
             links: msg.partial.links ?? prev?.links ?? [],
             announcements: msg.partial.announcements ?? prev?.announcements ?? [],
             gradeSummaries: msg.partial.gradeSummaries ?? prev?.gradeSummaries ?? {},
+            ...(msg.partial.courseStaff ?? prev?.courseStaff
+              ? { courseStaff: msg.partial.courseStaff ?? prev?.courseStaff }
+              : {}),
             errors: msg.partial.errors ?? prev?.errors ?? [],
           }));
         } else {
@@ -1077,10 +1183,13 @@ export default function App() {
           setIsSyncWindowCollapsed(false);
         }, 2500);
         // Re-read settings/trackedCourseIds from storage in case sync applied remote changes
-        Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult()]).then(([ids, extSettings, cached]) => {
+        Promise.all([getTrackedCourseIds(), getSettings(), getCachedSyncResult(), getCachedCourseStaff()]).then(([ids, extSettings, cached, staffCache]) => {
           setTrackedCourseIdsState(ids);
           setSettingsState(extSettings);
           if (cached) setSyncResult(cached);
+          if (staffCache && Object.keys(staffCache).length > 0) {
+            setCachedCourseStaff(staffCache);
+          }
         });
         if (msg.result) {
           setSyncResult(msg.result);
@@ -1111,6 +1220,9 @@ export default function App() {
         }
         if (changes.cachedSyncResult?.newValue) {
           setSyncResult(changes.cachedSyncResult.newValue);
+        }
+        if ('cachedCourseStaff' in changes) {
+          setCachedCourseStaff(changes.cachedCourseStaff?.newValue || {});
         }
         if (changes.localFsConfig?.newValue) {
           setLocalFsConfigState({ ...DEFAULT_LOCAL_FS_CONFIG, ...changes.localFsConfig.newValue });
@@ -1209,6 +1321,10 @@ export default function App() {
   // Merge tracked sub-course items into parent academic portals when multiple portals exist for the same course and parent is tracked
   const mergedSyncView = useMemo(() => {
     if (!syncResult) return null;
+    const baseStaffMap: Record<number, CourseStaffMember[]> = {
+      ...cachedCourseStaff,
+      ...(syncResult.courseStaff || {}),
+    };
     const trackedSet = new Set(trackedCourseIds);
     const multiPortalGroups = groupedCoursesResult.academicCourses
       .filter((u) => u.subCourses.length > 1 && trackedSet.has(u.id))
@@ -1217,7 +1333,20 @@ export default function App() {
         subCourses: u.subCourses.filter((s) => trackedSet.has(s.courseId)),
       }))
       .filter((u) => u.subCourses.length > 1);
-    if (multiPortalGroups.length === 0) return syncResult;
+    if (multiPortalGroups.length === 0) {
+      if ((syncResult.recordings && syncResult.recordings.length > 0) || Object.keys(baseStaffMap).length > 0) {
+        return {
+          ...syncResult,
+          ...(Object.keys(baseStaffMap).length > 0 ? { courseStaff: baseStaffMap } : {}),
+          recordings: reclassifyPanoptoRecordings(
+            syncResult.recordings || [],
+            settings?.coursesPanoptoStaff,
+            baseStaffMap
+          ),
+        };
+      }
+      return syncResult;
+    }
 
     const childCourseIds = new Set<number>();
     for (const u of multiPortalGroups) {
@@ -1225,7 +1354,20 @@ export default function App() {
         if (s.courseId !== u.id) childCourseIds.add(s.courseId);
       }
     }
-    if (childCourseIds.size === 0) return syncResult;
+    if (childCourseIds.size === 0) {
+      if ((syncResult.recordings && syncResult.recordings.length > 0) || Object.keys(baseStaffMap).length > 0) {
+        return {
+          ...syncResult,
+          ...(Object.keys(baseStaffMap).length > 0 ? { courseStaff: baseStaffMap } : {}),
+          recordings: reclassifyPanoptoRecordings(
+            syncResult.recordings || [],
+            settings?.coursesPanoptoStaff,
+            baseStaffMap
+          ),
+        };
+      }
+      return syncResult;
+    }
 
     let assignments = (syncResult.assignments || []).filter((a) => !childCourseIds.has(a.courseId));
     let files = (syncResult.files || []).filter((f) => !childCourseIds.has(f.courseId));
@@ -1236,6 +1378,7 @@ export default function App() {
     let announcements = (syncResult.announcements || []).filter((ann) => !childCourseIds.has(ann.courseId));
     let recordings = (syncResult.recordings || []).filter((rec) => !childCourseIds.has(rec.courseId));
     const gradeSummaries = { ...(syncResult.gradeSummaries || {}) };
+    const courseStaff: Record<number, CourseStaffMember[]> = { ...baseStaffMap };
 
     for (const u of multiPortalGroups) {
       const agg = aggregateUnifiedCourseItems(u, syncResult);
@@ -1250,6 +1393,21 @@ export default function App() {
       if (agg.gradeSummary) {
         gradeSummaries[u.id] = agg.gradeSummary;
       }
+      if (Object.keys(baseStaffMap).length > 0) {
+        const combinedStaff: CourseStaffMember[] = [];
+        const seenNames = new Set<string>();
+        for (const sub of u.subCourses) {
+          for (const member of baseStaffMap[sub.courseId] || []) {
+            const key = normalizePersonName(member.fullName);
+            if (!key || seenNames.has(key)) continue;
+            seenNames.add(key);
+            combinedStaff.push(member);
+          }
+        }
+        if (combinedStaff.length > 0) {
+          courseStaff[u.id] = combinedStaff;
+        }
+      }
     }
 
     return {
@@ -1261,10 +1419,26 @@ export default function App() {
       links,
       sections,
       announcements,
-      recordings,
+      recordings:
+        recordings.length > 0
+          ? reclassifyPanoptoRecordings(
+            recordings,
+            settings?.coursesPanoptoStaff,
+            courseStaff,
+            (() => {
+              const aliases = new Map<number, number[]>();
+              for (const u of multiPortalGroups) {
+                const memberIds = u.subCourses.map((s) => s.courseId);
+                for (const id of memberIds) aliases.set(id, memberIds);
+              }
+              return aliases;
+            })()
+          )
+          : recordings,
       gradeSummaries,
+      ...(Object.keys(courseStaff).length > 0 ? { courseStaff } : {}),
     };
-  }, [syncResult, groupedCoursesResult, trackedCourseIds]);
+  }, [syncResult, cachedCourseStaff, groupedCoursesResult, trackedCourseIds, settings?.coursesPanoptoStaff]);
 
   const assignmentsList = useMemo(() => {
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
@@ -1357,8 +1531,19 @@ export default function App() {
         });
       }
 
-      const cached = await getCachedSyncResult();
+      const [cached, storedStaff] = await Promise.all([
+        getCachedSyncResult(),
+        getCachedCourseStaff(),
+      ]);
       setSyncResult(cached);
+      const mergedStaffCache: Record<number, CourseStaffMember[]> = {
+        ...(cached?.courseStaff || {}),
+        ...storedStaff,
+      };
+      setCachedCourseStaff(mergedStaffCache);
+      if (cached?.courseStaff && Object.keys(cached.courseStaff).length > 0 && Object.keys(storedStaff).length === 0) {
+        void mergeCachedCourseStaff(cached.courseStaff);
+      }
 
       if (storedToken && ids.length > 0) {
         setOnboardingStep(3); // Fully set up
@@ -1434,7 +1619,7 @@ export default function App() {
       const client = new MoodleClient(t, undefined, {
         sesskey: sesskey || undefined,
         devMode: true,
-        enableScraping: settings?.scrapingEnabled ?? false
+        enableScraping: false // Legacy Web Scraping fallback removed
       });
       const remoteSettings = await client.loadNoodleSettings();
       if (remoteSettings && Object.keys(remoteSettings).length > 0) {
@@ -1676,6 +1861,8 @@ export default function App() {
       setToken(null);
       setTrackedCourseIdsState([]);
       setSyncResult(null);
+      setCachedCourseStaff({});
+      autoFetchedStaffCourseIdsRef.current.clear();
       setAvailableCourses([]);
       setMoodleUsername('');
       setMoodleId('');
@@ -1872,6 +2059,193 @@ export default function App() {
       handleManualSync();
     }
   }
+
+  function buildCourseAliasMap(): Map<number, number[]> {
+    const aliases = new Map<number, number[]>();
+    for (const u of groupedCoursesResult.academicCourses) {
+      const memberIds = u.subCourses.map((s) => s.courseId);
+      if (memberIds.length > 1) {
+        for (const id of memberIds) {
+          aliases.set(id, memberIds);
+        }
+      }
+    }
+    return aliases;
+  }
+
+  async function handleUpdateCoursePanoptoStaff(courseId: number, entries: CoursePanoptoStaffEntry[]) {
+    if (!settings) return;
+    const nextStaffMap: Record<number, CoursePanoptoStaffEntry[]> = {
+      ...(settings.coursesPanoptoStaff || {}),
+    };
+    if (entries.length === 0) {
+      delete nextStaffMap[courseId];
+    } else {
+      nextStaffMap[courseId] = entries;
+    }
+    const updated = { ...settings, coursesPanoptoStaff: nextStaffMap };
+    setSettingsState(updated);
+    await setSettings({ coursesPanoptoStaff: nextStaffMap });
+
+    if (syncResult?.recordings && syncResult.recordings.length > 0) {
+      const aliasMap = buildCourseAliasMap();
+      const reclassified = reclassifyPanoptoRecordings(
+        syncResult.recordings,
+        nextStaffMap,
+        syncResult.courseStaff,
+        aliasMap
+      );
+      const updatedSync: SyncResult = { ...syncResult, recordings: reclassified };
+      setSyncResult(updatedSync);
+      await setCachedSyncResult(updatedSync);
+    }
+  }
+
+  async function handleImportCourseStaff(courseId: number, forceRefresh = false): Promise<CourseStaffMember[]> {
+    const unified = groupedCoursesResult.academicCourses.find(
+      (u) => u.id === courseId || u.subCourses.some((s) => s.courseId === courseId)
+    );
+    const targetIds = unified
+      ? Array.from(new Set(unified.subCourses.map((s) => s.courseId)))
+      : [courseId];
+
+    const courseBaseUrls: Record<number, string> = {};
+    for (const id of targetIds) {
+      const found = availableCourses.find((c) => c.id === id);
+      const courseBase =
+        found?.instanceUrl ||
+        (found?.year && found.year !== String(new Date().getFullYear())
+          ? `https://moodle.tau.ac.il/${found.year}`
+          : undefined) ||
+        found?.url;
+      if (courseBase) {
+        courseBaseUrls[id] = courseBase;
+      }
+    }
+
+    const res = await fetchCourseStaffOnBackground(targetIds, courseBaseUrls, forceRefresh);
+    if (!res?.success || !res.byCourseId) {
+      if (res?.error) {
+        showToast(res.error, 'error');
+      }
+      return [];
+    }
+
+    const combined: CourseStaffMember[] = [];
+    const seen = new Set<string>();
+    for (const id of targetIds) {
+      for (const member of res.byCourseId[id] || []) {
+        const key = normalizePersonName(member.fullName);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        combined.push(member);
+      }
+    }
+
+    if (Object.keys(res.byCourseId).length > 0) {
+      setCachedCourseStaff((prev) => ({ ...prev, ...res.byCourseId }));
+      await mergeCachedCourseStaff(res.byCourseId);
+      if (syncResult) {
+        const updatedSync: SyncResult = {
+          ...syncResult,
+          courseStaff: { ...(syncResult.courseStaff || {}), ...res.byCourseId },
+        };
+        setSyncResult(updatedSync);
+        await setCachedSyncResult(updatedSync);
+      }
+    }
+
+    return combined;
+  }
+
+  async function handleToggleTrackHost(
+    courseId: number,
+    hostName: string,
+    recordingType: PanoptoRecordingType
+  ) {
+    if (!settings) return;
+    const existingEntries =
+      settings.coursesPanoptoStaff?.[courseId] ||
+      (settings.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(courseId)] ||
+      [];
+    const moodleStaff =
+      mergedSyncView?.courseStaff?.[courseId] ||
+      cachedCourseStaff[courseId] ||
+      syncResult?.courseStaff?.[courseId];
+    const nextEntries = toggleTrackedHostEntry(existingEntries, hostName, recordingType, moodleStaff);
+    await handleUpdateCoursePanoptoStaff(courseId, nextEntries);
+  }
+
+  // One-time automatic Moodle staff population when Manage Courses opens (for courses not yet cached in local storage)
+  useEffect(() => {
+    if (!isManageModalOpen || !settings?.panoptoEnabled || !token) return;
+
+    const candidateParents = groupedCoursesResult.academicCourses.filter((u) =>
+      u.subCourses.some((s) => trackedCourseIds.includes(s.courseId)) || trackedCourseIds.includes(u.id)
+    );
+    const parentIdsToFetch: number[] = [];
+    const allSubIdsToFetch: number[] = [];
+    const baseUrls: Record<number, string> = {};
+
+    for (const u of candidateParents) {
+      if (autoFetchedStaffCourseIdsRef.current.has(u.id)) continue;
+      const memberIds = Array.from(new Set(u.subCourses.map((s) => s.courseId)));
+      const alreadyCached = memberIds.some((mid) => {
+        const list = cachedCourseStaff[mid] || syncResult?.courseStaff?.[mid];
+        return Array.isArray(list) && list.length > 0;
+      });
+      if (alreadyCached) {
+        autoFetchedStaffCourseIdsRef.current.add(u.id);
+        continue;
+      }
+      autoFetchedStaffCourseIdsRef.current.add(u.id);
+      parentIdsToFetch.push(u.id);
+      for (const mid of memberIds) {
+        allSubIdsToFetch.push(mid);
+        const found = availableCourses.find((c) => c.id === mid);
+        const courseBase =
+          found?.instanceUrl ||
+          (found?.year && found.year !== String(new Date().getFullYear())
+            ? `https://moodle.tau.ac.il/${found.year}`
+            : undefined) ||
+          found?.url;
+        if (courseBase) {
+          baseUrls[mid] = courseBase;
+        }
+      }
+    }
+
+    if (allSubIdsToFetch.length === 0) return;
+
+    let cancelled = false;
+    setLoadingStaffCourseIds((prev) => {
+      const next = new Set(prev);
+      parentIdsToFetch.forEach((id) => next.add(id));
+      return next;
+    });
+
+    void fetchCourseStaffOnBackground(allSubIdsToFetch, baseUrls, false)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res?.success && res.byCourseId && Object.keys(res.byCourseId).length > 0) {
+          setCachedCourseStaff((prev) => ({ ...prev, ...res.byCourseId }));
+          await mergeCachedCourseStaff(res.byCourseId);
+        }
+      })
+      .catch(() => { })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingStaffCourseIds((prev) => {
+          const next = new Set(prev);
+          parentIdsToFetch.forEach((id) => next.delete(id));
+          return next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isManageModalOpen, settings?.panoptoEnabled, token, groupedCoursesResult, trackedCourseIds, cachedCourseStaff, syncResult?.courseStaff, availableCourses]);
 
   async function handleToggleRecordingWatched(recordingId: string) {
     if (!settings || !recordingId) return;
@@ -2556,7 +2930,64 @@ export default function App() {
               <CollapseSidebarIcon size={16} isCollapsed={sidebarCollapsed} isRtl={currentLang === 'he'} />
               <span>{t('collapse_sidebar')}</span>
             </button>
+            <button
+              type="button"
+              className="nav-item sidebar-tour-btn"
+              onClick={handleStartTour}
+              title={t('take_tour_btn')}
+              aria-label={t('take_tour_btn')}
+            >
+              <TourCompassIcon size={16} />
+              <span>{t('take_tour_btn')}</span>
+            </button>
           </nav>
+
+          {showSidebarUpdateBanner && storeUpdateStatus?.latestVersion && (
+            <div className="sidebar-update-banner" role="status" aria-live="polite">
+              {sidebarCollapsed ? (
+                <a
+                  href={storeUpdateStatus.storeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="sidebar-update-compact"
+                  title={`${t('update_banner_title')}: v${storeUpdateStatus.latestVersion}`}
+                  aria-label={`${t('update_banner_title')}: v${storeUpdateStatus.latestVersion}`}
+                >
+                  <UpdateArrowIcon size={16} />
+                </a>
+              ) : (
+                <>
+                  <div className="sidebar-update-header">
+                    <span className="sidebar-update-title">
+                      <UpdateArrowIcon size={14} />
+                      <span>{t('update_banner_title')}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="sidebar-update-dismiss"
+                      onClick={() => handleDismissStoreUpdate(storeUpdateStatus.latestVersion!)}
+                      title={t('update_banner_dismiss')}
+                      aria-label={t('update_banner_dismiss')}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="sidebar-update-versions" dir="ltr">
+                    v{currentManifestVersion} → v{storeUpdateStatus.latestVersion}
+                  </div>
+                  <a
+                    href={storeUpdateStatus.storeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="sidebar-update-cta"
+                  >
+                    <span>{t('update_banner_cta')}</span>
+                    <ExternalLinkIcon size={11} />
+                  </a>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="sidebar-footer">
             <a
@@ -2687,6 +3118,11 @@ export default function App() {
                     files={filesList}
                     meetings={meetingsList}
                     recordings={recordingsList}
+                    courseStaff={
+                      mergedSyncView?.courseStaff?.[selectedCourseId] ||
+                      cachedCourseStaff[selectedCourseId] ||
+                      syncResult?.courseStaff?.[selectedCourseId]
+                    }
                     courseSections={mergedSyncView?.sections}
                     courseFolders={mergedSyncView?.folders}
                     courseLinks={mergedSyncView?.links}
@@ -2703,14 +3139,20 @@ export default function App() {
                     onSetCourseMeetingsVisibility={handleSetCourseMeetingsVisibility}
                     showHiddenZoomCourseIds={showHiddenZoomCourseIds}
                     onToggleShowHiddenZoom={handleToggleShowHiddenZoom}
+                    showHiddenPanoptoCourseIds={showHiddenPanoptoCourseIds}
+                    onToggleShowHiddenPanopto={handleToggleShowHiddenPanopto}
                     onToggleCompleted={handleToggleCompleted}
                     onToggleHidden={handleToggleHidden}
                     onToggleHideAllCourse={handleToggleHideAllCourse}
                     onToggleRecordingWatched={handleToggleRecordingWatched}
+                    onToggleTrackHost={handleToggleTrackHost}
                     onUpdatePanopto={handleUpdateCoursePanopto}
+                    onUpdatePanoptoStaff={handleUpdateCoursePanoptoStaff}
+                    onImportCourseStaff={handleImportCourseStaff}
                     isSyncing={loading || isSyncing}
                     hasPanoptoPermission={hasPanoptoPermission}
                     onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                    tourStep={tourStep}
                   />
                 ) : activeTab === 'dashboard' ? (
                   <DashboardTab
@@ -2858,12 +3300,6 @@ export default function App() {
                       setSettingsState(updated);
                       await setSettings(updated);
                     }}
-                    onToggleScraping={async (enabled: boolean) => {
-                      if (!settings) return;
-                      const updated = { ...settings, scrapingEnabled: enabled };
-                      setSettingsState(updated);
-                      await setSettings(updated);
-                    }}
                     onTogglePanoptoFolderOverride={async (enabled: boolean) => {
                       if (!settings) return;
                       const updated = { ...settings, showPanoptoFolderOverride: enabled };
@@ -2926,7 +3362,7 @@ export default function App() {
                     t={t}
                     lang={currentLang}
                     tourStep={tourStep}
-                    onStartTour={() => { setShowTour(true); setTourStep(0); }}
+                    onStartTour={handleStartTour}
                   />
                 )}
               </div>
@@ -2963,20 +3399,20 @@ export default function App() {
               bottom: 0,
               background: 'rgba(0, 0, 0, 0.7)',
               display: 'flex',
-              alignItems: tourStep === 4 ? 'flex-start' : 'center',
+              alignItems: 'center',
               justifyContent: 'center',
               zIndex: 1000,
               backdropFilter: 'blur(4px)',
-              padding: tourStep === 4 ? '2rem 1.5rem 15rem 1.5rem' : '1.5rem'
+              padding: '1.5rem'
             }}
             onClick={() => setIsManageModalOpen(false)}
           >
             <div
-              className={`modal-content glass-panel ${tourStep === 4 ? 'tour-highlight' : ''}`}
+              className="modal-content manage-courses-modal glass-panel"
               style={{
-                maxWidth: '850px',
+                maxWidth: 'min(1280px, 95vw)',
                 width: '100%',
-                maxHeight: tourStep === 4 ? '62vh' : '85vh',
+                maxHeight: '85vh',
                 overflowY: 'auto',
                 padding: '1.75rem',
                 borderRadius: 'var(--radius-md)'
@@ -2985,7 +3421,7 @@ export default function App() {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 style={{ margin: 0 }}>{t('tracked_courses_config')}</h3>
-                <button className="btn-ghost" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
+                <button className="tour-close-btn" onClick={() => setIsManageModalOpen(false)} style={{ fontSize: '1.25rem', cursor: 'pointer' }}>
                   ✕
                 </button>
               </div>
@@ -2993,15 +3429,20 @@ export default function App() {
               <CoursesConfigTable
                 trackedCourseIds={trackedCourseIds}
                 syncResult={syncResult}
+                cachedCourseStaff={cachedCourseStaff}
+                loadingStaffCourseIds={loadingStaffCourseIds}
                 enrolledCourses={availableCourses || []}
                 getCourseColor={getCourseColor}
                 getCourseDisplayName={getCourseDisplayName}
                 coursesPanoptoMap={settings?.coursesPanoptoMap}
+                coursesPanoptoStaff={settings?.coursesPanoptoStaff}
                 panoptoEnabled={settings?.panoptoEnabled ?? false}
                 showPanoptoFolderOverride={settings?.showPanoptoFolderOverride ?? false}
                 onUpdateColor={handleUpdateCourseColor}
                 onUpdateCustomName={handleUpdateCourseCustomName}
                 onUpdatePanopto={handleUpdateCoursePanopto}
+                onUpdatePanoptoStaff={handleUpdateCoursePanoptoStaff}
+                onImportCourseStaff={handleImportCourseStaff}
                 onSaveTrackedCourses={(newIds, panoptoOverrides) => {
                   setIsManageModalOpen(false);
                   handleSaveTrackedCourses(newIds, panoptoOverrides);
@@ -3218,6 +3659,39 @@ const UploadIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const TrashIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <line x1="10" y1="11" x2="10" y2="17" />
+    <line x1="14" y1="11" x2="14" y2="17" />
+  </svg>
+);
+
+const SyncIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 2v6h-6" />
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+    <path d="M3 22v-6h6" />
+    <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+  </svg>
+);
+
+const TourCompassIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-icon" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+  </svg>
+);
+
+const UpdateArrowIcon = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 19V5" />
+    <polyline points="5 12 12 5 19 12" />
+    <path d="M5 20h14" />
+  </svg>
+);
+
 const ClockIcon = ({ size = 13, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) => (
   <svg
     width={size}
@@ -3379,7 +3853,6 @@ const ExitIcon = ({ size = 16 }: { size?: number }) => (
 interface TabProps {
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, def: string) => string;
-  onToggleScraping?: (enabled: boolean) => void;
   t: (key: any) => string;
   lang: 'he' | 'en';
 }
@@ -3393,15 +3866,20 @@ type EnhancedAssignment = Assignment & {
 function CoursesConfigTable({
   trackedCourseIds,
   syncResult,
+  cachedCourseStaff,
+  loadingStaffCourseIds,
   enrolledCourses,
   getCourseColor,
   getCourseDisplayName,
   coursesPanoptoMap,
+  coursesPanoptoStaff,
   panoptoEnabled,
   showPanoptoFolderOverride,
   onUpdateColor,
   onUpdateCustomName,
   onUpdatePanopto,
+  onUpdatePanoptoStaff,
+  onImportCourseStaff,
   onSaveTrackedCourses,
   onLabDetected,
   t,
@@ -3409,15 +3887,20 @@ function CoursesConfigTable({
 }: {
   trackedCourseIds: number[];
   syncResult: SyncResult | null;
+  cachedCourseStaff?: Record<number, CourseStaffMember[]>;
+  loadingStaffCourseIds?: Set<number>;
   enrolledCourses?: any[];
   getCourseColor: (id: number) => string;
   getCourseDisplayName: (id: number, defaultName: string) => string;
   coursesPanoptoMap?: Record<number, string>;
+  coursesPanoptoStaff?: Record<number, CoursePanoptoStaffEntry[]>;
   panoptoEnabled?: boolean;
   showPanoptoFolderOverride?: boolean;
   onUpdateColor?: (id: number, color: string) => void;
   onUpdateCustomName?: (id: number, name: string) => void;
   onUpdatePanopto?: (id: number, panoptoVal: string) => void;
+  onUpdatePanoptoStaff?: (id: number, entries: CoursePanoptoStaffEntry[]) => void;
+  onImportCourseStaff?: (id: number, forceRefresh?: boolean) => Promise<CourseStaffMember[]>;
   onSaveTrackedCourses?: (newIds: number[], panoptoOverrides?: Record<number, string>) => void;
   onLabDetected?: (id: number, name: string) => void;
   t: (key: any) => string;
@@ -3425,7 +3908,43 @@ function CoursesConfigTable({
 }) {
   const [activeTrackedIds, setActiveTrackedIds] = useState<number[]>(trackedCourseIds);
   const [localPanoptoMap, setLocalPanoptoMap] = useState<Record<number, string>>(coursesPanoptoMap || {});
+  const [expandedStaffCourseId, setExpandedStaffCourseId] = useState<number | null>(null);
   const showPanoptoCol = Boolean(panoptoEnabled && showPanoptoFolderOverride);
+  const showStaffCols = Boolean(panoptoEnabled && onUpdatePanoptoStaff);
+  const tableClassName = `courses-settings-table${showStaffCols ? ' with-staff-cols' : ''}${showPanoptoCol ? ' with-panopto-col' : ''}`;
+
+  const getMergedMoodleStaffForIds = (ids: Iterable<number>): CourseStaffMember[] => {
+    const combined: CourseStaffMember[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const lists = [cachedCourseStaff?.[id], syncResult?.courseStaff?.[id]];
+      for (const list of lists) {
+        if (!Array.isArray(list)) continue;
+        for (const member of list) {
+          const key = normalizePersonName(member.fullName);
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          combined.push(member);
+        }
+      }
+    }
+    return combined;
+  };
+
+  const getDetectedHostsForIds = (memberIds: Set<number>): string[] =>
+    Array.from(
+      new Set(
+        (syncResult?.recordings || [])
+          .filter((r) => memberIds.has(r.courseId) || (r.sourceCourseId && memberIds.has(r.sourceCourseId)))
+          .map((r) => r.host)
+          .filter((h): h is string => Boolean(h && h.trim()))
+      )
+    );
+
+  const getCourseStaffEntries = (courseId: number): CoursePanoptoStaffEntry[] =>
+    coursesPanoptoStaff?.[courseId] ||
+    (coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(courseId)] ||
+    EMPTY_STAFF_ENTRIES;
 
   useEffect(() => {
     setActiveTrackedIds(trackedCourseIds);
@@ -3530,11 +4049,13 @@ function CoursesConfigTable({
                 >
                   {sec.label}
                 </h4>
-                <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
+                <div className={tableClassName}>
                   <div className="table-header">
                     <div>{t('track')}</div>
                     <div>{t('course_code_name')}</div>
                     <div>{t('display_nickname')}</div>
+                    {showStaffCols && <div>{t('panopto_col_lecturer')}</div>}
+                    {showStaffCols && <div>{t('panopto_col_ta')}</div>}
                     {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                     <div>{t('theme_color_label')}</div>
                   </div>
@@ -3542,6 +4063,12 @@ function CoursesConfigTable({
                   {sec.courses.map((u) => {
                     const isMultiPortal = u.subCourses.length > 1;
                     const childSubCourses = isMultiPortal ? u.subCourses.filter((s) => s.courseId !== u.id) : [];
+                    const staffEntries = getCourseStaffEntries(u.id);
+                    const memberIds = new Set(u.subCourses.map((s) => s.courseId));
+                    const detectedHosts = getDetectedHostsForIds(memberIds);
+                    const moodleStaffCombined = getMergedMoodleStaffForIds(memberIds);
+                    const isLoadingMoodle = Boolean(loadingStaffCourseIds?.has(u.id));
+                    const isExpanded = expandedStaffCourseId === u.id;
 
                     return (
                       <Fragment key={u.id}>
@@ -3583,6 +4110,34 @@ function CoursesConfigTable({
                               onBlur={(e) => onUpdateCustomName && onUpdateCustomName(u.id, e.target.value)}
                             />
                           </div>
+                          {showStaffCols && onUpdatePanoptoStaff && (
+                            <>
+                              <CourseStaffHostColumnCell
+                                courseId={u.id}
+                                role="Lecture"
+                                entries={staffEntries}
+                                moodleStaff={moodleStaffCombined}
+                                detectedHosts={detectedHosts}
+                                isLoadingMoodle={isLoadingMoodle}
+                                onSaveEntries={onUpdatePanoptoStaff}
+                                onRefreshFromMoodle={onImportCourseStaff ? (id) => onImportCourseStaff(id, true) : undefined}
+                                t={t}
+                                lang={lang}
+                              />
+                              <CourseStaffHostColumnCell
+                                courseId={u.id}
+                                role="Recitation"
+                                entries={staffEntries}
+                                moodleStaff={moodleStaffCombined}
+                                detectedHosts={detectedHosts}
+                                isLoadingMoodle={isLoadingMoodle}
+                                onSaveEntries={onUpdatePanoptoStaff}
+                                onRefreshFromMoodle={onImportCourseStaff ? (id) => onImportCourseStaff(id, true) : undefined}
+                                t={t}
+                                lang={lang}
+                              />
+                            </>
+                          )}
                           {showPanoptoCol && (
                             <div>
                               <input
@@ -3599,15 +4154,40 @@ function CoursesConfigTable({
                               />
                             </div>
                           )}
-                          <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <input
                               type="color"
                               className="color-picker"
                               value={getCourseColor(u.id)}
                               onChange={(e) => onUpdateColor && onUpdateColor(u.id, e.target.value)}
                             />
+                            {panoptoEnabled && onUpdatePanoptoStaff && onImportCourseStaff && (
+                              <button
+                                type="button"
+                                className={`secondary-btn btn-xs panopto-staff-toggle-btn ${isExpanded ? 'active' : ''}`}
+                                onClick={() => setExpandedStaffCourseId(isExpanded ? null : u.id)}
+                                title={t('panopto_staff_title')}
+                              >
+                                {t('panopto_staff_short_btn')} ({staffEntries.length})
+                              </button>
+                            )}
                           </div>
                         </div>
+
+                        {panoptoEnabled && onUpdatePanoptoStaff && onImportCourseStaff && isExpanded && (
+                          <div className="panopto-staff-table-drawer">
+                            <PanoptoStaffEditor
+                              courseId={u.id}
+                              entries={staffEntries}
+                              moodleStaff={moodleStaffCombined}
+                              detectedHosts={detectedHosts}
+                              onSaveEntries={onUpdatePanoptoStaff}
+                              onImportFromMoodle={(id) => onImportCourseStaff(id, true)}
+                              t={t}
+                              lang={lang}
+                            />
+                          </div>
+                        )}
 
                         {/* Indented Sub-Course Rows */}
                         {childSubCourses.map((sub) => {
@@ -3669,6 +4249,8 @@ function CoursesConfigTable({
                                   onBlur={(e) => onUpdateCustomName && onUpdateCustomName(sub.courseId, e.target.value)}
                                 />
                               </div>
+                              {showStaffCols && <div />}
+                              {showStaffCols && <div />}
                               {showPanoptoCol && (
                                 <div>
                                   <input
@@ -3719,7 +4301,7 @@ function CoursesConfigTable({
                   >
                     🛡️ {lang === 'he' ? 'הדרכות בטיחות ומנהלה' : 'Safety & Administrative Tutorials'}
                   </h4>
-                  <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
+                  <div className={`courses-settings-table${showPanoptoCol ? ' with-panopto-col' : ''}`}>
                     <div className="table-header">
                       <div>{t('track')}</div>
                       <div>{t('course_code_name')}</div>
@@ -3766,7 +4348,7 @@ function CoursesConfigTable({
                             onBlur={(e) => onUpdateCustomName && onUpdateCustomName(sub.courseId, e.target.value)}
                           />
                         </div>
-                        {panoptoEnabled && <div />}
+                        {showPanoptoCol && <div />}
                         <div>
                           <input
                             type="color"
@@ -3797,62 +4379,125 @@ function CoursesConfigTable({
               >
                 {group.label}
               </h4>
-              <div className={`courses-settings-table ${showPanoptoCol ? 'with-panopto-col' : ''}`}>
+              <div className={tableClassName}>
                 <div className="table-header">
                   <div>{t('track')}</div>
                   <div>{t('course_code_name')}</div>
                   <div>{t('display_nickname')}</div>
+                  {showStaffCols && <div>{t('panopto_col_lecturer')}</div>}
+                  {showStaffCols && <div>{t('panopto_col_ta')}</div>}
                   {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                   <div>{t('theme_color_label')}</div>
                 </div>
-                {[...group.courses].map((c) => (
-                  <div key={c.id} className="table-row">
-                    <div>
-                      <input
-                        type="checkbox"
-                        checked={activeTrackedIds.includes(c.id)}
-                        onChange={() => handleToggle(c.id)}
-                      />
-                    </div>
-                    <div>
-                      <span className="course-code-span">{c.name.split('-')[0]}</span>
-                      <p className="course-full-p">{c.name}</p>
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        className="nickname-input"
-                        defaultValue={getCourseDisplayName(c.id, '')}
-                        placeholder={t('nickname_placeholder')}
-                        onBlur={(e) => onUpdateCustomName && onUpdateCustomName(c.id, e.target.value)}
-                      />
-                    </div>
-                    {showPanoptoCol && (
-                      <div>
-                        <input
-                          type="text"
-                          className="nickname-input panopto-folder-input"
-                          value={localPanoptoMap[c.id] ?? ''}
-                          placeholder={t('panopto_folder_placeholder')}
-                          dir="ltr"
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setLocalPanoptoMap((prev) => ({ ...prev, [c.id]: val }));
-                          }}
-                          onBlur={(e) => onUpdatePanopto && onUpdatePanopto(c.id, e.target.value)}
-                        />
+                {[...group.courses].map((c) => {
+                  const staffEntries = getCourseStaffEntries(c.id);
+                  const isExpanded = expandedStaffCourseId === c.id;
+                  const detectedHosts = getDetectedHostsForIds(new Set([c.id]));
+                  const moodleStaff = getMergedMoodleStaffForIds([c.id]);
+                  const isLoadingMoodle = Boolean(loadingStaffCourseIds?.has(c.id));
+                  return (
+                    <Fragment key={c.id}>
+                      <div className="table-row">
+                        <div>
+                          <input
+                            type="checkbox"
+                            checked={activeTrackedIds.includes(c.id)}
+                            onChange={() => handleToggle(c.id)}
+                          />
+                        </div>
+                        <div>
+                          <span className="course-code-span">{c.name.split('-')[0]}</span>
+                          <p className="course-full-p">{c.name}</p>
+                        </div>
+                        <div>
+                          <input
+                            type="text"
+                            className="nickname-input"
+                            defaultValue={getCourseDisplayName(c.id, '')}
+                            placeholder={t('nickname_placeholder')}
+                            onBlur={(e) => onUpdateCustomName && onUpdateCustomName(c.id, e.target.value)}
+                          />
+                        </div>
+                        {showStaffCols && onUpdatePanoptoStaff && (
+                          <>
+                            <CourseStaffHostColumnCell
+                              courseId={c.id}
+                              role="Lecture"
+                              entries={staffEntries}
+                              moodleStaff={moodleStaff}
+                              detectedHosts={detectedHosts}
+                              isLoadingMoodle={isLoadingMoodle}
+                              onSaveEntries={onUpdatePanoptoStaff}
+                              onRefreshFromMoodle={onImportCourseStaff ? (id) => onImportCourseStaff(id, true) : undefined}
+                              t={t}
+                              lang={lang}
+                            />
+                            <CourseStaffHostColumnCell
+                              courseId={c.id}
+                              role="Recitation"
+                              entries={staffEntries}
+                              moodleStaff={moodleStaff}
+                              detectedHosts={detectedHosts}
+                              isLoadingMoodle={isLoadingMoodle}
+                              onSaveEntries={onUpdatePanoptoStaff}
+                              onRefreshFromMoodle={onImportCourseStaff ? (id) => onImportCourseStaff(id, true) : undefined}
+                              t={t}
+                              lang={lang}
+                            />
+                          </>
+                        )}
+                        {showPanoptoCol && (
+                          <div>
+                            <input
+                              type="text"
+                              className="nickname-input panopto-folder-input"
+                              value={localPanoptoMap[c.id] ?? ''}
+                              placeholder={t('panopto_folder_placeholder')}
+                              dir="ltr"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setLocalPanoptoMap((prev) => ({ ...prev, [c.id]: val }));
+                              }}
+                              onBlur={(e) => onUpdatePanopto && onUpdatePanopto(c.id, e.target.value)}
+                            />
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <input
+                            type="color"
+                            className="color-picker"
+                            value={getCourseColor(c.id)}
+                            onChange={(e) => onUpdateColor && onUpdateColor(c.id, e.target.value)}
+                          />
+                          {panoptoEnabled && onUpdatePanoptoStaff && onImportCourseStaff && (
+                            <button
+                              type="button"
+                              className={`secondary-btn btn-xs panopto-staff-toggle-btn ${isExpanded ? 'active' : ''}`}
+                              onClick={() => setExpandedStaffCourseId(isExpanded ? null : c.id)}
+                              title={t('panopto_staff_title')}
+                            >
+                              {t('panopto_staff_short_btn')} ({staffEntries.length})
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    <div>
-                      <input
-                        type="color"
-                        className="color-picker"
-                        value={getCourseColor(c.id)}
-                        onChange={(e) => onUpdateColor && onUpdateColor(c.id, e.target.value)}
-                      />
-                    </div>
-                  </div>
-                ))}
+                      {panoptoEnabled && onUpdatePanoptoStaff && onImportCourseStaff && isExpanded && (
+                        <div className="panopto-staff-table-drawer">
+                          <PanoptoStaffEditor
+                            courseId={c.id}
+                            entries={staffEntries}
+                            moodleStaff={moodleStaff}
+                            detectedHosts={detectedHosts}
+                            onSaveEntries={onUpdatePanoptoStaff}
+                            onImportFromMoodle={(id) => onImportCourseStaff(id, true)}
+                            t={t}
+                            lang={lang}
+                          />
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </div>
             </div>
           ))
@@ -4053,7 +4698,16 @@ function DashboardTab({
   const isPanoptoActive = !!settings?.panoptoEnabled;
   const watchedRecordingsSet = new Set(settings?.watchedRecordings || []);
   const trackedSet = new Set(trackedCourseIds);
-  const allTrackedRecordings = (syncResult?.recordings || []).filter((r) => trackedSet.has(r.courseId));
+  const allTrackedRecordings = (syncResult?.recordings || []).filter((r) => {
+    if (!trackedSet.has(r.courseId)) return false;
+    const configuredStaff =
+      settings?.coursesPanoptoStaff?.[r.courseId] ||
+      (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(r.courseId)];
+    if (Array.isArray(configuredStaff) && configuredStaff.length > 0) {
+      return doesRecordingMatchStaffEntries(r, configuredStaff);
+    }
+    return true;
+  });
   const unwatchedCatchUpRecordings = allTrackedRecordings
     .filter((r) => !watchedRecordingsSet.has(r.id))
     .sort((a, b) => {
@@ -4184,9 +4838,9 @@ function DashboardTab({
       )}
 
       {/* 1. Hero Action Strip: Upcoming To-Do Queue + Catch-Up Queue */}
-      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''} ${isTaskSplitOpen ? 'has-expanded-task' : ''}`}>
+      <div className={`hero-action-strip ${isPanoptoActive ? 'with-catchup' : ''} ${isTaskSplitOpen ? 'has-expanded-task' : ''} ${tourStep === 2 ? 'tour-highlight' : ''}`}>
         {/* Upcoming To-Do Queue (Splits horizontally into Master List + Course-Bordered Detail Pane when a task is selected) */}
-        <div className={`queue-card glass-panel ${isTaskSplitOpen ? 'is-split' : ''} ${tourStep === 2 || tourStep === 3 ? 'tour-highlight' : ''}`}>
+        <div className={`queue-card glass-panel ${isTaskSplitOpen ? 'is-split' : ''}`}>
           <div className="queue-split-layout">
             <div className="queue-master-pane">
               <div className="queue-header">
@@ -4246,6 +4900,19 @@ function DashboardTab({
                                 <ClockIcon size={12} />
                               </span>
                             )}
+                            {/* TODO(hide-task-button): Wire up click handler to hide/dismiss irrelevant or bonus tasks (e.g. via onToggleHidden / hiddenAssignments). */}
+                            <button
+                              type="button"
+                              className="queue-delete-btn"
+                              title={t('queue_delete_task_tooltip')}
+                              aria-label={t('queue_delete_task_tooltip')}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                // TODO(hide-task-button): Dismiss/hide task on click instead of no-op once irrelevant-task hiding behavior is implemented.
+                              }}
+                            >
+                              <TrashIcon size={13} />
+                            </button>
                             <span
                               className="queue-item-chevron"
                               style={{
@@ -4591,7 +5258,7 @@ function DashboardTab({
 
       {/* 2. Multi-Active Zoom Sessions Strip */}
       {activeMeetings.length > 0 && (
-        <div className={`multi-zoom-strip ${tourStep === 5 ? 'tour-highlight' : ''}`}>
+        <div className={`multi-zoom-strip ${tourStep === 3 ? 'tour-highlight' : ''}`}>
           {activeMeetings.map((m, idx) => {
             const courseColor = getCourseColor(m.courseId);
             const courseDisplayName = getCourseDisplayName(m.courseId, m.courseName);
@@ -4691,7 +5358,7 @@ function DashboardTab({
           </div>
         </div>
 
-        <div className={`courses-rows-container ${coursesViewMode === 'cards' ? 'courses-cards-grid' : ''} ${tourStep === 5 && activeMeetings.length === 0 ? 'tour-highlight' : ''}`}>
+        <div className={`courses-rows-container ${coursesViewMode === 'cards' ? 'courses-cards-grid' : ''} ${(tourStep === 3 && activeMeetings.length === 0) || tourStep === 5 ? 'tour-highlight' : ''}`}>
           {displayCourseIds.length === 0 ? (
             <div className="empty-state">{t('empty_state_pending')}</div>
           ) : (
@@ -4706,8 +5373,16 @@ function DashboardTab({
               const doneAssigns = visibleCourseAssigns.filter((a) => a.isCompleted).length;
               const gapAssigns = Math.max(0, totalAssigns - doneAssigns);
 
-              // Breakdown: Panopto (Lectures and Recitations)
-              const courseRecordings = isPanoptoActive ? (syncResult?.recordings || []).filter((r) => r.courseId === cid) : [];
+              // Breakdown: Panopto (Lectures and Recitations) — exclude hidden-host recordings from gaps & progress
+              const rawCourseRecordings = isPanoptoActive ? (syncResult?.recordings || []).filter((r) => r.courseId === cid) : [];
+              const courseStaffEntries =
+                settings?.coursesPanoptoStaff?.[cid] ||
+                (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(cid)] ||
+                EMPTY_STAFF_ENTRIES;
+              const courseRecordings = partitionPanoptoRecordingsByTrackedHosts(
+                rawCourseRecordings,
+                courseStaffEntries
+              ).visible;
               const courseLectures = courseRecordings.filter((r) => r.type === 'Lecture');
               const totalLectures = courseLectures.length;
               const doneLectures = courseLectures.filter((r) => watchedRecordingsSet.has(r.id)).length;
@@ -4760,7 +5435,7 @@ function DashboardTab({
               return (
                 <div
                   key={cid}
-                  className={`course-row-card glass-panel ${coursesViewMode === 'cards' ? 'course-grid-card' : ''} ${tourStep === 5 && (trackedCourseIds?.[0] === cid || idx === 0) ? 'tour-highlight' : ''}`}
+                  className={`course-row-card glass-panel ${coursesViewMode === 'cards' ? 'course-grid-card' : ''} ${tourStep === 3 && (trackedCourseIds?.[0] === cid || idx === 0) ? 'tour-highlight' : ''}`}
                   style={{ borderInlineStartColor: color, cursor: 'pointer' }}
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a, button, input')) return;
@@ -5777,7 +6452,6 @@ function SettingsTab({
   onUpdateTimeThemeHours,
   onOpenManageCourses,
   onUpdateThresholds,
-  onToggleScraping,
   onTogglePanopto,
   onTogglePanoptoFolderOverride,
   onToggleNotifications,
@@ -5813,7 +6487,6 @@ function SettingsTab({
   onUpdateTimeThemeHours?: (start: number, end: number) => void;
   onOpenManageCourses?: () => void;
   onUpdateThresholds: (green: number, yellow: number) => void;
-  onToggleScraping?: (enabled: boolean) => void;
   onTogglePanopto?: (enabled: boolean) => void;
   onTogglePanoptoFolderOverride?: (enabled: boolean) => void;
   onToggleNotifications?: (enabled: boolean) => void;
@@ -6360,33 +7033,6 @@ function SettingsTab({
       <hr className="settings-divider" />
 
       <div className="settings-section">
-        <h4>{t('scraping_enabled_title')}</h4>
-        <div className="toggle-row">
-          <div>
-            <span className="toggle-label">{t('scraping_enabled_title')}</span>
-            <p className="subtitle">{t('scraping_enabled_desc')}</p>
-          </div>
-          <label className="switch">
-            <input
-              type="checkbox"
-              id="scraping-enabled-toggle"
-              checked={settings.scrapingEnabled ?? false}
-              onChange={async (e) => {
-                if (onToggleScraping) {
-                  onToggleScraping(e.target.checked);
-                } else {
-                  await setSettings({ scrapingEnabled: e.target.checked });
-                }
-              }}
-            />
-            <span className="slider round"></span>
-          </label>
-        </div>
-      </div>
-
-      <hr className="settings-divider" />
-
-      <div className="settings-section">
         <h4>
           {t('panopto_enabled_title')}
           <span className="badge-beta" style={{ marginInlineStart: '0.5rem' }}>
@@ -6495,6 +7141,7 @@ function SettingsTab({
             onShowToast={onShowToast}
             t={t}
             lang={lang}
+            highlightForTour={tourStep === 8}
           />
           <hr className="settings-divider" />
         </>
@@ -6609,6 +7256,7 @@ function CourseDetailView({
   files,
   meetings,
   recordings,
+  courseStaff,
   courseSections,
   courseFolders,
   courseLinks,
@@ -6625,20 +7273,27 @@ function CourseDetailView({
   onSetCourseMeetingsVisibility,
   showHiddenZoomCourseIds,
   onToggleShowHiddenZoom,
+  showHiddenPanoptoCourseIds,
+  onToggleShowHiddenPanopto,
   onToggleCompleted,
   onToggleHidden,
   onToggleHideAllCourse,
   onToggleRecordingWatched,
+  onToggleTrackHost,
   onUpdatePanopto,
+  onUpdatePanoptoStaff,
+  onImportCourseStaff,
   isSyncing,
   hasPanoptoPermission = true,
   onRequestPanoptoPermission,
+  tourStep,
 }: {
   courseId: number;
   assignments: Assignment[];
   files: CourseFile[];
   meetings: ZoomMeeting[];
   recordings?: PanoptoRecording[];
+  courseStaff?: CourseStaffMember[];
   courseSections?: CourseSection[];
   courseFolders?: CourseFolder[];
   courseLinks?: CourseLink[];
@@ -6653,17 +7308,24 @@ function CourseDetailView({
   onSetCourseMeetingsVisibility?: (courseMeetings: ZoomMeeting[], makeVisible: boolean) => void;
   showHiddenZoomCourseIds?: Set<number>;
   onToggleShowHiddenZoom?: (courseId: number) => void;
+  showHiddenPanoptoCourseIds?: Set<number>;
+  onToggleShowHiddenPanopto?: (courseId: number) => void;
   onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number | string) => void;
   onToggleHideAllCourse?: (courseAssignIds: number[], shouldHideAll: boolean) => void;
   onToggleRecordingWatched?: (recordingId: string) => void;
+  onToggleTrackHost?: (courseId: number, hostName: string, recordingType: PanoptoRecordingType) => void;
   onUpdatePanopto?: (courseId: number, panoptoVal: string, triggerSync?: boolean) => void;
+  onUpdatePanoptoStaff?: (courseId: number, entries: CoursePanoptoStaffEntry[]) => void;
+  onImportCourseStaff?: (courseId: number, forceRefresh?: boolean) => Promise<CourseStaffMember[]>;
   isSyncing?: boolean;
   hasPanoptoPermission?: boolean;
   onRequestPanoptoPermission?: () => void;
+  tourStep?: number;
 } & TabProps) {
   const [expandedZoom, setExpandedZoom] = useState<boolean>(false);
   const [expandedPanopto, setExpandedPanopto] = useState<boolean>(true);
+  const [expandedPanoptoStaff, setExpandedPanoptoStaff] = useState<boolean>(false);
   const [panoptoInputVal, setPanoptoInputVal] = useState<string>(
     settings?.coursesPanoptoMap?.[courseId] ||
     (settings?.coursesPanoptoMap as Record<string, string> | undefined)?.[String(courseId)] ||
@@ -6787,7 +7449,164 @@ function CourseDetailView({
   const thisCourseGroup = courseGradeSummary.courseGroups[courseId];
   const courseFiles = files.filter((f) => f.courseId === courseId);
   const courseRecordings = (settings?.panoptoEnabled ? (recordings || []) : []).filter((r) => r.courseId === courseId);
+  const coursePanoptoStaffEntries =
+    settings?.coursesPanoptoStaff?.[courseId] ||
+    (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(courseId)] ||
+    EMPTY_STAFF_ENTRIES;
+  const partitionedCourseRecordings = partitionPanoptoRecordingsByTrackedHosts(
+    courseRecordings,
+    coursePanoptoStaffEntries
+  );
+  const isHiddenPanoptoOpen = showHiddenPanoptoCourseIds?.has(courseId) ?? false;
   const watchedSet = new Set(settings?.watchedRecordings || []);
+
+  const renderRecordingRow = (rec: PanoptoRecording, rIdx: number, isHiddenRow = false) => {
+    const isWatched = watchedSet.has(rec.id);
+    const isRecitation = rec.type === 'Recitation';
+    const isHostTracked =
+      Boolean(rec.host) &&
+      doesRecordingMatchStaffEntries({ host: rec.host }, coursePanoptoStaffEntries);
+
+    return (
+      <div
+        key={rec.id || rIdx}
+        className={`section-recording-item ${isWatched ? 'is-watched' : ''} ${isHiddenRow ? 'is-hidden-recording' : ''}`}
+      >
+        <div className="recording-left-info">
+          <span
+            className={`item-type-tag recording-type-tag ${isRecitation ? 'recitation-tag' : 'lecture-tag'}`}
+          >
+            {isRecitation ? `📐 ${t('panopto_recitation_badge')}` : `🎬 ${t('panopto_lecture_badge')}`}
+          </span>
+          <span className="item-name recording-title-span">{rec.title}</span>
+          {rec.host && (
+            <span className="recording-host-badge" dir="ltr">{rec.host}</span>
+          )}
+          {isHiddenRow && (
+            <span className="recording-hidden-tag">({t('panopto_hidden_tag')})</span>
+          )}
+          {rec.publishedDate && (
+            <span className="recording-date-badge">{rec.publishedDate}</span>
+          )}
+        </div>
+        <div className="recording-actions">
+          {rec.host && onToggleTrackHost && (
+            <button
+              type="button"
+              className={`file-action-btn recording-track-host-btn ${isHostTracked ? 'tracking' : ''}`}
+              onClick={() => onToggleTrackHost(courseId, rec.host!, rec.type)}
+              title={isHostTracked ? t('panopto_tracking_host') : t('panopto_track_host')}
+            >
+              {isHostTracked ? (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+              )}
+              <span>{isHostTracked ? t('panopto_tracking_host') : t('panopto_track_host')}</span>
+            </button>
+          )}
+          {onToggleRecordingWatched && (
+            <button
+              type="button"
+              className={`file-action-btn recording-watched-btn ${isWatched ? 'watched' : ''}`}
+              onClick={() => onToggleRecordingWatched(rec.id)}
+              title={isWatched ? t('watched_done') : t('mark_watched')}
+            >
+              <CheckIcon size={11} />
+              <span>{isWatched ? t('watched_done') : t('mark_watched')}</span>
+            </button>
+          )}
+          <a
+            href={rec.recordingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="file-action-btn recording-watch-link"
+          >
+            {t('watch_recording')}
+          </a>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPanoptoRecordingsBlock = (
+    listRecordings: PanoptoRecording[],
+    maxHeight?: string
+  ) => {
+    const { visible: visibleRecs, hidden: hiddenRecs } = partitionPanoptoRecordingsByTrackedHosts(
+      listRecordings,
+      coursePanoptoStaffEntries
+    );
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {visibleRecs.length === 0 && hiddenRecs.length > 0 ? (
+          <div className="panopto-all-hidden-notice">
+            {t('panopto_all_recordings_hidden_by_host')}
+          </div>
+        ) : (
+          <div
+            className="section-recordings-list"
+            style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}
+          >
+            {visibleRecs.map((rec, rIdx) => renderRecordingRow(rec, rIdx, false))}
+          </div>
+        )}
+
+        {hiddenRecs.length > 0 && (
+          <div className="panopto-hidden-recordings-wrapper">
+            <button
+              type="button"
+              className="secondary-btn btn-xs panopto-toggle-hidden-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleShowHiddenPanopto?.(courseId);
+              }}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {isHiddenPanoptoOpen ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+              <span>
+                {isHiddenPanoptoOpen
+                  ? `${t('panopto_hide_hidden_recordings')} (${hiddenRecs.length})`
+                  : `${t('panopto_show_hidden_recordings')} (${hiddenRecs.length})`}
+              </span>
+            </button>
+
+            {isHiddenPanoptoOpen && (
+              <div className="panopto-hidden-recordings-drawer">
+                {hiddenRecs.map((rec, hIdx) => renderRecordingRow(rec, hIdx, true))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Resolve the direct Panopto course folder URL (from manual override or auto-discovered recording metadata)
   const resolvedCoursePanoptoFolderId =
@@ -6995,7 +7814,7 @@ function CourseDetailView({
   });
 
   return (
-    <div className="course-detail-view glass-panel" style={{ borderTop: `6px solid ${courseColor}` }}>
+    <div className={`course-detail-view glass-panel ${tourStep === 5 ? 'tour-highlight' : ''}`} style={{ borderTop: `6px solid ${courseColor}` }}>
       <div className="detail-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button className="back-btn" onClick={onBack}>
@@ -7370,7 +8189,10 @@ function CourseDetailView({
           })()}
 
           {settings?.panoptoEnabled && (() => {
-            const watchedCount = courseRecordings.filter(r => watchedSet.has(r.id)).length;
+            const visibleCountTarget = partitionedCourseRecordings.isFilteringActive
+              ? partitionedCourseRecordings.visible
+              : courseRecordings;
+            const watchedCount = visibleCountTarget.filter(r => watchedSet.has(r.id)).length;
             const panoptoExternalUrl = panoptoCourseUrl;
             const coursePanoptoError = (syncErrors || []).find(
               e =>
@@ -7403,19 +8225,35 @@ function CourseDetailView({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>🎬 {t('panopto_card_title')} ({watchedCount}/{courseRecordings.length} {t('panopto_watched_summary')})</span>
+                      <span>🎬 {t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
                       <span className="badge-beta">{lang === 'he' ? 'בטא' : 'BETA'}</span>
                     </h4>
-                    <a
-                      href={panoptoExternalUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="secondary-btn btn-sm"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', textDecoration: 'none' }}
-                    >
-                      {t('open_panopto_btn')}
-                    </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      {onUpdatePanoptoStaff && onImportCourseStaff && (
+                        <button
+                          type="button"
+                          className={`secondary-btn btn-sm panopto-staff-toggle-btn ${expandedPanoptoStaff ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!expandedPanopto) setExpandedPanopto(true);
+                            setExpandedPanoptoStaff((prev) => !prev);
+                          }}
+                          style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem' }}
+                        >
+                          {t('panopto_staff_short_btn')} ({coursePanoptoStaffEntries.length})
+                        </button>
+                      )}
+                      <a
+                        href={panoptoExternalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="secondary-btn btn-sm"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', textDecoration: 'none' }}
+                      >
+                        {t('open_panopto_btn')}
+                      </a>
+                    </div>
                   </div>
                   <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginInlineStart: 8 }}>
                     {expandedPanopto ? '▲' : '▼'}
@@ -7466,6 +8304,29 @@ function CourseDetailView({
                           </button>
                         )}
                       </div>
+                    )}
+
+                    {onUpdatePanoptoStaff && onImportCourseStaff && expandedPanoptoStaff && (
+                      <PanoptoStaffEditor
+                        courseId={courseId}
+                        entries={
+                          settings?.coursesPanoptoStaff?.[courseId] ||
+                          (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(courseId)] ||
+                          EMPTY_STAFF_ENTRIES
+                        }
+                        moodleStaff={courseStaff}
+                        detectedHosts={Array.from(
+                          new Set(
+                            courseRecordings
+                              .map((r) => r.host)
+                              .filter((h): h is string => Boolean(h && h.trim()))
+                          )
+                        )}
+                        onSaveEntries={onUpdatePanoptoStaff}
+                        onImportFromMoodle={onImportCourseStaff}
+                        t={t}
+                        lang={lang}
+                      />
                     )}
 
                     {/* Inline Folder URL / UUID Override Bar (defaults to off) */}
@@ -7541,51 +8402,7 @@ function CourseDetailView({
                         </div>
                       </div>
                     ) : (
-                      <div className="section-recordings-list" style={{ maxHeight: '340px', overflowY: 'auto' }}>
-                        {courseRecordings.map((rec, rIdx) => {
-                          const isWatched = watchedSet.has(rec.id);
-                          const isRecitation = rec.type === 'Recitation';
-                          return (
-                            <div
-                              key={rec.id || rIdx}
-                              className={`section-recording-item ${isWatched ? 'is-watched' : ''}`}
-                            >
-                              <div className="recording-left-info">
-                                <span
-                                  className={`item-type-tag recording-type-tag ${isRecitation ? 'recitation-tag' : 'lecture-tag'}`}
-                                >
-                                  {isRecitation ? `📐 ${t('panopto_recitation_badge')}` : `🎬 ${t('panopto_lecture_badge')}`}
-                                </span>
-                                <span className="item-name recording-title-span">{rec.title}</span>
-                                {rec.publishedDate && (
-                                  <span className="recording-date-badge">{rec.publishedDate}</span>
-                                )}
-                              </div>
-                              <div className="recording-actions">
-                                {onToggleRecordingWatched && (
-                                  <button
-                                    type="button"
-                                    className={`file-action-btn recording-watched-btn ${isWatched ? 'watched' : ''}`}
-                                    onClick={() => onToggleRecordingWatched(rec.id)}
-                                    title={isWatched ? t('watched_done') : t('mark_watched')}
-                                  >
-                                    <CheckIcon size={11} />
-                                    <span>{isWatched ? t('watched_done') : t('mark_watched')}</span>
-                                  </button>
-                                )}
-                                <a
-                                  href={rec.recordingUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="file-action-btn recording-watch-link"
-                                >
-                                  {t('watch_recording')}
-                                </a>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      renderPanoptoRecordingsBlock(courseRecordings, '340px')
                     )}
                   </div>
                 )}
@@ -8557,53 +9374,7 @@ function CourseDetailView({
                           </div>
                         )}
 
-                        {content.recordings.length > 0 && (
-                          <div className="section-recordings-list">
-                            {content.recordings.map((rec, rIdx) => {
-                              const isWatched = watchedSet.has(rec.id);
-                              const isRecitation = rec.type === 'Recitation';
-                              return (
-                                <div
-                                  key={rec.id || rIdx}
-                                  className={`section-recording-item ${isWatched ? 'is-watched' : ''}`}
-                                >
-                                  <div className="recording-left-info">
-                                    <span
-                                      className={`item-type-tag recording-type-tag ${isRecitation ? 'recitation-tag' : 'lecture-tag'}`}
-                                    >
-                                      {isRecitation ? `📐 ${t('panopto_recitation_badge')}` : `🎬 ${t('panopto_lecture_badge')}`}
-                                    </span>
-                                    <span className="item-name recording-title-span">{rec.title}</span>
-                                    {rec.publishedDate && (
-                                      <span className="recording-date-badge">{rec.publishedDate}</span>
-                                    )}
-                                  </div>
-                                  <div className="recording-actions">
-                                    {onToggleRecordingWatched && (
-                                      <button
-                                        type="button"
-                                        className={`file-action-btn recording-watched-btn ${isWatched ? 'watched' : ''}`}
-                                        onClick={() => onToggleRecordingWatched(rec.id)}
-                                        title={isWatched ? t('watched_done') : t('mark_watched')}
-                                      >
-                                        <CheckIcon size={11} />
-                                        <span>{isWatched ? t('watched_done') : t('mark_watched')}</span>
-                                      </button>
-                                    )}
-                                    <a
-                                      href={rec.recordingUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn recording-watch-link"
-                                    >
-                                      {t('watch_recording')}
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {content.recordings.length > 0 && renderPanoptoRecordingsBlock(content.recordings)}
 
                       </div>
                     )}
@@ -9537,78 +10308,84 @@ interface TourOverlayProps {
 }
 
 function TourOverlay({ step, setStep, onClose, t, lang }: TourOverlayProps) {
-  const steps = [
-    {
-      icon: '🍜',
-      title: t('tour_welcome_title'),
-      tag: t('tour_welcome_tag'),
-      desc: t('tour_welcome_desc'),
-      chips: lang === 'he' ? ['מודל את"א', 'ללא שרת', 'פרטיות מלאה'] : ['TAU Moodle', 'Decentralized', 'Zero Server'],
-    },
-    {
-      icon: '🔄',
-      title: t('tour_sync_btn_title'),
-      tag: t('tour_sync_btn_tag'),
-      desc: t('tour_sync_btn_desc'),
-      chips: lang === 'he' ? ['סנכרון מיידי', 'ללא שרת', 'Google Tasks'] : ['Live Sync', 'Direct Moodle', 'Google Tasks'],
-    },
-    {
-      icon: '🎯',
-      title: t('tour_next_task_title'),
-      tag: t('tour_next_task_tag'),
-      desc: t('tour_next_task_desc'),
-      chips: lang === 'he' ? ['ספירה לאחור חיה', 'הגשה בלחיצה', 'קבצי הנחיות ונושא'] : ['Live Countdown', '1-Click Submit', 'Subject Files'],
-    },
-    {
-      icon: '✅',
-      title: t('tour_tasks_actions_title'),
-      tag: t('tour_tasks_actions_tag'),
-      desc: t('tour_tasks_actions_desc'),
-      chips: lang === 'he' ? ['סימון כבוצע ✓', 'הסתרת משימות 👁', 'תור דינמי'] : ['Mark Done ✓', 'Hide Tasks 👁', 'Dynamic Queue'],
-    },
-    {
-      icon: '🎨',
-      title: t('tour_courses_custom_title'),
-      tag: t('tour_courses_custom_tag'),
-      desc: t('tour_courses_custom_desc'),
-      chips: lang === 'he' ? ['כינויים מקוצרים', 'פלטות צבעים', 'סינון סמסטרים'] : ['Short Nicknames', 'Color Palettes', 'Semester Tracking'],
-    },
-    {
-      icon: '📹',
-      title: t('tour_zoom_visibility_title'),
-      tag: t('tour_zoom_visibility_tag'),
-      desc: t('tour_zoom_visibility_desc'),
-      chips: lang === 'he' ? ['פעיל כעת ●', 'סינון תרגולים (👁)', 'הצטרפות ישירה'] : ['Active Now ●', 'Filter Recitations (👁)', 'Direct Zoom Link'],
-    },
-    {
-      icon: '📋',
-      title: t('tour_tab_assignments_title'),
-      tag: t('tour_tab_assignments_tag'),
-      desc: t('tour_tab_assignments_desc'),
-      chips: lang === 'he' ? ['חיפוש מהיר', '4 מסנני סטטוס', 'מגירת חומרי קורס'] : ['Instant Search', '4 Status Filters', 'Course Files Drawer'],
-    },
-    {
-      icon: '📊',
-      title: t('tour_tab_grades_title'),
-      tag: t('tour_tab_grades_tag'),
-      desc: t('tour_tab_grades_desc'),
-      chips: lang === 'he' ? ['ממוצע משוקלל', 'התפלגות ציונים', 'שקלול אוטומטי'] : ['GPA Tracker', 'Components Breakdown', 'Auto Weighted'],
-    },
-    {
-      icon: '⚙️',
-      title: t('tour_google_tasks_title'),
-      tag: t('tour_google_tasks_tag'),
-      desc: t('tour_google_tasks_desc'),
-      chips: lang === 'he' ? ['סנכרון דו-כיווני', 'ערכות נושא (קפה / נודלס)', 'התראות מותאמות'] : ['2-Way Sync', 'Themes (Coffee/Noodle)', 'Custom Alerts'],
-    },
-    {
-      icon: '🚀',
-      title: t('tour_finish_title'),
-      tag: t('tour_finish_tag'),
-      desc: t('tour_finish_desc'),
-      chips: lang === 'he' ? ['הפעלה מחדש מ"אודות"', 'קיצורי מקלדת', 'בהצלחה בסמסטר!'] : ['Restart via About', 'Keyboard Shortcuts', 'Good Luck!'],
-    },
-  ];
+  const steps: {
+    icon: React.ReactNode;
+    title: string;
+    tag: string;
+    desc: string;
+    chips: string[];
+  }[] = [
+      {
+        icon: <DashboardIcon size={22} />,
+        title: t('tour_welcome_title'),
+        tag: t('tour_welcome_tag'),
+        desc: t('tour_welcome_desc'),
+        chips: lang === 'he' ? ['מודל את"א', 'ללא שרת', 'פרטיות מלאה'] : ['TAU Moodle', 'Decentralized', 'Zero Server'],
+      },
+      {
+        icon: <SyncIcon size={22} />,
+        title: t('tour_sync_btn_title'),
+        tag: t('tour_sync_btn_tag'),
+        desc: t('tour_sync_btn_desc'),
+        chips: lang === 'he' ? ['סנכרון מיידי', 'חלונית מתקפלת', 'Google Tasks'] : ['Live Sync', 'Collapsible Dock', 'Google Tasks'],
+      },
+      {
+        icon: <AssignmentsIcon size={22} />,
+        title: t('tour_next_task_title'),
+        tag: t('tour_next_task_tag'),
+        desc: t('tour_next_task_desc'),
+        chips: lang === 'he' ? ['חלונית פרטים חיה', 'השלמות פאנופטו', 'הסרת משימות'] : ['Live Split Pane', 'Panopto Catch-Up', 'Dismiss Tasks'],
+      },
+      {
+        icon: <VideoIcon size={22} />,
+        title: t('tour_tasks_actions_title'),
+        tag: t('tour_tasks_actions_tag'),
+        desc: t('tour_tasks_actions_desc'),
+        chips: lang === 'he' ? ['מפגשי Zoom חיים', 'תצוגת כרטיסים / רשימה', 'חישוב פערים נקי'] : ['Live Zoom Strip', 'Cards & List Views', 'Filtered Gaps'],
+      },
+      {
+        icon: <BookOpenIcon size={22} />,
+        title: t('tour_courses_custom_title'),
+        tag: t('tour_courses_custom_tag'),
+        desc: t('tour_courses_custom_desc'),
+        chips: lang === 'he' ? ['כינויים וצבעים', 'מיפוי מרצים ומתרגלים', 'מעקב סמסטריאלי'] : ['Nicknames & Colors', 'Lecturer & TA Mapping', 'Semester Tracking'],
+      },
+      {
+        icon: <FolderIcon size={22} />,
+        title: t('tour_zoom_visibility_title'),
+        tag: t('tour_zoom_visibility_tag'),
+        desc: t('tour_zoom_visibility_desc'),
+        chips: lang === 'he' ? ['הורדת תיקיות כ-ZIP', 'פתיחת קבצים במחשב', 'עקוב אחרי מנחה'] : ['Folder ZIP Download', 'Open PC Files', 'Track This Host'],
+      },
+      {
+        icon: <CheckIcon size={22} />,
+        title: t('tour_tab_assignments_title'),
+        tag: t('tour_tab_assignments_tag'),
+        desc: t('tour_tab_assignments_desc'),
+        chips: lang === 'he' ? ['חיפוש מיידי', '4 מסנני סטטוס', 'חלון חסד להגשה'] : ['Instant Search', '4 Status Filters', 'Grace Period Clocks'],
+      },
+      {
+        icon: <GradesIcon size={22} />,
+        title: t('tour_tab_grades_title'),
+        tag: t('tour_tab_grades_tag'),
+        desc: t('tour_tab_grades_desc'),
+        chips: lang === 'he' ? ['ממוצע משוקלל', 'פירוט רכיבים', 'סנכרון ישיר ממודל'] : ['Weighted GPA', 'Components Breakdown', 'Direct Moodle Sync'],
+      },
+      {
+        icon: <SettingsIcon size={22} />,
+        title: t('tour_google_tasks_title'),
+        tag: t('tour_google_tasks_tag'),
+        desc: t('tour_google_tasks_desc'),
+        chips: lang === 'he' ? ['סנכרון תיקייה מקומית', 'Google Tasks דו-כיווני', '4 ערכות נושא'] : ['Local Folder Sync', '2-Way Google Tasks', '4 Themes'],
+      },
+      {
+        icon: <AboutIcon size={22} />,
+        title: t('tour_finish_title'),
+        tag: t('tour_finish_tag'),
+        desc: t('tour_finish_desc'),
+        chips: lang === 'he' ? ['הפעלה מחדש מ"אודות"', 'קיצורי מקלדת', 'משוב ב-GitHub'] : ['Restart via About', 'Keyboard Shortcuts', 'GitHub Feedback'],
+      },
+    ];
 
   const currentStep = steps[step] || steps[0];
   const isHighlightStep = step >= 1 && step <= 8;

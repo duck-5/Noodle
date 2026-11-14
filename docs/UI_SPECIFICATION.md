@@ -54,13 +54,18 @@ Presented immediately after successful authentication or when manually triggered
     - **Dashboard** (`dashboard`): Central overview cockpit (Hero Action Strip, Multi-Active Zoom, Semester Progress, My Tracked Courses).
     - **Assignments** (`assignments`): Dedicated full-page assignments feed with search, status filters, course filter banner, and expandable cards.
     - **Grades** (`grades`): Course grades breakdown, averages, and overall GPA tracker.
-    - **Settings** (`settings`): Configuration settings, theme selector, mock course generator, scraping fallback toggle, Google Tasks, and backup.
+    - **Settings** (`settings`): Configuration settings, theme selector, mock course generator, Panopto & Local Filesystem sync toggles, Google Tasks, and backup.
     - **About** (`about`): Credits, application details, and interactive tour launcher.
 *   **Sidebar Collapse Toggle**:
     - Flat button at the bottom of the sidebar with an arrow icon.
     - Clicking toggles width state (`240px` expanded vs `72px` collapsed).
     - (Mobile only) Clicking anywhere not on the sidebar collapses it
     - *Collapsed state styling*: Hides text labels, scales the logo to `44px` circular bounds, and formats navigation items as centered square buttons.
+*   **Sidebar Take Tour Button (`.sidebar-tour-btn`)**:
+    - Placed inside `.sidebar-nav` directly below the Sidebar Collapse Toggle with `<TourCompassIcon />`, allowing users to launch the 10-step Interactive Tour anytime without logging out or navigating away.
+*   **Sidebar New-Version Update Banner (`.sidebar-update-banner`)**:
+    - Displayed cleanly above `.sidebar-footer` whenever the background store checker detects a published Chrome Web Store / Firefox AMO version newer than `manifest.version` (and not dismissed for that `latestVersion`).
+    - Displays version progression (`v<current> → v<latest>`), a direct Store link CTA button, and a dismiss (`✕`) button; collapses into a compact `40px` icon link (`.sidebar-update-compact`) when the sidebar is collapsed.
 *   **Footer**:
     - **Disconnect Button**: Exit door with arrow vector icon (`ExitIcon`) that triggers log out.
     - (Mobile only) The disconnect logo will appear only when the sidebar is expended
@@ -305,12 +310,8 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
         - Chrome Web Store Review (`https://chromewebstore.google.com/detail/noodle/nelflkccefbdpnaphjabcgkpakhdoope`)
 *   **Disconnect Button**: Destructive button labeled "Disconnect from Moodle" that wipes all tokens, logs, local databases, and cookie records.
 
-### F. Web Scraping & Panopto Tracking Configuration
-*   **Moodle Web Scraping (Fallback)** (`#scraping-enabled-toggle`):
-    - Switch toggle to enable or disable HTML web scraping fallback.
-    - Default state: **OFF** (`scrapingEnabled: false`).
-    - Bilingual Description: "Scrape Moodle web pages for archived assignments, Zoom links, and files unavailable via the standard API. Default: Off (may slow down sync)." / "סריקת עמודי Moodle לאיתור מטלות בארכיון, קישורי Zoom וקבצים שאינם זמינים ב-API הרגיל. ברירת מחדל: כבוי (עשוי להאט את הסנכרון)."
-    - When disabled, synchronization strictly utilizes pure Moodle REST and AJAX endpoints for high-speed performance and minimal resource consumption.
+### F. Panopto Tracking Configuration *(Legacy Web Scraping toggle removed)*
+*   **Moodle Web Scraping Fallback *(Legacy / Removed from UI)***: Previously exposed as `#scraping-enabled-toggle`, now removed so extension synchronization strictly uses pure Moodle REST and AJAX endpoints.
 *   **Panopto Lecture & Recitation Tracking** (`#panopto-enabled-toggle`):
     - Switch toggle to enable or disable automatic discovery and tracking of Panopto lecture and recitation recordings per course.
     - Default state: **OFF** (`panoptoEnabled: false`).
@@ -320,6 +321,9 @@ The Settings tab is organized in a clear, prioritized hierarchy ensuring quick a
         - Opt-in switch toggle (default: **OFF**) labeled "Show manual Panopto folder override (URL / UUID)" / "הצגת הגדרה ידנית של תיקיית Panopto".
         - Description: "Allows manually entering a custom Panopto folder link or UUID for courses where automatic discovery does not find recordings." / "מאפשר הזנה ידנית של קישור או מזהה UUID לתיקיית Panopto עבור קורסים שהסריקה האוטומטית לא מזהה."
         - When disabled (default), raw UUID and folder URL override inputs in `CourseDetailView` and the Panopto column in `CoursesConfigTable` remain hidden to provide a clean, non-intimidating experience for non-technical users. When enabled, power users can supply custom folder overrides.
+    - **Per-Course Staff Mapping, Manage Courses Host Columns & Exclusive Filtering (`PanoptoStaffEditor` / `CourseStaffHostColumnCell` in `CourseDetailView` & `CoursesConfigTable`)**:
+        - When `panoptoEnabled` is true, the **Manage Courses** modal expands to `min(1280px, 95vw)` (`.manage-courses-modal`) and adds dedicated **Lecturer (Lecture Host)** and **TA (Recitation Host)** columns (`CourseStaffHostColumnCell`). Each column displays selected host chips, a role label paired with a `<select>` combobox auto-populated from cached Moodle staff (fetched once per course and stored in `browser.storage.local` `cachedCourseStaff`, with an explicit refresh button), and a manual host name input/add control. Both `CoursesConfigTable` rows and `CourseDetailView` also retain the `Staff (N)` (`סגל (N)`) drawer (`PanoptoStaffEditor`, using vector SVG icons) for detailed Moodle-to-English alias editing and detected-host chips.
+        - **Track This Host & Hidden Recordings List**: Every recording row with a detected `host` exposes a **Track this host** / **Tracking host** button (`.recording-track-host-btn`) that assigns or removes that host for the recording's type (`Lecture` / `Recitation`). Once at least one lecturer or TA is picked for a course, the recording list, Dashboard course card/list gaps and progress bars, Dashboard Catch-Up queue, and Toolbar Popup count display recordings matching picked hosts exclusively and move all other recordings into a collapsible **Show hidden recordings (`N`)** drawer (`.panopto-hidden-recordings-drawer`) without counting hidden recordings as gaps or in progress totals; when zero hosts are selected, nothing is hidden.
 
 ### G. Local Filesystem Sync Configuration (`LocalFsSettingsSection`)
 *   **Master Switch (`#local-fs-enabled-toggle`)**: Opt-in toggle (default: **OFF**) with live status pill (`Off` / `Connected` / `Syncing files...` / `Paused` / `Cooldown` / `Permission needed` / `Re-login needed`). On Firefox, enabling the toggle saves configuration cleanly without auto-starting downloads so users can run **Scan existing folder** (`#local-fs-firefox-scan-btn`) first; changing the target Firefox subfolder prompts via an accessible Escape-dismissible confirmation modal before clearing manifest/queue tracking (`LOCAL_FS_RESET_FOLDER`).
@@ -435,36 +439,37 @@ The extension includes a 10-step interactive walkthrough designed in the v4 fros
 ### A. Walkthrough Progression & Steps
 1. **Step 0 — Cockpit Overview (`tour_welcome`)**:
    - *Target View*: Centered modal dialog on Dashboard.
-   - *Contents*: Noodle bowl icon avatar badge, category pill `מבט כולל • Cockpit Overview`, decentralized local-first architecture highlights.
-2. **Step 1 — Real-Time Sync Button (`tour_sync_btn`)**:
+   - *Contents*: SVG icon badge (`DashboardIcon`), category pill (`Overview • Cockpit`), decentralized local-first architecture highlights with zero backend servers.
+2. **Step 1 — Live API Sync & Progress Dock (`tour_sync_btn`)**:
    - *Target View*: Highlights `.header-sync-btn` on Dashboard.
-   - *Contents*: Real-time manual sync trigger, direct Moodle fetching without external proxy, automatic synchronization to Google Tasks.
-3. **Step 2 — Next Task Spotlight (`tour_next_task`)**:
-   - *Target View*: Docks to bottom center; highlights `.hero-spotlight-card`.
-   - *Contents*: Immediate urgency spotlight, live countdown timer, 1-click submission link, prompt attachments, and course topic materials.
-4. **Step 3 — Task Controls: Done & Hidden (`tour_tasks_actions`)**:
-   - *Target View*: Highlights `.hero-actions-row` and `.queue-card`.
-   - *Contents*: Single-click completion (`✓`) and hiding tasks (`👁`). Dynamic auto-removal from active to-do queue.
-5. **Step 4 — Manage Courses Modal (`tour_courses_custom`)**:
-   - *Target View*: Automatically opens `ManageCoursesModal` (`isManageModalOpen: true`), highlights `.modal-content` aligned to top viewport (`maxHeight: 62vh`).
-   - *Contents*: Setting short course nicknames, assigning theme colors, tracking checkboxes, and semester grouping.
-6. **Step 5 — Live Zoom Sessions & Visibility (`tour_zoom_visibility`)**:
-   - *Target View*: Closes modal and automatically expands the first tracked course row (`expandedCourseId`), highlighting `.course-row-card`.
-   - *Contents*: Recitation filtering via the eye icon (`👁`), "Active Now" banner with 1-click join, and viewing hidden sessions.
-7. **Step 6 — Assignments Hub & Feed (`tour_tab_assignments`)**:
+   - *Contents*: Manual Moodle sync trigger, direct Moodle REST APIs inside the collapsible floating sync progress dock, and Google Tasks sync.
+3. **Step 2 — To-Do Queue, Split Detail & Catch-Up (`tour_next_task`)**:
+   - *Target View*: Docks to bottom center; highlights `.hero-action-strip`.
+   - *Contents*: Clicking any assignment opens the inline Master-Detail split pane with prompt files, subject files, submissions, and grace-period clock indicators; Panopto Catch-Up Queue appears alongside when enabled; `.queue-delete-btn` SVG trash button placeholder marks where irrelevant/bonus task dismissal will live (`TODO(hide-task-button)`).
+4. **Step 3 — Active Zoom Sessions & Gap Progress (`tour_tasks_actions`)**:
+   - *Target View*: Highlights `.multi-zoom-strip` (when live meetings exist), the first `.course-row-card`, and falls back to `.courses-rows-container` if no active meetings exist.
+   - *Contents*: Direct Zoom joining from Active Now banner, Cards/List view toggle, and course progress/gap tracking excluding hidden assignments and hidden-host Panopto recordings.
+5. **Step 4 — Manage Courses & Staff Mapping (`tour_courses_custom`)**:
+   - *Target View*: Stays on Dashboard without auto-opening `.manage-courses-modal`; highlights `.courses-list-header` and pulses `.manage-courses-trigger-btn`.
+   - *Contents*: Toggling semester tracking, setting short nicknames and colors, and assigning Lecturer and TA hosts from cached Moodle staff lists.
+6. **Step 5 — Course Hub, ZIP Folders & Host Tracking (`tour_zoom_visibility`)**:
+   - *Target View*: Automatically opens the first tracked course (`CourseDetailView`, `.course-detail-view.tour-highlight`), or falls back to `.courses-rows-container` when zero courses are tracked.
+   - *Contents*: Hierarchical course sections, Download Folder as ZIP, opening locally synced files on PC, Zoom meeting filtering, and Panopto `Track this host` filtering.
+7. **Step 6 — Assignments Hub & Deadlines Feed (`tour_tab_assignments`)**:
    - *Target View*: Automatically switches to the `assignments` tab; highlights `.filter-bar`.
-   - *Contents*: Real-time search by task or course, 4 status filters (To Do, Past, Completed, Hidden), and expandable subject materials drawers.
+   - *Contents*: Instant search, 4 status filters (To Do, Past, Completed, Hidden), grace-period indicators, and expandable materials drawers.
 8. **Step 7 — Grades & GPA Tracker (`tour_tab_grades`)**:
    - *Target View*: Automatically switches to the `grades` tab; highlights `.stat-card`.
-   - *Contents*: Cumulative estimated GPA, grade component distributions (exams, exercises, quizzes), and auto-calculated averages.
-9. **Step 8 — Settings & Google Tasks Sync (`tour_google_tasks`)**:
-   - *Target View*: Automatically switches to the `settings` tab; highlights `.google-tasks-section`.
-   - *Contents*: 2-way sync engine connecting Moodle assignment deadlines directly to Google Tasks and Google Calendar, theme options, and alert thresholds.
+   - *Contents*: Cumulative weighted GPA and per-course grade components (exams, assignments, quizzes) synced from Moodle.
+9. **Step 8 — Local Folder Sync, Google Tasks & Settings (`tour_google_tasks`)**:
+   - *Target View*: Automatically switches to the `settings` tab; highlights both `.google-tasks-section` and `.local-fs-section`.
+   - *Contents*: Local PC folder automatic sync & adoption, 2-way Google Tasks / Calendar sync, Panopto toggle, urgency thresholds, and 4 themes including Time-Adaptive mode.
 10. **Step 9 — Ready to Roll & About Tab (`tour_finish`)**:
    - *Target View*: Automatically switches to the `about` tab; highlights `.tab-about`.
-   - *Contents*: Restarting the tour anytime, keyboard navigation shortcuts, developer credits, and version information. Exiting cleanly returns user to the Dashboard (`setActiveTab('dashboard')`).
+   - *Contents*: Restarting the tour anytime, keyboard navigation shortcuts (`ArrowRight`/`ArrowLeft`, `Esc`), GitHub feedback links, and version information. Exiting cleanly returns the user to Dashboard (`setActiveTab('dashboard')`).
 
 ### B. UI/UX Design System
+- **Zero-Emoji Iconography**: All `.tour-icon-badge` step badges render crisp inline SVG icons in `--primary` stroke, with plain-text titles and feature chips (zero unicode emojis).
 - **Viewport Docking**:
   - *Steps 0 & 9*: Centered modal with `rgba(10, 12, 20, 0.72)` blurred backdrop overlay.
   - *Steps 1–8 (Highlight Mode)*: Transparent backdrop (`pointer-events: none`); card docks at the bottom viewport center (`max-width: 560px`), leaving the target highlighted UI elements completely visible and interactive.

@@ -1,5 +1,15 @@
 import browser from 'webextension-polyfill';
-import type { SyncResult, CourseSection, CourseFolder, CourseLink, CourseAnnouncement, CourseGradeSummary } from '@tautracker/moodle-client';
+import type { StoreVersionCheckResult } from './versionChecker.js';
+import type {
+  SyncResult,
+  CourseSection,
+  CourseFolder,
+  CourseLink,
+  CourseAnnouncement,
+  CourseGradeSummary,
+  CourseStaffMember,
+  CoursePanoptoStaffEntry,
+} from '@tautracker/moodle-client';
 
 export interface ExtensionSettings {
   googleTasksEnabled: boolean;
@@ -20,11 +30,13 @@ export interface ExtensionSettings {
   hiddenAssignments?: Array<number | string>;  // Array of assignment ids or uids that are hidden
   completedAssignments?: Array<number | string>; // Array of assignment ids or uids that are marked as completed
   uncompletedAssignments?: Array<number | string>; // Array of assignment ids or uids marked as To Do even if submitted
+  /** @deprecated Legacy setting removed from UI; Web Scraping fallback is permanently disabled. */
   scrapingEnabled?: boolean;
   syncWithoutDeadline?: boolean;
   panoptoEnabled?: boolean;
   showPanoptoFolderOverride?: boolean;
   coursesPanoptoMap?: Record<number, string>;
+  coursesPanoptoStaff?: Record<number, CoursePanoptoStaffEntry[]>;
   watchedRecordings?: string[];
   syncIntervalMinutes?: number;
 }
@@ -48,11 +60,12 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   hiddenAssignments: [],
   completedAssignments: [],
   uncompletedAssignments: [],
-  scrapingEnabled: false,
+  scrapingEnabled: false, // Legacy setting kept as false for backwards storage compatibility
   syncWithoutDeadline: false,
   panoptoEnabled: false,
   showPanoptoFolderOverride: false,
   coursesPanoptoMap: {},
+  coursesPanoptoStaff: {},
   watchedRecordings: [],
   syncIntervalMinutes: 60,
 };
@@ -173,6 +186,34 @@ export async function getCachedAnnouncements(): Promise<CourseAnnouncement[]> {
 export async function getCachedGradeSummaries(): Promise<Record<number, CourseGradeSummary>> {
   const result = await getCachedSyncResult();
   return result?.gradeSummaries || {};
+}
+
+export async function getCachedCourseStaff(): Promise<Record<number, CourseStaffMember[]>> {
+  const res = (await browser.storage.local.get('cachedCourseStaff').catch(() => ({}))) as {
+    cachedCourseStaff?: Record<number, CourseStaffMember[]>;
+  };
+  return res.cachedCourseStaff || {};
+}
+
+export async function setCachedCourseStaff(
+  staffMap: Record<number, CourseStaffMember[]>
+): Promise<void> {
+  await browser.storage.local.set({ cachedCourseStaff: staffMap });
+}
+
+export async function mergeCachedCourseStaff(
+  patch?: Record<number, CourseStaffMember[]>
+): Promise<Record<number, CourseStaffMember[]>> {
+  const current = await getCachedCourseStaff();
+  if (!patch || Object.keys(patch).length === 0) return current;
+  const merged: Record<number, CourseStaffMember[]> = { ...current };
+  for (const [k, members] of Object.entries(patch)) {
+    if (Array.isArray(members) && members.length > 0) {
+      merged[Number(k)] = members;
+    }
+  }
+  await setCachedCourseStaff(merged);
+  return merged;
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -414,4 +455,37 @@ export async function setLocalFsStatus(patch: Partial<LocalFsStatus>): Promise<L
   };
   await browser.storage.local.set({ localFsStatus: merged });
   return merged;
+}
+
+export const STORE_UPDATE_STATUS_KEY = 'storeUpdateStatus';
+export const DISMISSED_UPDATE_VERSION_KEY = 'dismissedUpdateVersion';
+
+export async function getStoreUpdateStatus(): Promise<StoreVersionCheckResult | null> {
+  const res = (await browser.storage.local.get(STORE_UPDATE_STATUS_KEY).catch(() => ({}))) as {
+    storeUpdateStatus?: StoreVersionCheckResult;
+  };
+  return res.storeUpdateStatus || null;
+}
+
+export async function setStoreUpdateStatus(status: StoreVersionCheckResult | null): Promise<void> {
+  if (!status) {
+    await browser.storage.local.remove(STORE_UPDATE_STATUS_KEY);
+    return;
+  }
+  await browser.storage.local.set({ [STORE_UPDATE_STATUS_KEY]: status });
+}
+
+export async function getDismissedUpdateVersion(): Promise<string | null> {
+  const res = (await browser.storage.local.get(DISMISSED_UPDATE_VERSION_KEY).catch(() => ({}))) as {
+    dismissedUpdateVersion?: string;
+  };
+  return res.dismissedUpdateVersion || null;
+}
+
+export async function setDismissedUpdateVersion(version: string | null): Promise<void> {
+  if (!version) {
+    await browser.storage.local.remove(DISMISSED_UPDATE_VERSION_KEY);
+    return;
+  }
+  await browser.storage.local.set({ [DISMISSED_UPDATE_VERSION_KEY]: version });
 }

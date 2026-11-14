@@ -8,6 +8,7 @@ import {
   RawMoodleQuiz,
   RawMoodleQuizAttempt,
 } from '../moodleApi.js';
+import type { CourseStaffMember } from '../types.js';
 
 export class UnsupportedStrategyError extends Error {
   constructor(
@@ -29,6 +30,7 @@ export interface StrategyContext {
   sesskey?: string;
   baseUrl: string;
   devMode?: boolean;
+  /** @deprecated Legacy Web Scraping fallback option (removed from extension Settings UI). */
   enableScraping?: boolean;
   lang?: 'he' | 'en';
 }
@@ -42,6 +44,7 @@ export interface IMoodleStrategy {
   getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus>;
   getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse>;
   getCourseContents(courseId: number): Promise<RawCourseSection[]>;
+  getCourseStaff?(courseId: number): Promise<CourseStaffMember[]>;
   getQuizzes?(courseIds: number[]): Promise<RawMoodleQuiz[]>;
   getQuizAttempts?(quizId: number): Promise<RawMoodleQuizAttempt[]>;
   updateActivityCompletionManually?(cmid: number, completed: boolean): Promise<boolean>;

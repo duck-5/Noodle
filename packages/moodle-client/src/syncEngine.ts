@@ -12,11 +12,14 @@ import {
   CourseGradeItem,
   ZoomMeeting,
   PanoptoRecording,
+  CourseStaffMember,
+  CoursePanoptoStaffEntry,
   SyncError,
   MoodleCredentials,
   Attachment,
 } from './types.js';
 import { fetchCourseFormatState, fetchSesskeyFromJar, ParsedCourseFormatState } from './courseFormatState.js';
+import { groupEnrolledCourses } from './courseGrouping.js';
 import { buildAuthenticatedFileUrl } from './zipBuilder.js';
 import { parseTauCourseMetadata } from './courseParser.js';
 import { SmartProgressCalculator, SyncProgressState } from './syncProgress.js';
@@ -31,6 +34,9 @@ import {
   buildPanoptoViewerUrl,
   extractPanoptoFromCourseHtml,
   classifyRecordingType,
+  classifyRecordingWithSource,
+  ClassifyRecordingOptions,
+  fetchCourseStaffFromParticipantsPage,
   filterAndDeduplicateRecordings,
   ensurePanoptoAuthenticated,
   resolvePanoptoViaLti,
@@ -82,9 +88,13 @@ export function hasGracePeriod(assignment: { deadline: string | null; cutoffDate
 }
 
 export interface RunSyncOptions {
+  /** @deprecated Legacy Web Scraping fallback option (removed from extension Settings UI; pure REST/AJAX is standard). */
   enableScraping?: boolean;
   enablePanopto?: boolean;
   coursesPanoptoMap?: Record<number, string>;
+  coursesPanoptoStaff?: Record<number, CoursePanoptoStaffEntry[]>;
+  /** Previously cached Moodle course staff (skipped from re-fetching when non-empty). */
+  cachedCourseStaff?: Record<number, CourseStaffMember[]>;
   onEnsurePanoptoAuth?: (forceRefresh?: boolean) => Promise<boolean>;
   lang?: 'he' | 'en';
 }
@@ -103,6 +113,7 @@ export async function runSync(
   const enableScraping = options?.enableScraping ?? false;
   const enablePanopto = options?.enablePanopto ?? false;
   const coursesPanoptoMap = options?.coursesPanoptoMap || {};
+  const coursesPanoptoStaff = options?.coursesPanoptoStaff || {};
   const client = new MoodleClient(token, baseUrl, {
     sesskey,
     devMode: false,
@@ -119,6 +130,7 @@ export async function runSync(
   const sections: CourseSection[] = [];
   const announcements: CourseAnnouncement[] = [];
   const gradeSummaries: Record<number, CourseGradeSummary> = {};
+  const courseStaff: Record<number, CourseStaffMember[]> = {};
 
   let scrapedMeetingsJar: CookieJar | null = null;
   let didAttemptLogin = false;
@@ -240,6 +252,7 @@ export async function runSync(
     format?: string;
     coursecategory?: string;
   }>();
+  const courseGroupAliases = new Map<number, number[]>();
   try {
     const courses = await client.getEnrolledCourses(userId);
     for (const c of courses) {
@@ -260,6 +273,31 @@ export async function runSync(
         year: c.year,
         instanceUrl: c.instanceUrl,
       });
+    }
+    try {
+      const normalizedCourses = courses.map((c) => {
+        const meta = parseTauCourseMetadata(c.idnumber || c.shortname || c.fullname || '');
+        return {
+          id: c.id,
+          courseId: meta?.courseCode || c.idnumber || c.shortname || String(c.id),
+          shortname: c.shortname || '',
+          fullname: c.fullname || '',
+          idnumber: c.idnumber,
+          semester: meta?.semester || 'Other',
+          year: meta?.year || (c.year !== undefined ? String(c.year) : ''),
+        };
+      });
+      const grouped = groupEnrolledCourses(normalizedCourses);
+      for (const u of grouped.academicCourses) {
+        const memberIds = Array.from(new Set([u.id, ...u.subCourses.map((s) => s.courseId)]));
+        if (memberIds.length > 1) {
+          for (const mid of memberIds) {
+            courseGroupAliases.set(mid, memberIds);
+          }
+        }
+      }
+    } catch {
+      // Non-fatal if grouping fails on partial mock courses
     }
     progress.setCourseMappingDone('Course catalog loaded.');
   } catch (err: any) {
@@ -1296,6 +1334,53 @@ export async function runSync(
         let resolutionTier = 'none';
         const ltiRecordings: PanoptoRecording[] = [];
 
+        // Reuse cached Moodle staff when already fetched; otherwise fetch once from Moodle
+        // for host-based classification and start-of-year mapping before recordings exist.
+        let moodleStaff: CourseStaffMember[] = [];
+        try {
+          const cachedForCourse =
+            options?.cachedCourseStaff?.[courseId] ??
+            (options?.cachedCourseStaff as Record<string, CourseStaffMember[]> | undefined)?.[String(courseId)];
+          if (Array.isArray(cachedForCourse) && cachedForCourse.length > 0) {
+            moodleStaff = cachedForCourse;
+          } else {
+            moodleStaff = await client.getCourseStaff(courseId);
+            if (moodleStaff.length === 0) {
+              moodleStaff = await fetchCourseStaffFromParticipantsPage(
+                courseId,
+                courseBaseUrl,
+                sesskey,
+                jar,
+                creds
+              );
+            }
+          }
+          if (moodleStaff.length > 0) {
+            courseStaff[courseId] = moodleStaff;
+          }
+        } catch (staffErr) {
+          console.warn(`[SyncEngine][Panopto] Course staff fetch skipped for ${courseId}:`, staffErr);
+        }
+
+        const groupIds = courseGroupAliases.get(courseId) || [courseId];
+        const staffEntries: CoursePanoptoStaffEntry[] = [];
+        const mergedMoodleStaff: CourseStaffMember[] = [...moodleStaff];
+        for (const gid of groupIds) {
+          const configured =
+            coursesPanoptoStaff[gid] ??
+            (coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]>)[String(gid)];
+          if (Array.isArray(configured)) {
+            staffEntries.push(...configured);
+          }
+          if (gid !== courseId && Array.isArray(courseStaff[gid])) {
+            mergedMoodleStaff.push(...courseStaff[gid]);
+          }
+        }
+        const classificationOptions: ClassifyRecordingOptions = {
+          staffEntries,
+          moodleStaff: mergedMoodleStaff,
+        };
+
         await ensurePanoptoSession(jar);
 
         const rawManual =
@@ -1438,7 +1523,9 @@ export async function runSync(
             courseId,
             courseName,
             PANOPTO_BASE_URL,
-            jar
+            jar,
+            0,
+            classificationOptions
           );
           if (folderRecordings.length > 0) {
             panoptoSessionVerified = true;
@@ -1453,7 +1540,9 @@ export async function runSync(
                 courseId,
                 courseName,
                 PANOPTO_BASE_URL,
-                jar
+                jar,
+                0,
+                classificationOptions
               );
               if (folderRecordings.length > 0) {
                 panoptoSessionVerified = true;
@@ -1469,15 +1558,29 @@ export async function runSync(
           }
         }
 
-        const rawCombined: PanoptoRecording[] = [...folderRecordings, ...ltiRecordings];
+        const reclassifiedLti = ltiRecordings.map((rec) => {
+          const classified = classifyRecordingWithSource(rec.title, {
+            ...classificationOptions,
+            host: rec.host,
+          });
+          return {
+            ...rec,
+            type: classified.type,
+            classificationSource: classified.source,
+          };
+        });
+
+        const rawCombined: PanoptoRecording[] = [...folderRecordings, ...reclassifiedLti];
         if (rawCombined.length === 0 && discoveredPanoptoDeliveries.length > 0) {
           for (const del of discoveredPanoptoDeliveries) {
+            const classified = classifyRecordingWithSource(del.title, classificationOptions);
             rawCombined.push({
               id: del.id,
               title: del.title,
               recordingUrl: del.recordingUrl,
               publishedDate: '',
-              type: classifyRecordingType(del.title),
+              type: classified.type,
+              classificationSource: classified.source,
               courseId,
               courseName,
               sectionName: del.sectionName,
@@ -1489,7 +1592,7 @@ export async function runSync(
           ? buildPanoptoFolderUrl(resolvedFolderId, PANOPTO_BASE_URL)
           : undefined;
 
-        const finalCourseRecordings = filterAndDeduplicateRecordings(rawCombined).map(rec => ({
+        const finalCourseRecordings = filterAndDeduplicateRecordings(rawCombined, classificationOptions).map(rec => ({
           ...rec,
           folderId: resolvedFolderId || rec.folderId,
           folderUrl: resolvedFolderUrl || rec.folderUrl,
@@ -1514,9 +1617,12 @@ export async function runSync(
       }
     }
 
-    // Level 3 Complete: Emit all Panopto recordings atomically
-    if (onPartialSync && recordings.length > 0) {
-      onPartialSync({ recordings: [...recordings] });
+    // Level 3 Complete: Emit all Panopto recordings and course staff atomically
+    if (onPartialSync && (recordings.length > 0 || Object.keys(courseStaff).length > 0)) {
+      onPartialSync({
+        recordings: [...recordings],
+        ...(Object.keys(courseStaff).length > 0 ? { courseStaff: { ...courseStaff } } : {}),
+      });
     }
   }
 
@@ -1590,6 +1696,7 @@ export async function runSync(
     links,
     announcements,
     gradeSummaries,
+    ...(Object.keys(courseStaff).length > 0 ? { courseStaff } : {}),
     syncedAt: new Date().toISOString(),
   };
 }

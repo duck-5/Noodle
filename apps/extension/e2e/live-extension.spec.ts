@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 test.describe('Live Extension Verification with Real Credentials', () => {
-  test('TC-EXT-LIVE-01: Log in with real credentials, verify scraping toggle default OFF, toggle ON, and test sync', async ({ context, optionsPage, extensionId }) => {
+  test('TC-EXT-LIVE-01: Log in with real credentials, verify legacy scraping toggle removed, and test pure API sync', async ({ context, optionsPage, extensionId }) => {
     test.setTimeout(360000); // 6 minutes timeout for full real network & SSO requests
     await optionsPage.setViewportSize({ width: 1280, height: 900 });
 
@@ -112,29 +112,16 @@ test.describe('Live Extension Verification with Real Credentials', () => {
     await settingsTabBtn.click();
     console.log('[Live Test] Navigated to Settings tab.');
 
-    // 5. Verify the scraping toggle is present
+    // 5. Verify the legacy scraping toggle was removed from Settings UI
     const scrapingToggle = optionsPage.locator('#scraping-enabled-toggle');
-    const toggleSlider = optionsPage.locator('label.switch:has(#scraping-enabled-toggle) .slider');
-    await expect(scrapingToggle).toBeAttached();
+    await expect(scrapingToggle).toHaveCount(0);
 
-    // Ensure we start from OFF mode
-    if (await scrapingToggle.isChecked()) {
-      console.log('[Live Test] Toggle was ON from previous session; toggling OFF to test default OFF mode...');
-      await toggleSlider.click();
-      await expect(scrapingToggle).not.toBeChecked();
-    }
-
-    const isCheckedOff = await scrapingToggle.isChecked();
-    console.log(`[Live Test] Scraping toggle is confirmed OFF: isChecked = ${isCheckedOff}`);
-    expect(isCheckedOff).toBe(false);
-
-    // Capture screenshot of Settings tab with toggle OFF
     const screenshotsDir = path.resolve(process.cwd(), 'screenshots');
     if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
-    await optionsPage.screenshot({ path: path.join(screenshotsDir, 'live-settings-scraping-off.png'), fullPage: true });
+    await optionsPage.screenshot({ path: path.join(screenshotsDir, 'live-settings.png'), fullPage: true });
 
-    // 6. Test sync with Scraping OFF
-    console.log('[Live Test] Testing Sync with Scraping OFF (Pure API mode)...');
+    // 6. Test pure API sync (no legacy HTML scraping fallback)
+    console.log('[Live Test] Testing Pure API Sync...');
     await background.evaluate(() => {
       (globalThis as any).__sw_logs = [];
     });
@@ -145,52 +132,20 @@ test.describe('Live Extension Verification with Real Credentials', () => {
     // Wait for sync to complete (button becomes enabled again with 'Sync Now' / 'סנכרן עכשיו' text)
     await expect(headerSyncBtn).toBeEnabled({ timeout: 90000 });
     await expect(headerSyncBtn).toHaveText(/סנכרן עכשיו|Sync Now/);
-    console.log('[Live Test] Sync with Scraping OFF completed quickly and cleanly!');
+    console.log('[Live Test] Pure API Sync completed cleanly!');
 
-    const logsScrapingOff = await background.evaluate(() => (globalThis as any).__sw_logs || []);
-    const scraperLogs = logsScrapingOff.filter((l: string) => l.includes('[ScraperStrategy]') || l.includes("strategy 'Scraper'"));
-    console.log(`[Live Test] Verified: 0 Scraper log entries while Scraping is OFF (actual: ${scraperLogs.length})`);
+    const logsSync = await background.evaluate(() => (globalThis as any).__sw_logs || []);
+    const scraperLogs = logsSync.filter((l: string) => l.includes('[ScraperStrategy]') || l.includes("strategy 'Scraper'"));
+    console.log(`[Live Test] Verified: 0 legacy Scraper log entries (actual: ${scraperLogs.length})`);
     expect(scraperLogs).toHaveLength(0);
 
-    // 7. Toggle Scraping to ON by clicking the toggle
-    console.log('[Live Test] Toggling Scraping to ON in the Settings page...');
-    await toggleSlider.click();
-    
-    // Assert checkbox is now checked
-    await expect(scrapingToggle).toBeChecked();
-
-    // Verify stored settings in chrome.storage.sync has scrapingEnabled: true
-    const storedOn = await optionsPage.evaluate(async () => {
+    const storedSettings = await optionsPage.evaluate(async () => {
       const s = await chrome.storage.sync.get('settings');
       return s.settings;
     });
-    console.log(`[Live Test] Stored scrapingEnabled setting after toggle ON: ${storedOn.scrapingEnabled}`);
-    expect(storedOn.scrapingEnabled).toBe(true);
+    expect(Boolean(storedSettings?.scrapingEnabled)).toBe(false);
 
-    // Capture screenshot of Settings tab with toggle ON
-    await optionsPage.screenshot({ path: path.join(screenshotsDir, 'live-settings-scraping-on.png'), fullPage: true });
-
-    // 8. Test sync with Scraping ON
-    console.log('[Live Test] Testing Sync with Scraping ON (Fallback Scraper active)...');
-    await expect(headerSyncBtn).toBeEnabled({ timeout: 30000 });
-    await headerSyncBtn.click();
-    await expect(headerSyncBtn).toBeEnabled({ timeout: 120000 });
-    await expect(headerSyncBtn).toHaveText(/סנכרן עכשיו|Sync Now/);
-    console.log('[Live Test] Sync with Scraping ON completed successfully!');
-
-    // 9. Reset toggle back to OFF so clean default state remains
-    console.log('[Live Test] Resetting Scraping toggle back to OFF (default)...');
-    await toggleSlider.click();
-    await expect(scrapingToggle).not.toBeChecked();
-
-    const storedReset = await optionsPage.evaluate(async () => {
-      const s = await chrome.storage.sync.get('settings');
-      return s.settings;
-    });
-    console.log(`[Live Test] Final stored scrapingEnabled setting: ${storedReset.scrapingEnabled}`);
-    expect(storedReset.scrapingEnabled).toBe(false);
-
-    // 10. Navigate to assignments/dashboard tab and capture final dashboard
+    // 7. Navigate to assignments/dashboard tab and capture final dashboard
     const assignmentsTabBtn = optionsPage.locator('button.nav-item').filter({ hasText: /לוח בקרה|Dashboard|מטלות|Assignments/ }).first();
     if (await assignmentsTabBtn.isVisible()) {
       await assignmentsTabBtn.click();

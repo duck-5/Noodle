@@ -205,8 +205,9 @@ graph LR
 | **TC-BG-06** | Smart Weighted Sync Progress Calculation & Monotonic State Progression | All (Mobile + Chrome + Firefox) | Automated | Background Sync |
 | **TC-EXT-01** | Toolbar Popup Quick-Access View | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
 | **TC-EXT-02** | Collapsible Sidebar (240px to 72px) | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
-| **TC-EXT-03** | First-Time Interactive Onboarding Tour | Extension (Chrome & Firefox) | Browser Agent | Extension Specials |
+| **TC-EXT-03** | First-Time Interactive Onboarding Tour | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension Specials |
 | **TC-EXT-04** | Options Dashboard React Hook Invariant Parity | Extension (Chrome & Firefox) | Automated | Extension Specials |
+| **TC-EXT-05** | Sidebar Update Checker Banner & Dismiss Persistence | Extension (Chrome & Firefox) | Automated & Browser Agent | Extension Specials |
 | **TC-EXT-BRW-01** | Manifest Build Transformation Parity | Extension (Chrome & Firefox) | Automated | Cross-Browser |
 | **TC-EXT-BRW-02** | OAuth Redirect URI Resolution Parity | Extension (Chrome & Firefox) | Automated & Browser Agent | Cross-Browser |
 | **TC-EXT-BRW-03** | Gecko Protocol Interception Parity | Extension (Firefox Specific) | Automated & Browser Agent | Cross-Browser |
@@ -597,10 +598,10 @@ graph LR
 #### TC-DASH-REHAUL-02: Upcoming To-Do Queue Item Filtering & Split Detail Pane Expansion
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments. Clicking any queue item smoothly splits `.queue-card` (`is-split`) to open the side-by-side detail pane (`.queue-detail-pane.queue-item-expanded.open`) framed by a border in the course's color, while keeping the task list scrollable alongside it.
+* **Description**: Verifies that the upcoming to-do queue (`.queue-card`) completely filters out completed and hidden assignments, displaying only urgent pending assignments with a `.queue-delete-btn` SVG trash UI placeholder (`stopPropagation` no-op until task hiding is wired). Clicking any queue item smoothly splits `.queue-card` (`is-split`) to open the side-by-side detail pane (`.queue-detail-pane.queue-item-expanded.open`) framed by a border in the course's color, while keeping the task list scrollable alongside it.
 * **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-DASH-REHAUL-02"`
 * **Browser Agent Prompt / Action**:
-  1. Verify queue list does not contain completed or hidden assignments.
+  1. Verify queue list does not contain completed or hidden assignments, and verify `.queue-item .queue-delete-btn svg` renders and does not expand the detail pane when clicked.
   2. Click a queue item card.
   3. Verify `.queue-card.is-split` opens `.queue-detail-pane.queue-item-expanded.open` alongside the scrollable list, framed by a course-colored border, displaying attachments, subject files matching topic, submitted files, and action buttons ("Go to Course", "Mark Done", "Hide", "Submit").
 
@@ -1334,30 +1335,31 @@ graph LR
 #### TC-EXT-03: First-Time Interactive Onboarding Tour (v4 Cockpit Redesign)
 * **Platform Target**: `Extension (Chrome & Firefox)`
 * **Modality**: `Browser Agent` & `Automated`
-* **Description**: For a fresh installation without `hasSeenTour` (or when relaunched from the About tab), renders the v4 glassmorphic 10-step interactive walkthrough in both Chrome and Firefox:
+* **Automated Playwright Command**: `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-EXT-03"`
+* **Description**: For a fresh installation without `hasSeenTour` (or when relaunched from the About tab), renders the v4 glassmorphic 10-step interactive walkthrough with SVG icon badges and zero unicode emojis in both Chrome and Firefox:
   1. **Step 0 (Cockpit Overview)**: Centered modal introducing Noodle's decentralized local-first architecture, complete privacy, and student cockpit.
-  2. **Step 1 (Real-Time Sync Button)**: Highlights `.header-sync-btn` on Dashboard, explaining instant direct Moodle fetching and background synchronization to Google Tasks without intermediate servers.
-  3. **Step 2 (Next Task Spotlight & Upcoming Queue)**: Docks to bottom viewport; highlights `.queue-card` with the closest urgent task expanded by default with urgent flare styling, live countdown, 1-click Moodle submission link, prompt attachments, and relevant course topic files.
-  4. **Step 3 (Task Actions: Done & Hidden)**: Highlights `.queue-card`, demonstrating 1-click completion (`✓`) and hiding tasks (`👁`), with dynamic removal from the active to-do queue.
-  5. **Step 4 (Manage Courses Modal)**: Automatically opens the "Manage Courses" modal (`isManageModalOpen: true`), highlighting `.modal-content` with top viewport alignment to prevent obscuring by the tour card. Explains setting custom course nicknames, assigning theme colors, tracking checkboxes, and semester grouping.
-  6. **Step 5 (Course Tracking & 1-Click Navigation)**: Closes modal and highlights the first tracked course card (`.course-row-card`), explaining course progress bars, breakdown statistics, and 1-click navigation to the course detail view (`onGoToCourse`) and assignments.
-  7. **Step 6 (Assignments Hub & Feed)**: Automatically switches to the `assignments` tab, highlighting `.filter-bar`. Explains global search, 4 status filters (To Do, Past, Completed, Hidden), and expandable materials drawers.
-  8. **Step 7 (Grades & GPA Tracker)**: Automatically switches to the `grades` tab, highlighting `.stat-card`. Explains cumulative GPA tracking, course grade components, and automatic Moodle grade synchronization.
-  9. **Step 8 (Settings & Google Tasks Sync)**: Automatically switches to the `settings` tab, highlighting `.google-tasks-section`. Explains 2-way sync with Google Tasks and Calendar, theme selection (Dark, Noodle, Coffee), and urgency notification thresholds.
-  10. **Step 9 (Ready to Roll & About)**: Automatically switches to the `about` tab, highlighting `.tab-about`. Explains how to relaunch the tour anytime, view developer credits, keyboard shortcuts, and version info. Exiting smoothly returns the user to the Dashboard (`setActiveTab('dashboard')`).
+  2. **Step 1 (Live API Sync & Progress Dock)**: Highlights `.header-sync-btn` on Dashboard, explaining instant direct Moodle REST fetching inside the collapsible sync dock and Google Tasks sync.
+  3. **Step 2 (To-Do Queue, Split Detail & Catch-Up)**: Docks to bottom viewport; highlights `.hero-action-strip` showcasing the inline split pane, grace-period clocks, Panopto Catch-Up Queue, and `.queue-delete-btn` dismiss button placeholder.
+  4. **Step 3 (Active Zoom Sessions & Gap Progress)**: Highlights `.multi-zoom-strip` (when active meetings exist) and `.course-row-card` (falling back to `.courses-rows-container` if no active meetings), covering Cards/List views and filtered gaps excluding hidden tasks and hidden Panopto hosts.
+  5. **Step 4 (Manage Courses & Staff Mapping)**: Stays on Dashboard without auto-opening `.manage-courses-modal`; highlights `.courses-list-header` and pulses `.manage-courses-trigger-btn`, explaining nicknames, colors, semester tracking, and Lecturer/TA staff mapping.
+  6. **Step 5 (Course Hub, ZIP Folders & Host Tracking)**: Opens the first tracked course (`CourseDetailView`, `.course-detail-view.tour-highlight`) or falls back to `.courses-rows-container`, explaining hierarchical sections, Download Folder as ZIP, local PC file opening, Zoom filtering, and Panopto "Track this host".
+  7. **Step 6 (Assignments Hub & Feed)**: Automatically switches to the `assignments` tab, highlighting `.filter-bar`. Explains global search, 4 status filters (To Do, Past, Completed, Hidden), grace-period indicators, and expandable materials drawers.
+  8. **Step 7 (Grades & GPA Tracker)**: Automatically switches to the `grades` tab, highlighting `.stat-card`. Explains cumulative weighted GPA tracking and per-course grade components synced from Moodle.
+  9. **Step 8 (Local Folder Sync, Google Tasks & Settings)**: Automatically switches to the `settings` tab, highlighting `.google-tasks-section` and `.local-fs-section`. Explains PC folder sync & adoption, 2-way Google Tasks sync, Panopto toggle, and 4 themes including Time-Adaptive mode.
+  10. **Step 9 (Ready to Roll & About)**: Automatically switches to the `about` tab, highlighting `.tab-about`. Explains how to relaunch the tour anytime, keyboard shortcuts, GitHub links, and version info. Exiting smoothly returns the user to the Dashboard (`setActiveTab('dashboard')`).
 * **Navigation & Interaction Controls**:
   - 10-segment segmented progress bar with click-to-step navigation.
   - Keyboard navigation (`ArrowRight` / `ArrowLeft` adapted to RTL/LTR, `Escape` to close).
   - Multi-theme styling verified across Slate Dark, Warm Noodle, and Dark Espresso Coffee themes.
 * **Browser Agent Prompt / Action**:
-  1. Clear `hasSeenTour` in local storage or click "Start Tour" in the About tab.
-  2. Verify Step 0 renders centered with blurred backdrop, icon badge, and feature chips.
+  1. Click `.sidebar-nav .sidebar-tour-btn` (directly below `.collapse-toggle-btn`) OR `.card-accent-tour` in the About tab (or clear `hasSeenTour` in local storage).
+  2. Verify Steps 0–9 render `.tour-icon-badge svg` and zero unicode emojis inside `.tour-card`.
   3. Advance using `ArrowLeft` (in RTL Hebrew) or click "Next".
   4. Assert Step 1 highlights `.header-sync-btn`.
-  5. Assert Step 4 automatically opens the Manage Courses modal and highlights the modal content with top padding.
-  6. Assert Step 5 closes the modal and highlights the course card showcasing course progress and navigation buttons.
-  7. Assert Steps 6, 7, 8, and 9 automatically switch tabs (`assignments`, `grades`, `settings`, `about`) and highlight respective sections.
-  8. Test exiting via `Escape` key or clicking "Finish" on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
+  5. Assert Step 2 highlights `.hero-action-strip` and Step 3 highlights active Zoom/course cards.
+  6. Assert Step 4 highlights `.courses-list-header` and pulses `.manage-courses-trigger-btn` WITHOUT opening `.manage-courses-modal`.
+  7. Assert Step 5 opens `.course-detail-view.tour-highlight` (or `.courses-rows-container` fallback) and Steps 6, 7, 8, 9 switch tabs (`assignments`, `grades`, `settings`, `about`) highlighting their respective sections.
+  8. Test exiting via `Escape` key or clicking finish CTA on Step 9; assert user is cleanly returned to Dashboard and `hasSeenTour: true` is persisted.
 
 
 #### TC-EXT-04: Options Dashboard React Hook Invariant Parity
@@ -1365,6 +1367,14 @@ graph LR
 * **Modality**: `Automated`
 * **Description**: Verifies that all React hooks (`useState`, `useEffect`, `useMemo`) in `apps/extension/src/options/App.tsx` execute unconditionally at top level across all onboarding states (loading, onboarding step 1 credentials, step 2 course selection, and step 3 dashboard view). Prevents runtime React error #310 ("Rendered more hooks than during the previous render") during state transitions.
 * **Automated Runner**: `pnpm --filter extension run lint` (ESLint `react-hooks/rules-of-hooks`), `pnpm --filter extension run build`, and `pnpm test:devtools`.
+
+#### TC-EXT-05: Sidebar Store Version Checker & Update Banner
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated` & `Browser Agent`
+* **Automated Commands**:
+  - `pnpm --filter extension test -- versionChecker.test.ts` (unit tests for Chrome Web Store HTML/CRX and Firefox AMO API/HTML parsing, cache invalidation on `manifest.version` change, and semver comparison)
+  - `pnpm --filter extension test:e2e e2e/dashboard.spec.ts -g "TC-EXT-05"`
+* **Description**: Checks the relevant browser extension store (Chrome Web Store for Chromium builds, Firefox AMO API/listing for Firefox builds) and displays `.sidebar-update-banner` above `.sidebar-footer` when `latestVersion > manifest.version`, collapsing into a compact `.sidebar-update-compact` icon link when sidebar is collapsed and persisting dismissal (`dismissedUpdateVersion`) per version.
 
 #### TC-EXT-BRW-01: Manifest Build Transformation Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`
@@ -1668,18 +1678,15 @@ graph LR
   - High-resolution, zero-whitespace Toolbar Popup container captures in both English (`toolbar-popup.png`) and Hebrew (`toolbar-popup-he.png`), verifying grammatically sound due countdowns ("1 day" / "4 days" vs "יום" / "4 ימים") and proper LTR/RTL text alignment.
   - Zero mentions of TAU or Tel Aviv University across all graphics, in strict adherence to third-party companion branding guidelines.
 
-#### TC-EXT-LIVE-01: Real Credentials Live E2E Authentication & Scraping Toggle Verification
+#### TC-EXT-LIVE-01: Real Credentials Live E2E Authentication & Pure API Sync Verification
 * **Platform Target**: `Extension (Chromium Specific)`
 * **Modality**: `Automated & Real Network (Live Credentials)`
 * **Test Runner**: `pnpm --filter extension exec playwright test e2e/live-extension.spec.ts`
 * **Description**: End-to-end live testing with real student credentials (`moodle_test_credentials.env`) against Tel Aviv University's live SSO server and Moodle platform:
   - Authenticates through TAU SSO (`nidp.tau.ac.il`), following SAML challenge responses.
   - Successfully navigates onboarding and course selection, persisting tracked courses.
-  - Verifies that the Fallback Web Scraping toggle (`#scraping-enabled-toggle`) in the Settings page defaults to **OFF** (`scrapingEnabled: false`).
-  - Executes rapid pure API sync with Scraping OFF, verifying fast completion without HTML scraping overhead.
-  - Toggles Web Scraping to ON via UI switch, verifying instant React state update and `chrome.storage.sync` persistence (`scrapingEnabled: true`).
-  - Executes synchronization with Scraping ON, testing fallback scraper activation.
-  - Toggles Scraping back to default OFF state and captures visual validation screenshots (`live-settings-scraping-off.png`, `live-settings-scraping-on.png`, `live-dashboard-after-sync.png`).
+  - Verifies that the legacy Web Scraping toggle (`#scraping-enabled-toggle`) is removed from the Settings page (`count === 0`).
+  - Executes pure API sync, verifying zero `[ScraperStrategy]` log entries, confirms `scrapingEnabled` remains falsy in `chrome.storage.sync`, and captures validation screenshots (`live-settings.png`, `live-dashboard-after-sync.png`).
 
 ---
 
@@ -2015,3 +2022,15 @@ graph LR
   3. `injectedPanoptoLoginStep` detects `window.Panopto.user.isAuthenticated` on `Login.aspx` / `Home.aspx` (preventing 25s timeouts when `externalLoginButton` is hidden for already-authenticated users) and falls back to `?instance=Moodle<year>&AllowBounce=true` if `Panopto.Login.checkStorageAccess()` stalls `extBtn.click()` in inactive background tabs.
   4. When `core_block_get_course_blocks` returns a lazy `<div id="loading_text">` placeholder, Stage 3 invokes `discoverPanoptoFromMoodleAjaxBlock` (`/blocks/panopto/ajax/load_panopto_block.php`) with the active Moodle `sesskey`.
 * **Verification**: `pnpm --filter @tautracker/moodle-client test`, `pnpm --filter extension run build:chrome`, and `pnpm --filter extension run build:firefox`.
+
+#### TC-PAN-09: Host Extraction, Hebrew-English Staff Mapping, Start-of-Year Moodle Staff Import & Instant Reclassification (#40)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Test Runner**: `pnpm --filter @tautracker/moodle-client test -- panopto.test.ts` and `pnpm --filter extension exec playwright test e2e/panopto-staff.spec.ts`
+* **Target Components**: `packages/moodle-client/src/panoptoScraper.ts`, `packages/moodle-client/src/strategies/restStrategy.ts`, `packages/moodle-client/src/syncEngine.ts`, `apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/PanoptoStaffEditor.tsx`, `apps/extension/src/options/App.tsx`
+* **Description**:
+  1. `extractPanoptoHostFromAbstract` extracts `Host` from `SessionRow.Abstract` (e.g. `Zoom Meeting ID: ...\r\n• Host: Yoav Lahini\r\n...`, single-line bullet/pipe abstracts, HTML entities, Hebrew `מארח:`, fallback host properties) and rejects empty/`N/A` placeholders.
+  2. `doesHostMatchPersonName` & `transliterateHebrewNameToEnglish` match Hebrew Moodle names (`יואב לחיני`, `אדם חיטין ביאלוס`, hyphenated `אדם חיטין-ביאלוס`, `אלי אייזנברג`) against English Panopto host names (including reversed token order) while avoiding false positives.
+  3. `classifyRecordingWithSource` and `reclassifyPanoptoRecordings` prioritize per-course user-configured staff entries (`coursesPanoptoStaff`) over title regexes, fall back to `moodleStaff` and then title keywords, and propagate across `courseIdAliases` / unified parent-child portals during `runSync`.
+  4. `RestMoodleStrategy.getCourseStaff` queries `core_enrol_get_enrolled_users` with `moodlewssettingfilter: 'false'` (using root URL for current-year courses and `/{year}` only for archive courses), maps `Non-editing teacher` / `מורה ללא הרשאות עריכה` to `'Recitation'`, `parseParticipantsHtml` scopes role extraction to the `Roles`/`תפקידים` column (`<thead>`/`<th>` index or `data-itemtype="roles"`, with non-role/student guards on headerless fragments so Students in groups like `"Recitation 01"` / `"Tutorial Group A"` are never misclassified as staff) while stripping `.userinitials` and retrying `&lang=he` when English HTML hides Hebrew-only names, and `runSync` populates `SyncResult.courseStaff` even with 0 Panopto recordings.
+  5. UI exposes `PanoptoStaffEditor` in `CourseDetailView` and **Manage Courses** (`CoursesConfigTable`, widened `.manage-courses-modal`), dedicated **Lecturer (Lecture Host)** and **TA (Recitation Host)** columns (`CourseStaffHostColumnCell` with role label, Moodle-populated combobox backed by first-time local storage `cachedCourseStaff`, manual host entry, and no redundant Moodle re-fetches), plus a **Track this host** button on every recording row paired with `partitionPanoptoRecordingsByTrackedHosts` exclusive visibility filtering, collapsible `.panopto-hidden-recordings-drawer`, and exclusion of hidden recordings from Dashboard course gaps, progress bars, Catch-Up queue, and Popup counts (verified via `panopto.test.ts` and `e2e/panopto-staff.spec.ts`).

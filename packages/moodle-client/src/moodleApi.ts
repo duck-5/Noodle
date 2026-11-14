@@ -6,6 +6,7 @@ import {
   ScraperMoodleStrategy,
   executeWithFallback,
 } from './strategies/index.js';
+import type { CourseStaffMember } from './types.js';
 
 export * from './strategies/index.js';
 
@@ -281,6 +282,7 @@ export interface MoodleClientOptions {
   sesskey?: string;
   devMode?: boolean;
   strategies?: IMoodleStrategy[];
+  /** @deprecated Legacy Web Scraping fallback option (removed from extension Settings UI; pure REST/AJAX is standard). */
   enableScraping?: boolean;
   lang?: 'he' | 'en';
 }
@@ -447,6 +449,22 @@ export class MoodleClient {
       (s) => s.getCourseContents(courseId),
       this.devMode
     );
+  }
+
+  public async getCourseStaff(courseId: number): Promise<CourseStaffMember[]> {
+    try {
+      return await executeWithFallback(
+        'getCourseStaff',
+        this.strategies,
+        (s) => (s.getCourseStaff ? s.getCourseStaff(courseId) : Promise.resolve([])),
+        this.devMode
+      );
+    } catch (err) {
+      if (this.devMode) {
+        console.warn(`[MoodleClient] getCourseStaff(${courseId}) failed:`, err);
+      }
+      return [];
+    }
   }
 
   public async uploadFile(filename: string, fileContentBase64: string): Promise<{ itemid: number }> {
