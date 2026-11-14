@@ -682,7 +682,7 @@ export const translations = {
     token_saved: "Saved!",
     copy_btn: "Copy",
     copied_btn: "Copied!",
-    panopto_enabled_title: "Panopto Recordings Tracking (Beta)",
+    panopto_enabled_title: "Panopto Recordings Tracking",
     panopto_enabled_desc: "Experimental beta feature to automatically sync lecture and recitation recordings from Panopto and group them inside course sections (manual folder URL/ID override available in Manage Courses). Default: Off.",
     panopto_perm_needed_title: "Browser Permission Required for Panopto",
     panopto_perm_needed_desc: "Your browser (Firefox/Zen) requires explicit permission to access panopto.eu servers to sync recordings. Without this permission, requests are blocked by CORS.",

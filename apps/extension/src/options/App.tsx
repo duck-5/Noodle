@@ -4111,7 +4111,6 @@ function CoursesConfigTable({
                     <div>{t('display_nickname')}</div>
                     {showStaffCols && <div>{t('panopto_col_lecturer')}</div>}
                     {showStaffCols && <div>{t('panopto_col_ta')}</div>}
-                    {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                     <div>{t('theme_color_label')}</div>
                   </div>
 
@@ -4441,7 +4440,6 @@ function CoursesConfigTable({
                   <div>{t('display_nickname')}</div>
                   {showStaffCols && <div>{t('panopto_col_lecturer')}</div>}
                   {showStaffCols && <div>{t('panopto_col_ta')}</div>}
-                  {showPanoptoCol && <div>{t('panopto_folder_column')} <span className="badge-beta" style={{ fontSize: '0.62rem' }}>{lang === 'he' ? 'בטא' : 'BETA'}</span></div>}
                   <div>{t('theme_color_label')}</div>
                 </div>
                 {[...group.courses].map((c) => {
@@ -7990,17 +7988,11 @@ function SettingsTab({
       <div className="settings-section">
         <h4>
           {t('panopto_enabled_title')}
-          <span className="badge-beta" style={{ marginInlineStart: '0.5rem' }}>
-            {lang === 'he' ? 'בטא' : 'BETA'}
-          </span>
         </h4>
         <div className="toggle-row">
           <div>
             <span className="toggle-label">
               {t('panopto_enabled_title')}
-              {/* <span className="badge-beta" style={{ marginInlineStart: '0.4rem' }}>
-                {lang === 'he' ? 'בטא' : 'BETA'}
-              </span> */}
             </span>
             <p className="subtitle">{t('panopto_enabled_desc')}</p>
           </div>
@@ -9180,8 +9172,7 @@ function CourseDetailView({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h4 style={{ margin: 0, fontSize: '1rem', color: courseColor, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>🎬 {t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
-                      <span className="badge-beta">{lang === 'he' ? 'בטא' : 'BETA'}</span>
+                      <span>{t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
                     </h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       {onUpdatePanoptoStaff && onImportCourseStaff && (
@@ -10915,7 +10906,7 @@ function AboutTab({
                     </svg>
                   </div>
                   <div className="about-item-text">
-                    <strong className="about-item-title">Panopto Recordings Tracking (Beta):</strong>
+                    <strong className="about-item-title">Panopto Recordings Tracking:</strong>
                     <span>Automatic sync of lecture and recitation recordings from Panopto folders directly grouped within course views.</span>
                   </div>
                 </li>
