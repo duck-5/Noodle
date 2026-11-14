@@ -151,10 +151,30 @@ A dedicated full-page assignment feed providing comprehensive management of all 
   - **Filter Checkboxes**: Real-time filters for Pending ("לביצוע"), Past ("עברו"), Completed ("הושלמו"), and Hidden ("מוסתרים").
   - **Calendar View Toggle Button (`📅 תצוגת לוח שנה` / `📅 Calendar View`)**: Toggles an interactive split-pane monthly calendar alongside the assignments list.
 * **Split-Pane Calendar View (`.assignments-workspace.calendar-open`)**:
-  - Shrinking the width of the assignments feed (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`), a sticky monthly calendar pane appears on the side.
-  - Displays month navigation (`◀`, `היום` / `Today`, `▶`) and color-coded assignment pills on their due dates.
-  - When an assignment has a late submission grace period, the calendar pill features an inline `.calendar-pill-clock` vector SVG icon and extends the pill tooltip to include: ` · [Late assignment accepted til {date} / מטלות באיחור יתקבלו עד {date}]`.
-  - Clicking any assignment pill in the calendar automatically enables its status filter if currently unchecked, expands that assignment card in the feed, and smoothly scrolls it into view.
+  - Shrinking the width of the feed (`grid-template-columns: minmax(340px, 1.05fr) minmax(420px, 0.95fr)`), a sticky interactive calendar pane (`ScheduleCalendarPane`) appears on the side.
+  - Supports **Monthly** and **Weekly** view modes via a segmented `.calendar-mode-switcher` control persisted under `localStorage.noodle_calendar_view_mode`:
+    - **Monthly Mode**: 7-column month grid displaying prev/today/next month navigation (`◀`, `היום` / `Today`, `▶`) and color-coded `.calendar-assign-pill` pills. When an assignment has a late submission grace period, the pill displays `.calendar-pill-clock` and extends the tooltip (`Late assignment accepted til {date}`).
+    - **Weekly Mode**: 7-column day card grid (`.calendar-week-grid` with `min-height: 180px` `.calendar-week-day-card` columns) showing prev/today/next week navigation and full non-truncated `.calendar-week-item-card` entries (course accent bar, display name, Lecture/Recitation or Assignment badge, full title, host/time metadata).
+  - Includes an optional cross-overlay toggle (`.calendar-overlay-toggle`: `"הצג גם הקלטות" / "Also show recordings"` in Assignments; `"הצג גם מטלות" / "Also show assignments"` in Recordings) to overlay Panopto recordings and assignment deadlines on the same schedule. Clicking an overlay item switches to its corresponding tab and focuses it.
+  - Clicking any item pill in the calendar automatically enables its status filter if currently unchecked, expands/highlights its card in the feed, and smoothly scrolls it into view.
+
+---
+
+## 4B. Dedicated Recordings Tab ("הקלטות")
+
+A full-page Panopto recording feed complementing the Assignments tab (`RecordingsTab`), built exclusively with inline SVG vector icons (zero unicode emojis):
+* **Panopto Disabled & Permission States**:
+  - When `settings.panoptoEnabled` is `false`, renders an empty-state card with `<VideoIcon />` and a direct **"Open Settings"** button.
+  - When enabled without granted Panopto host permission, surfaces `.panopto-permission-banner` with a 1-click grant CTA.
+* **Filter Bar**:
+  - **Search & Course Selector**: Text filter matching recording title, host name, section name, or course name paired with a course `<select>` (`All Courses` + tracked courses).
+  - **5 Filter Checkboxes**: `Unwatched` (`טרם נצפו`, default checked), `Watched` (`נצפו`), `Lectures` (`הרצאות`, default checked), `Recitations` (`תרגולים`, default checked), and `Hidden` (`מוסתרים`).
+  - **Calendar View Toggle**: Toggles the split-pane `ScheduleCalendarPane` (persisted via `localStorage.noodle_show_recordings_calendar_view`).
+* **Recording Feed Cards (`.recording-feed-card`)**:
+  - Sorted newest-first via `parseRecordingDateToKey(rec.publishedDate)`.
+  - Displays a clickable course badge (`onGoToCourse`), Lecture/Recitation `.recording-type-tag`, optional `.badge-hidden-tag`, title, host & published date badges, and optional section label.
+  - Action row includes **Track Host / Tracking Host** (`onToggleTrackHost`), **Mark Watched / Watched** (`onToggleRecordingWatched`), direct **Watch** link (`rec.recordingUrl`), and **Dismiss / Restore** (`.queue-delete-btn` persisting in `ExtensionSettings.hiddenRecordings`).
+  - Dismissed and host-hidden recordings are accessible either via the `Hidden` filter checkbox or via the collapsible bottom `.panopto-hidden-recordings-drawer`.
 * **Course Filter Banner**:
   - Appears when navigating from a course row's "מטלות" button: `מסנן לפי קורס: [Course Name]`.
   - Includes an inline "הצג את כל הקורסים ✕" button to easily clear the filter and return to the complete assignments feed.

@@ -38,6 +38,7 @@ export interface ExtensionSettings {
   coursesPanoptoMap?: Record<number, string>;
   coursesPanoptoStaff?: Record<number, CoursePanoptoStaffEntry[]>;
   watchedRecordings?: string[];
+  hiddenRecordings?: string[];
   syncIntervalMinutes?: number;
 }
 
@@ -67,6 +68,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   coursesPanoptoMap: {},
   coursesPanoptoStaff: {},
   watchedRecordings: [],
+  hiddenRecordings: [],
   syncIntervalMinutes: 60,
 };
 

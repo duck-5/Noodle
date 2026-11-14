@@ -725,6 +725,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [assignmentFilterCourseId, setAssignmentFilterCourseId] = useState<number | null>(null);
+  const [focusedAssignmentId, setFocusedAssignmentId] = useState<number | null>(null);
+  const [focusedRecordingId, setFocusedRecordingId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [showHiddenZoomCourseIds, setShowHiddenZoomCourseIds] = useState<Set<number>>(new Set());
   const [showHiddenPanoptoCourseIds, setShowHiddenPanoptoCourseIds] = useState<Set<number>>(new Set());
@@ -2260,6 +2262,17 @@ export default function App() {
     await setSettings(updated);
   }
 
+  async function handleToggleRecordingHidden(recordingId: string) {
+    if (!settings || !recordingId) return;
+    const currentHidden = settings.hiddenRecordings || [];
+    const updatedHidden = currentHidden.includes(recordingId)
+      ? currentHidden.filter((id) => id !== recordingId)
+      : [...currentHidden, recordingId];
+    const updated = { ...settings, hiddenRecordings: updatedHidden };
+    setSettingsState(updated);
+    await setSettings(updated);
+  }
+
   async function handleToggleCompleted(assignmentId: number | string) {
     if (!settings) return;
     const rawAssignments = (mergedSyncView || syncResult)?.assignments || [];
@@ -2906,6 +2919,12 @@ export default function App() {
               <AssignmentsIcon size={18} /> <span>{t('assignments')}</span>
             </button>
             <button
+              className={`nav-item ${activeTab === 'recordings' && selectedCourseId === null ? 'active' : ''}`}
+              onClick={() => { setActiveTab('recordings'); setSelectedCourseId(null); }}
+            >
+              <VideoIcon size={18} /> <span>{t('recordings')}</span>
+            </button>
+            <button
               className={`nav-item ${activeTab === 'grades' && selectedCourseId === null ? 'active' : ''}`}
               onClick={() => { setActiveTab('grades'); setSelectedCourseId(null); }}
             >
@@ -3217,6 +3236,7 @@ export default function App() {
                 ) : activeTab === 'assignments' ? (
                   <AssignmentsTab
                     assignments={assignmentsList}
+                    recordings={recordingsList}
                     files={filesList}
                     token={token}
                     getCourseColor={getCourseColor}
@@ -3232,6 +3252,39 @@ export default function App() {
                     tourStep={tourStep}
                     onToggleCompleted={handleToggleCompleted}
                     onToggleHidden={handleToggleHidden}
+                    focusedAssignId={focusedAssignmentId}
+                    onClearFocusedAssign={() => setFocusedAssignmentId(null)}
+                    onFocusRecording={(recordingId) => {
+                      setFocusedRecordingId(recordingId);
+                      setActiveTab('recordings');
+                    }}
+                  />
+                ) : activeTab === 'recordings' ? (
+                  <RecordingsTab
+                    recordings={recordingsList}
+                    assignments={assignmentsList}
+                    trackedCourseIds={trackedCourseIds}
+                    enrolledCourses={availableCourses}
+                    getCourseColor={getCourseColor}
+                    getCourseDisplayName={getCourseDisplayName}
+                    onGoToCourse={(courseId) => {
+                      setSelectedCourseId(courseId);
+                    }}
+                    settings={settings}
+                    t={t}
+                    lang={currentLang}
+                    onToggleRecordingWatched={handleToggleRecordingWatched}
+                    onToggleRecordingHidden={handleToggleRecordingHidden}
+                    onToggleTrackHost={handleToggleTrackHost}
+                    hasPanoptoPermission={hasPanoptoPermission}
+                    onRequestPanoptoPermission={handleRequestPanoptoPermission}
+                    onOpenSettings={() => setActiveTab('settings')}
+                    focusedRecordingId={focusedRecordingId}
+                    onClearFocusedRecording={() => setFocusedRecordingId(null)}
+                    onFocusAssignment={(assignId) => {
+                      setFocusedAssignmentId(assignId);
+                      setActiveTab('assignments');
+                    }}
                   />
                 ) : null}
 
@@ -5619,9 +5672,389 @@ function DashboardTab({
   );
 }
 
+function formatLocalDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function parseRecordingDateToKey(dateStr?: string): { date: Date; key: string } | null {
+  if (!dateStr) return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const y = Number(isoDateMatch[1]);
+    const m = Number(isoDateMatch[2]) - 1;
+    const day = Number(isoDateMatch[3]);
+    const d = new Date(y, m, day);
+    if (!isNaN(d.getTime())) {
+      return { date: d, key: formatLocalDateKey(d) };
+    }
+  }
+
+  const dmyMatch = trimmed.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})(?:[\s,T]+(\d{1,2}):(\d{2}))?$/);
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const m = Number(dmyMatch[2]) - 1;
+    const y = Number(dmyMatch[3]);
+    const hh = dmyMatch[4] ? Number(dmyMatch[4]) : 0;
+    const mm = dmyMatch[5] ? Number(dmyMatch[5]) : 0;
+    const d = new Date(y, m, day, hh, mm);
+    if (!isNaN(d.getTime()) && d.getDate() === day && d.getMonth() === m) {
+      return { date: d, key: formatLocalDateKey(d) };
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return null;
+  return { date: parsed, key: formatLocalDateKey(parsed) };
+}
+
+interface CalendarScheduleItem {
+  key: string;
+  kind: 'assignment' | 'recording';
+  courseId: number;
+  courseName: string;
+  title: string;
+  dateKey: string;
+  timeLabel?: string;
+  subLabel?: string;
+  typeBadge?: string;
+  isDone?: boolean;
+  isSelected?: boolean;
+  graceTooltip?: string | null;
+  onClick: () => void;
+}
+
+function ScheduleCalendarPane({
+  items,
+  overlayItems,
+  overlayToggleLabel,
+  showOverlay = false,
+  onToggleOverlay,
+  hintText,
+  getCourseColor,
+  t,
+  lang,
+}: {
+  items: CalendarScheduleItem[];
+  overlayItems?: CalendarScheduleItem[];
+  overlayToggleLabel?: string;
+  showOverlay?: boolean;
+  onToggleOverlay?: (next: boolean) => void;
+  hintText: string;
+  getCourseColor: (courseId: number) => string;
+  t: (key: any) => string;
+  lang: 'he' | 'en';
+}) {
+  const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week'>(() => {
+    try {
+      return localStorage.getItem('noodle_calendar_view_mode') === 'week' ? 'week' : 'month';
+    } catch {
+      return 'month';
+    }
+  });
+  const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
+
+  const handleSetCalendarViewMode = (mode: 'month' | 'week') => {
+    setCalendarViewMode(mode);
+    try {
+      localStorage.setItem('noodle_calendar_view_mode', mode);
+    } catch {
+      // ignore storage failures
+    }
+  };
+
+  const now = new Date();
+  const todayKey = formatLocalDateKey(now);
+  const locale = lang === 'he' ? 'he-IL' : 'en-US';
+  const weekdayLabels = lang === 'he'
+    ? ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"]
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const combinedItems = useMemo(() => {
+    if (showOverlay && overlayItems && overlayItems.length > 0) {
+      return [...items, ...overlayItems];
+    }
+    return items;
+  }, [items, overlayItems, showOverlay]);
+
+  const itemsByDateKey = useMemo(() => {
+    const map = new Map<string, CalendarScheduleItem[]>();
+    for (const item of combinedItems) {
+      if (!map.has(item.dateKey)) {
+        map.set(item.dateKey, []);
+      }
+      map.get(item.dateKey)!.push(item);
+    }
+    return map;
+  }, [combinedItems]);
+
+  const calYear = calendarDate.getFullYear();
+  const calMonthIdx = calendarDate.getMonth();
+
+  // Monthly grid cells
+  const firstDayOfWeek = new Date(calYear, calMonthIdx, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonthIdx + 1, 0).getDate();
+  const daysInPrevMonth = new Date(calYear, calMonthIdx, 0).getDate();
+
+  const monthCells: Array<{ date: Date; dayNumber: number; isCurrentMonth: boolean; isToday: boolean; items: CalendarScheduleItem[] }> = [];
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const dayNum = daysInPrevMonth - i;
+    const cellDate = new Date(calYear, calMonthIdx - 1, dayNum);
+    const key = formatLocalDateKey(cellDate);
+    monthCells.push({
+      date: cellDate,
+      dayNumber: dayNum,
+      isCurrentMonth: false,
+      isToday: key === todayKey,
+      items: itemsByDateKey.get(key) || [],
+    });
+  }
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+    const cellDate = new Date(calYear, calMonthIdx, dayNum);
+    const key = formatLocalDateKey(cellDate);
+    monthCells.push({
+      date: cellDate,
+      dayNumber: dayNum,
+      isCurrentMonth: true,
+      isToday: key === todayKey,
+      items: itemsByDateKey.get(key) || [],
+    });
+  }
+  const totalNeeded = monthCells.length > 35 ? 42 : 35;
+  const remaining = totalNeeded - monthCells.length;
+  for (let dayNum = 1; dayNum <= remaining; dayNum++) {
+    const cellDate = new Date(calYear, calMonthIdx + 1, dayNum);
+    const key = formatLocalDateKey(cellDate);
+    monthCells.push({
+      date: cellDate,
+      dayNumber: dayNum,
+      isCurrentMonth: false,
+      isToday: key === todayKey,
+      items: itemsByDateKey.get(key) || [],
+    });
+  }
+
+  // Weekly grid cells (Sunday - Saturday of anchor date)
+  const anchorMidnight = new Date(calYear, calMonthIdx, calendarDate.getDate());
+  const weekStart = new Date(anchorMidnight);
+  weekStart.setDate(anchorMidnight.getDate() - anchorMidnight.getDay());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  const weekCells: Array<{ date: Date; weekdayLabel: string; isToday: boolean; items: CalendarScheduleItem[] }> = [];
+  for (let offset = 0; offset < 7; offset++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + offset);
+    const key = formatLocalDateKey(d);
+    weekCells.push({
+      date: d,
+      weekdayLabel: weekdayLabels[offset],
+      isToday: key === todayKey,
+      items: itemsByDateKey.get(key) || [],
+    });
+  }
+
+  const headerTitle = calendarViewMode === 'week'
+    ? `${weekStart.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} – ${weekEnd.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}`
+    : calendarDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+
+  const handlePrev = () => {
+    if (calendarViewMode === 'week') {
+      setCalendarDate(new Date(calYear, calMonthIdx, calendarDate.getDate() - 7));
+    } else {
+      setCalendarDate(new Date(calYear, calMonthIdx - 1, 1));
+    }
+  };
+
+  const handleNext = () => {
+    if (calendarViewMode === 'week') {
+      setCalendarDate(new Date(calYear, calMonthIdx, calendarDate.getDate() + 7));
+    } else {
+      setCalendarDate(new Date(calYear, calMonthIdx + 1, 1));
+    }
+  };
+
+  const handleToday = () => {
+    setCalendarDate(new Date());
+  };
+
+  return (
+    <aside className="assignments-calendar-pane glass-panel">
+      <div className="calendar-pane-header">
+        <div className="calendar-month-title">{headerTitle}</div>
+        <div className="calendar-pane-controls-group">
+          <div className="calendar-mode-switcher" role="group">
+            <button
+              type="button"
+              className={`calendar-mode-btn ${calendarViewMode === 'month' ? 'active' : ''}`}
+              onClick={() => handleSetCalendarViewMode('month')}
+            >
+              {t('calendar_mode_month')}
+            </button>
+            <button
+              type="button"
+              className={`calendar-mode-btn ${calendarViewMode === 'week' ? 'active' : ''}`}
+              onClick={() => handleSetCalendarViewMode('week')}
+            >
+              {t('calendar_mode_week')}
+            </button>
+          </div>
+          <div className="calendar-nav-controls">
+            <button
+              type="button"
+              className="calendar-nav-btn"
+              onClick={handlePrev}
+              title={calendarViewMode === 'week' ? t('prev_week') : t('prev_month')}
+            >
+              {lang === 'he' ? '▶' : '◀'}
+            </button>
+            <button
+              type="button"
+              className="calendar-today-btn"
+              onClick={handleToday}
+            >
+              {t('today_btn')}
+            </button>
+            <button
+              type="button"
+              className="calendar-nav-btn"
+              onClick={handleNext}
+              title={calendarViewMode === 'week' ? t('next_week') : t('next_month')}
+            >
+              {lang === 'he' ? '◀' : '▶'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="calendar-subtoolbar">
+        <div className="calendar-hint-subtext">{hintText}</div>
+        {overlayToggleLabel && onToggleOverlay && (
+          <label className="calendar-overlay-toggle">
+            <input
+              type="checkbox"
+              checked={showOverlay}
+              onChange={(e) => onToggleOverlay(e.target.checked)}
+            />
+            <span>{overlayToggleLabel}</span>
+          </label>
+        )}
+      </div>
+
+      {calendarViewMode === 'month' ? (
+        <>
+          <div className="calendar-weekdays-row">
+            {weekdayLabels.map((lbl, idx) => (
+              <div key={idx} className="calendar-weekday-cell">
+                {lbl}
+              </div>
+            ))}
+          </div>
+
+          <div className="calendar-days-grid">
+            {monthCells.map((cell, idx) => (
+              <div
+                key={idx}
+                className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'outside-month'} ${cell.isToday ? 'today is-today' : ''} ${cell.items.length > 0 ? 'has-items' : ''}`}
+              >
+                <div className="calendar-day-number">{cell.dayNumber}</div>
+                <div className="calendar-day-items">
+                  {cell.items.map((item) => {
+                    const color = getCourseColor(item.courseId);
+                    const metaBits = [item.timeLabel, item.subLabel, item.graceTooltip].filter(Boolean).join(' • ');
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        className={`calendar-assign-pill ${item.isSelected ? 'selected' : ''} ${item.isDone ? 'completed done' : ''} ${item.kind === 'recording' ? 'is-recording-pill' : ''}`}
+                        style={{
+                          borderInlineStartColor: color,
+                          backgroundColor: item.isSelected ? `${color}33` : `${color}1a`,
+                        }}
+                        onClick={item.onClick}
+                        title={`${item.courseName} — ${item.title}${metaBits ? ` (${metaBits})` : ''}`}
+                      >
+                        <span className="calendar-pill-dot" style={{ backgroundColor: color }} />
+                        <span className="calendar-pill-text">{item.title}</span>
+                        {item.graceTooltip && (
+                          <span className="calendar-pill-clock" title={item.graceTooltip}>
+                            <ClockIcon size={10} style={{ marginInlineStart: '3px', verticalAlign: '-1px', opacity: 0.85 }} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="calendar-week-scroll">
+          <div className="calendar-week-grid">
+            {weekCells.map((cell, idx) => (
+              <div
+                key={idx}
+                className={`calendar-week-day-card ${cell.isToday ? 'today is-today' : ''} ${cell.items.length > 0 ? 'has-items' : ''}`}
+              >
+                <div className="calendar-week-day-header">
+                  <span className="calendar-week-day-name">{cell.weekdayLabel}</span>
+                  <span className="calendar-week-day-date">
+                    {cell.date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+                <div className="calendar-week-day-items">
+                  {cell.items.map((item) => {
+                    const color = getCourseColor(item.courseId);
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        className={`calendar-week-item-card ${item.isSelected ? 'selected' : ''} ${item.isDone ? 'completed done' : ''}`}
+                        style={{
+                          borderInlineStartColor: color,
+                          backgroundColor: item.isSelected ? `${color}28` : `${color}12`,
+                        }}
+                        onClick={item.onClick}
+                      >
+                        <div className="calendar-week-item-top">
+                          <span className="calendar-week-item-course" style={{ color }}>
+                            {item.courseName}
+                          </span>
+                          {item.typeBadge && (
+                            <span className="calendar-week-item-badge">{item.typeBadge}</span>
+                          )}
+                        </div>
+                        <div className="calendar-week-item-title">{item.title}</div>
+                        {(item.timeLabel || item.subLabel || item.graceTooltip) && (
+                          <div className="calendar-week-item-meta">
+                            {[item.timeLabel, item.subLabel].filter(Boolean).join(' • ')}
+                            {item.graceTooltip && (
+                              <span className="calendar-pill-clock" title={item.graceTooltip}>
+                                <ClockIcon size={10} style={{ marginInlineStart: '3px', verticalAlign: '-1px', opacity: 0.85 }} />
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 // 2. ASSIGNMENTS TAB (Dedicated v4 Redesign Page)
 function AssignmentsTab({
   assignments,
+  recordings = [],
   files,
   token,
   getCourseColor,
@@ -5635,8 +6068,12 @@ function AssignmentsTab({
   tourStep,
   onToggleCompleted,
   onToggleHidden,
+  focusedAssignId,
+  onClearFocusedAssign,
+  onFocusRecording,
 }: {
   assignments: EnhancedAssignment[];
+  recordings?: PanoptoRecording[];
   files?: CourseFile[];
   token: string | null;
   filterCourseId: number | null;
@@ -5646,6 +6083,9 @@ function AssignmentsTab({
   tourStep?: number;
   onToggleCompleted?: (assignmentId: number | string) => void;
   onToggleHidden?: (assignmentId: number | string) => void;
+  focusedAssignId?: number | null;
+  onClearFocusedAssign?: () => void;
+  onFocusRecording?: (recordingId: string) => void;
 } & TabProps) {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterPending, setFilterPending] = useState<boolean>(true);
@@ -5653,6 +6093,7 @@ function AssignmentsTab({
   const [filterCompleted, setFilterCompleted] = useState<boolean>(false);
   const [filterHidden, setFilterHidden] = useState<boolean>(false);
   const [expandedAssignId, setExpandedAssignId] = useState<number | null>(null);
+  const [alsoShowRecordings, setAlsoShowRecordings] = useState<boolean>(false);
   const [showCalendarView, setShowCalendarView] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('noodle_show_calendar_view');
@@ -5661,12 +6102,33 @@ function AssignmentsTab({
       return true;
     }
   });
-  const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
 
   const now = new Date();
+
+  useEffect(() => {
+    if (!focusedAssignId) return;
+    const target = assignments.find((a) => a.id === focusedAssignId);
+    if (target) {
+      const refNow = new Date();
+      const isHidden = isActivityHidden(target, settings?.hiddenAssignments);
+      const isCompleted = Boolean(target.isCompleted);
+      const hasDeadlinePassed = target.deadline ? new Date(target.deadline) < refNow : false;
+      if (isHidden) setFilterHidden(true);
+      if (!isHidden && isCompleted) setFilterCompleted(true);
+      if (!isHidden && !isCompleted) {
+        if (hasDeadlinePassed) setFilterPast(true);
+        else setFilterPending(true);
+      }
+      setExpandedAssignId(target.id);
+      setTimeout(() => {
+        const el = document.getElementById(`assign-card-${target.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 60);
+    }
+    onClearFocusedAssign?.();
+  }, [focusedAssignId, assignments, settings?.hiddenAssignments, onClearFocusedAssign]);
 
   const handleToggleHiddenWithFilter = (targetAssign: EnhancedAssignment) => {
     const isCurrentlyHidden = isActivityHidden(targetAssign, settings?.hiddenAssignments);
@@ -5743,81 +6205,57 @@ function AssignmentsTab({
     }, 60);
   };
 
-  // Build Calendar Grid for `calendarMonth`
-  const calYear = calendarMonth.getFullYear();
-  const calMonthIdx = calendarMonth.getMonth();
-  const firstDayOfWeek = new Date(calYear, calMonthIdx, 1).getDay(); // 0 (Sun) - 6 (Sat)
-  const daysInMonth = new Date(calYear, calMonthIdx + 1, 0).getDate();
-  const daysInPrevMonth = new Date(calYear, calMonthIdx, 0).getDate();
-
-  const calendarCells: Array<{ date: Date; dayNumber: number; isCurrentMonth: boolean; isToday: boolean; items: EnhancedAssignment[] }> = [];
-
-  // Map dated assignments by YYYY-MM-DD key
-  // Calendar shows filtered assignments (plus any active/upcoming assignments if all filters match)
-  const assignsByDateKey = new Map<string, EnhancedAssignment[]>();
-  for (const a of filteredAssigns) {
-    if (!a.deadline) continue;
-    const d = new Date(a.deadline);
+  // Build unified calendar items for Assignments & optional Recordings overlay
+  const assignmentCalendarItems: CalendarScheduleItem[] = [];
+  for (const item of filteredAssigns) {
+    if (!item.deadline) continue;
+    const d = new Date(item.deadline);
     if (isNaN(d.getTime())) continue;
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    if (!assignsByDateKey.has(key)) {
-      assignsByDateKey.set(key, []);
+    const dateKey = formatLocalDateKey(d);
+    const courseName = getCourseDisplayName(item.courseId, item.courseName);
+    const dueTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const graceTooltip = item.cutoffDate && hasGracePeriod(item)
+      ? formatGracePeriodTooltip(item.cutoffDate, lang)
+      : null;
+    assignmentCalendarItems.push({
+      key: `assign-${item.id}`,
+      kind: 'assignment',
+      courseId: item.courseId,
+      courseName,
+      title: item.name,
+      dateKey,
+      timeLabel: dueTimeStr,
+      isDone: Boolean(item.isCompleted),
+      isSelected: expandedAssignId === item.id,
+      graceTooltip,
+      onClick: () => handleSelectCalendarAssignment(item),
+    });
+  }
+
+  const overlayRecordingItems: CalendarScheduleItem[] = [];
+  if (alsoShowRecordings && settings?.panoptoEnabled) {
+    const watchedSet = new Set(settings?.watchedRecordings || []);
+    const hiddenRecSet = new Set(settings?.hiddenRecordings || []);
+    for (const rec of recordings) {
+      if (filterCourseId && rec.courseId !== filterCourseId) continue;
+      if (hiddenRecSet.has(rec.id)) continue;
+      const parsedDate = parseRecordingDateToKey(rec.publishedDate);
+      if (!parsedDate) continue;
+      const courseName = getCourseDisplayName(rec.courseId, rec.courseName);
+      overlayRecordingItems.push({
+        key: `rec-overlay-${rec.id}`,
+        kind: 'recording',
+        courseId: rec.courseId,
+        courseName,
+        title: rec.title,
+        dateKey: parsedDate.key,
+        subLabel: rec.host,
+        typeBadge: rec.type === 'Recitation' ? t('panopto_recitation_badge') : t('panopto_lecture_badge'),
+        isDone: watchedSet.has(rec.id),
+        onClick: () => onFocusRecording?.(rec.id),
+      });
     }
-    assignsByDateKey.get(key)!.push(a);
   }
-
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-  // Leading days from previous month
-  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-    const dayNum = daysInPrevMonth - i;
-    const cellDate = new Date(calYear, calMonthIdx - 1, dayNum);
-    const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
-    calendarCells.push({
-      date: cellDate,
-      dayNumber: dayNum,
-      isCurrentMonth: false,
-      isToday: key === todayKey,
-      items: assignsByDateKey.get(key) || [],
-    });
-  }
-
-  // Current month days
-  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
-    const cellDate = new Date(calYear, calMonthIdx, dayNum);
-    const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
-    calendarCells.push({
-      date: cellDate,
-      dayNumber: dayNum,
-      isCurrentMonth: true,
-      isToday: key === todayKey,
-      items: assignsByDateKey.get(key) || [],
-    });
-  }
-
-  // Trailing days from next month to complete 6 weeks (42 cells) or 5 weeks (35 cells)
-  const totalNeeded = calendarCells.length > 35 ? 42 : 35;
-  const remaining = totalNeeded - calendarCells.length;
-  for (let dayNum = 1; dayNum <= remaining; dayNum++) {
-    const cellDate = new Date(calYear, calMonthIdx + 1, dayNum);
-    const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
-    calendarCells.push({
-      date: cellDate,
-      dayNumber: dayNum,
-      isCurrentMonth: false,
-      isToday: key === todayKey,
-      items: assignsByDateKey.get(key) || [],
-    });
-  }
-
-  const weekdayLabels = lang === 'he'
-    ? ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"]
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  const monthTitle = calendarMonth.toLocaleDateString(lang === 'he' ? 'he-IL' : 'en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
 
   return (
     <div className="tab-assignments">
@@ -6232,92 +6670,602 @@ function AssignmentsTab({
 
         {/* Interactive Calendar Side Pane */}
         {showCalendarView && (
-          <aside className="assignments-calendar-pane glass-panel">
-            <div className="calendar-pane-header">
-              <div className="calendar-month-title">{monthTitle}</div>
-              <div className="calendar-nav-controls">
-                <button
-                  type="button"
-                  className="calendar-nav-btn"
-                  onClick={() => setCalendarMonth(new Date(calYear, calMonthIdx - 1, 1))}
-                  title={t('prev_month')}
-                >
-                  {lang === 'he' ? '▶' : '◀'}
-                </button>
-                <button
-                  type="button"
-                  className="calendar-today-btn"
-                  onClick={() => setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1))}
-                >
-                  {t('today_btn')}
-                </button>
-                <button
-                  type="button"
-                  className="calendar-nav-btn"
-                  onClick={() => setCalendarMonth(new Date(calYear, calMonthIdx + 1, 1))}
-                  title={t('next_month')}
-                >
-                  {lang === 'he' ? '◀' : '▶'}
-                </button>
-              </div>
+          <ScheduleCalendarPane
+            items={assignmentCalendarItems}
+            overlayItems={overlayRecordingItems}
+            overlayToggleLabel={settings?.panoptoEnabled ? t('calendar_also_show_recordings') : undefined}
+            showOverlay={alsoShowRecordings}
+            onToggleOverlay={setAlsoShowRecordings}
+            hintText={t('calendar_click_hint')}
+            getCourseColor={getCourseColor}
+            t={t}
+            lang={lang}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 2B. RECORDINGS TAB
+function RecordingsTab({
+  recordings,
+  assignments = [],
+  trackedCourseIds = [],
+  enrolledCourses = [],
+  getCourseColor,
+  getCourseDisplayName,
+  onGoToCourse,
+  settings,
+  t,
+  lang,
+  onToggleRecordingWatched,
+  onToggleRecordingHidden,
+  onToggleTrackHost,
+  hasPanoptoPermission = true,
+  onRequestPanoptoPermission,
+  onOpenSettings,
+  focusedRecordingId,
+  onClearFocusedRecording,
+  onFocusAssignment,
+}: {
+  recordings: PanoptoRecording[];
+  assignments?: EnhancedAssignment[];
+  trackedCourseIds?: number[];
+  enrolledCourses?: { id: number; fullname: string }[];
+  onGoToCourse: (courseId: number) => void;
+  settings: ExtensionSettings | null;
+  onToggleRecordingWatched?: (recordingId: string) => void;
+  onToggleRecordingHidden?: (recordingId: string) => void;
+  onToggleTrackHost?: (courseId: number, hostName: string, recordingType: PanoptoRecordingType) => void;
+  hasPanoptoPermission?: boolean;
+  onRequestPanoptoPermission?: () => void;
+  onOpenSettings?: () => void;
+  focusedRecordingId?: string | null;
+  onClearFocusedRecording?: () => void;
+  onFocusAssignment?: (assignmentId: number) => void;
+} & TabProps) {
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState<'all' | number>('all');
+  const [filterUnwatched, setFilterUnwatched] = useState<boolean>(true);
+  const [filterWatched, setFilterWatched] = useState<boolean>(false);
+  const [filterLectures, setFilterLectures] = useState<boolean>(true);
+  const [filterRecitations, setFilterRecitations] = useState<boolean>(true);
+  const [filterHidden, setFilterHidden] = useState<boolean>(false);
+  const [showHiddenDrawer, setShowHiddenDrawer] = useState<boolean>(false);
+  const [activeFocusedRecId, setActiveFocusedRecId] = useState<string | null>(null);
+  const [alsoShowAssignments, setAlsoShowAssignments] = useState<boolean>(false);
+  const [showCalendarView, setShowCalendarView] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('noodle_show_recordings_calendar_view');
+      return saved === 'false' ? false : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const watchedSet = useMemo(() => new Set(settings?.watchedRecordings || []), [settings?.watchedRecordings]);
+  const manualHiddenSet = useMemo(() => new Set(settings?.hiddenRecordings || []), [settings?.hiddenRecordings]);
+
+  const trackedRecordings = useMemo(() => {
+    if (!trackedCourseIds || trackedCourseIds.length === 0) return recordings;
+    const trackedSet = new Set(trackedCourseIds);
+    return recordings.filter((r) => trackedSet.has(r.courseId));
+  }, [recordings, trackedCourseIds]);
+
+  // Partition tracked recordings by course host filters + manual hidden list
+  const recordingPartition = useMemo(() => {
+    const byCourse = new Map<number, PanoptoRecording[]>();
+    for (const r of trackedRecordings) {
+      if (!byCourse.has(r.courseId)) byCourse.set(r.courseId, []);
+      byCourse.get(r.courseId)!.push(r);
+    }
+    const hiddenByHostSet = new Set<string>();
+    for (const [cid, list] of byCourse.entries()) {
+      const staffEntries =
+        settings?.coursesPanoptoStaff?.[cid] ||
+        (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(cid)];
+      const partitioned = partitionPanoptoRecordingsByTrackedHosts(list, staffEntries);
+      for (const h of partitioned.hidden) {
+        hiddenByHostSet.add(h.id);
+      }
+    }
+    return { hiddenByHostSet };
+  }, [trackedRecordings, settings?.coursesPanoptoStaff]);
+
+  const focusAndScrollToRecording = (recId: string) => {
+    const target = trackedRecordings.find((r) => r.id === recId) || recordings.find((r) => r.id === recId);
+    if (target) {
+      const isRecHidden = manualHiddenSet.has(target.id) || recordingPartition.hiddenByHostSet.has(target.id);
+      const isRecWatched = watchedSet.has(target.id);
+      if (isRecHidden) setFilterHidden(true);
+      if (!isRecHidden && isRecWatched) setFilterWatched(true);
+      if (!isRecHidden && !isRecWatched) setFilterUnwatched(true);
+      if (target.type === 'Recitation') setFilterRecitations(true);
+      else setFilterLectures(true);
+      if (selectedCourseFilter !== 'all' && selectedCourseFilter !== target.courseId) {
+        setSelectedCourseFilter('all');
+      }
+    }
+    setActiveFocusedRecId(recId);
+    setTimeout(() => {
+      const el = document.getElementById(`recording-card-${recId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 60);
+    setTimeout(() => {
+      setActiveFocusedRecId((curr) => (curr === recId ? null : curr));
+    }, 2400);
+  };
+
+  useEffect(() => {
+    if (!focusedRecordingId) return;
+    focusAndScrollToRecording(focusedRecordingId);
+    onClearFocusedRecording?.();
+  }, [focusedRecordingId]);
+
+  const sortedRecordings = useMemo(() => {
+    return [...trackedRecordings].sort((a, b) => {
+      const pa = parseRecordingDateToKey(a.publishedDate);
+      const pb = parseRecordingDateToKey(b.publishedDate);
+      const ta = pa ? pa.date.getTime() : 0;
+      const tb = pb ? pb.date.getTime() : 0;
+      if (tb !== ta) return tb - ta;
+      return b.id.localeCompare(a.id);
+    });
+  }, [trackedRecordings]);
+
+  const courseFilterOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const r of trackedRecordings) {
+      if (!map.has(r.courseId)) {
+        map.set(r.courseId, getCourseDisplayName(r.courseId, r.courseName));
+      }
+    }
+    for (const c of enrolledCourses) {
+      if (trackedCourseIds.length === 0 || trackedCourseIds.includes(c.id)) {
+        if (!map.has(c.id)) {
+          map.set(c.id, getCourseDisplayName(c.id, c.fullname));
+        }
+      }
+    }
+    return Array.from(map.entries())
+      .map(([courseId, displayName]) => ({ courseId, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [trackedRecordings, enrolledCourses, trackedCourseIds, getCourseDisplayName]);
+
+  const matchesBaseFilters = (r: PanoptoRecording): boolean => {
+    if (selectedCourseFilter !== 'all' && r.courseId !== selectedCourseFilter) return false;
+    const isRecitation = r.type === 'Recitation';
+    if (isRecitation && !filterRecitations) return false;
+    if (!isRecitation && !filterLectures) return false;
+
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      const courseDisplayName = getCourseDisplayName(r.courseId, r.courseName).toLowerCase();
+      const haystacks = [
+        r.title.toLowerCase(),
+        (r.host || '').toLowerCase(),
+        (r.sectionName || '').toLowerCase(),
+        courseDisplayName,
+        r.courseName.toLowerCase(),
+      ];
+      if (!haystacks.some((h) => h.includes(q))) return false;
+    }
+    return true;
+  };
+
+  const filteredFeedRecordings = sortedRecordings.filter((r) => {
+    if (!matchesBaseFilters(r)) return false;
+    const isManuallyHidden = manualHiddenSet.has(r.id);
+    const isHiddenByHost = recordingPartition.hiddenByHostSet.has(r.id);
+    const isHidden = isManuallyHidden || isHiddenByHost;
+    const isWatched = watchedSet.has(r.id);
+
+    if (isHidden) {
+      return filterHidden;
+    }
+    if (isWatched && filterWatched) return true;
+    if (!isWatched && filterUnwatched) return true;
+    return false;
+  });
+
+  const drawerHiddenRecordings = sortedRecordings.filter((r) => {
+    if (!matchesBaseFilters(r)) return false;
+    return manualHiddenSet.has(r.id) || recordingPartition.hiddenByHostSet.has(r.id);
+  });
+
+  const recordingCalendarItems: CalendarScheduleItem[] = [];
+  for (const rec of sortedRecordings) {
+    if (!matchesBaseFilters(rec)) continue;
+    const isHidden = manualHiddenSet.has(rec.id) || recordingPartition.hiddenByHostSet.has(rec.id);
+    if (isHidden && !filterHidden) continue;
+    const isWatched = watchedSet.has(rec.id);
+    if (!isHidden) {
+      if (isWatched && !filterWatched) continue;
+      if (!isWatched && !filterUnwatched) continue;
+    }
+    const parsedDate = parseRecordingDateToKey(rec.publishedDate);
+    if (!parsedDate) continue;
+    const courseName = getCourseDisplayName(rec.courseId, rec.courseName);
+    recordingCalendarItems.push({
+      key: `rec-${rec.id}`,
+      kind: 'recording',
+      courseId: rec.courseId,
+      courseName,
+      title: rec.title,
+      dateKey: parsedDate.key,
+      subLabel: rec.host,
+      typeBadge: rec.type === 'Recitation' ? t('panopto_recitation_badge') : t('panopto_lecture_badge'),
+      isDone: isWatched,
+      isSelected: activeFocusedRecId === rec.id,
+      onClick: () => focusAndScrollToRecording(rec.id),
+    });
+  }
+
+  const overlayAssignmentItems: CalendarScheduleItem[] = [];
+  if (alsoShowAssignments) {
+    for (const a of assignments) {
+      if (selectedCourseFilter !== 'all' && a.courseId !== selectedCourseFilter) continue;
+      if (isActivityHidden(a, settings?.hiddenAssignments)) continue;
+      if (!a.deadline) continue;
+      const d = new Date(a.deadline);
+      if (isNaN(d.getTime())) continue;
+      const dateKey = formatLocalDateKey(d);
+      const courseName = getCourseDisplayName(a.courseId, a.courseName);
+      const dueTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const graceTooltip = a.cutoffDate && hasGracePeriod(a)
+        ? formatGracePeriodTooltip(a.cutoffDate, lang)
+        : null;
+      overlayAssignmentItems.push({
+        key: `assign-overlay-${a.id}`,
+        kind: 'assignment',
+        courseId: a.courseId,
+        courseName,
+        title: a.name,
+        dateKey,
+        timeLabel: dueTimeStr,
+        typeBadge: t('assignments'),
+        isDone: Boolean(a.isCompleted),
+        graceTooltip,
+        onClick: () => onFocusAssignment?.(a.id),
+      });
+    }
+  }
+
+  if (!settings?.panoptoEnabled) {
+    return (
+      <div className="tab-recordings">
+        <div className="glass-panel empty-state panopto-disabled-empty-card" style={{ padding: '3rem 2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.85rem' }}>
+          <div style={{ opacity: 0.75, color: 'var(--primary)' }}>
+            <VideoIcon size={38} />
+          </div>
+          <h3 style={{ margin: 0 }}>{t('panopto_disabled_tab_title')}</h3>
+          <p style={{ margin: 0, maxWidth: '460px', color: 'var(--text-secondary)' }}>
+            {t('panopto_disabled_tab_desc')}
+          </p>
+          {onOpenSettings && (
+            <button type="button" className="primary-btn" onClick={onOpenSettings}>
+              {t('open_settings_btn')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const renderRecordingCard = (rec: PanoptoRecording) => {
+    const color = getCourseColor(rec.courseId);
+    const courseDisplayName = getCourseDisplayName(rec.courseId, rec.courseName);
+    const isWatched = watchedSet.has(rec.id);
+    const isManuallyHidden = manualHiddenSet.has(rec.id);
+    const isHiddenByHost = recordingPartition.hiddenByHostSet.has(rec.id);
+    const isHidden = isManuallyHidden || isHiddenByHost;
+    const isRecitation = rec.type === 'Recitation';
+    const isFocused = activeFocusedRecId === rec.id;
+
+    const coursePanoptoStaffEntries =
+      settings?.coursesPanoptoStaff?.[rec.courseId] ||
+      (settings?.coursesPanoptoStaff as Record<string, CoursePanoptoStaffEntry[]> | undefined)?.[String(rec.courseId)] ||
+      [];
+    const isHostTracked =
+      Boolean(rec.host) &&
+      doesRecordingMatchStaffEntries({ host: rec.host }, coursePanoptoStaffEntries);
+
+    return (
+      <div
+        key={rec.id}
+        id={`recording-card-${rec.id}`}
+        className={`assignment-card glass-panel recording-feed-card ${isWatched ? 'is-watched' : ''} ${isHidden ? 'is-hidden' : ''} ${isFocused ? 'focused-pulse' : ''}`}
+        style={{ borderInlineStartColor: color }}
+      >
+        <div className="assignment-card-compact-row">
+          <div className="assign-left-info" style={{ flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="course-chip-btn"
+              onClick={() => onGoToCourse(rec.courseId)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                borderColor: `${color}55`,
+                color,
+                background: `${color}12`,
+                padding: '0.18rem 0.5rem',
+                borderRadius: '6px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <BookOpenIcon size={12} />
+              <span>{courseDisplayName}</span>
+            </button>
+
+            <span className={`recording-type-tag ${isRecitation ? 'type-recitation' : 'type-lecture'}`}>
+              {isRecitation ? t('panopto_recitation_badge') : t('panopto_lecture_badge')}
+            </span>
+
+            {isHidden && <span className="badge-hidden-tag">{t('panopto_hidden_tag')}</span>}
+
+            <span className="assign-title-span" title={rec.title} style={{ fontWeight: 600 }}>
+              {rec.title}
+            </span>
+          </div>
+
+          <div className="assign-right-meta" style={{ flexWrap: 'wrap' }}>
+            {rec.host && (
+              <span className="recording-host-badge">{rec.host}</span>
+            )}
+            {rec.publishedDate && (
+              <span className="recording-date-badge">{rec.publishedDate}</span>
+            )}
+            {rec.sectionName && (
+              <span className="recording-section-meta" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                <FolderIcon size={11} />
+                <span>{rec.sectionName}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="recording-feed-card-footer">
+          <div className="recording-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+            {rec.host && onToggleTrackHost && (
+              <button
+                type="button"
+                className={`file-action-btn recording-track-host-btn ${isHostTracked ? 'tracking' : ''}`}
+                onClick={() => onToggleTrackHost(rec.courseId, rec.host!, rec.type)}
+                title={isHostTracked ? t('panopto_tracking_host') : t('panopto_track_host')}
+              >
+                {isHostTracked ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+                <span>{isHostTracked ? t('panopto_tracking_host') : t('panopto_track_host')}</span>
+              </button>
+            )}
+
+            {onToggleRecordingWatched && (
+              <button
+                type="button"
+                className={`file-action-btn recording-watched-btn ${isWatched ? 'watched' : ''}`}
+                onClick={() => onToggleRecordingWatched(rec.id)}
+                title={isWatched ? t('watched_done') : t('mark_watched')}
+              >
+                <CheckIcon size={12} />
+                <span>{isWatched ? t('watched_done') : t('mark_watched')}</span>
+              </button>
+            )}
+
+            {rec.recordingUrl && (
+              <a
+                href={rec.recordingUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-btn btn-xs"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none' }}
+              >
+                <VideoIcon size={12} />
+                <span>{t('watch_recording')}</span>
+              </a>
+            )}
+
+            {onToggleRecordingHidden && (
+              <button
+                type="button"
+                className={`queue-delete-btn ${isManuallyHidden ? 'is-restore' : ''}`}
+                onClick={() => onToggleRecordingHidden(rec.id)}
+                title={isManuallyHidden ? t('unhide_recording') : t('hide_recording')}
+                aria-label={isManuallyHidden ? t('unhide_recording') : t('hide_recording')}
+              >
+                {isManuallyHidden ? <EyeIcon size={14} /> : <TrashIcon size={14} />}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="tab-recordings tab-assignments">
+      {!hasPanoptoPermission && (
+        <div className="glass-panel panopto-permission-banner" style={{ marginBottom: '0.9rem', padding: '0.85rem 1.15rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+          <div>
+            <strong>{t('panopto_perm_needed_title')}</strong>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              {t('panopto_perm_needed_desc')}
             </div>
+          </div>
+          {onRequestPanoptoPermission && (
+            <button type="button" className="primary-btn btn-sm" onClick={onRequestPanoptoPermission}>
+              {t('panopto_grant_perm_btn')}
+            </button>
+          )}
+        </div>
+      )}
 
-            <div className="calendar-hint-subtext">{t('calendar_click_hint')}</div>
+      {/* Filter Bar */}
+      <div className="filter-bar glass-panel" style={{ padding: '0.85rem 1.25rem' }}>
+        <div className="search-input-box" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            className="search-input"
+            placeholder={t('search_recordings_feed')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ flex: '1 1 220px' }}
+          />
+          <select
+            className="recordings-course-select"
+            value={selectedCourseFilter === 'all' ? 'all' : String(selectedCourseFilter)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedCourseFilter(val === 'all' ? 'all' : Number(val));
+            }}
+            aria-label={t('all_courses_filter')}
+          >
+            <option value="all">{t('all_courses_filter')}</option>
+            {courseFilterOptions.map((opt) => (
+              <option key={opt.courseId} value={String(opt.courseId)}>
+                {opt.displayName}
+              </option>
+            ))}
+          </select>
+        </div>
 
-            <div className="calendar-weekdays-row">
-              {weekdayLabels.map((lbl, idx) => (
-                <div key={idx} className="calendar-weekday-cell">
-                  {lbl}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.15rem', flexWrap: 'wrap' }}>
+          <div className="filter-checkboxes">
+            <label>
+              <input
+                type="checkbox"
+                checked={filterUnwatched}
+                onChange={(e) => setFilterUnwatched(e.target.checked)}
+              />
+              <span>{t('filter_unwatched')}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={filterWatched}
+                onChange={(e) => setFilterWatched(e.target.checked)}
+              />
+              <span>{t('filter_watched')}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={filterLectures}
+                onChange={(e) => setFilterLectures(e.target.checked)}
+              />
+              <span>{t('lectures')}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={filterRecitations}
+                onChange={(e) => setFilterRecitations(e.target.checked)}
+              />
+              <span>{t('recitations')}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={filterHidden}
+                onChange={(e) => setFilterHidden(e.target.checked)}
+              />
+              <span>{t('filter_hidden')}</span>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className={`calendar-toggle-btn ${showCalendarView ? 'active' : ''}`}
+            onClick={() => {
+              setShowCalendarView((prev) => {
+                const next = !prev;
+                try {
+                  localStorage.setItem('noodle_show_recordings_calendar_view', String(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }}
+            title={showCalendarView ? t('hide_calendar_view') : t('calendar_view')}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span>{showCalendarView ? t('hide_calendar_view') : t('calendar_view')}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Split Workspace: Recordings Feed + Weekly/Monthly Calendar */}
+      <div className={`assignments-workspace ${showCalendarView ? 'calendar-open' : ''}`}>
+        <div className="assignments-feed assignments-list">
+          {filteredFeedRecordings.length === 0 ? (
+            <div className="glass-panel empty-state" style={{ padding: '2.5rem', textAlign: 'center' }}>
+              {drawerHiddenRecordings.length > 0 && !filterHidden
+                ? t('panopto_all_recordings_hidden')
+                : t('no_recordings_match')}
+            </div>
+          ) : (
+            filteredFeedRecordings.map(renderRecordingCard)
+          )}
+
+          {!filterHidden && drawerHiddenRecordings.length > 0 && (
+            <div className="panopto-hidden-recordings-wrapper" style={{ marginTop: '0.75rem' }}>
+              <button
+                type="button"
+                className="panopto-hidden-toggle-btn"
+                onClick={() => setShowHiddenDrawer((prev) => !prev)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '0.45rem 0.85rem',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                }}
+              >
+                <ChevronDownIcon size={14} expanded={showHiddenDrawer} />
+                <span>
+                  {showHiddenDrawer ? t('panopto_hide_hidden_recordings') : t('panopto_show_hidden_recordings')} ({drawerHiddenRecordings.length})
+                </span>
+              </button>
+              {showHiddenDrawer && (
+                <div className="panopto-hidden-recordings-drawer" style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {drawerHiddenRecordings.map(renderRecordingCard)}
                 </div>
-              ))}
+              )}
             </div>
+          )}
+        </div>
 
-            <div className="calendar-days-grid">
-              {calendarCells.map((cell, idx) => (
-                <div
-                  key={idx}
-                  className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'outside-month'} ${cell.isToday ? 'is-today' : ''} ${cell.items.length > 0 ? 'has-items' : ''}`}
-                >
-                  <div className="calendar-day-number">{cell.dayNumber}</div>
-                  <div className="calendar-day-items">
-                    {cell.items.map((item) => {
-                      const color = getCourseColor(item.courseId);
-                      const courseName = getCourseDisplayName(item.courseId, item.courseName);
-                      const isSelected = expandedAssignId === item.id;
-                      const isDone = Boolean(item.isCompleted);
-                      const dueTimeStr = item.deadline
-                        ? new Date(item.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : '';
-                      const graceTooltip = item.cutoffDate && hasGracePeriod(item)
-                        ? formatGracePeriodTooltip(item.cutoffDate, lang)
-                        : null;
-                      return (
-                        <button
-                          type="button"
-                          key={item.id}
-                          className={`calendar-assign-pill ${isSelected ? 'selected' : ''} ${isDone ? 'completed' : ''}`}
-                          style={{
-                            borderInlineStartColor: color,
-                            backgroundColor: isSelected ? `${color}33` : `${color}1a`,
-                          }}
-                          onClick={() => handleSelectCalendarAssignment(item)}
-                          title={`${courseName} — ${item.name}${dueTimeStr ? ` (${dueTimeStr})` : ''}${graceTooltip ? ` • ${graceTooltip}` : ''}`}
-                        >
-                          <span className="calendar-pill-dot" style={{ backgroundColor: color }} />
-                          <span className="calendar-pill-text">{item.name}</span>
-                          {graceTooltip && (
-                            <span className="calendar-pill-clock" title={graceTooltip}>
-                              <ClockIcon size={10} style={{ marginInlineStart: '3px', verticalAlign: '-1px', opacity: 0.85 }} />
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </aside>
+        {showCalendarView && (
+          <ScheduleCalendarPane
+            items={recordingCalendarItems}
+            overlayItems={overlayAssignmentItems}
+            overlayToggleLabel={t('calendar_also_show_assignments')}
+            showOverlay={alsoShowAssignments}
+            onToggleOverlay={setAlsoShowAssignments}
+            hintText={t('calendar_recording_click_hint')}
+            getCourseColor={getCourseColor}
+            t={t}
+            lang={lang}
+          />
         )}
       </div>
     </div>
@@ -6624,6 +7572,7 @@ function SettingsTab({
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <input
             type="range"
+            className="settings-range-slider"
             min={760}
             max={2560}
             step={20}
@@ -6637,7 +7586,11 @@ function SettingsTab({
                 onUpdateDashboardWidth && onUpdateDashboardWidth(localWidth);
               }
             }}
-            style={{ width: '220px', cursor: 'pointer' }}
+            style={{
+              width: '220px',
+              cursor: 'pointer',
+              ['--slider-pct' as string]: `${Math.max(0, Math.min(100, ((localWidth - 760) / (2560 - 760)) * 100))}%`,
+            }}
           />
           <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.9rem', minWidth: '65px' }}>
             {localWidth}px

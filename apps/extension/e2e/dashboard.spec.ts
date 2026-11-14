@@ -342,7 +342,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await expect(tourCard).toBeHidden();
 
     // 2. Also verify relaunching from About tab's Interactive Tour card works
-    await optionsPage.locator('.sidebar-nav .nav-item').nth(4).click();
+    await optionsPage.locator('.sidebar-nav .nav-item').filter({ hasText: /אודות|About/ }).click();
     const tourLaunchCard = optionsPage.locator('.card-accent-tour');
     await expect(tourLaunchCard).toBeVisible();
     await tourLaunchCard.click();
@@ -471,5 +471,130 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     await optionsPage.reload();
     await optionsPage.waitForLoadState('domcontentloaded');
     await expect(optionsPage.locator('.sidebar-update-banner')).toBeHidden();
+  });
+
+  test('TC-REC-TAB-01: Recordings tab filters, dismiss/restore drawer, and weekly/monthly calendar with cross-overlay', async ({ optionsPage }) => {
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    await optionsPage.evaluate(async (dateKey) => {
+      const localData = await chrome.storage.local.get('cachedSyncResult');
+      const syncResult = localData.cachedSyncResult || {};
+      if (Array.isArray(syncResult.assignments) && syncResult.assignments.length > 0) {
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 0, 0, 0);
+        syncResult.assignments[0].deadline = endOfToday.toISOString();
+      }
+      syncResult.recordings = [
+        {
+          id: 'rec-lecture-1',
+          title: 'Lecture 1 - Asymptotic Bounds',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-lecture-1',
+          publishedDate: dateKey,
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+          host: 'Dr. Cohen',
+        },
+        {
+          id: 'rec-recitation-1',
+          title: 'Recitation 1 - Induction',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-recitation-1',
+          publishedDate: dateKey,
+          type: 'Recitation',
+          courseId: 2,
+          courseName: 'אלגוריתמים',
+          host: 'TA Levi',
+        },
+      ];
+      await chrome.storage.local.set({ cachedSyncResult: syncResult });
+
+      const syncData = await chrome.storage.sync.get('settings');
+      const settings = syncData.settings || {};
+      settings.panoptoEnabled = true;
+      settings.watchedRecordings = ['rec-recitation-1'];
+      settings.hiddenRecordings = [];
+      await chrome.storage.sync.set({ settings });
+    }, todayIso);
+
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+
+    // Navigate to dedicated Recordings tab
+    const recNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /הקלטות|Recordings/ });
+    await expect(recNavBtn).toBeVisible();
+    await recNavBtn.click();
+
+    await expect(optionsPage.locator('.tab-recordings')).toBeVisible();
+
+    // Initially Unwatched=true, Watched=false -> Lecture 1 visible, Recitation 1 hidden by watched filter
+    await expect(optionsPage.locator('#recording-card-rec-lecture-1')).toBeVisible();
+    await expect(optionsPage.locator('#recording-card-rec-recitation-1')).toHaveCount(0);
+
+    // Enable Watched filter -> both recordings visible
+    const filterCheckboxes = optionsPage.locator('.tab-recordings .filter-checkboxes input[type="checkbox"]');
+    await filterCheckboxes.nth(1).check(); // filter_watched
+    await expect(optionsPage.locator('#recording-card-rec-recitation-1')).toBeVisible();
+
+    // Uncheck Recitations filter -> Recitation 1 filtered out
+    await filterCheckboxes.nth(3).uncheck(); // filter_recitations
+    await expect(optionsPage.locator('#recording-card-rec-recitation-1')).toHaveCount(0);
+    await filterCheckboxes.nth(3).check();
+
+    // Search filter isolates by host / title
+    const searchInput = optionsPage.locator('.tab-recordings .search-input');
+    await searchInput.fill('Asymptotic');
+    await expect(optionsPage.locator('#recording-card-rec-lecture-1')).toBeVisible();
+    await expect(optionsPage.locator('#recording-card-rec-recitation-1')).toHaveCount(0);
+    await searchInput.fill('');
+
+    // Calendar pane starts open -> switch to Weekly mode and verify 7-day week grid
+    await expect(optionsPage.locator('.assignments-calendar-pane')).toBeVisible();
+    const weekBtn = optionsPage.locator('.calendar-mode-btn').filter({ hasText: /שבועי|Weekly/ });
+    await weekBtn.click();
+    await expect(optionsPage.locator('.calendar-week-grid .calendar-week-day-card')).toHaveCount(7);
+    await expect(optionsPage.locator('.calendar-week-item-card').filter({ hasText: 'Lecture 1 - Asymptotic Bounds' })).toBeVisible();
+
+    // Toggle "Also show assignments" overlay -> seeded Assignment for Course 1 renders in weekly calendar
+    const overlayCheckbox = optionsPage.locator('.calendar-overlay-toggle input[type="checkbox"]');
+    await overlayCheckbox.check();
+    await expect(optionsPage.locator('.calendar-week-item-card').filter({ hasText: 'תרגיל בית 1 - עצי חיפוש' })).toBeVisible();
+    await overlayCheckbox.uncheck();
+
+    // Switch back to Monthly mode and click recording pill to focus its card
+    await optionsPage.locator('.calendar-mode-btn').filter({ hasText: /חודשי|Monthly/ }).click();
+    await optionsPage.locator('.calendar-assign-pill').filter({ hasText: 'Lecture 1 - Asymptotic Bounds' }).click();
+    await expect(optionsPage.locator('#recording-card-rec-lecture-1')).toBeVisible();
+
+    // Dismiss Lecture 1 -> moves into collapsible hidden recordings drawer; Restore brings it back
+    await optionsPage.locator('#recording-card-rec-lecture-1 .queue-delete-btn').click();
+    await expect(optionsPage.locator('#recording-card-rec-lecture-1')).toHaveCount(0);
+    const hiddenDrawerToggle = optionsPage.locator('.panopto-hidden-toggle-btn');
+    await expect(hiddenDrawerToggle).toBeVisible();
+    await hiddenDrawerToggle.click();
+    await expect(optionsPage.locator('.panopto-hidden-recordings-drawer #recording-card-rec-lecture-1')).toBeVisible();
+    await optionsPage.locator('.panopto-hidden-recordings-drawer #recording-card-rec-lecture-1 .queue-delete-btn').click();
+    await expect(optionsPage.locator('.assignments-feed > #recording-card-rec-lecture-1')).toBeVisible();
+
+    // Verify theme accent color on filter checkboxes and Settings range slider (Coffee theme -> #d4a373)
+    await optionsPage.evaluate(async () => {
+      const data = await chrome.storage.sync.get('settings');
+      const settings = data.settings || {};
+      settings.theme = 'coffee';
+      await chrome.storage.sync.set({ settings });
+    });
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+    await optionsPage.locator('.nav-item').filter({ hasText: /הקלטות|Recordings/ }).click();
+    const recCheckboxAccent = await optionsPage.locator('.tab-recordings .filter-checkboxes input[type="checkbox"]').first().evaluate(
+      (el) => getComputedStyle(el).accentColor
+    );
+    expect(recCheckboxAccent).toBe('rgb(212, 163, 115)');
+
+    await optionsPage.locator('.nav-item').filter({ hasText: /הגדרות|Settings/ }).click();
+    const sliderAccent = await optionsPage.locator('.settings-range-slider').evaluate(
+      (el) => getComputedStyle(el).accentColor
+    );
+    expect(sliderAccent).toBe('rgb(212, 163, 115)');
   });
 });
