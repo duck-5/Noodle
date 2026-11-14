@@ -332,7 +332,7 @@ export function LocalFsSettingsSection({
           <div style={{ display: 'flex-row' }}>
             <span className="toggle-label">{t('local_fs_enable_label')}</span>
             <span className="badge-beta" style={{ marginInlineStart: '0.5rem' }}>
-              {lang === 'he' ? 'בטא' : 'BETA'}
+              {lang === 'he' ? 'נסיוני' : 'EXPERIMENTAL'}
             </span>
           </div>
           <p className="subtitle">{t('local_fs_desc')}</p>
