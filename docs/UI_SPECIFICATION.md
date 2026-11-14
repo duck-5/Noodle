@@ -127,7 +127,7 @@ The top of the dashboard features a focused action strip designed for rapid orie
 
 ### B. Live Session & Progress Bar
 * **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, strictly filtering out hidden or uninterested meetings.
-* **Semester Progress**: Visual progress bar tracking overall completion percentage across all assignments in tracked courses (`X/Y (Z%)`).
+* **Semester Progress**: Compact single progress card (`.semester-progress-card`) with a 5-option segmented multiswitch (`.view-mode-toggle-group.semester-progress-switch`, matching the Courses card switcher and persisted in `localStorage` `noodle_semester_progress_mode`, defaulting to `Total`) across **Lectures**, **Recitations**, **Assignments**, **Total**, and **All**. Single-category views render a full-width progress bar (`.semester-progress-single`), while **All** expands `.semester-progress-grid` showing all four bars together, with inline SVG icons and exact `done/total (pct%)` counts respecting hidden items, `panoptoEnabled`, and per-course host filters.
 
 ### C. My Tracked Courses ("הקורסים שלי")
 * **Deterministic Course Order**: Predictable, clean list of tracked courses.

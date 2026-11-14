@@ -7090,3 +7090,190 @@ body.theme-coffee .sync-window-status-msg {
 body.theme-coffee .sync-window-pct {
   color: #d9a066 !important;
 }
+
+/* =====================================================
+   4-Category Semester Cumulative Progress Card
+   ===================================================== */
+
+.semester-progress-card {
+  margin-bottom: 2rem;
+  padding: 1rem 1.25rem;
+}
+
+.semester-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.semester-progress-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.semester-progress-switch {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.semester-progress-single {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.semester-progress-single.is-empty {
+  opacity: 0.7;
+}
+
+.semester-progress-single-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.semester-progress-single-stats {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.semester-progress-track.is-single {
+  height: 8px;
+}
+
+.semester-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .semester-progress-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .semester-progress-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.semester-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.semester-progress-item.is-total {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.26);
+}
+
+.semester-progress-item.is-empty {
+  opacity: 0.65;
+}
+
+.semester-progress-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.semester-progress-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.semester-progress-item.is-total .semester-progress-item-label {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.semester-progress-item-stats {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.semester-progress-item.is-total .semester-progress-item-stats {
+  color: var(--primary);
+}
+
+.semester-progress-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.semester-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.semester-progress-fill.fill-lectures {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.semester-progress-fill.fill-recitations {
+  background: linear-gradient(90deg, #a855f7, #c084fc);
+}
+
+.semester-progress-fill.fill-assignments {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.semester-progress-fill.fill-total {
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+}
+
+body.theme-noodle .semester-progress-item {
+  background: rgba(194, 112, 68, 0.05);
+  border-color: rgba(194, 112, 68, 0.16);
+}
+
+body.theme-noodle .semester-progress-item.is-total {
+  background: rgba(194, 112, 68, 0.12);
+  border-color: rgba(194, 112, 68, 0.34);
+}
+
+body.theme-noodle .semester-progress-track {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+body.theme-coffee .semester-progress-item {
+  background: rgba(217, 160, 102, 0.04);
+  border-color: rgba(217, 160, 102, 0.14);
+}
+
+body.theme-coffee .semester-progress-item.is-total {
+  background: rgba(217, 160, 102, 0.1);
+  border-color: rgba(217, 160, 102, 0.3);
+}
+
+body.theme-coffee .semester-progress-track {
+  background: rgba(255, 255, 255, 0.1);
+}

@@ -4898,6 +4898,17 @@ function DashboardTab({
       return 'cards';
     }
   });
+  const [semesterProgressMode, setSemesterProgressMode] = useState<'lectures' | 'recitations' | 'assignments' | 'total' | 'all'>(() => {
+    try {
+      const saved = localStorage.getItem('noodle_semester_progress_mode');
+      if (saved === 'lectures' || saved === 'recitations' || saved === 'assignments' || saved === 'total' || saved === 'all') {
+        return saved;
+      }
+      return 'total';
+    } catch {
+      return 'total';
+    }
+  });
 
   const displayCourseIds = useMemo(() => {
     const multiPortalGroups = (groupedCoursesResult?.academicCourses || []).filter((u: any) => u.subCourses.length > 1);
@@ -4918,6 +4929,15 @@ function DashboardTab({
     setCoursesViewMode(mode);
     try {
       localStorage.setItem('noodle_courses_view_mode', mode);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleSetSemesterProgressMode = (mode: 'lectures' | 'recitations' | 'assignments' | 'total' | 'all') => {
+    setSemesterProgressMode(mode);
+    try {
+      localStorage.setItem('noodle_semester_progress_mode', mode);
     } catch {
       // Ignore
     }
@@ -4991,11 +5011,6 @@ function DashboardTab({
   };
   const activeMeetings = collapseRecurringMeetings(meetings, new Date()).filter((m) => (isZoomJoinUrl(m.meetingUrl, m.meetingNumber) || isZoomUrl(m.meetingUrl)) && getMeetingStatus(m.startTime) === 'active' && isMeetingVisible(m));
 
-  // Semester progress calculation
-  const totalAssignCount = visibleAssignments.length;
-  const completedAssignCount = visibleAssignments.filter((a) => a.isCompleted).length;
-  const semProgressPercent = totalAssignCount > 0 ? Math.round((completedAssignCount / totalAssignCount) * 100) : 0;
-
   // Panopto catch-up recordings (unwatched recordings for tracked courses, oldest first)
   const isPanoptoActive = !!settings?.panoptoEnabled;
   const watchedRecordingsSet = new Set(settings?.watchedRecordings || []);
@@ -5020,6 +5035,70 @@ function DashboardTab({
       if (!b.publishedDate) return -1;
       return a.publishedDate.localeCompare(b.publishedDate);
     });
+
+  // Semester progress calculation across Lectures, Recitations, Assignments, and Total
+  const trackedLectures = isPanoptoActive ? allTrackedRecordings.filter((r) => r.type === 'Lecture') : [];
+  const trackedRecitations = isPanoptoActive ? allTrackedRecordings.filter((r) => r.type === 'Recitation') : [];
+  const totalLecturesCount = trackedLectures.length;
+  const completedLecturesCount = trackedLectures.filter((r) => watchedRecordingsSet.has(r.id)).length;
+  const lecturesPercent = totalLecturesCount > 0 ? Math.round((completedLecturesCount / totalLecturesCount) * 100) : 0;
+
+  const totalRecitationsCount = trackedRecitations.length;
+  const completedRecitationsCount = trackedRecitations.filter((r) => watchedRecordingsSet.has(r.id)).length;
+  const recitationsPercent = totalRecitationsCount > 0 ? Math.round((completedRecitationsCount / totalRecitationsCount) * 100) : 0;
+
+  const totalAssignCount = visibleAssignments.length;
+  const completedAssignCount = visibleAssignments.filter((a) => a.isCompleted).length;
+  const assignPercent = totalAssignCount > 0 ? Math.round((completedAssignCount / totalAssignCount) * 100) : 0;
+
+  const totalOverallCount = totalLecturesCount + totalRecitationsCount + totalAssignCount;
+  const completedTotalCount = completedLecturesCount + completedRecitationsCount + completedAssignCount;
+  const semProgressPercent = totalOverallCount > 0 ? Math.round((completedTotalCount / totalOverallCount) * 100) : 0;
+
+  const semesterProgressCategories = [
+    {
+      key: 'lectures' as const,
+      label: t('lectures'),
+      completed: completedLecturesCount,
+      total: totalLecturesCount,
+      percent: lecturesPercent,
+      icon: <VideoIcon size={13} />,
+      fillClass: 'fill-lectures',
+      isTotal: false,
+    },
+    {
+      key: 'recitations' as const,
+      label: t('recitations'),
+      completed: completedRecitationsCount,
+      total: totalRecitationsCount,
+      percent: recitationsPercent,
+      icon: <BookOpenIcon size={13} />,
+      fillClass: 'fill-recitations',
+      isTotal: false,
+    },
+    {
+      key: 'assignments' as const,
+      label: t('assignments'),
+      completed: completedAssignCount,
+      total: totalAssignCount,
+      percent: assignPercent,
+      icon: <AssignmentsIcon size={13} />,
+      fillClass: 'fill-assignments',
+      isTotal: false,
+    },
+    {
+      key: 'total' as const,
+      label: t('semester_progress_total'),
+      completed: completedTotalCount,
+      total: totalOverallCount,
+      percent: semProgressPercent,
+      icon: <CheckIcon size={13} />,
+      fillClass: 'fill-total',
+      isTotal: true,
+    },
+  ];
+  const activeSemesterProgressCategory =
+    semesterProgressCategories.find((item) => item.key === semesterProgressMode) ?? semesterProgressCategories[3];
 
   return (
     <div className="tab-dashboard">
@@ -5611,24 +5690,95 @@ function DashboardTab({
         </div>
       )}
 
-      {/* 3. Semester Cumulative Progress Bar */}
-      {totalAssignCount > 0 && (
-        <div className="progress-container glass-panel" style={{ marginBottom: '2rem', padding: '1rem 1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 600 }}>
-            <span>{t('semester_progress')}</span>
-            <span style={{ color: 'var(--primary)' }}>{completedAssignCount}/{totalAssignCount} ({semProgressPercent}%)</span>
-          </div>
-          <div className="progress-bar-bg" style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+      {/* 3. Semester Cumulative Progress Bar (Multiswitch: Lectures, Recitations, Assignments, Total, All) */}
+      {totalOverallCount > 0 && (
+        <div className="progress-container glass-panel semester-progress-card">
+          <div className="semester-progress-header">
+            <span className="semester-progress-title">{t('semester_progress')}</span>
             <div
-              className="progress-bar-fill"
-              style={{
-                width: `${semProgressPercent}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, var(--primary), var(--secondary))',
-                transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-            />
+              className="view-mode-toggle-group semester-progress-switch"
+              role="group"
+              aria-label={t('semester_progress')}
+            >
+              {semesterProgressCategories.map((cat) => (
+                <button
+                  key={cat.key}
+                  type="button"
+                  data-progress-mode={cat.key}
+                  className={`view-mode-btn ${semesterProgressMode === cat.key ? 'active' : ''}`}
+                  aria-pressed={semesterProgressMode === cat.key}
+                  onClick={() => handleSetSemesterProgressMode(cat.key)}
+                >
+                  {cat.icon}
+                  <span>{cat.label}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                data-progress-mode="all"
+                className={`view-mode-btn ${semesterProgressMode === 'all' ? 'active' : ''}`}
+                aria-pressed={semesterProgressMode === 'all'}
+                onClick={() => handleSetSemesterProgressMode('all')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span>{t('semester_progress_all')}</span>
+              </button>
+            </div>
           </div>
+
+          {semesterProgressMode === 'all' ? (
+            <div className="semester-progress-grid">
+              {semesterProgressCategories.map((item) => (
+                <div
+                  key={item.key}
+                  data-category={item.key}
+                  className={`semester-progress-item${item.isTotal ? ' is-total' : ''}${item.total === 0 ? ' is-empty' : ''}`}
+                >
+                  <div className="semester-progress-item-top">
+                    <span className="semester-progress-item-label">
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </span>
+                    <span className="semester-progress-item-stats">
+                      {item.completed}/{item.total} ({item.percent}%)
+                    </span>
+                  </div>
+                  <div className="progress-bar-bg semester-progress-track">
+                    <div
+                      className={`progress-bar-fill semester-progress-fill ${item.fillClass}`}
+                      style={{ width: `${item.percent}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              className={`semester-progress-single${activeSemesterProgressCategory.total === 0 ? ' is-empty' : ''}`}
+              data-category={activeSemesterProgressCategory.key}
+            >
+              <div className="semester-progress-single-top">
+                <span className="semester-progress-item-label">
+                  {activeSemesterProgressCategory.icon}
+                  <span>{activeSemesterProgressCategory.label}</span>
+                </span>
+                <span className="semester-progress-single-stats">
+                  {activeSemesterProgressCategory.completed}/{activeSemesterProgressCategory.total} ({activeSemesterProgressCategory.percent}%)
+                </span>
+              </div>
+              <div className="progress-bar-bg semester-progress-track is-single">
+                <div
+                  className={`progress-bar-fill semester-progress-fill ${activeSemesterProgressCategory.fillClass}`}
+                  style={{ width: `${activeSemesterProgressCategory.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -9551,7 +9701,6 @@ function CourseDetailView({
                         <VideoIcon size={16} />
                         <span>{t('panopto_card_title')} ({watchedCount}/{visibleCountTarget.length} {t('panopto_watched_summary')})</span>
                       </span>
-                      <span className="badge-beta">{lang === 'he' ? 'בטא' : 'BETA'}</span>
                     </h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       {onUpdatePanoptoStaff && onImportCourseStaff && (
@@ -10360,451 +10509,451 @@ function CourseDetailView({
                       };
 
                       return (
-                      <div className="section-node-body" style={{ marginTop: '1rem' }}>
-                        {isSectionContentEmpty(content) && (
-                          <div
-                            className="empty-section-placeholder"
-                            style={{
-                              padding: '0.6rem 0.85rem',
-                              color: 'var(--text-secondary)',
-                              fontSize: '0.85rem',
-                              fontStyle: 'italic',
-                              background: 'rgba(255, 255, 255, 0.02)',
-                              borderRadius: '6px',
-                              border: '1px dashed rgba(255, 255, 255, 0.08)'
-                            }}
-                          >
-                            {t('no_items_in_section')}
-                          </div>
-                        )}
-                        {content.summaryHtml && (
-                          <div
-                            className="section-summary-banner"
-                            style={{
-                              padding: '0.65rem 0.85rem',
-                              marginBottom: '0.85rem',
-                              background: 'rgba(255, 255, 255, 0.03)',
-                              borderRadius: '6px',
-                              borderInlineStart: `3px solid ${courseColor}`,
-                              fontSize: '0.85rem',
-                              color: 'var(--text-secondary)',
-                              lineHeight: '1.45',
-                              whiteSpace: 'pre-line',
-                            }}
-                          >
-                            {content.summaryHtml}
-                          </div>
-                        )}
-                        {visibleSecAssigns.length > 0 && (
-                          <div className="section-assignments-list">
-                            {visibleSecAssigns.map((a) => renderSectionAssignmentItem(a, false))}
-                          </div>
-                        )}
+                        <div className="section-node-body" style={{ marginTop: '1rem' }}>
+                          {isSectionContentEmpty(content) && (
+                            <div
+                              className="empty-section-placeholder"
+                              style={{
+                                padding: '0.6rem 0.85rem',
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.85rem',
+                                fontStyle: 'italic',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                borderRadius: '6px',
+                                border: '1px dashed rgba(255, 255, 255, 0.08)'
+                              }}
+                            >
+                              {t('no_items_in_section')}
+                            </div>
+                          )}
+                          {content.summaryHtml && (
+                            <div
+                              className="section-summary-banner"
+                              style={{
+                                padding: '0.65rem 0.85rem',
+                                marginBottom: '0.85rem',
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '6px',
+                                borderInlineStart: `3px solid ${courseColor}`,
+                                fontSize: '0.85rem',
+                                color: 'var(--text-secondary)',
+                                lineHeight: '1.45',
+                                whiteSpace: 'pre-line',
+                              }}
+                            >
+                              {content.summaryHtml}
+                            </div>
+                          )}
+                          {visibleSecAssigns.length > 0 && (
+                            <div className="section-assignments-list">
+                              {visibleSecAssigns.map((a) => renderSectionAssignmentItem(a, false))}
+                            </div>
+                          )}
 
-                        {content.files.length > 0 && (
-                          <div className="section-files-list">
-                            {content.files.map((f, fIdx) => {
-                              const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
-                              const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                              return (
-                                <div key={fIdx} className="section-file-item">
-                                  <span className="item-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{f.fileName}</span></span>
-                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                    {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
-                                    <FileOpenAction
-                                      rawUrl={f.fileUrl}
-                                      openUrl={openUrl}
-                                      fileName={f.fileName}
-                                      token={token}
-                                      t={t}
-                                      lang={lang}
-                                    />
-                                    <a
-                                      href={downloadUrl}
-                                      download={f.fileName}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="file-action-btn file-download-btn"
-                                      title={t('download_file')}
-                                      aria-label={t('download_file')}
-                                    >
-                                      <DownloadIcon size={12} />
-                                    </a>
+                          {content.files.length > 0 && (
+                            <div className="section-files-list">
+                              {content.files.map((f, fIdx) => {
+                                const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                                const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                                return (
+                                  <div key={fIdx} className="section-file-item">
+                                    <span className="item-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileIcon size={13} style={{ opacity: 0.7, flexShrink: 0 }} /><span>{f.fileName}</span></span>
+                                    <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                      {f.fileSize > 0 && <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>}
+                                      <FileOpenAction
+                                        rawUrl={f.fileUrl}
+                                        openUrl={openUrl}
+                                        fileName={f.fileName}
+                                        token={token}
+                                        t={t}
+                                        lang={lang}
+                                      />
+                                      <a
+                                        href={downloadUrl}
+                                        download={f.fileName}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="file-action-btn file-download-btn"
+                                        title={t('download_file')}
+                                        aria-label={t('download_file')}
+                                      >
+                                        <DownloadIcon size={12} />
+                                      </a>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          )}
 
-                        {content.folders && content.folders.length > 0 && (
-                          <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
-                            {content.folders.map((fld) => {
-                              const isDownloading = downloadingFolderId === fld.id;
-                              const isExpanded = !collapsedFolderIds.has(fld.id);
-                              const files = fld.files || [];
-                              const rootFiles = files.filter((f) => !f.relativePath || f.relativePath === '' || f.relativePath === '/');
-                              const subfolderMap = new Map<string, CourseFolderFile[]>();
-                              files.forEach((f) => {
-                                const cleanRel = (f.relativePath || '').replace(/^\/+|\/+$/g, '');
-                                if (cleanRel) {
-                                  if (!subfolderMap.has(cleanRel)) subfolderMap.set(cleanRel, []);
-                                  subfolderMap.get(cleanRel)!.push(f);
-                                }
-                              });
-                              const subfolders = Array.from(subfolderMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+                          {content.folders && content.folders.length > 0 && (
+                            <div className="section-folders-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                              {content.folders.map((fld) => {
+                                const isDownloading = downloadingFolderId === fld.id;
+                                const isExpanded = !collapsedFolderIds.has(fld.id);
+                                const files = fld.files || [];
+                                const rootFiles = files.filter((f) => !f.relativePath || f.relativePath === '' || f.relativePath === '/');
+                                const subfolderMap = new Map<string, CourseFolderFile[]>();
+                                files.forEach((f) => {
+                                  const cleanRel = (f.relativePath || '').replace(/^\/+|\/+$/g, '');
+                                  if (cleanRel) {
+                                    if (!subfolderMap.has(cleanRel)) subfolderMap.set(cleanRel, []);
+                                    subfolderMap.get(cleanRel)!.push(f);
+                                  }
+                                });
+                                const subfolders = Array.from(subfolderMap.entries()).sort(([a], [b]) => a.localeCompare(b));
 
-                              return (
-                                <div
-                                  key={fld.id}
-                                  className="section-folder-card glass-panel"
-                                  style={{
-                                    borderRadius: '8px',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    background: 'rgba(255, 255, 255, 0.02)',
-                                    overflow: 'hidden',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  {/* Folder Header Row */}
+                                return (
                                   <div
-                                    className="folder-header-row"
+                                    key={fld.id}
+                                    className="section-folder-card glass-panel"
                                     style={{
-                                      padding: '0.75rem 1rem',
+                                      borderRadius: '8px',
+                                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                                      background: 'rgba(255, 255, 255, 0.02)',
+                                      overflow: 'hidden',
+                                      transition: 'all 0.2s ease',
+                                    }}
+                                  >
+                                    {/* Folder Header Row */}
+                                    <div
+                                      className="folder-header-row"
+                                      style={{
+                                        padding: '0.75rem 1rem',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        flexWrap: 'wrap',
+                                        gap: '0.5rem',
+                                        cursor: files.length > 0 ? 'pointer' : 'default',
+                                        background: isExpanded && files.length > 0 ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
+                                        borderBottom: isExpanded && files.length > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
+                                      }}
+                                      onClick={() => {
+                                        if (files.length > 0) {
+                                          toggleFolderCollapsed(fld.id);
+                                        }
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                        <FolderIcon size={18} style={{ color: "var(--accent, #6366f1)", opacity: 0.9 }} />
+                                        <div>
+                                          <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
+                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                            <span>
+                                              {files.length} {lang === 'he' ? 'קבצים' : 'files'}
+                                              {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
+                                            </span>
+                                            {files.length > 0 && (
+                                              <span style={{ fontSize: '0.7rem', color: 'var(--accent, #6366f1)', marginInlineStart: '0.2rem' }}>
+                                                {isExpanded ? '▲' : '▼'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <a
+                                          href={fld.moodleUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="action-link-btn"
+                                          style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                        >
+                                          {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                        </a>
+                                        <button
+                                          type="button"
+                                          className="secondary-btn btn-sm"
+                                          disabled={isDownloading || files.length === 0}
+                                          onClick={() => handleDownloadFolderZip(fld)}
+                                          title={files.length === 0 ? (lang === 'he' ? 'אין קבצים בתיקייה' : 'Folder is empty') : undefined}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.35rem',
+                                            fontSize: '0.75rem',
+                                            padding: '0.3rem 0.6rem',
+                                            cursor: isDownloading ? 'wait' : files.length === 0 ? 'not-allowed' : 'pointer',
+                                            opacity: files.length === 0 ? 0.6 : 1,
+                                          }}
+                                        >
+                                          <DownloadIcon size={12} />
+                                          <span>
+                                            {isDownloading
+                                              ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
+                                              : lang === 'he'
+                                                ? 'הורד כ-ZIP'
+                                                : 'Download ZIP'}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Expanded Folder Files List */}
+                                    {isExpanded && files.length > 0 && (
+                                      <div
+                                        className="folder-files-container"
+                                        style={{
+                                          padding: '0.5rem 0.75rem 0.75rem',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '0.35rem',
+                                          background: 'rgba(0, 0, 0, 0.08)',
+                                        }}
+                                      >
+                                        {/* Root files */}
+                                        {rootFiles.map((f, fIdx) => {
+                                          const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
+                                          const openUrl = buildFileOpenUrl(f.fileUrl, token);
+                                          return (
+                                            <div
+                                              key={`root_${fIdx}`}
+                                              className="section-file-item folder-file-item"
+                                              style={{
+                                                padding: '0.5rem 0.75rem',
+                                                borderRadius: '6px',
+                                                background: 'rgba(255, 255, 255, 0.025)',
+                                                border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                              }}
+                                            >
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                                <FileIcon size={15} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
+                                                <span
+                                                  className="item-name"
+                                                  style={{
+                                                    fontSize: '0.85rem',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                  }}
+                                                  title={f.fileName}
+                                                >
+                                                  {f.fileName}
+                                                </span>
+                                              </div>
+                                              <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                {f.fileSize > 0 && (
+                                                  <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                                )}
+                                                <FileOpenAction
+                                                  rawUrl={f.fileUrl}
+                                                  openUrl={openUrl}
+                                                  fileName={f.fileName}
+                                                  token={token}
+                                                  t={t}
+                                                  lang={lang}
+                                                />
+                                                <a
+                                                  href={downloadUrl}
+                                                  download={f.fileName}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="file-action-btn file-download-btn"
+                                                  title={t('download_file')}
+                                                  aria-label={t('download_file')}
+                                                >
+                                                  <DownloadIcon size={12} />
+                                                </a>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+
+                                        {/* Subfolders */}
+                                        {subfolders.map(([subPath, subFiles]) => (
+                                          <div
+                                            key={subPath}
+                                            className="folder-subgroup"
+                                            style={{
+                                              marginBlockStart: '0.4rem',
+                                              paddingInlineStart: '0.5rem',
+                                              borderInlineStart: '2px solid rgba(255, 255, 255, 0.12)',
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                fontSize: '0.78rem',
+                                                fontWeight: 600,
+                                                color: 'var(--text-secondary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.35rem',
+                                                padding: '0.2rem 0',
+                                              }}
+                                            >
+                                              <FolderIcon size={14} style={{ color: "var(--accent, #6366f1)", opacity: 0.85 }} />
+                                              <span>{subPath}/</span>
+                                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({subFiles.length})</span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.2rem' }}>
+                                              {subFiles.map((subFile, sfIdx) => {
+                                                const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
+                                                const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
+                                                return (
+                                                  <div
+                                                    key={`${subPath}_${sfIdx}`}
+                                                    className="section-file-item folder-file-item"
+                                                    style={{
+                                                      padding: '0.5rem 0.75rem',
+                                                      borderRadius: '6px',
+                                                      background: 'rgba(255, 255, 255, 0.025)',
+                                                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                      display: 'flex',
+                                                      justifyContent: 'space-between',
+                                                      alignItems: 'center',
+                                                      gap: '0.5rem',
+                                                    }}
+                                                  >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
+                                                      <FileIcon size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
+                                                      <span
+                                                        className="item-name"
+                                                        style={{
+                                                          fontSize: '0.85rem',
+                                                          overflow: 'hidden',
+                                                          textOverflow: 'ellipsis',
+                                                          whiteSpace: 'nowrap',
+                                                        }}
+                                                        title={subFile.fileName}
+                                                      >
+                                                        {subFile.fileName}
+                                                      </span>
+                                                    </div>
+                                                    <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                      {subFile.fileSize > 0 && (
+                                                        <span className="file-size">{(subFile.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                                                      )}
+                                                      <FileOpenAction
+                                                        rawUrl={subFile.fileUrl}
+                                                        openUrl={openUrl}
+                                                        fileName={subFile.fileName}
+                                                        token={token}
+                                                        t={t}
+                                                        lang={lang}
+                                                      />
+                                                      <a
+                                                        href={downloadUrl}
+                                                        download={subFile.fileName}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="file-action-btn file-download-btn"
+                                                        title={t('download_file')}
+                                                        aria-label={t('download_file')}
+                                                      >
+                                                        <DownloadIcon size={12} />
+                                                      </a>
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {content.links && content.links.length > 0 && (
+                            <div className="section-links-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
+                              {content.links.map((lnk) => {
+                                let linkIconNode: React.ReactNode = <LinkIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                                if (lnk.linkKind === 'drive') linkIconNode = <FolderIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                                else if (lnk.linkKind === 'github') linkIconNode = <GitHubIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                                else if (lnk.linkKind === 'zoom') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+                                else if (lnk.linkKind === 'panopto') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
+
+                                return (
+                                  <div
+                                    key={lnk.id}
+                                    className="section-link-item"
+                                    style={{
                                       display: 'flex',
                                       justifyContent: 'space-between',
                                       alignItems: 'center',
-                                      flexWrap: 'wrap',
-                                      gap: '0.5rem',
-                                      cursor: files.length > 0 ? 'pointer' : 'default',
-                                      background: isExpanded && files.length > 0 ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
-                                      borderBottom: isExpanded && files.length > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
-                                    }}
-                                    onClick={() => {
-                                      if (files.length > 0) {
-                                        toggleFolderCollapsed(fld.id);
-                                      }
+                                      padding: '0.5rem 0.75rem',
+                                      borderRadius: '6px',
+                                      background: 'rgba(255, 255, 255, 0.02)',
+                                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                                      fontSize: '0.85rem'
                                     }}
                                   >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                      <FolderIcon size={18} style={{ color: "var(--accent, #6366f1)", opacity: 0.9 }} />
-                                      <div>
-                                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{fld.name}</div>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                          <span>
-                                            {files.length} {lang === 'he' ? 'קבצים' : 'files'}
-                                            {fld.totalSize > 0 ? ` (${(fld.totalSize / 1024 / 1024).toFixed(2)} MB)` : ''}
-                                          </span>
-                                          {files.length > 0 && (
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--accent, #6366f1)', marginInlineStart: '0.2rem' }}>
-                                              {isExpanded ? '▲' : '▼'}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                      {linkIconNode}
+                                      <span style={{ fontWeight: 500 }}>{lnk.name}</span>
                                     </div>
-                                    <div
-                                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                       <a
-                                        href={fld.moodleUrl}
+                                        href={lnk.targetUrl}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="action-link-btn"
-                                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
                                       >
-                                        {lang === 'he' ? 'פתח תיקייה במודל ↗' : 'Open in Moodle ↗'}
+                                        {lang === 'he' ? 'פתח קישור ↗' : 'Open Link ↗'}
                                       </a>
-                                      <button
-                                        type="button"
-                                        className="secondary-btn btn-sm"
-                                        disabled={isDownloading || files.length === 0}
-                                        onClick={() => handleDownloadFolderZip(fld)}
-                                        title={files.length === 0 ? (lang === 'he' ? 'אין קבצים בתיקייה' : 'Folder is empty') : undefined}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '0.35rem',
-                                          fontSize: '0.75rem',
-                                          padding: '0.3rem 0.6rem',
-                                          cursor: isDownloading ? 'wait' : files.length === 0 ? 'not-allowed' : 'pointer',
-                                          opacity: files.length === 0 ? 0.6 : 1,
-                                        }}
-                                      >
-                                        <DownloadIcon size={12} />
-                                        <span>
-                                          {isDownloading
-                                            ? `${lang === 'he' ? 'מוריד...' : 'Downloading...'} (${downloadProgress?.current || 0}/${downloadProgress?.total || files.length})`
-                                            : lang === 'he'
-                                              ? 'הורד כ-ZIP'
-                                              : 'Download ZIP'}
-                                        </span>
-                                      </button>
                                     </div>
                                   </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
-                                  {/* Expanded Folder Files List */}
-                                  {isExpanded && files.length > 0 && (
-                                    <div
-                                      className="folder-files-container"
-                                      style={{
-                                        padding: '0.5rem 0.75rem 0.75rem',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '0.35rem',
-                                        background: 'rgba(0, 0, 0, 0.08)',
-                                      }}
-                                    >
-                                      {/* Root files */}
-                                      {rootFiles.map((f, fIdx) => {
-                                        const downloadUrl = buildFileDownloadUrl(f.fileUrl, token);
-                                        const openUrl = buildFileOpenUrl(f.fileUrl, token);
-                                        return (
-                                          <div
-                                            key={`root_${fIdx}`}
-                                            className="section-file-item folder-file-item"
-                                            style={{
-                                              padding: '0.5rem 0.75rem',
-                                              borderRadius: '6px',
-                                              background: 'rgba(255, 255, 255, 0.025)',
-                                              border: '1px solid rgba(255, 255, 255, 0.06)',
-                                              display: 'flex',
-                                              justifyContent: 'space-between',
-                                              alignItems: 'center',
-                                              gap: '0.5rem',
-                                            }}
-                                          >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
-                                              <FileIcon size={15} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
-                                              <span
-                                                className="item-name"
-                                                style={{
-                                                  fontSize: '0.85rem',
-                                                  overflow: 'hidden',
-                                                  textOverflow: 'ellipsis',
-                                                  whiteSpace: 'nowrap',
-                                                }}
-                                                title={f.fileName}
-                                              >
-                                                {f.fileName}
-                                              </span>
-                                            </div>
-                                            <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                                              {f.fileSize > 0 && (
-                                                <span className="file-size">{(f.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                              )}
-                                              <FileOpenAction
-                                                rawUrl={f.fileUrl}
-                                                openUrl={openUrl}
-                                                fileName={f.fileName}
-                                                token={token}
-                                                t={t}
-                                                lang={lang}
-                                              />
-                                              <a
-                                                href={downloadUrl}
-                                                download={f.fileName}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="file-action-btn file-download-btn"
-                                                title={t('download_file')}
-                                                aria-label={t('download_file')}
-                                              >
-                                                <DownloadIcon size={12} />
-                                              </a>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
+                          {content.recordings.length > 0 && renderPanoptoRecordingsBlock(content.recordings)}
 
-                                      {/* Subfolders */}
-                                      {subfolders.map(([subPath, subFiles]) => (
-                                        <div
-                                          key={subPath}
-                                          className="folder-subgroup"
-                                          style={{
-                                            marginBlockStart: '0.4rem',
-                                            paddingInlineStart: '0.5rem',
-                                            borderInlineStart: '2px solid rgba(255, 255, 255, 0.12)',
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              fontSize: '0.78rem',
-                                              fontWeight: 600,
-                                              color: 'var(--text-secondary)',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '0.35rem',
-                                              padding: '0.2rem 0',
-                                            }}
-                                          >
-                                            <FolderIcon size={14} style={{ color: "var(--accent, #6366f1)", opacity: 0.85 }} />
-                                            <span>{subPath}/</span>
-                                            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({subFiles.length})</span>
-                                          </div>
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.2rem' }}>
-                                            {subFiles.map((subFile, sfIdx) => {
-                                              const downloadUrl = buildFileDownloadUrl(subFile.fileUrl, token);
-                                              const openUrl = buildFileOpenUrl(subFile.fileUrl, token);
-                                              return (
-                                                <div
-                                                  key={`${subPath}_${sfIdx}`}
-                                                  className="section-file-item folder-file-item"
-                                                  style={{
-                                                    padding: '0.5rem 0.75rem',
-                                                    borderRadius: '6px',
-                                                    background: 'rgba(255, 255, 255, 0.025)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.06)',
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    gap: '0.5rem',
-                                                  }}
-                                                >
-                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1 }}>
-                                                    <FileIcon size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
-                                                    <span
-                                                      className="item-name"
-                                                      style={{
-                                                        fontSize: '0.85rem',
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis',
-                                                        whiteSpace: 'nowrap',
-                                                      }}
-                                                      title={subFile.fileName}
-                                                    >
-                                                      {subFile.fileName}
-                                                    </span>
-                                                  </div>
-                                                  <div className="file-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                                                    {subFile.fileSize > 0 && (
-                                                      <span className="file-size">{(subFile.fileSize / 1024 / 1024).toFixed(2)} MB</span>
-                                                    )}
-                                                    <FileOpenAction
-                                                      rawUrl={subFile.fileUrl}
-                                                      openUrl={openUrl}
-                                                      fileName={subFile.fileName}
-                                                      token={token}
-                                                      t={t}
-                                                      lang={lang}
-                                                    />
-                                                    <a
-                                                      href={downloadUrl}
-                                                      download={subFile.fileName}
-                                                      target="_blank"
-                                                      rel="noreferrer"
-                                                      className="file-action-btn file-download-btn"
-                                                      title={t('download_file')}
-                                                      aria-label={t('download_file')}
-                                                    >
-                                                      <DownloadIcon size={12} />
-                                                    </a>
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {content.links && content.links.length > 0 && (
-                          <div className="section-links-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
-                            {content.links.map((lnk) => {
-                              let linkIconNode: React.ReactNode = <LinkIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
-                              if (lnk.linkKind === 'drive') linkIconNode = <FolderIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
-                              else if (lnk.linkKind === 'github') linkIconNode = <GitHubIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
-                              else if (lnk.linkKind === 'zoom') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
-                              else if (lnk.linkKind === 'panopto') linkIconNode = <VideoIcon size={14} style={{ color: 'var(--text-secondary)' }} />;
-
-                              return (
-                                <div
-                                  key={lnk.id}
-                                  className="section-link-item"
-                                  style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    padding: '0.5rem 0.75rem',
-                                    borderRadius: '6px',
-                                    background: 'rgba(255, 255, 255, 0.02)',
-                                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                                    fontSize: '0.85rem'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                    {linkIconNode}
-                                    <span style={{ fontWeight: 500 }}>{lnk.name}</span>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                    <a
-                                      href={lnk.targetUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="action-link-btn"
-                                      style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
-                                    >
-                                      {lang === 'he' ? 'פתח קישור ↗' : 'Open Link ↗'}
-                                    </a>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {content.recordings.length > 0 && renderPanoptoRecordingsBlock(content.recordings)}
-
-                        {hiddenSecAssigns.length > 0 && (
-                          <div
-                            className="panopto-hidden-recordings-wrapper hidden-assignments-drawer-wrapper section-hidden-assignments-wrapper"
-                            style={{
-                              marginTop:
-                                visibleSecAssigns.length > 0 ||
-                                content.files.length > 0 ||
-                                content.folders.length > 0 ||
-                                content.links.length > 0 ||
-                                content.recordings.length > 0
-                                  ? '0.75rem'
-                                  : '0',
-                            }}
-                          >
-                            <button
-                              type="button"
-                              className="secondary-btn btn-xs panopto-toggle-hidden-btn section-hidden-assignments-toggle"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleHiddenSectionAssigns(secName);
+                          {hiddenSecAssigns.length > 0 && (
+                            <div
+                              className="panopto-hidden-recordings-wrapper hidden-assignments-drawer-wrapper section-hidden-assignments-wrapper"
+                              style={{
+                                marginTop:
+                                  visibleSecAssigns.length > 0 ||
+                                    content.files.length > 0 ||
+                                    content.folders.length > 0 ||
+                                    content.links.length > 0 ||
+                                    content.recordings.length > 0
+                                    ? '0.75rem'
+                                    : '0',
                               }}
-                              style={{ alignSelf: 'flex-start' }}
                             >
-                              {isSecHiddenAssignsOpen ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
-                              <span>
-                                {isSecHiddenAssignsOpen
-                                  ? `${t('hide_hidden_assignments')} (${hiddenSecAssigns.length})`
-                                  : `${t('show_hidden_assignments')} (${hiddenSecAssigns.length})`}
-                              </span>
-                            </button>
-
-                            {isSecHiddenAssignsOpen && (
-                              <div
-                                className="panopto-hidden-recordings-drawer hidden-assignments-drawer section-hidden-assignments-drawer section-assignments-list"
-                                style={{ marginTop: '0.5rem' }}
+                              <button
+                                type="button"
+                                className="secondary-btn btn-xs panopto-toggle-hidden-btn section-hidden-assignments-toggle"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleHiddenSectionAssigns(secName);
+                                }}
+                                style={{ alignSelf: 'flex-start' }}
                               >
-                                {hiddenSecAssigns.map((a) => renderSectionAssignmentItem(a, true))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                                {isSecHiddenAssignsOpen ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+                                <span>
+                                  {isSecHiddenAssignsOpen
+                                    ? `${t('hide_hidden_assignments')} (${hiddenSecAssigns.length})`
+                                    : `${t('show_hidden_assignments')} (${hiddenSecAssigns.length})`}
+                                </span>
+                              </button>
+
+                              {isSecHiddenAssignsOpen && (
+                                <div
+                                  className="panopto-hidden-recordings-drawer hidden-assignments-drawer section-hidden-assignments-drawer section-assignments-list"
+                                  style={{ marginTop: '0.5rem' }}
+                                >
+                                  {hiddenSecAssigns.map((a) => renderSectionAssignmentItem(a, true))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       );
                     })()}
                   </div>
@@ -11168,7 +11317,7 @@ function AboutTab({
             </>
           ) : (
             <>
-              <strong className="about-brand-highlight">Noodle</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, tracks Panopto recordings (beta), provides fast offline-ready access to files, and protects your privacy without any external backend servers.
+              <strong className="about-brand-highlight">Noodle</strong> is a decentralized, client-only utility designed for TAU students. It syncs Moodle deadlines directly to Google Tasks and Google Calendar, organizes live Zoom recitations, tracks Panopto recordings, provides fast offline-ready access to files, and protects your privacy without any external backend servers.
             </>
           )}
         </p>

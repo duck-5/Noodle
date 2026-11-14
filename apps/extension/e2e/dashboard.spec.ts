@@ -289,7 +289,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
 
   test('TC-DASH-REHAUL-08: Toggling to cards view switches to responsive card grid and horizontal 2-section layout', async ({ optionsPage }) => {
     // 1. Check segmented view mode buttons exist
-    const viewModeGroup = optionsPage.locator('.view-mode-toggle-group');
+    const viewModeGroup = optionsPage.locator('.courses-list-header .view-mode-toggle-group');
     await expect(viewModeGroup).toBeVisible();
 
     // 2. Click "Cards" button
@@ -745,5 +745,127 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // Restore Panopto recording from hidden drawer
     await panoptoHiddenDrawer.locator('.section-recording-item').locator('.queue-delete-btn').click();
     await expect(panoptoCard.locator('.section-recordings-list .section-recording-item')).toContainText('הרצאה 01 - מבוא למבני נתונים');
+  });
+
+  test('TC-DASH-PROG-01: Semester progress bar provides multiswitch across Lectures, Recitations, Assignments, Total, and All', async ({ optionsPage }) => {
+    const progressCard = optionsPage.locator('.semester-progress-card');
+    await expect(progressCard).toBeVisible();
+
+    const modeSwitch = progressCard.locator('.semester-progress-switch');
+    await expect(modeSwitch).toBeVisible();
+    const lecturesBtn = modeSwitch.locator('[data-progress-mode="lectures"]');
+    const recitationsBtn = modeSwitch.locator('[data-progress-mode="recitations"]');
+    const assignmentsBtn = modeSwitch.locator('[data-progress-mode="assignments"]');
+    const totalBtn = modeSwitch.locator('[data-progress-mode="total"]');
+    const allBtn = modeSwitch.locator('[data-progress-mode="all"]');
+
+    // Defaults to Total single-bar view: 1/3 (33%) without Panopto
+    await expect(totalBtn).toHaveClass(/active/);
+    await expect(progressCard.locator('.semester-progress-single')).toHaveAttribute('data-category', 'total');
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('1/3 (33%)');
+
+    // Switching to Lectures without Panopto active shows 0/0 (0%)
+    await lecturesBtn.click();
+    await expect(lecturesBtn).toHaveClass(/active/);
+    await expect(progressCard.locator('.semester-progress-single')).toHaveAttribute('data-category', 'lectures');
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('0/0 (0%)');
+
+    // Enable Panopto with watched/hidden recordings + hidden assignment
+    await optionsPage.evaluate(async () => {
+      const localData = await chrome.storage.local.get('cachedSyncResult');
+      const syncResult = (localData.cachedSyncResult || {}) as Record<string, unknown>;
+      syncResult.recordings = [
+        {
+          id: 'prog-lec-1',
+          title: 'Lecture 1',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=prog-lec-1',
+          publishedDate: '2026-11-01',
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+        },
+        {
+          id: 'prog-lec-2',
+          title: 'Lecture 2',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=prog-lec-2',
+          publishedDate: '2026-11-02',
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+        },
+        {
+          id: 'prog-lec-hidden',
+          title: 'Lecture Hidden',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=prog-lec-hidden',
+          publishedDate: '2026-11-03',
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+        },
+        {
+          id: 'prog-rec-1',
+          title: 'Recitation 1',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=prog-rec-1',
+          publishedDate: '2026-11-04',
+          type: 'Recitation',
+          courseId: 2,
+          courseName: 'אלגברה לינארית',
+        },
+        {
+          id: 'prog-rec-2',
+          title: 'Recitation 2',
+          recordingUrl: 'https://tau.panopto.eu/Panopto/Pages/Viewer.aspx?id=prog-rec-2',
+          publishedDate: '2026-11-05',
+          type: 'Recitation',
+          courseId: 2,
+          courseName: 'אלגברה לינארית',
+        },
+      ];
+      await chrome.storage.local.set({ cachedSyncResult: syncResult });
+
+      const syncData = await chrome.storage.sync.get('settings');
+      const settings = (syncData.settings || {}) as Record<string, unknown>;
+      settings.panoptoEnabled = true;
+      settings.watchedRecordings = ['prog-lec-1', 'prog-rec-1', 'prog-rec-2'];
+      settings.hiddenRecordings = ['prog-lec-hidden'];
+      settings.hiddenAssignments = [102];
+      await chrome.storage.sync.set({ settings });
+    });
+
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+
+    // Persisted "lectures" mode stays active across reload
+    await expect(lecturesBtn).toHaveClass(/active/);
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('1/2 (50%)');
+
+    await recitationsBtn.click();
+    await expect(progressCard.locator('.semester-progress-single')).toHaveAttribute('data-category', 'recitations');
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('2/2 (100%)');
+
+    await assignmentsBtn.click();
+    await expect(progressCard.locator('.semester-progress-single')).toHaveAttribute('data-category', 'assignments');
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('1/2 (50%)');
+
+    await totalBtn.click();
+    await expect(progressCard.locator('.semester-progress-single')).toHaveAttribute('data-category', 'total');
+    await expect(progressCard.locator('.semester-progress-single')).toContainText('4/6 (67%)');
+
+    // Switch to "All" mode -> displays all 4 bars together in .semester-progress-grid
+    await allBtn.click();
+    await expect(allBtn).toHaveClass(/active/);
+    const grid = progressCard.locator('.semester-progress-grid');
+    await expect(grid).toBeVisible();
+    await expect(grid.locator('[data-category="lectures"]')).toContainText('1/2 (50%)');
+    await expect(grid.locator('[data-category="recitations"]')).toContainText('2/2 (100%)');
+    await expect(grid.locator('[data-category="assignments"]')).toContainText('1/2 (50%)');
+    await expect(grid.locator('[data-category="total"]')).toContainText('4/6 (67%)');
+    await expect(grid.locator('.semester-progress-item-label svg')).toHaveCount(4);
+
+    // Reload preserves "all" view mode
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+    await expect(allBtn).toHaveClass(/active/);
+    await expect(progressCard.locator('.semester-progress-grid')).toBeVisible();
   });
 });

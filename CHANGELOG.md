@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+- **Semester Cumulative Progress Multiswitch & All-Categories View (`apps/extension`, `TC-DASH-PROG-01`)**:
+  - Upgraded the Dashboard's **Semester Progress** card (`.semester-progress-card`) with a `.view-mode-toggle-group` segmented multiswitch (`.semester-progress-switch`, matching the Courses card switcher and persisted in `localStorage` `noodle_semester_progress_mode`) allowing one-click switching between **Lectures**, **Recitations**, **Assignments**, **Total** (single bar view), and **All** (4-bar grid view `.semester-progress-grid`), with inline SVG vector icons, theme-matched styling across Default Indigo, Coffee, and Noodle themes, and exact `done/total (pct%)` counts respecting `panoptoEnabled`, `watchedRecordings`, `hiddenRecordings`, `coursesPanoptoStaff`, and `hiddenAssignments`.
+
 ## [4.1.0] - 2026-11-14
 
 ### Added

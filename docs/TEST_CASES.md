@@ -2047,3 +2047,13 @@ graph LR
   3. Both `AssignmentsTab` and `RecordingsTab` render `ScheduleCalendarPane` supporting `Monthly` and `Weekly` modes (`.calendar-week-grid` with 7 `.calendar-week-day-card` day columns), optional cross-overlay toggles (`Also show assignments` / `Also show recordings`), and click-to-focus scrolling to recording/assignment cards.
   4. Filter checkboxes in both `AssignmentsTab` and `RecordingsTab` as well as `.settings-range-slider` in `SettingsTab` adopt the active theme's accent palette (`--primary` / `color-scheme`).
 * **Verification**: Covered by `TC-REC-TAB-01` in `apps/extension/e2e/dashboard.spec.ts`.
+
+#### TC-DASH-PROG-01: Semester Cumulative Progress Bar Multiswitch & All-Categories View
+* **Platform Target**: `Extension (Chrome & Firefox)`
+* **Modality**: `Automated & Browser Agent`
+* **Test Runner**: `pnpm --filter extension exec playwright test e2e/dashboard.spec.ts`
+* **Target Components**: `apps/extension/src/options/App.tsx`, `apps/extension/src/options/App.css`, `apps/extension/src/shared/i18n.ts`, `apps/extension/e2e/dashboard.spec.ts`
+* **Description**:
+  1. Dashboard section 3 (`.semester-progress-card`) renders a 5-way segmented multiswitch (`.view-mode-toggle-group.semester-progress-switch`) with **Lectures**, **Recitations**, **Assignments**, **Total**, and **All**, defaulting to the single-bar **Total** view and persisting the selected mode in `localStorage` (`noodle_semester_progress_mode`).
+  2. Switching across **Lectures**, **Recitations**, **Assignments**, and **Total** updates the full-width progress bar (`.semester-progress-single`) with inline SVG icons and `done/total (pct%)` metrics matching `panoptoEnabled`, `watchedRecordings`, `hiddenRecordings`, `coursesPanoptoStaff`, and `hiddenAssignments`; selecting **All** expands `.semester-progress-grid` to display all four bars side by side.
+* **Verification**: Covered by `TC-DASH-PROG-01` in `apps/extension/e2e/dashboard.spec.ts`.
