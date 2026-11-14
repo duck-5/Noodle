@@ -245,7 +245,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // 1. Set theme to coffee
     await optionsPage.evaluate(async () => {
       const data = await chrome.storage.sync.get('settings');
-      const settings = data.settings || {};
+      const settings = (data.settings || {}) as Record<string, any>;
       settings.theme = 'coffee';
       await chrome.storage.sync.set({ settings });
     });
@@ -272,7 +272,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // 2. Hide Assignment 101 via settings
     await optionsPage.evaluate(async () => {
       const data = await chrome.storage.sync.get('settings');
-      const settings = data.settings || {};
+      const settings = (data.settings || {}) as Record<string, any>;
       settings.hiddenAssignments = [101];
       await chrome.storage.sync.set({ settings });
     });
@@ -482,7 +482,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
 
     await optionsPage.evaluate(async (dateKey) => {
       const localData = await chrome.storage.local.get('cachedSyncResult');
-      const syncResult = localData.cachedSyncResult || {};
+      const syncResult = (localData.cachedSyncResult || {}) as Record<string, any>;
       if (Array.isArray(syncResult.assignments) && syncResult.assignments.length > 0) {
         const endOfToday = new Date();
         endOfToday.setHours(23, 0, 0, 0);
@@ -508,67 +508,17 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
           courseId: 2,
           courseName: 'אלגוריתמים',
           host: 'TA Levi',
-  test('TC-DASH-REHAUL-07: Assignment delete button, locked assignment auto-dismissal, and Panopto recording dismissal move items to hidden lists (including per-section hidden list on Course page)', async ({ optionsPage }) => {
-    // Seed sectionName 'שבוע 02' on assignment 101, a locked auto-hidden assignment (תרגיל בית 2 - קבוצה 4) in 'שבוע 02', a section file, and a Panopto recording
-    await optionsPage.evaluate(async () => {
-      const localData = await chrome.storage.local.get('cachedSyncResult');
-      const syncResult = localData.cachedSyncResult || {};
-      syncResult.assignments = (syncResult.assignments || []).map((a: any) =>
-        a.id === 101 ? { ...a, sectionName: 'שבוע 02' } : a
-      );
-      syncResult.assignments.push({
-        id: 504,
-        cmid: 1504,
-        uid: 'assign:504',
-        courseId: 1,
-        courseName: 'מבני נתונים',
-        sectionName: 'שבוע 02',
-        name: 'תרגיל בית 2 - קבוצה 4',
-        status: 'Assigned',
-        deadline: '2026-11-10T11:00:00.000Z',
-        opened: null,
-        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1504',
-        grade: null,
-        gradeMax: 100,
-        isHidden: true,
-      });
-      syncResult.files = [
-        {
-          id: 901,
-          courseId: 1,
-          courseName: 'מבני נתונים',
-          sectionName: 'שבוע 02',
-          fileName: 'תרגול 2.pdf',
-          fileUrl: 'https://moodle.tau.ac.il/pluginfile.php/901/mod_resource/content/1/tirgul2.pdf',
-          fileSize: 102400,
-          fileType: 'application/pdf',
-        },
-      ];
-      syncResult.recordings = [
-        {
-          id: 'rec-ds-01',
-          title: 'הרצאה 01 - מבוא למבני נתונים',
-          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-01',
-          publishedDate: '2026-11-01',
-          type: 'Lecture',
-          courseId: 1,
-          courseName: 'מבני נתונים',
-          durationSeconds: 3600,
         },
       ];
       await chrome.storage.local.set({ cachedSyncResult: syncResult });
 
       const syncData = await chrome.storage.sync.get('settings');
-      const settings = syncData.settings || {};
+      const settings = (syncData.settings || {}) as Record<string, any>;
       settings.panoptoEnabled = true;
       settings.watchedRecordings = ['rec-recitation-1'];
       settings.hiddenRecordings = [];
       await chrome.storage.sync.set({ settings });
     }, todayIso);
-      settings.hiddenAssignments = [];
-      settings.hiddenRecordings = [];
-      await chrome.storage.sync.set({ settings });
-    });
 
     await optionsPage.reload();
     await optionsPage.waitForLoadState('domcontentloaded');
@@ -632,7 +582,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
     // Verify theme accent color on filter checkboxes and Settings range slider (Coffee theme -> #d4a373)
     await optionsPage.evaluate(async () => {
       const data = await chrome.storage.sync.get('settings');
-      const settings = data.settings || {};
+      const settings = (data.settings || {}) as Record<string, any>;
       settings.theme = 'coffee';
       await chrome.storage.sync.set({ settings });
     });
@@ -649,6 +599,68 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
       (el) => getComputedStyle(el).accentColor
     );
     expect(sliderAccent).toBe('rgb(212, 163, 115)');
+  });
+
+  test('TC-DASH-REHAUL-07: Assignment delete button, locked assignment auto-dismissal, and Panopto recording dismissal move items to hidden lists (including per-section hidden list on Course page)', async ({ optionsPage }) => {
+    // Seed sectionName 'שבוע 02' on assignment 101, a locked auto-hidden assignment (תרגיל בית 2 - קבוצה 4) in 'שבוע 02', a section file, and a Panopto recording
+    await optionsPage.evaluate(async () => {
+      const localData = await chrome.storage.local.get('cachedSyncResult');
+      const syncResult = (localData.cachedSyncResult || {}) as Record<string, any>;
+      syncResult.assignments = (syncResult.assignments || []).map((a: any) =>
+        a.id === 101 ? { ...a, sectionName: 'שבוע 02' } : a
+      );
+      syncResult.assignments.push({
+        id: 504,
+        cmid: 1504,
+        uid: 'assign:504',
+        courseId: 1,
+        courseName: 'מבני נתונים',
+        sectionName: 'שבוע 02',
+        name: 'תרגיל בית 2 - קבוצה 4',
+        status: 'Assigned',
+        deadline: '2026-11-10T11:00:00.000Z',
+        opened: null,
+        link: 'https://moodle.tau.ac.il/mod/assign/view.php?id=1504',
+        grade: null,
+        gradeMax: 100,
+        isHidden: true,
+      });
+      syncResult.files = [
+        {
+          id: 901,
+          courseId: 1,
+          courseName: 'מבני נתונים',
+          sectionName: 'שבוע 02',
+          fileName: 'תרגול 2.pdf',
+          fileUrl: 'https://moodle.tau.ac.il/pluginfile.php/901/mod_resource/content/1/tirgul2.pdf',
+          fileSize: 102400,
+          fileType: 'application/pdf',
+        },
+      ];
+      syncResult.recordings = [
+        {
+          id: 'rec-ds-01',
+          title: 'הרצאה 01 - מבוא למבני נתונים',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-01',
+          publishedDate: '2026-11-01',
+          type: 'Lecture',
+          courseId: 1,
+          courseName: 'מבני נתונים',
+          durationSeconds: 3600,
+        },
+      ];
+      await chrome.storage.local.set({ cachedSyncResult: syncResult });
+
+      const syncData = await chrome.storage.sync.get('settings');
+      const settings = (syncData.settings || {}) as Record<string, any>;
+      settings.panoptoEnabled = true;
+      settings.hiddenAssignments = [];
+      settings.hiddenRecordings = [];
+      await chrome.storage.sync.set({ settings });
+    });
+
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
     // 1. Locked assignment "תרגיל בית 2 - קבוצה 4" must NOT appear in the Dashboard Upcoming To-Do queue
     const queueCard = optionsPage.locator('.queue-card').first();
     await expect(queueCard).not.toContainText('תרגיל בית 2 - קבוצה 4');
