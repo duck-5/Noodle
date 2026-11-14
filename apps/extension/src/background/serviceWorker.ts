@@ -59,6 +59,7 @@ async function checkForStoreUpdate(force = false): Promise<StoreVersionCheckResu
   }
 
   activeStoreUpdateCheckPromise = (async () => {
+    const startedAt = Date.now();
     const currentVersion = browser.runtime.getManifest()?.version || '0.0.0';
     const isFirefox = isFirefoxExtensionRuntime();
     const cachedResult = await getStoreUpdateStatus();
@@ -86,6 +87,10 @@ async function checkForStoreUpdate(force = false): Promise<StoreVersionCheckResu
     });
 
     if (result.latestVersion) {
+      const latestInStorage = await getStoreUpdateStatus();
+      if (!force && latestInStorage && latestInStorage.checkedAt > startedAt) {
+        return latestInStorage;
+      }
       await setStoreUpdateStatus(result);
     }
     return result;

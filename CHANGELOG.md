@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
+- **Automated Tag-Triggered GitHub Release Workflow (`.github/workflows/release-extension.yml`, `scripts/verify-release.mjs`, `scripts/build-releases.py`, `scripts/package-source.py`, `TC-EXT-BRW-01`)**:
+  - Added `.github/workflows/release-extension.yml` triggered on `v*` tag pushes (excluded via `tags-ignore: ['v*']` in `build-extension.yml` to prevent duplicate workflow runs).
+  - Added `scripts/verify-release.mjs` (backed by unit tests in `scripts/verify-release.test.mjs`) to verify the pushed git tag matches `apps/extension/src/manifest.json` and `apps/extension/package.json` versions and extract release notes from `CHANGELOG.md` (`## [<version>]` with `## [Unreleased]` fallback).
+  - Packaged Chrome (`noodle-v<version>-chrome.zip` with `manifest.json` `key` stripped), Firefox (`noodle-v<version>-firefox.zip`), AMO reviewer source archive (`noodle-v<version>-source-code.zip`), signed Firefox `.xpi` (`noodle-v<version>-firefox.xpi` via `web-ext sign` using `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` secrets and configurable `AMO_CHANNEL` defaulting to `listed`), and `SHA256SUMS.txt` into the published GitHub Release.
+  - Updated `docs/developer-guide.md` and `docs/TEST_CASES.md` with release workflow setup, required AMO secrets, and test case traceability.
 - **Sidebar "Take Tour" Button & Store Version Update Checker Banner (`apps/extension`, `TC-EXT-03`, `TC-EXT-05`)**:
   - Added a persistent **Take Tour** button (`.sidebar-tour-btn`, `<TourCompassIcon />`, `take_tour_btn`) in the sidebar navigation directly below the Collapse Sidebar button so users can launch the 10-step onboarding tour anytime without logging out.
   - Added `apps/extension/src/shared/versionChecker.ts` (`compareVersions`, `parseChromeCrxUpdateXmlVersion`, `parseChromeWebStoreHtmlVersion`, `parseAmoApiVersion`, `parseAmoHtmlVersion`, `checkExtensionUpdate`) and background `CHECK_STORE_UPDATE` / 6-hour `storeUpdateCheck` alarm (`serviceWorker.ts`) checking Google's Omaha CRX endpoint (`clients2.google.com/service/update2/crx`, with Chrome Web Store HTML fallback) on Chromium and Firefox AMO v5 API (`addons.mozilla.org/api/v5/addons/addon/noodle/` + AMO listing fallback) on Firefox.
@@ -54,6 +59,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Styled with full theme integration across Default Dark, Noodle (warm cream/terracotta), and Coffee (espresso/amber) themes with zero unicode emojis.
 
 ### Fixed
+- **Release Packaging Script Portability & CI Artifact Paths (`scripts/build-releases.py`, `scripts/package-source.py`, `.github/workflows/build-extension.yml`)**:
+  - Fixed `scripts/build-releases.py` passing argument lists with `shell=True` (which dropped CLI arguments on Linux runners) and added `--version` output naming plus manifest verification inside generated `.zip` archives.
+  - Excluded `dist-firefox`, `.dev-profile`, `playwright-report`, `test-results`, `screenshots`, `releases`, and binary extension files from `scripts/package-source.py`.
+  - Fixed `.github/workflows/build-extension.yml` Firefox artifact upload path (`apps/extension/dist-firefox` instead of `apps/extension/dist`).
+- **Store Version Update Check Race Condition in Online CI (`apps/extension/src/background/serviceWorker.ts`, `apps/extension/src/options/App.tsx`, `apps/extension/e2e/dashboard.spec.ts`, `TC-EXT-05`)**:
+  - Guarded `checkForStoreUpdate` and `App.tsx` `checkStoreUpdateOnBackground(false)` completion using `startedAt` / `checkedAt` timestamps so an in-flight live store fetch cannot overwrite newer `storeUpdateStatus` entries, and drained any startup check before seeding state in Playwright `TC-EXT-05`.
 - **Panopto SSO Hidden-Tab Authentication, DeclarativeNetRequest Cookie Injection & Block Cleanup (`apps/extension/src/background/serviceWorker.ts`, `packages/moodle-client/src/syncEngine.ts`, `TC-PAN-08`)**:
   - Fixed cross-site cookie stripping in Brave browser by dynamically attaching the user's active Panopto `.ASPXAUTH` cookie via `chrome.declarativeNetRequest.updateDynamicRules` on outgoing API requests to `tau.cloud.panopto.eu`, bypassing Brave's background service worker third-party cookie restrictions at the network layer.
   - Stopped premature cookie teardown in `ensurePanoptoAuthViaHiddenTab` when already authenticated, preventing the extension from invalidating the active session before opening the hidden tab.

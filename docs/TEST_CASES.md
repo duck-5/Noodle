@@ -1386,7 +1386,8 @@ graph LR
   3. Execute `pnpm --filter extension run build:firefox`.
   4. Parse output `dist-firefox/manifest.json`; assert `background.scripts` is an array and `browser_specific_settings.gecko.id` equals `"noodle@tau"`.
   5. Assert that `dist/manifest.json` remains completely unmodified and preserved with `background.service_worker`.
-  6. Assert that `manifest.key` is preserved in `dist/manifest.json` for static local developer OAuth redirect resolution, and stripped from `dist-firefox/manifest.json` as well as release zip packaging for store upload compliance.
+  6. Assert that `manifest.key` is preserved in `dist/manifest.json` for static local developer OAuth redirect resolution, and stripped from `dist-firefox/manifest.json` as well as release zip packaging (`scripts/build-releases.py`, `.github/workflows/release-extension.yml`) for store upload compliance.
+  7. Execute `node --test scripts/verify-release.test.mjs` to verify `v*` tag matching against `apps/extension/src/manifest.json` + `apps/extension/package.json` and `CHANGELOG.md` release-note extraction.
 
 #### TC-EXT-BRW-02: OAuth Redirect URI Resolution Parity
 * **Platform Target**: `Extension (Chrome & Firefox)`

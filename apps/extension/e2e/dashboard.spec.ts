@@ -417,8 +417,20 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
   });
 
   test('TC-EXT-05: Sidebar new-version banner pops up when store has newer version, adapts on collapse, and persists dismiss', async ({ optionsPage }) => {
+    // Wait for initial Dashboard boot & drain any in-flight store check (on online CI,
+    // initial CHECK_STORE_UPDATE fetches the live store and would otherwise race with seeding).
+    await expect(optionsPage.locator('.collapse-toggle-btn')).toBeVisible();
+
     // Seed a store update check result with a version higher than the current manifest version
     await optionsPage.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        try {
+          chrome.runtime.sendMessage({ type: 'CHECK_STORE_UPDATE', force: false }, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+
       const currentVersion = chrome.runtime.getManifest().version;
       await chrome.storage.local.remove('dismissedUpdateVersion');
       await chrome.storage.local.set({
@@ -430,7 +442,7 @@ test.describe('Category 3: Unified Assignments Dashboard UI', () => {
           updateAvailable: true,
           checkedAt: Date.now(),
           checkedForVersion: currentVersion,
-          source: 'cws-html',
+          source: 'cws-crx',
         },
       });
     });

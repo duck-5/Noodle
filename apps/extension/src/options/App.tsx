@@ -883,7 +883,9 @@ export default function App() {
       const res = await checkStoreUpdateOnBackground(false);
       if (!active) return;
       if (res?.success && res.result?.latestVersion) {
-        setStoreUpdateStatus(res.result);
+        setStoreUpdateStatus((prev) =>
+          prev && prev.checkedAt > res.result!.checkedAt ? prev : res.result!
+        );
       }
     })();
 
