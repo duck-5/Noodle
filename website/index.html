@@ -8,7 +8,7 @@
   <meta name="description"
     content="A decentralized, client-only companion for Tel Aviv University's Moodle. Real-time deadlines, split calendar, instant Google Tasks 2-way sync, and live Zoom hub.">
   <link rel="icon" type="image/png" href="assets/logo.png">
-  <link rel="stylesheet" href="styles.css?v=4.0.5">
+  <link rel="stylesheet" href="styles.css?v=4.1.0">
 </head>
 
 <body>
@@ -20,7 +20,7 @@
         <img src="assets/logo.png" alt="Noodle Logo" class="brand-logo-img">
         <div class="brand-text">
           <span class="brand-title">Noodle</span>
-          <span class="brand-badge">v4.0.3</span>
+          <span class="brand-badge">v4.1.0</span>
         </div>
       </a>
 
@@ -322,8 +322,7 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>1-Click Done & Hide:</strong> Check off assignments you've turned in or hide optional tasks
-                  with a single button.</div>
+                <div><strong>1-Click Dismiss &amp; Split-Pane Details:</strong> Inspect assignment files side-by-side or dismiss optional and locked tasks with a single click.</div>
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -384,10 +383,9 @@
         <!-- Panel 3: Split Calendar -->
         <div id="panel-calendar" class="feature-tab-panel">
           <div class="feature-panel-text">
-            <h3>Visual monthly planning with color-coded pills.</h3>
+            <h3>Monthly &amp; weekly planning with color-coded pills.</h3>
             <p>
-              Toggle the calendar view in your Assignments tab to get a responsive split-pane workspace. View your
-              monthly schedule alongside your feed, with assignment pills mapped directly to their due dates.
+              Toggle between Monthly and Weekly calendar views alongside your Assignments or Recordings feed, with color-coded pills mapped directly to due dates and lectures.
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
@@ -395,7 +393,7 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Interactive Pill Navigation:</strong> Click any assignment pill in the monthly grid to
+                <div><strong>Interactive Pill Navigation:</strong> Click any assignment or recording pill in the grid to
                   scroll directly to its full details in the feed.</div>
               </li>
               <li class="feature-check-item">
@@ -435,8 +433,7 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Live Cumulative GPA:</strong> Instant GPA calculation based on completed TAU credit points
-                  and weighted averages.</div>
+                <div><strong>Live Cumulative GPA:</strong> Instant GPA calculation based strictly on published grades, completed TAU credit points, and weighted averages.</div>
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -467,10 +464,16 @@
           <div class="feature-panel-text">
             <h3>All lecture recordings, links, and slides in one spot.</h3>
             <p>
-              Stop hunting across course blocks for meeting IDs and passwords. Noodle aggregates your lecture and
-              recitation Zoom sessions into an actionable schedule.
+              Stop hunting across course blocks for meeting IDs and passwords. Browse a dedicated Recordings tab, track specific lecturers or TAs, and join active Zoom sessions in one click.
             </p>
             <ul class="feature-checklist">
+              <li class="feature-check-item">
+                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg></span>
+                <div><strong>Dedicated Recordings Tab &amp; Host Tracking:</strong> Filter Panopto lectures and recitations by tracked lecturers or TAs and track watched progress.</div>
+              </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -484,16 +487,7 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Section Accordions:</strong> Clean topic drawers that organize course documents by syllabus
-                  week.</div>
-              </li>
-              <li class="feature-check-item">
-                <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg></span>
-                <div><strong>Direct Course Shortcut:</strong> "Open in Moodle ↗" button whenever you need the raw
-                  university page.</div>
+                <div><strong>Section Accordions &amp; ZIP Downloads:</strong> Clean topic drawers by syllabus week with 1-click folder ZIP downloads.</div>
               </li>
             </ul>
           </div>
@@ -532,8 +526,7 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Semester Grouping:</strong> Partition your courses by Semester A, Semester B, Summer, and
-                  Yearly automatically.</div>
+                <div><strong>Local Folder Sync &amp; Semester Grouping:</strong> Sync course files automatically to a local folder on your PC and group courses by semester.</div>
               </li>
             </ul>
           </div>
@@ -946,7 +939,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=4.0.4"></script>
+  <script src="app.js?v=4.1.0"></script>
 </body>
 
 </html>
