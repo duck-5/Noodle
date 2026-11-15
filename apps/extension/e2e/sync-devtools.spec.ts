@@ -961,8 +961,12 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       };
     });
 
-    // Seed state with mock token and 2 tracked courses (9999 and 9998)
+    // Seed state with mock token, 2 tracked courses (9999 and 9998), cards view, and clean starting state
     await optionsPage.evaluate(async () => {
+      localStorage.setItem('noodle_courses_view_mode', 'cards');
+      localStorage.setItem('noodle_show_recordings_calendar_view', 'true');
+      localStorage.setItem('noodle_calendar_view_mode', 'month');
+
       await chrome.storage.local.set({
         wstoken: 'VALID_MOCK_DEVTOOLS_TOKEN',
         hasSeenTour: true,
@@ -970,6 +974,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
           assignments: [],
           files: [],
           meetings: [],
+          recordings: [],
           errors: [],
           syncedAt: new Date().toISOString(),
         },
@@ -981,6 +986,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
           language: 'he',
           coursesColorMap: { 9999: '#e07a5f', 9998: '#a0613e' },
           coursesCustomNames: { 9999: 'מבוא למדעי המחשב', 9998: 'מבני נתונים' },
+          panoptoEnabled: false, // Keep false during initial Moodle sync so SW does not attempt background Panopto tab login
           hiddenAssignments: [],
           completedAssignments: [],
           uncompletedAssignments: [],
@@ -997,6 +1003,13 @@ test.describe('DevTools & Sync Feedback Loop', () => {
     console.log('[DevTools] Triggering full successful sync via UI button...');
     await syncButton.click();
 
+    // Wait for the sync button / sync status to finish
+    await optionsPage.waitForFunction(() => {
+      const icon = document.querySelector('.header-sync-btn .spinning-sync-icon');
+      const text = document.querySelector('.header-actions')?.textContent || '';
+      return !icon && !text.includes('מסנכרן');
+    }, { timeout: 15000 });
+
     // Verify assignment cards appear in UI after sync
     const firstAssignmentCard = optionsPage.locator('.hero-spotlight-card, .queue-item').filter({ hasText: 'מטלה 1 - רקורסיה ויעילות' }).first();
     await expect(firstAssignmentCard).toBeVisible({ timeout: 10000 });
@@ -1010,6 +1023,127 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       fs.mkdirSync(screenshotsDir, { recursive: true });
     }
 
+    // Now seed rich mock recordings for Panopto Catch-Up Queue, Recordings Tab, Zoom meetings, and enable Panopto in settings
+    await optionsPage.evaluate(async () => {
+      const cur = await chrome.storage.local.get('cachedSyncResult');
+      const res = cur.cachedSyncResult || {};
+      res.meetings = [
+        {
+          title: 'הרצאה 03 - רקורסיה ומבנה המחשב (פעיל כעת)',
+          meetingUrl: 'https://tau-ac-il.zoom.us/j/9911223344?pwd=mockPasswordCS1',
+          courseId: 9999,
+          courseName: '0368-1001-01 מבוא למדעי המחשב',
+          sectionName: 'שיעורי Zoom והקלטות',
+          startTime: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+          meetingNumber: '9911223344',
+        },
+        {
+          title: 'תרגול 05 - שאלות ממבחנים על עצים מאוזנים',
+          meetingUrl: 'https://tau-ac-il.zoom.us/j/9988776656?pwd=mockPasswordDS2',
+          courseId: 9998,
+          courseName: '0368-2158-01 מבני נתונים',
+          sectionName: 'שיעורי Zoom ומפגשי שו"ת',
+          startTime: new Date(Date.now() + 2 * 86400 * 1000).toISOString(),
+          meetingNumber: '9988776656',
+        },
+      ];
+      res.recordings = [
+        {
+          id: 'rec-cs-01',
+          title: 'הרצאה 03 - רקורסיה ומבנה המחשב',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-cs-01',
+          publishedDate: new Date(Date.now() - 2 * 86400 * 1000).toISOString().split('T')[0],
+          type: 'Lecture',
+          courseId: 9999,
+          courseName: '0368-1001-01 מבוא למדעי המחשב',
+          durationSeconds: 5400,
+          host: 'Amir Shpilka',
+        },
+        {
+          id: 'rec-cs-02',
+          title: 'תרגול 03 - תרגול רקורסיה והוכחות נכונות',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-cs-02',
+          publishedDate: new Date(Date.now() - 86400 * 1000).toISOString().split('T')[0],
+          type: 'Recitation',
+          courseId: 9999,
+          courseName: '0368-1001-01 מבוא למדעי המחשב',
+          durationSeconds: 3600,
+          host: 'Noa Levy',
+        },
+        {
+          id: 'rec-ds-01',
+          title: 'הרצאה 04 - עצי AVL ואיזון עצים בינאריים',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-01',
+          publishedDate: new Date(Date.now() - 3 * 86400 * 1000).toISOString().split('T')[0],
+          type: 'Lecture',
+          courseId: 9998,
+          courseName: '0368-2158-01 מבני נתונים',
+          durationSeconds: 5400,
+          host: 'Yoav Lahini',
+        },
+        {
+          id: 'rec-ds-02',
+          title: 'תרגול 04 - שאלות ממבחנים על עצים מאוזנים',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-02',
+          publishedDate: new Date(Date.now() - 86400 * 1000).toISOString().split('T')[0],
+          type: 'Recitation',
+          courseId: 9998,
+          courseName: '0368-2158-01 מבני נתונים',
+          durationSeconds: 3600,
+          host: 'Dan Cohen',
+        },
+        {
+          id: 'rec-cs-00',
+          title: 'הרצאה 01 - מבוא לשפת Python ותחביר בסיסי',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-cs-00',
+          publishedDate: new Date(Date.now() - 14 * 86400 * 1000).toISOString().split('T')[0],
+          type: 'Lecture',
+          courseId: 9999,
+          courseName: '0368-1001-01 מבוא למדעי המחשב',
+          durationSeconds: 5100,
+          host: 'Amir Shpilka',
+        },
+        {
+          id: 'rec-ds-00',
+          title: 'תרגול 01 - טבלאות גיבוב ומיונים מהירים',
+          recordingUrl: 'https://tau.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=rec-ds-00',
+          publishedDate: new Date(Date.now() - 12 * 86400 * 1000).toISOString().split('T')[0],
+          type: 'Recitation',
+          courseId: 9998,
+          courseName: '0368-2158-01 מבני נתונים',
+          durationSeconds: 3600,
+          host: 'Dan Cohen',
+        },
+      ];
+      await chrome.storage.local.set({ cachedSyncResult: res });
+
+      const syncData = await chrome.storage.sync.get('settings');
+      const settings = syncData.settings || {};
+      settings.panoptoEnabled = true;
+      settings.watchedRecordings = ['rec-cs-00', 'rec-ds-00'];
+      settings.coursesPanoptoStaff = {
+        9999: [
+          { moodleName: 'אמיר שפילקה', panoptoName: 'Amir Shpilka', role: 'Lecture' },
+          { moodleName: 'נועה לוי', panoptoName: 'Noa Levy', role: 'Recitation' },
+        ],
+        9998: [
+          { moodleName: 'יואב לחיני', panoptoName: 'Yoav Lahini', role: 'Lecture' },
+          { moodleName: 'דן כהן', panoptoName: 'Dan Cohen', role: 'Recitation' },
+        ],
+      };
+      await chrome.storage.sync.set({ settings });
+    });
+    await optionsPage.reload();
+    await optionsPage.waitForLoadState('domcontentloaded');
+    await optionsPage.waitForTimeout(600);
+
+    // Click the first upcoming task to reveal the Master-Detail Split Pane with course-colored border!
+    const firstQueueItem = optionsPage.locator('.queue-item').first();
+    if (await firstQueueItem.isVisible()) {
+      await firstQueueItem.click();
+      await optionsPage.waitForTimeout(400);
+    }
+
     // Expand Zoom accordions on the dashboard so meetings are visible
     const dashZoomHeaders = optionsPage.locator('.zoom-courses-list .zoom-course-header');
     const dashZoomCount = await dashZoomHeaders.count();
@@ -1018,7 +1152,7 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       await optionsPage.waitForTimeout(200);
     }
 
-    // 1. Capture Main Dashboard with the 2 synced courses & assignments & Zoom banner
+    // 1. Capture Main Dashboard with Course Cards, Active Zoom strip, Split Task Pane & Catch-Up Queue!
     const dashboardScreenshot = path.join(screenshotsDir, 'main-dashboard.png');
     await optionsPage.screenshot({ path: dashboardScreenshot, fullPage: true });
     console.log(`[DevTools UI] Captured Main Dashboard screenshot: ${dashboardScreenshot}`);
@@ -1039,11 +1173,55 @@ test.describe('DevTools & Sync Feedback Loop', () => {
       }
     }
 
-    // 3. Navigate to dedicated "Assignments" tab and capture both normal and expanded view
+    // 3. Navigate to dedicated "Recordings" tab and capture recordings-tab.png
+    const recordingsNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /הקלטות|Recordings/ });
+    if (await recordingsNavBtn.isVisible()) {
+      await recordingsNavBtn.click();
+      await optionsPage.waitForTimeout(600);
+      const recScreenshot = path.join(screenshotsDir, 'recordings-tab.png');
+      await optionsPage.screenshot({ path: recScreenshot, fullPage: true });
+      fs.copyFileSync(recScreenshot, path.join(screenshotsDir, 'recordings-page.png'));
+      console.log(`[DevTools UI] Captured Dedicated Recordings Tab screenshot: ${recScreenshot}`);
+    }
+
+    // 4. Navigate to dedicated "Assignments" tab and capture both normal and expanded view
     const assignsNavBtn = optionsPage.locator('.nav-item').filter({ hasText: /מטלות|Assignments/ });
     if (await assignsNavBtn.isVisible()) {
       await assignsNavBtn.click();
       await optionsPage.waitForTimeout(500);
+
+      // Check if calendar is open; capture Month and Week views
+      const calPane = optionsPage.locator('.assignments-calendar-pane');
+      if (await calPane.isVisible()) {
+        const calendarScreenshot = path.join(screenshotsDir, 'calendar-view.png');
+        await optionsPage.screenshot({ path: calendarScreenshot, fullPage: true });
+        console.log(`[DevTools UI] Captured Calendar Monthly View screenshot: ${calendarScreenshot}`);
+
+        // Switch to Weekly calendar mode and capture calendar-week-view.png!
+        const weekModeBtn = optionsPage.locator('.calendar-mode-btn').filter({ hasText: /שבועי|Weekly|Week/ }).first();
+        if (await weekModeBtn.isVisible()) {
+          await weekModeBtn.click();
+          await optionsPage.waitForTimeout(500);
+          const weekCalendarScreenshot = path.join(screenshotsDir, 'calendar-week-view.png');
+          await optionsPage.screenshot({ path: weekCalendarScreenshot, fullPage: true });
+          console.log(`[DevTools UI] Captured Calendar Weekly View screenshot: ${weekCalendarScreenshot}`);
+
+          // Switch back to monthly mode
+          const monthModeBtn = optionsPage.locator('.calendar-mode-btn').filter({ hasText: /חודשי|Monthly|Month/ }).first();
+          if (await monthModeBtn.isVisible()) {
+            await monthModeBtn.click();
+            await optionsPage.waitForTimeout(300);
+          }
+        }
+
+        // Toggle calendar view off to showcase full clean assignments feed
+        const calendarToggleBtn = optionsPage.locator('.calendar-toggle-btn').first();
+        if (await calendarToggleBtn.isVisible()) {
+          await calendarToggleBtn.click();
+          await optionsPage.waitForTimeout(400);
+        }
+      }
+
       const assignsScreenshot = path.join(screenshotsDir, 'assignments-page.png');
       await optionsPage.screenshot({ path: assignsScreenshot, fullPage: true });
       console.log(`[DevTools UI] Captured Assignments Tab screenshot: ${assignsScreenshot}`);
@@ -1056,19 +1234,6 @@ test.describe('DevTools & Sync Feedback Loop', () => {
         const assignsExpandedScreenshot = path.join(screenshotsDir, 'assignments-page-expanded.png');
         await optionsPage.screenshot({ path: assignsExpandedScreenshot, fullPage: true });
         console.log(`[DevTools UI] Captured Expanded Assignments screenshot: ${assignsExpandedScreenshot}`);
-      }
-
-      // Toggle Calendar View and capture calendar-view.png!
-      const calendarToggleBtn = optionsPage.locator('.calendar-toggle-btn');
-      if (await calendarToggleBtn.isVisible()) {
-        await calendarToggleBtn.click();
-        await optionsPage.waitForTimeout(600);
-        const calendarScreenshot = path.join(screenshotsDir, 'calendar-view.png');
-        await optionsPage.screenshot({ path: calendarScreenshot, fullPage: true });
-        console.log(`[DevTools UI] Captured Calendar View screenshot: ${calendarScreenshot}`);
-        // Toggle calendar view back off
-        await calendarToggleBtn.click();
-        await optionsPage.waitForTimeout(300);
       }
     }
 

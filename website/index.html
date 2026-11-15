@@ -195,7 +195,9 @@
             <!-- Tab Pills to switch live screenshots -->
             <div class="mockup-tab-pills">
               <button class="mockup-tab-btn active" data-target="mock-dash">Dashboard</button>
-              <button class="mockup-tab-btn" data-target="mock-calendar">Calendar</button>
+              <button class="mockup-tab-btn" data-target="mock-recordings">Recordings</button>
+              <button class="mockup-tab-btn" data-target="mock-calendar">Month Calendar</button>
+              <button class="mockup-tab-btn" data-target="mock-week-cal">Week Calendar</button>
               <button class="mockup-tab-btn" data-target="mock-grades">Grades & GPA</button>
               <button class="mockup-tab-btn" data-target="mock-course">Course Hub</button>
               <button class="mockup-tab-btn" data-target="mock-coffee">Coffee Theme</button>
@@ -208,9 +210,13 @@
           </div>
 
           <div class="mockup-image-holder">
-            <img id="mock-dash" src="assets/main-dashboard.png" alt="Noodle Dashboard Overview"
+            <img id="mock-dash" src="assets/main-dashboard.png" alt="Noodle Dashboard Overview with Course Cards & Catch-Up Queue"
               class="mockup-image active">
-            <img id="mock-calendar" src="assets/calendar-view.png" alt="Noodle Split-Pane Calendar View"
+            <img id="mock-recordings" src="assets/recordings-tab.png" alt="Noodle Panopto Recordings & Catch-Up Hub"
+              class="mockup-image">
+            <img id="mock-calendar" src="assets/calendar-view.png" alt="Noodle Monthly Calendar View"
+              class="mockup-image">
+            <img id="mock-week-cal" src="assets/calendar-week-view.png" alt="Noodle 7-Day Weekly Schedule View"
               class="mockup-image">
             <img id="mock-grades" src="assets/grades-page.png" alt="Noodle Academic Grades & GPA Performance"
               class="mockup-image">
@@ -302,11 +308,9 @@
         <!-- Panel 1: Cockpit & Spotlight -->
         <div id="panel-cockpit" class="feature-tab-panel active">
           <div class="feature-panel-text">
-            <h3>Your closest deadline, always in focus.</h3>
+            <h3>Your courses, deadlines, and recordings in one cockpit.</h3>
             <p>
-              The <strong>Next-Up Spotlight</strong> prominently pins the most urgent assignment due across all your
-              courses. See remaining time down to the second, access required PDF problem sets, and submit directly to
-              Moodle with a single click.
+              The <strong>Modern Cockpit</strong> organizes all your active courses into elegant cards with progress bars and next-task countdowns. Master your semester with the master-detail task split pane and the Panopto catch-up queue.
             </p>
             <ul class="feature-checklist">
               <li class="feature-check-item">
@@ -314,28 +318,26 @@
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Dynamic Urgency Color Coding:</strong> Red (&le;24h), Amber (&le;72h), and Coral so you
-                  instantly know what needs attention.</div>
+                <div><strong>Modern Course Cards:</strong> Next assignment countdown, breakdown badges (assignments, lectures, recitations), and completion progress bars.</div>
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>1-Click Dismiss &amp; Split-Pane Details:</strong> Inspect assignment files side-by-side or dismiss optional and locked tasks with a single click.</div>
+                <div><strong>Master–Detail Split Pane &amp; 1-Click Dismiss:</strong> Click any upcoming task to review attached problem set PDFs and starter templates side-by-side, or dismiss optional/locked tasks with a single click.</div>
               </li>
               <li class="feature-check-item">
                 <span class="feature-check-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg></span>
-                <div><strong>Topic File Previews:</strong> Preview problem sets and lecture notes directly without
-                  waiting for blank browser tabs.</div>
+                <div><strong>Panopto Catch-Up Queue:</strong> Prominently highlights unwatched lecture and recitation recordings with 1-click playback.</div>
               </li>
             </ul>
           </div>
           <div class="feature-preview-card">
-            <img src="assets/promo-1-hero-overview.png" alt="Next Up Spotlight" class="feature-preview-img">
+            <img src="assets/promo-1-hero-overview.png" alt="Next Up Spotlight and Course Cards" class="feature-preview-img">
           </div>
         </div>
 

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- **v4.1.0 Showcase Media, High-Res Store Promo Assets & Website Integration (`website/`, `apps/extension/promo/`, `apps/extension/screenshots/`, `TC-EXT-01`)**:
+  - Re-captured high-resolution, pixel-perfect 1280x800 screenshots reflecting v4.1.0 UI features: Course cards grid mode (`noodle_courses_view_mode: 'cards'`), Panopto Catch-Up Queue, master-detail task split pane, dedicated Recordings tab with host tracking and duration filters, and dual monthly/weekly calendar switcher.
+  - Re-generated Chrome Web Store promo slides (1-8), Marquee banner (1400x560), and Small Promo tile (440x280) featuring warm pastel palette (`#e07a5f` coral orange, `#a0613e` mocha brown, amber/cream) with clean non-industrial layout and zero institutional affiliation mentions.
+  - Updated website (`website/index.html`) interactive demo with dedicated `Recordings` and `Week Calendar` tabs, and synchronized all new image assets to `website/assets/`.
+
 ### Changed
 - **Website v4.1.0 Feature & Version Sync (`website/index.html`, `CHANGELOG.md`, `TC-WEB-001`)**:
   - Updated the landing website badge and asset cache-busters to `v4.1.0`.

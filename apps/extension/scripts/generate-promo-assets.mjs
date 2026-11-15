@@ -35,6 +35,8 @@ const modalData = getBase64Image(path.join(screenshotsDir, 'dashboard-manage-mod
 const popupData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup.png'));
 const popupHeData = getBase64Image(path.join(screenshotsDir, 'toolbar-popup-he.png'));
 const calendarData = getBase64Image(path.join(screenshotsDir, 'calendar-view.png'));
+const calendarWeekData = getBase64Image(path.join(screenshotsDir, 'calendar-week-view.png'));
+const recordingsData = getBase64Image(path.join(screenshotsDir, 'recordings-tab.png'));
 const gradesData = getBase64Image(path.join(screenshotsDir, 'grades-page.png'));
 const settingsData = getBase64Image(path.join(screenshotsDir, 'settings-page.png'));
 
@@ -354,19 +356,19 @@ const slides = [
 
           <!-- Callout 1 -->
           <div class="badge-callout" style="bottom: 45px; left: 40px;">
-            <div class="badge-icon-box" style="background: #ecfdf5; color: #059669;">🎯</div>
+            <div class="badge-icon-box" style="background: #fff7ed; color: #ea580c;">🗂️</div>
             <div>
-              <div class="badge-text-title">Urgent Deadline Spotlight</div>
-              <div class="badge-text-sub">Next due assignment with topic files & attachments</div>
+              <div class="badge-text-title">Modern Course Cards</div>
+              <div class="badge-text-sub">Next deadlines, gap tracking & progress bars</div>
             </div>
           </div>
 
           <!-- Callout 2 -->
           <div class="badge-callout" style="top: 140px; right: 40px;">
-            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎥</div>
+            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎯</div>
             <div>
-              <div class="badge-text-title">Live Zoom Detection</div>
-              <div class="badge-text-sub">1-click join banner when your lecture is live</div>
+              <div class="badge-text-title">Master-Detail Split Pane</div>
+              <div class="badge-text-sub">Review prompt files and code templates in 1 click</div>
             </div>
           </div>
         </div>
@@ -463,7 +465,7 @@ const slides = [
     `,
   },
 
-  // Slide 3: Course Materials & Live Lecture Hub
+  // Slide 3: Course Recordings & Catch-Up Hub
   {
     name: 'promo-3-zoom-hub',
     html: `
@@ -485,7 +487,7 @@ const slides = [
           .dashboard-scaled-container img {
             width: 100%;
             height: auto;
-            transform: scale(0.96) translateY(-460px);
+            transform: scale(0.97);
             transform-origin: top center;
             display: block;
             image-rendering: -webkit-optimize-contrast;
@@ -498,15 +500,15 @@ const slides = [
             <div>
               <div class="brand-pill">
                 <img src="${logoData}" alt="Noodle logo">
-                <span>Course Materials & Lecture Hub</span>
+                <span>Panopto & Live Class Hub</span>
               </div>
-              <h1 class="slide-title">Course Files & Zoom in <span class="highlight">One Click</span></h1>
-              <p class="slide-subtitle">Browse weekly topics, download course slides and code skeletons with exact file sizes, and join live lectures without hunting for links.</p>
+              <h1 class="slide-title">Lectures, Recitations & <span class="highlight">Recordings</span></h1>
+              <p class="slide-subtitle">All course videos with instructor host tracking, unwatched catch-up filters, duration badges, and 1-click Panopto playback.</p>
             </div>
             <div class="pill-group">
-              <div class="feature-tag">🎥 Auto-Discovered Zoom</div>
-              <div class="feature-tag">📥 1-Click Downloads</div>
-              <div class="feature-tag">🗂️ Weekly Topic Pills</div>
+              <div class="feature-tag">🎥 Panopto Sync</div>
+              <div class="feature-tag">👤 Host Tracking</div>
+              <div class="feature-tag">⏱️ Duration & Dates</div>
             </div>
           </div>
 
@@ -518,31 +520,31 @@ const slides = [
                 <span class="traffic-light tl-green"></span>
               </div>
               <div class="browser-address">
-                <span>🔒 chrome-extension://noodle/options.html#course/9999</span>
+                <span>🔒 chrome-extension://noodle/options.html#recordings</span>
               </div>
             </div>
             <div class="browser-content">
               <div class="dashboard-scaled-container">
-                <img src="${courseDetailData}" alt="Course Detail Preview">
+                <img src="${recordingsData}" alt="Dedicated Recordings Tab Preview">
               </div>
             </div>
           </div>
 
           <!-- Callout 1 -->
           <div class="badge-callout" style="bottom: 45px; left: 40px;">
-            <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">🎥</div>
+            <div class="badge-icon-box" style="background: #fff7ed; color: #ea580c;">👤</div>
             <div>
-              <div class="badge-text-title">Live Meeting Detection</div>
-              <div class="badge-text-sub">Active Zoom lecture highlighted with direct join button</div>
+              <div class="badge-text-title">Host & Track Filtering</div>
+              <div class="badge-text-sub">Lectures and recitations separated by lecturer and TA</div>
             </div>
           </div>
 
           <!-- Callout 2 -->
           <div class="badge-callout" style="top: 140px; right: 40px;">
-            <div class="badge-icon-box" style="background: #f0fdf4; color: #16a34a;">📦</div>
+            <div class="badge-icon-box" style="background: #ecfdf5; color: #059669;">▶️</div>
             <div>
-              <div class="badge-text-title">Exact File Sizes & Downloads</div>
-              <div class="badge-text-sub">Download slides, syllabi and zip archives directly</div>
+              <div class="badge-text-title">Unwatched Catch-Up Queue</div>
+              <div class="badge-text-sub">Mark videos watched and stay on schedule before exams</div>
             </div>
           </div>
         </div>
@@ -781,7 +783,7 @@ const slides = [
     `,
   },
 
-  // Slide 6: Visual Monthly Calendar Hub
+  // Slide 6: Visual Monthly & Weekly Calendar Hub
   {
     name: 'promo-6-calendar-hub',
     html: `
@@ -818,11 +820,11 @@ const slides = [
                 <img src="${logoData}" alt="Noodle logo">
                 <span>Visual Academic Calendar</span>
               </div>
-              <h1 class="slide-title">Plan Your Month at a <span class="highlight">Glance</span></h1>
-              <p class="slide-subtitle">A responsive split-pane workspace. Assignment deadlines mapped directly to an interactive monthly grid with color-coded date pills.</p>
+              <h1 class="slide-title">Plan in <span class="highlight">Monthly & Weekly</span> Views</h1>
+              <p class="slide-subtitle">A responsive split-pane workspace. Toggle between full month overview and 7-day weekly schedule with interactive deadline pills and Panopto overlays.</p>
             </div>
             <div class="pill-group">
-              <div class="feature-tag">📅 Monthly Grid View</div>
+              <div class="feature-tag">📅 Month & Week Modes</div>
               <div class="feature-tag">🎯 1-Click Pill Jump</div>
               <div class="feature-tag">🎨 Pastel Urgency Tags</div>
             </div>
@@ -850,8 +852,8 @@ const slides = [
           <div class="badge-callout" style="bottom: 45px; left: 40px;">
             <div class="badge-icon-box" style="background: #eff6ff; color: #2563eb;">📅</div>
             <div>
-              <div class="badge-text-title">Interactive Deadline Pills</div>
-              <div class="badge-text-sub">Click any pill to scroll directly to full homework details</div>
+              <div class="badge-text-title">Dual Calendar Modes</div>
+              <div class="badge-text-sub">Instant switch between monthly grid and 7-day weekly schedule</div>
             </div>
           </div>
 
@@ -859,8 +861,8 @@ const slides = [
           <div class="badge-callout" style="top: 140px; right: 40px;">
             <div class="badge-icon-box" style="background: #fef3c7; color: #d97706;">⚡</div>
             <div>
-              <div class="badge-text-title">Split-Pane Workspace</div>
-              <div class="badge-text-sub">Keep your homework feed visible while planning your month</div>
+              <div class="badge-text-title">Interactive Schedule Pills</div>
+              <div class="badge-text-sub">Click any pill to scroll directly to full homework details</div>
             </div>
           </div>
         </div>
