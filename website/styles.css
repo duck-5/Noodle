@@ -490,6 +490,7 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0.9rem 1.4rem;
   background: var(--bg-subtle);
   border-bottom: 1px solid var(--border-light);
@@ -498,6 +499,7 @@ body::after {
 .mockup-dots {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .mockup-dot {
@@ -513,19 +515,28 @@ body::after {
 
 .mockup-tab-pills {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.35rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mockup-tab-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .mockup-tab-btn {
   background: none;
   border: none;
   font-family: inherit;
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 600;
-  padding: 0.4rem 0.95rem;
+  padding: 0.4rem 0.8rem;
   border-radius: var(--radius-full);
   color: var(--text-muted);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--transition-fast);
 }
 
