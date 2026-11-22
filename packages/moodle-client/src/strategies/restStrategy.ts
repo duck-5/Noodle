@@ -1,5 +1,5 @@
-import {
-  MoodleApiError,
+import { MoodleApiError } from '../errors.js';
+import type {
   MoodleSiteInfo,
   RawCourseSection,
   RawGradeReportResponse,
@@ -9,7 +9,9 @@ import {
   RawMoodleQuiz,
   RawMoodleQuizAttempt,
 } from '../moodleApi.js';
-import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
+import type { IMoodleStrategy, StrategyContext } from './types.js';
+import { UnsupportedStrategyError } from './types.js';
+import { DEFAULT_FETCH_TIMEOUT_MS, extractSetCookieHeader, fetchWithTimeout, isBrowserEnvironment } from '../runtimeEnv.js';
 import type { CourseStaffMember, PanoptoRecordingType } from '../types.js';
 import {
   extractMultilangPersonNames,
@@ -114,6 +116,7 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       url = `${url}/webservice/rest/server.php`;
     }
     const options: RequestInit = { method };
+    const headers: Record<string, string> = {};
 
     if (method === 'GET') {
       const urlParams = new URLSearchParams();
@@ -131,12 +134,36 @@ export class RestMoodleStrategy implements IMoodleStrategy {
         }
       }
       options.body = bodyParams;
-      options.headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      };
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
     }
 
-    const response = await fetch(url, options);
+    const isBrowser = isBrowserEnvironment();
+    if (!isBrowser) {
+      const ua = this.context.userAgent !== undefined ? this.context.userAgent : 'MoodleMobile';
+      if (ua) {
+        headers['User-Agent'] = ua;
+      }
+      if (this.context.cookieAdapter) {
+        const cookie = await this.context.cookieAdapter.getCookieHeader(url);
+        if (cookie) {
+          headers['Cookie'] = cookie;
+        }
+      }
+    }
+
+    if (Object.keys(headers).length > 0) {
+      options.headers = headers;
+    }
+
+    const response = await fetchWithTimeout(
+      this.context.fetch ?? fetch,
+      url,
+      options,
+      this.context.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+    );
+    if (!isBrowser && this.context.cookieAdapter?.ingestSetCookie) {
+      await this.context.cookieAdapter.ingestSetCookie(url, extractSetCookieHeader(response.headers));
+    }
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -224,8 +251,14 @@ export class RestMoodleStrategy implements IMoodleStrategy {
     return Array.from(new Map(allCourses.map(c => [c.id, c])).values());
   }
 
-  public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    const res = await this.apiCall('mod_assign_get_assignments');
+  public async getAssignments(courseIds?: number[]): Promise<RawMoodleAssignmentsResponse> {
+    const params: Record<string, any> = {};
+    if (Array.isArray(courseIds) && courseIds.length > 0) {
+      courseIds.forEach((id, idx) => {
+        params[`courseids[${idx}]`] = id;
+      });
+    }
+    const res = await this.apiCall('mod_assign_get_assignments', params);
 
     const currentYear = new Date().getFullYear();
     if (res && Array.isArray(res.courses)) {
@@ -254,16 +287,18 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus> {
+    const currentYear = new Date().getFullYear();
     const year = this.assignYearMap.get(assignId);
     const urlHost = new URL(this.context.baseUrl).origin;
-    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
     return this.apiCall('mod_assign_get_submission_status', { assignid: assignId }, 'POST', baseUrlOverride);
   }
 
   public async getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse> {
+    const currentYear = new Date().getFullYear();
     const year = this.courseYearMap.get(courseId);
     const urlHost = new URL(this.context.baseUrl).origin;
-    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
     return this.apiCall('gradereport_user_get_grade_items', {
       courseid: courseId,
       userid: userId
@@ -304,7 +339,17 @@ export class RestMoodleStrategy implements IMoodleStrategy {
           }
         }
       } catch (err) {
-        console.warn('mod_quiz_get_quizzes_by_courses failed:', err);
+        if (
+          err instanceof MoodleApiError &&
+          (err.errorcode === 'accessexception' ||
+            err.errorcode === 'servicenotavailable' ||
+            err.errorcode === 'nopermission' ||
+            err.errorcode === 'dmlreadexception')
+        ) {
+          console.warn('mod_quiz_get_quizzes_by_courses unavailable/restricted:', err);
+          continue;
+        }
+        throw err;
       }
     }
 
@@ -327,8 +372,17 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       }
       return [];
     } catch (err) {
-      console.warn(`mod_quiz_get_user_attempts for quiz ${quizId} failed:`, err);
-      return [];
+      if (
+        err instanceof MoodleApiError &&
+        (err.errorcode === 'accessexception' ||
+          err.errorcode === 'servicenotavailable' ||
+          err.errorcode === 'nopermission' ||
+          err.errorcode === 'dmlreadexception')
+      ) {
+        console.warn(`mod_quiz_get_user_attempts for quiz ${quizId} unavailable/restricted:`, err);
+        return [];
+      }
+      throw err;
     }
   }
 
@@ -350,9 +404,10 @@ export class RestMoodleStrategy implements IMoodleStrategy {
   }
 
   public async getCourseContents(courseId: number): Promise<RawCourseSection[]> {
+    const currentYear = new Date().getFullYear();
     const year = this.courseYearMap.get(courseId);
     const urlHost = new URL(this.context.baseUrl).origin;
-    const baseUrlOverride = year ? `${urlHost}/${year}` : undefined;
+    const baseUrlOverride = year && year !== currentYear ? `${urlHost}/${year}` : undefined;
     const sections = await this.apiCall('core_course_get_contents', { courseid: courseId }, 'POST', baseUrlOverride);
     if (year && Array.isArray(sections)) {
       for (const sec of sections) {
@@ -416,23 +471,15 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       'options[timestart]': 4102444800 - 86400,
     });
 
-    if (response && response.events) {
-      const existingEvents = response.events.filter((e: any) => e.name === 'NOODLE_SYNC_DATA');
-      if (existingEvents.length > 0) {
-        const deleteParams: Record<string, any> = {};
-        for (let i = 0; i < existingEvents.length; i++) {
-          deleteParams[`events[${i}][eventid]`] = existingEvents[i].id;
-          deleteParams[`events[${i}][repeat]`] = 0;
-        }
-        try {
-          await this.apiCall('core_calendar_delete_calendar_events', deleteParams, 'POST');
-        } catch (e: any) {
-          console.warn('[RestMoodleStrategy] Failed to delete old sync events:', e);
-        }
-      }
-    }
+    const existingEventIds: number[] =
+      response && Array.isArray(response.events)
+        ? response.events
+            .filter((e: any) => e.name === 'NOODLE_SYNC_DATA' && typeof e.id === 'number')
+            .map((e: any) => e.id)
+        : [];
 
-    await this.apiCall(
+    // Create the new event FIRST so a failure never leaves the user with deleted remote settings
+    const createRes = await this.apiCall(
       'core_calendar_create_calendar_events',
       {
         'events[0][name]': 'NOODLE_SYNC_DATA',
@@ -442,6 +489,36 @@ export class RestMoodleStrategy implements IMoodleStrategy {
       },
       'POST'
     );
+
+    if (
+      createRes &&
+      Array.isArray(createRes.warnings) &&
+      createRes.warnings.length > 0 &&
+      (!Array.isArray(createRes.events) || createRes.events.length === 0)
+    ) {
+      throw new Error(
+        createRes.warnings[0]?.message || 'Failed to create NOODLE_SYNC_DATA calendar event'
+      );
+    }
+
+    const createdId: number | undefined =
+      Array.isArray(createRes?.events) && typeof createRes.events[0]?.id === 'number'
+        ? createRes.events[0].id
+        : undefined;
+
+    const idsToDelete = existingEventIds.filter((id) => id !== createdId);
+    if (idsToDelete.length > 0) {
+      const deleteParams: Record<string, any> = {};
+      for (let i = 0; i < idsToDelete.length; i++) {
+        deleteParams[`events[${i}][eventid]`] = idsToDelete[i];
+        deleteParams[`events[${i}][repeat]`] = 0;
+      }
+      try {
+        await this.apiCall('core_calendar_delete_calendar_events', deleteParams, 'POST');
+      } catch (e: any) {
+        console.warn('[RestMoodleStrategy] Failed to delete old sync events:', e);
+      }
+    }
   }
 
   public async loadNoodleSettings(): Promise<any> {

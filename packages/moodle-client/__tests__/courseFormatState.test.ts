@@ -1,4 +1,5 @@
-import { fetchCourseFormatState } from '../src/courseFormatState.js';
+import { fetchCourseFormatState, fetchSesskeyFromJar } from '../src/courseFormatState.js';
+import { CookieJar } from '../src/zoomScraper.js';
 import { cleanMoodleString } from '../src/syncEngine.js';
 
 describe('Phase 1: courseFormatState & cleanMoodleString (Hard Item #2 & multilang filtering)', () => {
@@ -199,6 +200,94 @@ describe('Phase 1: courseFormatState & cleanMoodleString (Hard Item #2 & multila
         sesskey: 'EXPIRED_SESSKEY',
       });
       expect(errorResult).toBeNull();
+    });
+
+    it('should pass CookieJar cookies via mfetch when jar is provided in non-browser mode', async () => {
+      const jar = CookieJar.fromCookies('MoodleSession=jarSession123; Extra=ok');
+      const customFetch = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers['Cookie']).toContain('MoodleSession=jarSession123');
+        expect(headers['Cookie']).toContain('Extra=ok');
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => [
+            {
+              error: false,
+              data: JSON.stringify({
+                course: { id: 101, format: 'topics' },
+                section: [{ id: '10', section: 1, levelsan: 1 }],
+                cm: [{ id: 999, uservisible: false }],
+              }),
+            },
+          ],
+        } as unknown as Response;
+      });
+
+      const result = await fetchCourseFormatState({
+        instanceBaseUrl: 'https://moodle.tau.ac.il',
+        courseId: 101,
+        sesskey: 'SK1',
+        jar,
+        fetch: customFetch as any,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.sections.get(10)?.level).toBe(0);
+      expect(result!.lockedCmids?.has(999)).toBe(true);
+    });
+  });
+
+  describe('fetchSesskeyFromJar', () => {
+    it('should return null when redirected to /login/ or nidp.tau.ac.il', async () => {
+      const jar = new CookieJar();
+      const nidpFetch = jest.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 302,
+          headers: new Headers({ location: 'https://nidp.tau.ac.il/nidp/idff/sso' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => '<form id="login"><input name="Ecom_User_ID"></form>',
+        });
+
+      expect(
+        await fetchSesskeyFromJar(jar, 'https://moodle.tau.ac.il', { fetch: nidpFetch as any })
+      ).toBeNull();
+
+      const moodleLoginFetch = jest.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 302,
+          headers: new Headers({ location: 'https://moodle.tau.ac.il/login/index.php' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => '{"sesskey":"GUEST_SHOULD_IGNORE"}',
+        });
+
+      expect(
+        await fetchSesskeyFromJar(jar, 'https://moodle.tau.ac.il', { fetch: moodleLoginFetch as any })
+      ).toBeNull();
+    });
+
+    it('should extract sesskey from authenticated /my/ HTML', async () => {
+      const jar = CookieJar.fromCookies('MoodleSession=auth');
+      const okFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => '<script>M.cfg = {"sesskey":"VALID123ABC"};</script>',
+      });
+
+      expect(
+        await fetchSesskeyFromJar(jar, 'https://moodle.tau.ac.il', { fetch: okFetch as any })
+      ).toBe('VALID123ABC');
     });
   });
 });

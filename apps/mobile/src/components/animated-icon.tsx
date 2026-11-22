@@ -3,12 +3,15 @@ import { useState } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { usePreferences } from '@/hooks/use-preferences';
 
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);
+  const { theme } = usePreferences();
+  const bgColor = theme?.background || '#FAF5EB';
 
   if (!visible) return null;
 
@@ -39,7 +42,7 @@ export function AnimatedSplashOverlay() {
           scheduleOnRN(setVisible, false);
         }
       })}
-      style={styles.backgroundSolidColor}
+      style={[styles.backgroundSolidColor, { backgroundColor: bgColor }]}
     />
   );
 }
@@ -81,13 +84,19 @@ const glowKeyframe = new Keyframe({
 });
 
 export function AnimatedIcon() {
+  const { theme } = usePreferences();
+  const bgColor = theme?.background || '#FAF5EB';
+
   return (
     <View style={styles.iconContainer}>
       <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
         <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
       </Animated.View>
 
-      <Animated.View entering={keyframe.duration(DURATION)} style={styles.background} />
+      <Animated.View
+        entering={keyframe.duration(DURATION)}
+        style={[styles.background, { backgroundColor: bgColor }]}
+      />
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
         <Image style={styles.image} source={require('../../assets/logo.png')} />
       </Animated.View>

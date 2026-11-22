@@ -25,7 +25,10 @@ import {
   extractMultilangPersonNames,
   parseParticipantsHtml,
   fetchCourseStaffFromParticipantsPage,
+  discoverPanoptoFromMoodleBlocks,
+  ensurePanoptoAuthenticated,
 } from '../src/panoptoScraper.js';
+import { CookieJar } from '../src/zoomScraper.js';
 import { RestMoodleStrategy } from '../src/strategies/restStrategy.js';
 import { runSync } from '../src/syncEngine.js';
 import type { CoursePanoptoStaffEntry, CourseStaffMember, PanoptoRecording } from '../src/types.js';
@@ -1311,6 +1314,837 @@ describe('Panopto Lecture & Recitation Tracking', () => {
       } finally {
         global.fetch = origFetch;
       }
+    });
+  });
+
+  describe('TC-PAN-C1: panopto_content.php AJAX Discovery, Panopto 17.18 Auth Probes & Un-Gated Tier 3', () => {
+    it('discovers folder UUID via POST /blocks/panopto/panopto_content.php on lazy placeholder (raw HTML and JSON-wrapped)', async () => {
+      const folderUuid = 'a1b2c3d4-e5f6-4789-abcd-ef0123456789';
+      const ajaxRequests: Array<{ url: string; headers: Record<string, string>; body: string }> = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const headers = (init?.headers || {}) as Record<string, string>;
+        const body = init?.body ? String(init.body) : '';
+
+        if (url.includes('core_block_get_course_blocks')) {
+          return new Response(
+            JSON.stringify({
+              blocks: [
+                {
+                  name: 'panopto',
+                  instanceid: 3802,
+                  contents: {
+                    title: 'Panopto',
+                    content: '<div id="panopto_block_3802"><div id="loading_text">Loading...</div></div>',
+                    footer: '',
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          );
+        }
+
+        if (url.endsWith('/blocks/panopto/panopto_content.php')) {
+          ajaxRequests.push({ url, headers, body });
+          // Return JSON-escaped string payload to verify unwrapping
+          return new Response(
+            JSON.stringify(
+              `<div class="panoptoLink"><a href="https:\\/\\/tau.cloud.panopto.eu\\/Panopto\\/Pages\\/Sessions\\/List.aspx?folderID=${folderUuid}">Course Recordings</a></div>`
+            ),
+            { status: 200 }
+          );
+        }
+
+        return new Response('', { status: 404 });
+      });
+
+      const jar = CookieJar.fromCookies('MoodleSession=testSess');
+      const result = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        { fetch: customFetch as any },
+        { jar, sesskey: 'SK_PANOPT' }
+      );
+
+      expect(result.folderIds).toEqual([folderUuid]);
+      expect(ajaxRequests).toHaveLength(1);
+      expect(ajaxRequests[0].headers['X-Requested-With']).toBe('XMLHttpRequest');
+      expect(ajaxRequests[0].headers['Referer']).toBe('https://moodle.tau.ac.il/course/view.php?id=321213001');
+      const params = new URLSearchParams(ajaxRequests[0].body);
+      expect(params.get('courseid')).toBe('321213001');
+      expect(params.get('sesskey')).toBe('SK_PANOPT');
+
+      // Non-lazy block with existing folder link must NOT call panopto_content.php, and login HTML is ignored
+      let ajaxCallsSecond = 0;
+      const directFetch = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('core_block_get_course_blocks')) {
+          return new Response(
+            JSON.stringify({
+              blocks: [
+                {
+                  name: 'panopto',
+                  contents: {
+                    content: `<a href="https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx?folderID=${folderUuid}">Open</a>`,
+                    footer: '',
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.includes('panopto_content.php')) {
+          ajaxCallsSecond++;
+        }
+        return new Response('', { status: 404 });
+      });
+
+      const directRes = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        { fetch: directFetch as any },
+        { jar }
+      );
+      expect(directRes.folderIds).toEqual([folderUuid]);
+      expect(ajaxCallsSecond).toBe(0);
+    });
+
+    it('detects Panopto 17.18 Home.aspx / Data.svc auth and falls back to SSO.php?course_id on guest response', async () => {
+      // 1. Unquoted JS marker on Home.aspx when /Api/v1/users/me returns 401
+      const homeAuthFetch = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/Panopto/Api/v1/users/me')) {
+          return new Response('{}', { status: 401 });
+        }
+        if (url.includes('/Panopto/Pages/Home.aspx')) {
+          return new Response(
+            `<script>Panopto.user = { isAuthenticated: true, userId: '12345678-1234-1234-1234-123456789abc' };</script>`,
+            { status: 200 }
+          );
+        }
+        throw new Error(`Unexpected URL: ${url}`);
+      });
+      expect(
+        await ensurePanoptoAuthenticated(
+          'https://tau.cloud.panopto.eu',
+          'https://moodle.tau.ac.il',
+          new CookieJar(),
+          undefined,
+          { fetch: homeAuthFetch as any }
+        )
+      ).toBe(true);
+
+      // 2. Guest Home.aspx (isAuthenticated: false) + empty Data.svc Results: [] must NOT false-positive; falls back to SSO.php?course_id=...
+      let ssoUrlSeen = '';
+      const guestFallbackFetch = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/Panopto/Api/v1/users/me')) {
+          return new Response('{}', { status: 401 });
+        }
+        if (url.includes('/Panopto/Pages/Home.aspx')) {
+          return new Response(
+            `<script>Panopto.user = { isAuthenticated: false, userId: '00000000-0000-0000-0000-000000000000' };</script>`,
+            { status: 200 }
+          );
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          return new Response(JSON.stringify({ d: { Results: [] } }), { status: 200 });
+        }
+        if (url.includes('/blocks/panopto/SSO.php')) {
+          ssoUrlSeen = url;
+          return new Response('', {
+            status: 302,
+            headers: {
+              location: 'https://tau.cloud.panopto.eu/Panopto/Pages/Home.aspx',
+              'set-cookie': '.ASPXAUTH=SSO_COURSE_OK; Path=/',
+            },
+          });
+        }
+        return new Response('', { status: 404 });
+      });
+
+      const okGuestSso = await ensurePanoptoAuthenticated(
+        'https://tau.cloud.panopto.eu',
+        'https://moodle.tau.ac.il',
+        CookieJar.fromCookies('MoodleSession=active'),
+        undefined,
+        { fetch: guestFallbackFetch as any, sampleCourseId: 321213001 }
+      );
+      expect(okGuestSso).toBe(true);
+      expect(ssoUrlSeen).toBe('https://moodle.tau.ac.il/blocks/panopto/SSO.php?course_id=321213001');
+    });
+
+    it('un-gates Tier 3 discoverCourseFolderFromBrowse in runSync and persists discoveredPanoptoFolders (excluding manual overrides)', async () => {
+      const discoveredUuid = 'd1d2d3d4-1111-2222-3333-444455556666';
+      const manualUuid = 'e1e2e3e4-9999-8888-7777-666655554444';
+      const partialSnapshots: Array<any> = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? String(init.body) : '';
+        const fnMatch = (fn: string) => url.includes(fn) || body.includes(fn);
+
+        if (fnMatch('core_webservice_get_site_info')) {
+          return new Response(JSON.stringify({ userid: 1, fullname: 'Test Student' }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_users_courses')) {
+          return new Response(
+            JSON.stringify([
+              { id: 321213001, shortname: '0321-2130-01-2026-1', fullname: '0321213001 - Quantum Mechanics' },
+              { id: 502, shortname: '0321-5020-01-2026-1', fullname: '0321502001 - Optics' },
+            ]),
+            { status: 200 }
+          );
+        }
+        if (fnMatch('mod_assign_get_assignments')) {
+          return new Response(JSON.stringify({ courses: [] }), { status: 200 });
+        }
+        if (fnMatch('mod_quiz_get_quizzes_by_courses')) {
+          return new Response(JSON.stringify({ quizzes: [] }), { status: 200 });
+        }
+        if (fnMatch('gradereport_user_get_grade_items')) {
+          return new Response(JSON.stringify({ usergrades: [] }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_enrolled_users')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_course_get_contents')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_block_get_course_blocks')) {
+          return new Response(JSON.stringify({ blocks: [] }), { status: 200 });
+        }
+        if (url.includes('/Panopto/Api/v1/users/me') || url.includes('/Panopto/Pages/Home.aspx')) {
+          return new Response('', { status: 401 });
+        }
+        if (url.includes('/blocks/panopto/SSO.php')) {
+          return new Response('', { status: 403 });
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          const parsed = body ? JSON.parse(body) : {};
+          const qp = parsed.queryParameters || {};
+          // Auth probe (no query, no folderID) fails so ensurePanoptoSession returns false
+          if (!qp.folderID && !qp.query) {
+            return new Response('', { status: 401 });
+          }
+          // Tier 3 search query returns folder match for 0321213001
+          if (qp.query) {
+            return new Response(
+              JSON.stringify({
+                d: {
+                  Results: [
+                    {
+                      DeliveryID: 'del-tier3-1',
+                      SessionName: 'Lecture 1',
+                      FolderID: discoveredUuid,
+                      FolderName: '0321213001 - Quantum Mechanics',
+                      StartTime: '/Date(1730000000000)/',
+                      Duration: 3600,
+                    },
+                  ],
+                },
+              }),
+              { status: 200 }
+            );
+          }
+          // Folder fetch for discoveredUuid or manualUuid
+          return new Response(
+            JSON.stringify({
+              d: {
+                Results: [
+                  {
+                    DeliveryID: qp.folderID === discoveredUuid ? 'del-tier3-1' : 'del-manual-1',
+                    SessionName: qp.folderID === discoveredUuid ? 'Quantum Lecture 1' : 'Optics Lecture 1',
+                    FolderID: qp.folderID,
+                    FolderName: qp.folderID === discoveredUuid ? 'Quantum' : 'Optics',
+                    StartTime: '/Date(1730000000000)/',
+                    Duration: 3600,
+                  },
+                ],
+                Subfolders: [],
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const syncRes = await runSync(
+        'TEST_TOKEN',
+        [321213001, 502],
+        () => {},
+        'https://moodle.tau.ac.il',
+        undefined,
+        undefined,
+        undefined,
+        (partial) => {
+          if (partial.recordings || partial.discoveredPanoptoFolders) {
+            partialSnapshots.push(partial);
+          }
+        },
+        {
+          enablePanopto: true,
+          useNativeCookies: false,
+          coursesPanoptoMap: { 502: manualUuid },
+          fetch: customFetch as any,
+        }
+      );
+
+      expect(syncRes.recordings?.length).toBeGreaterThanOrEqual(2);
+      expect(syncRes.discoveredPanoptoFolders).toEqual({ 321213001: discoveredUuid });
+      expect(syncRes.errors.some((e) => e.context === 'Panopto Authentication')).toBe(false);
+      expect(partialSnapshots.some((p) => p.discoveredPanoptoFolders?.[321213001] === discoveredUuid)).toBe(true);
+    });
+
+    it('deduplicates and awaits concurrent Tier 3 forced re-auth across multiple courses without spurious auth errors', async () => {
+      const folder1 = '11111111-1111-4111-8111-111111111111';
+      const folder2 = '22222222-2222-4222-8222-222222222222';
+      let panoptoAuthed = false;
+      const authCalls: boolean[] = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? String(init.body) : '';
+        const fnMatch = (fn: string) => url.includes(fn) || body.includes(fn);
+
+        if (fnMatch('core_webservice_get_site_info')) {
+          return new Response(JSON.stringify({ userid: 1, fullname: 'Test Student' }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_users_courses')) {
+          return new Response(
+            JSON.stringify([
+              { id: 321213001, shortname: '0321-2130-01-2026-1', fullname: '0321213001 - Quantum Mechanics' },
+              { id: 321213002, shortname: '0321-2131-01-2026-1', fullname: '0321213101 - Statistical Mechanics' },
+            ]),
+            { status: 200 }
+          );
+        }
+        if (fnMatch('mod_assign_get_assignments')) {
+          return new Response(JSON.stringify({ courses: [] }), { status: 200 });
+        }
+        if (fnMatch('mod_quiz_get_quizzes_by_courses')) {
+          return new Response(JSON.stringify({ quizzes: [] }), { status: 200 });
+        }
+        if (fnMatch('gradereport_user_get_grade_items')) {
+          return new Response(JSON.stringify({ usergrades: [] }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_enrolled_users')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_course_get_contents')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_block_get_course_blocks')) {
+          return new Response(JSON.stringify({ blocks: [] }), { status: 200 });
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          if (!panoptoAuthed) {
+            return new Response('', { status: 401 });
+          }
+          const parsed = body ? JSON.parse(body) : {};
+          const qp = parsed.queryParameters || {};
+          if (qp.query) {
+            const isCourse1 = String(qp.query).includes('321213001') || String(qp.query).includes('0321213001') || String(qp.query).includes('Quantum');
+            const fid = isCourse1 ? folder1 : folder2;
+            const fname = isCourse1 ? '0321213001 - Quantum Mechanics' : '0321213101 - Statistical Mechanics';
+            return new Response(
+              JSON.stringify({
+                d: {
+                  Results: [
+                    {
+                      DeliveryID: isCourse1 ? 'del-c1' : 'del-c2',
+                      SessionName: 'Lecture 1',
+                      FolderID: fid,
+                      FolderName: fname,
+                      StartTime: '/Date(1730000000000)/',
+                      Duration: 3600,
+                    },
+                  ],
+                },
+              }),
+              { status: 200 }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              d: {
+                Results: [
+                  {
+                    DeliveryID: qp.folderID === folder1 ? 'del-c1' : 'del-c2',
+                    SessionName: qp.folderID === folder1 ? 'Quantum Lecture 1' : 'Stat Mech Lecture 1',
+                    FolderID: qp.folderID,
+                    FolderName: qp.folderID === folder1 ? 'Quantum' : 'Stat Mech',
+                    StartTime: '/Date(1730000000000)/',
+                    Duration: 3600,
+                  },
+                ],
+                Subfolders: [],
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response('', { status: 200 });
+      });
+
+      const syncRes = await runSync(
+        'TEST_TOKEN',
+        [321213001, 321213002],
+        () => {},
+        'https://moodle.tau.ac.il',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          enablePanopto: true,
+          useNativeCookies: true,
+          fetch: customFetch as any,
+          onEnsurePanoptoAuth: async (forceRefresh) => {
+            authCalls.push(Boolean(forceRefresh));
+            if (!forceRefresh) return false;
+            await new Promise((r) => setTimeout(r, 40));
+            panoptoAuthed = true;
+            return true;
+          },
+        }
+      );
+
+      expect(authCalls).toEqual([false, true]);
+      expect(syncRes.discoveredPanoptoFolders).toEqual({
+        321213001: folder1,
+        321213002: folder2,
+      });
+      expect(syncRes.recordings?.length).toBeGreaterThanOrEqual(2);
+      expect(syncRes.errors.filter((e) => e.context === 'Panopto Authentication')).toEqual([]);
+    });
+
+    it('shares normalized formatSesskeyCache for root Moodle URL and never leaks root sesskey to archive-year courses', async () => {
+      const currentYear = new Date().getFullYear();
+      const archiveYear = currentYear - 1;
+      let rootMyCount = 0;
+      const contentCalls: Array<{ url: string; sesskey: string | null }> = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? String(init.body) : '';
+        const fnMatch = (fn: string) => url.includes(fn) || body.includes(fn);
+
+        if (fnMatch('core_webservice_get_site_info')) {
+          return new Response(JSON.stringify({ userid: 1, fullname: 'Test Student' }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_users_courses')) {
+          return new Response(
+            JSON.stringify([
+              {
+                id: 901,
+                shortname: `0368-1111-01-${currentYear}-1`,
+                idnumber: `0368-1111-01-${currentYear}-1`,
+                fullname: 'Current Course',
+              },
+              {
+                id: 902,
+                shortname: `0368-1111-01-${archiveYear}-1`,
+                idnumber: `0368-1111-01-${archiveYear}-1`,
+                fullname: 'Archive Course',
+              },
+            ]),
+            { status: 200 }
+          );
+        }
+        if (fnMatch('mod_assign_get_assignments')) {
+          return new Response(JSON.stringify({ courses: [] }), { status: 200 });
+        }
+        if (fnMatch('mod_quiz_get_quizzes_by_courses')) {
+          return new Response(JSON.stringify({ quizzes: [] }), { status: 200 });
+        }
+        if (fnMatch('gradereport_user_get_grade_items')) {
+          return new Response(JSON.stringify({ usergrades: [] }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_enrolled_users')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_course_get_contents')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (url === `https://moodle.tau.ac.il/${archiveYear}/my/` || url === `https://moodle.tau.ac.il/${archiveYear}/my`) {
+          return new Response('Not Found', { status: 404 });
+        }
+        if (url === 'https://moodle.tau.ac.il/my/' || url === 'https://moodle.tau.ac.il/my') {
+          rootMyCount++;
+          return new Response('<script>M.cfg = {"sesskey":"SKROOT0001"};</script>', { status: 200 });
+        }
+        if (fnMatch('core_block_get_course_blocks')) {
+          return new Response(
+            JSON.stringify({
+              blocks: [
+                {
+                  name: 'panopto',
+                  contents: {
+                    content: '<div id="panopto_block_1"><div id="loading_text">Loading...</div></div>',
+                    footer: '',
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.endsWith('/blocks/panopto/panopto_content.php')) {
+          const params = new URLSearchParams(body);
+          contentCalls.push({ url, sesskey: params.get('sesskey') });
+          return new Response('<div></div>', { status: 200 });
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          return new Response(JSON.stringify({ d: { Results: [] } }), { status: 200 });
+        }
+        return new Response('', { status: 200 });
+      });
+
+      await runSync(
+        'TEST_TOKEN',
+        [901, 902],
+        () => {},
+        'https://moodle.tau.ac.il',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          enablePanopto: true,
+          useNativeCookies: true,
+          fetch: customFetch as any,
+          onEnsurePanoptoAuth: async () => true,
+        }
+      );
+
+      expect(rootMyCount).toBe(1);
+      const rootCall = contentCalls.find((c) => c.url === 'https://moodle.tau.ac.il/blocks/panopto/panopto_content.php');
+      const archiveCall = contentCalls.find(
+        (c) => c.url === `https://moodle.tau.ac.il/${archiveYear}/blocks/panopto/panopto_content.php`
+      );
+      expect(rootCall?.sesskey).toBe('SKROOT0001');
+      expect(archiveCall).toBeDefined();
+      expect(archiveCall?.sesskey).toBeNull();
+    });
+
+    it('extracts folder from panopto_content.php JSON html field despite loginUrl metadata and rejects logintoken/saml2 forms', async () => {
+      const folderUuid = 'f1f2f3f4-1111-4222-8333-444455556666';
+      const jar = CookieJar.fromCookies('MoodleSession=testSess');
+
+      const mockBlockAjax = (payload: string) =>
+        jest.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('core_block_get_course_blocks')) {
+            return new Response(
+              JSON.stringify({
+                blocks: [
+                  {
+                    name: 'panopto',
+                    contents: {
+                      content: '<div id="panopto_block_1"><div id="loading_text">Loading...</div></div>',
+                      footer: '',
+                    },
+                  },
+                ],
+              }),
+              { status: 200 }
+            );
+          }
+          if (url.endsWith('/blocks/panopto/panopto_content.php')) {
+            return new Response(payload, { status: 200 });
+          }
+          return new Response('', { status: 404 });
+        });
+
+      const jsonWithLoginUrl = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        {
+          fetch: mockBlockAjax(
+            JSON.stringify({
+              html: `<a href="https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx?folderID=${folderUuid}">Recs</a>`,
+              loginUrl: 'https://moodle.tau.ac.il/login/index.php',
+            })
+          ) as any,
+        },
+        { jar }
+      );
+      expect(jsonWithLoginUrl.folderIds).toEqual([folderUuid]);
+
+      const loginTokenForm = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        {
+          fetch: mockBlockAjax(
+            `<form action="/login/sso.php"><input name="logintoken" value="abc" /><input name="next" value="https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx?folderID=${folderUuid}" /></form>`
+          ) as any,
+        },
+        { jar }
+      );
+      expect(loginTokenForm.folderIds).toEqual([]);
+
+      const samlForm = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        {
+          fetch: mockBlockAjax(
+            `<form action="/auth/saml2/login.php"><input name="next" value="https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx?folderID=${folderUuid}" /></form>`
+          ) as any,
+        },
+        { jar }
+      );
+      expect(samlForm.folderIds).toEqual([]);
+
+      const ecomForm = await discoverPanoptoFromMoodleBlocks(
+        'WS_TOK',
+        321213001,
+        'https://moodle.tau.ac.il',
+        'https://tau.cloud.panopto.eu',
+        {
+          fetch: mockBlockAjax(
+            `<form action="/nidp/app"><input name="Ecom_User_ID" value="" /><input name="next" value="https://tau.cloud.panopto.eu/Panopto/Pages/Sessions/List.aspx?folderID=${folderUuid}" /></form>`
+          ) as any,
+        },
+        { jar }
+      );
+      expect(ecomForm.folderIds).toEqual([]);
+    });
+
+    it('awaits in-flight forced re-auth across staggered concurrent Tier 3 courses when initial stale cookie returned true', async () => {
+      const folder1 = '11111111-1111-4111-8111-111111111111';
+      const folder2 = '22222222-2222-4222-8222-222222222222';
+      const folder3 = '33333333-3333-4333-8333-333333333333';
+      let panoptoAuthed = false;
+      const authCalls: boolean[] = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? String(init.body) : '';
+        const fnMatch = (fn: string) => url.includes(fn) || body.includes(fn);
+
+        if (fnMatch('core_webservice_get_site_info')) {
+          return new Response(JSON.stringify({ userid: 1, fullname: 'Test Student' }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_users_courses')) {
+          return new Response(
+            JSON.stringify([
+              { id: 321213001, shortname: '0321-2130-01-2026-1', fullname: '0321213001 - Quantum Mechanics' },
+              { id: 321213002, shortname: '0321-2131-01-2026-1', fullname: '0321213101 - Statistical Mechanics' },
+              { id: 321213003, shortname: '0321-2132-01-2026-1', fullname: '0321213201 - Electromagnetism' },
+            ]),
+            { status: 200 }
+          );
+        }
+        if (fnMatch('mod_assign_get_assignments')) {
+          return new Response(JSON.stringify({ courses: [] }), { status: 200 });
+        }
+        if (fnMatch('mod_quiz_get_quizzes_by_courses')) {
+          return new Response(JSON.stringify({ quizzes: [] }), { status: 200 });
+        }
+        if (fnMatch('gradereport_user_get_grade_items')) {
+          return new Response(JSON.stringify({ usergrades: [] }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_enrolled_users')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_course_get_contents')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_block_get_course_blocks')) {
+          // Stagger Course 2 (20ms, while 60ms forced re-auth is pending) and Course 3 (90ms, after it resolves)
+          if (body.includes('courseid=321213002') || url.includes('courseid=321213002')) {
+            await new Promise((r) => setTimeout(r, 20));
+          } else if (body.includes('courseid=321213003') || url.includes('courseid=321213003')) {
+            await new Promise((r) => setTimeout(r, 90));
+          }
+          return new Response(JSON.stringify({ blocks: [] }), { status: 200 });
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          if (!panoptoAuthed) {
+            return new Response('', { status: 401 });
+          }
+          const parsed = body ? JSON.parse(body) : {};
+          const qp = parsed.queryParameters || {};
+          if (qp.query) {
+            const q = String(qp.query);
+            const fid =
+              q.includes('321213001') || q.includes('0321213001') || q.includes('Quantum')
+                ? folder1
+                : q.includes('321213002') || q.includes('0321213101') || q.includes('Statistical')
+                  ? folder2
+                  : folder3;
+            const fname =
+              fid === folder1
+                ? '0321213001 - Quantum Mechanics'
+                : fid === folder2
+                  ? '0321213101 - Statistical Mechanics'
+                  : '0321213201 - Electromagnetism';
+            return new Response(
+              JSON.stringify({
+                d: {
+                  Results: [
+                    {
+                      DeliveryID: `del-${fid.slice(0, 4)}`,
+                      SessionName: 'Lecture 1',
+                      FolderID: fid,
+                      FolderName: fname,
+                      StartTime: '/Date(1730000000000)/',
+                      Duration: 3600,
+                    },
+                  ],
+                },
+              }),
+              { status: 200 }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              d: {
+                Results: [
+                  {
+                    DeliveryID: `del-${String(qp.folderID).slice(0, 4)}`,
+                    SessionName: 'Lecture 1',
+                    FolderID: qp.folderID,
+                    FolderName: 'Course Folder',
+                    StartTime: '/Date(1730000000000)/',
+                    Duration: 3600,
+                  },
+                ],
+                Subfolders: [],
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response('', { status: 200 });
+      });
+
+      const syncRes = await runSync(
+        'TEST_TOKEN',
+        [321213001, 321213002, 321213003],
+        () => {},
+        'https://moodle.tau.ac.il',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          enablePanopto: true,
+          useNativeCookies: true,
+          fetch: customFetch as any,
+          onEnsurePanoptoAuth: async (forceRefresh) => {
+            authCalls.push(Boolean(forceRefresh));
+            if (!forceRefresh) {
+              // Stale .ASPXAUTH cookie exists initially
+              return true;
+            }
+            await new Promise((r) => setTimeout(r, 60));
+            panoptoAuthed = true;
+            return true;
+          },
+        }
+      );
+
+      expect(authCalls).toEqual([false, true]);
+      expect(syncRes.discoveredPanoptoFolders).toEqual({
+        321213001: folder1,
+        321213002: folder2,
+        321213003: folder3,
+      });
+      expect(syncRes.recordings?.length).toBeGreaterThanOrEqual(3);
+      expect(syncRes.errors.filter((e) => e.context === 'Panopto Authentication')).toEqual([]);
+    });
+
+    it('emits Panopto Authentication error when initial stale cookie fails Data.svc and forced re-auth returns false', async () => {
+      const authCalls: boolean[] = [];
+
+      const customFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? String(init.body) : '';
+        const fnMatch = (fn: string) => url.includes(fn) || body.includes(fn);
+
+        if (fnMatch('core_webservice_get_site_info')) {
+          return new Response(JSON.stringify({ userid: 1, fullname: 'Test Student' }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_users_courses')) {
+          return new Response(
+            JSON.stringify([
+              { id: 321213001, shortname: '0321-2130-01-2026-1', fullname: '0321213001 - Quantum Mechanics' },
+              { id: 321213002, shortname: '0321-2131-01-2026-1', fullname: '0321213101 - Statistical Mechanics' },
+            ]),
+            { status: 200 }
+          );
+        }
+        if (fnMatch('mod_assign_get_assignments')) {
+          return new Response(JSON.stringify({ courses: [] }), { status: 200 });
+        }
+        if (fnMatch('mod_quiz_get_quizzes_by_courses')) {
+          return new Response(JSON.stringify({ quizzes: [] }), { status: 200 });
+        }
+        if (fnMatch('gradereport_user_get_grade_items')) {
+          return new Response(JSON.stringify({ usergrades: [] }), { status: 200 });
+        }
+        if (fnMatch('core_enrol_get_enrolled_users')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_course_get_contents')) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (fnMatch('core_block_get_course_blocks')) {
+          if (body.includes('courseid=321213002') || url.includes('courseid=321213002')) {
+            await new Promise((r) => setTimeout(r, 20));
+          }
+          return new Response(JSON.stringify({ blocks: [] }), { status: 200 });
+        }
+        if (url.includes('/Panopto/Services/Data.svc/GetSessions')) {
+          return new Response('', { status: 401 });
+        }
+        return new Response('', { status: 200 });
+      });
+
+      const syncRes = await runSync(
+        'TEST_TOKEN',
+        [321213001, 321213002],
+        () => {},
+        'https://moodle.tau.ac.il',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          enablePanopto: true,
+          useNativeCookies: true,
+          fetch: customFetch as any,
+          onEnsurePanoptoAuth: async (forceRefresh) => {
+            authCalls.push(Boolean(forceRefresh));
+            if (!forceRefresh) {
+              // Stale .ASPXAUTH cookie exists initially
+              return true;
+            }
+            await new Promise((r) => setTimeout(r, 40));
+            return false;
+          },
+        }
+      );
+
+      expect(authCalls).toEqual([false, true]);
+      expect(syncRes.discoveredPanoptoFolders).toBeUndefined();
+      expect(syncRes.errors.filter((e) => e.context === 'Panopto Authentication')).toHaveLength(1);
     });
   });
 });

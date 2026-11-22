@@ -71,9 +71,13 @@ The project utilizes a **pnpm workspaces monorepo** to share TypeScript code bet
 Noodle/
 ├── apps/
 │   ├── mobile/                     # React Native + Expo mobile application
-│   │   ├── app/                    # Expo Router file-based routing
-│   │   ├── components/             # Native mobile UI components
-│   │   └── services/               # SQLite wrappers, local push alerts
+│   │   ├── src/
+│   │   │   ├── app/                # Expo Router file-based routing (6-tab portrait / 5-tab landscape tablet)
+│   │   │   ├── components/         # Native mobile UI components (incl. ColorPalettePickerModal, TrackedCoursesSection)
+│   │   │   ├── constants/          # Theme tokens, pastel COURSE_COLOR_PALETTE, WCAG contrast utils
+│   │   │   ├── hooks/              # AppState & responsive layout breakpoints
+│   │   │   └── services/           # SQLite wrappers, nativeBridge, auth, fileDownloadService, notifications
+│   │   └── android/.../NoodleNativeModule.kt  # OkHttp token launch, ACTION_CREATE_DOCUMENT, CookieManager bridge
 │   │
 │   └── extension/                  # Vite + React Chrome extension (Manifest V3)
 │       ├── src/
@@ -85,7 +89,8 @@ Noodle/
 ├── packages/
 │   └── moodle-client/              # Shared pure TypeScript API integration layer
 │       ├── src/
-│       │   ├── moodleApi.ts        # fetch()-based Moodle Web Service functions
+│       │   ├── errors.ts           # MoodleApiError isolated from moodleApi.ts (zero Hermes require cycles)
+│       │   ├── moodleApi.ts        # fetch()-based Moodle Web Service functions (re-exports MoodleApiError)
 │       │   ├── syncEngine.ts       # Two-stage deterministic sync pipeline (contents -> activities/quizzes)
 │       │   ├── syncProgress.ts     # Smart weighted monotonic sync progress engine (0-100%)
 │       │   ├── courseFormatState.ts# 2-level section hierarchy & mod_subsection parser
@@ -117,10 +122,11 @@ Noodle/
     6.  A synchronization run checkpoints course progress incrementally. If the Service Worker is terminated mid-sync, the next alarm resumes from the last successfully synced course.
 
 ### C. Mobile App (`apps/mobile`)
-*   **Framework:** Expo SDK 56 + React Native.
-*   **CORS Bypass:** React Native runs JavaScript in a native mobile application thread. HTTP requests made via the global `fetch()` bypass standard browser CORS checks because native network requests do not enforce Same-Origin Policies.
-*   **Secure Storage:** Sensitive credentials (the Moodle `wstoken` and Google OAuth tokens) are written to `expo-secure-store`, mapping to hardware-level OS keychains.
-*   **SQLite Database:** Non-sensitive data (assignments, course codes, colors, files, and zoom links) is cached in a local SQLite file using `expo-sqlite`, ensuring instantaneous UI load times and full offline usability.
+*   **Framework:** Expo SDK 56 + React Native + Expo Router responsive cockpit (`onboarding.tsx`, `(tabs)/index`, `(tabs)/courses`, `(tabs)/assignments`, `(tabs)/recordings`, `(tabs)/grades`, `(tabs)/settings`, `course/[id].tsx`): phones and portrait tablets expose all 6 tabs (`Home -> Courses -> Assignments -> Recordings -> Grades -> Settings`) with a bubbling `PanResponder` horizontal swipe wrapper (`tabs-swipe-container`) that yields gesture priority to inner `RtlHorizontalScrollView` strips (`C2`), while landscape tablets (`isLandscapeTablet`) hide `(tabs)/courses` (`href: null` + `/courses` -> `/` redirect) and render `TrackedCoursesSection` directly on `Home` with a bottom-left sidebar collapse toggle (`E3`). Includes on-tap-while-syncing `SyncProgressBanner.tsx` with immediate completion dismiss (`E7`), `ColorPalettePickerModal.tsx` + 14-pastel `COURSE_COLOR_PALETTE` (`C4`), `MoodleFileRow.tsx` Open + Download actions (`E8` Share button removed), signature gradient CTAs & animations (`src/components/ui/NoodleAnimations.tsx`, `E1`/`E2`), and `fileDownloadService.ts` routing `downloadMoodleFile` / `downloadMoodleFolderZip` through Android's native `Intent.ACTION_CREATE_DOCUMENT` File Explorer (`saveFileWithSystemExplorerNative`, zero fallback on cancel, guaranteed `cleanupTempZip()`, and SAF/Sharing fallback only when unsupported, `C3`).
+*   **RN/Hermes Compatibility (`packages/moodle-client/src/runtimeEnv.ts` & `errors.ts`):** Because React Native defines `window` without `document`, `isBrowserEnvironment()` checks `typeof document !== 'undefined'` and `navigator.product !== 'ReactNative'` so RN executes `CookieJar`, manual `3xx` hop-by-hop redirects, `cookieAdapter` hooks, and explicit `User-Agent: MoodleMobile` REST headers while bypassing browser CORS limits. `MoodleApiError` lives in `errors.ts` (`strategies/*.ts` use `import type` for `moodleApi.js`) to prevent Metro/Hermes require cycles (`E11`).
+*   **Secure Storage, Native Bridge & WebView SSO (`NoodleNativeModule.kt`, `nativeBridge.ts`):** Sensitive credentials and `wstoken` are stored in `expo-secure-store` (with Web `localStorage`/memory fallback). `NoodleNativeModule` exposes `hasPanoptoAuthCookie` (paired with HTTPS `nidp.tau.ac.il`-guarded auto-login injection in `SsoWebViewModal.tsx`, `C1`), `saveFileWithSystemExplorer` (`Intent.ACTION_CREATE_DOCUMENT` + `BaseActivityEventListener` + `ioExecutor`, `C3`), and `fetchMoodleMobileTokenViaLaunch` (non-redirecting OkHttp + WebView `CookieManager` hybrid `CookieJar` capturing `moodlemobile://token=`, wired into `auth.ts` `loginTauSso`/`renewTokenSilently` and paired with `isTokenAuthError` + the top safe-area `"Session Expired — Reconnect"` banner in `app/_layout.tsx`, `C5`).
+*   **SQLite Database & State Context:** `database.ts` wraps all multi-statement writes across `database.ts` and `settingsSyncService.ts` in re-entrant `runInTransaction(fn)` (`txDepth` guard preventing nested SQLite transaction crashes, `E10`), persists courses, `assignments` (`uid`, `cutoff_date`, `is_hidden`), `files`, `meetings`, `course_sections`, `course_folders`, `course_links`, `course_announcements`, `recordings`, `course_staff`, `grade_summaries`, and `preferences` in `noodle.db` (with an in-memory fallback on Web/Jest), and persists auto-discovered `coursesPanoptoMap` folder mappings (`persistDiscoveredPanoptoFolders` via `applyLocalSettingsPatch(..., false)`, `C1`), hydrated centrally via `AppStateProvider` (`use-app-state.tsx`) and `PreferencesProvider` (`use-preferences.tsx`).
+*   **Cross-Device Sync (`settingsSyncService.ts`):** Synchronizes all 28 shared settings keys via `NOODLE_SYNC_DATA` (`deviceId: 'mobile-app'`), matching the extension's 60-minute default sync interval.
 
 ---
 
@@ -190,6 +196,7 @@ To prevent silent degradation or unnecessary re-login prompts when the user's `w
 * **Detection**: `fallbackRunner.ts` intercepts `invalidtoken` and `accessexception` errors emitted by `RestMoodleStrategy`.
 * **Silent Token Generation**: It calls `s.getMobileToken()` across strategies. `ScraperMoodleStrategy` utilizes the browser's active SSO cookies to send an authenticated POST to `/user/managetoken.php` with `action=resetwstoken`, parsing the freshly issued `wstoken` from `copytoclipboardtoken`.
 * **State Synchronization & Instant Retry**: The newly acquired token is distributed to all strategies via `setToken()`, the REST circuit breaker cooldown is cleared, and the operation is retried via REST. The entire flow completes transparently in milliseconds.
+* **Mobile Native Launch Renewal (`C5`)**: On React Native/Android, `auth.ts` (`loginTauSso`, `renewTokenSilently`) invokes `NoodleNativeModule.fetchMoodleMobileTokenViaLaunch` (non-redirecting OkHttp + WebView `CookieManager` `CookieJar` following `/admin/tool/mobile/launch.php` and SAML forms to extract `moodlemobile://token=`). If renewal fails when credentials are not stored, `use-app-state.tsx` + `app/_layout.tsx` display the `"Session Expired — Reconnect"` banner opening `SsoWebViewModal` (`mode="moodle"`).
 
 ### Direct Course-Page Assignment Discovery (D4 Fix):
 To prevent missing past or unlisted assignments caused by calendar filtering:

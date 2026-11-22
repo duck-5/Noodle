@@ -3,12 +3,18 @@
     "name": "Noodle",
     "slug": "noodle",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": ["mobile", "noodle", "com.noodle.tau", "com.googleusercontent.apps.510394355212-opk74l9lv3e44sv3m1c1u96ocsdn1n0j"],
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "supportsTablet": true,
+      "requireFullScreen": false,
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.noodle.tau",
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,6 +30,10 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-background-fetch",
       [
         "expo-splash-screen",
         {

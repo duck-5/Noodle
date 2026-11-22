@@ -209,10 +209,15 @@ Noodle synchronizes pending assignments to the user's Google Tasks account using
 
 ### React Native & Expo APIs (Mobile)
 *   `expo-secure-store`: Accesses hardware-backed keychains (iOS Keychain via Secure Enclave, Android Keystore via Trusted Execution Environment) to store the Moodle token and Google OAuth tokens.
-*   `expo-sqlite`: Connects to a local SQLite database to query and persist courses, assignments, files, Zoom meetings, and local settings.
+*   `expo-sqlite`: Connects to a local SQLite database (`noodle.db`) to query and persist courses, assignments, files, Zoom meetings, recordings, and local settings, using a re-entrant `runInTransaction` (`txDepth`) guard across `database.ts` and `settingsSyncService.ts` (**E10**) and persisting auto-discovered `coursesPanoptoMap` Panopto folder mappings via `persistDiscoveredPanoptoFolders` (**C1**).
 *   `expo-background-fetch` & `expo-task-manager`: Registers OS-level background sync workers (using iOS background tasks and Android `WorkManager`) to trigger periodic syncing.
-*   `expo-notifications`: Handles scheduling, clearing, and triggering of local push alerts on the user's mobile device.
-*   `expo-file-system` & `expo-sharing`: Downloads authenticated course files (by appending `?token={wstoken}` to Moodle file URLs) to the local sandboxed storage and invokes native share dialogs to open them in other apps (e.g., PDF readers).
+*   `expo-notifications`: Handles scheduling, clearing, and triggering of local push alerts on the user's mobile device, configuring `shouldPlaySound: true` and the Android `deadline-reminders` high-importance channel while omitting string `sound: 'default'` so Android uses the channel default sound (**E11**).
+*   `expo-file-system` & `expo-sharing`: Downloads authenticated course files (`?token={wstoken}`) and pure-TS folder ZIPs to sandboxed cache; file rows open in the native viewer via `FileProvider` `contentUri` (`openContentUri`), while `downloadMoodleFile` / `downloadMoodleFolderZip` invoke Android's native File Explorer (`Intent.ACTION_CREATE_DOCUMENT` via `NoodleNativeModule.saveFileWithSystemExplorer`) and fall back to MediaStore/SAF/`expo-sharing` only when `ACTION_CREATE_DOCUMENT` is unsupported (never on user cancellation, with `cleanupTempZip()` always running) (**C3, E8**).
+*   `NoodleNativeModule` (`apps/mobile/android/.../NoodleNativeModule.kt` & `apps/mobile/src/services/nativeBridge.ts`):
+    *   `hasPanoptoAuthCookie()` / `hasPanoptoAuthCookieNative()`: Inspects Android `CookieManager` on `https://tau.cloud.panopto.eu` & `/Panopto/` for `.ASPXAUTH` (**C1**).
+    *   `saveFileWithSystemExplorer(sourcePath, fileName, mimeType)` / `saveFileWithSystemExplorerNative()`: Launches `Intent.ACTION_CREATE_DOCUMENT`, streams on `ioExecutor` via `BaseActivityEventListener`, returns `{ saved, uri, cancelled }` (**C3**).
+    *   `fetchMoodleMobileTokenViaLaunch(username, idNumber, password)` / `fetchMoodleMobileTokenViaLaunchNative()`: Non-redirecting OkHttp + WebView `CookieManager` hybrid `CookieJar` following `/admin/tool/mobile/launch.php` & SAML NIDP forms to extract `moodlemobile://token=` (**C5**).
+    *   Also exposes `openContentUri`, `saveToMediaStoreDownloads`, `flushCookies`, and `clearAllCookies`.
 
 ---
 
@@ -331,17 +336,20 @@ Communication between the UI frontends (Options Page, Popup) and the background 
 
 When `enablePanopto: true` (`ExtensionSettings.panoptoEnabled`) is enabled, Noodle discovers and fetches course lecture and recitation recordings from TAU's Panopto server (`https://panopto.tau.ac.il`) using the browser's implicit SSO session cookies (`credentials: 'include'`).
 
-### 2-Tier Folder Discovery & Hidden-Tab SSO Pipeline
-1. **Hidden-Tab Panopto SSO Auto-Login (`ensurePanoptoAuthViaHiddenTab` in `serviceWorker.ts`)**:
-   * Checks for an active `.ASPXAUTH` cookie on `panopto.eu` via `browser.cookies.getAll({ domain: 'panopto.eu' })`.
-   * If missing or if `fetchPanoptoFolderSessions` returns 0 recordings due to an expired server session (`forceRefresh = true`), opens a hidden background tab (`active: false`) to `https://tau.cloud.panopto.eu/Panopto/Pages/Auth/Login.aspx`, injects `injectedPanoptoLoginStep` via `scripting.executeScript` to click `#PageContentPlaceholder_loginControl_externalLoginButton`, fills `#Ecom_User_ID`, `#Ecom_User_Pid`, and `#Ecom_Password` on `nidp.tau.ac.il` using stored `MoodleCredentials`, waits for redirect back to `/Panopto/Pages/**` with a valid `.ASPXAUTH` cookie, and closes the hidden tab.
+### Multi-Tier Parallel Folder Discovery, LTI Launch & Web-Session Pipeline (`syncEngine.ts`)
+1. **Hidden-Tab / Mobile WebView SSO & Programmatic Web-Session Fallback**:
+   * *Extension (`serviceWorker.ts`)*: `ensurePanoptoAuthViaHiddenTab` checks `.ASPXAUTH` on `panopto.eu`, opening a hidden tab if missing/expired.
+   * *Mobile / Pure-TS (`panoptoScraper.ts`, `syncEngine.ts`, `SsoWebViewModal.tsx`, `backgroundSync.ts`)*: `getScrapeJar()` invokes `ensureMoodleWebSessionWithCreds` when credentials are present without session cookies, and `getPanoptoJar()` guarantees a non-null `CookieJar` synced with `cookieAdapter` so `.ASPXAUTH` cookies captured during LTI redirects persist across React Native sync stages. `SsoWebViewModal` (`mode="panopto"`) performs HTTPS `nidp.tau.ac.il`-guarded credential auto-fill and verifies `.ASPXAUTH` via `hasPanoptoAuthCookieNative()`, while `persistDiscoveredPanoptoFolders` persists resolved `courseId -> folderId` mappings to SQLite `coursesPanoptoMap` (`applyLocalSettingsPatch(..., false)`) without overwriting manual overrides (**C1**).
+   * *Parallel Batched Sync*: Stage 1 runs `core_course_get_contents` alongside `core_courseformat_get_state` (`Promise.all`) and batches per-module Zoom LTI scrapes (`batchPromises(..., 6)` with `upComing`/`previous` fetched via `Promise.all` inside `scrapeZoomMeetingsWithToken`). Stage 3 pre-populates `courseStaff` (`batchPromises(..., 8)`) and processes tracked courses in parallel (`batchPromises(..., 4)`).
 2. **Tier 1 — Manual Override (`coursesPanoptoMap`)**:
    * Users can configure a Panopto Folder URL or Folder UUID per course in the Manage Courses modal or inline in `CourseDetailView` (`settings.coursesPanoptoMap[courseId]`).
    * `extractPanoptoFolderId(input)` extracts the folder UUID directly, or if a `Viewer.aspx?id={deliveryId}` link is provided, resolves its parent folder UUID via `DeliveryInfo.aspx`.
-3. **Tier 2 — Moodle Course Modules & Page Auto-Discovery**:
-   * Scans `core_course_get_contents` modules (`url`, `lti`, `page`, `label`), `core_block_get_course_blocks`, and section summaries for links matching `panopto.tau.ac.il` or `*.panopto.eu`.
-   * Fetches `/course/view.php?id={courseId}` and invokes `extractPanoptoFromCourseHtml(html)` to extract folder UUIDs and delivery IDs from course links.
-   * If only a session delivery ID (`Viewer.aspx?id={deliveryId}`) is found on the course page, calls `resolveFolderIdFromDelivery(deliveryId)` (`POST /Panopto/Pages/Viewer/DeliveryInfo.aspx` with `deliveryId` and `responseType=json`) to read `Delivery.SessionGroupPublicID` / `Delivery.FolderId` and fetch the entire course folder.
+3. **Tier 2A–2D — Moodle Modules, Pure-REST LTI Launch & Course Blocks Auto-Discovery**:
+   * **Tier 2A**: Scans `core_course_get_contents` modules and HTML links matching `panopto.tau.ac.il` or `*.panopto.eu`.
+   * **Tier 2B (`resolvePanoptoViaLti`)**: Runs pure-REST `mod_lti_get_tool_launch_data` + signed OAuth POST prior to Tier 3 browse, establishing `.ASPXAUTH` and capturing folder UUIDs / direct sessions (also invoked as fallback retry if folder sessions initially return 0).
+   * **Tier 2C (`discoverPanoptoFromMoodleBlocks`)**: Queries `core_block_get_course_blocks` side panels and, when the block returns a lazy placeholder, calls `POST /blocks/panopto/panopto_content.php` (`sesskey` + `courseid`), extracting JSON `response`/`content`/`html`/`result` fields while rejecting login `<form>` HTML (`logintoken`/`saml2`) (**C1**).
+   * **Tier 2D (`resolveFolderIdFromDelivery`)**: Calls `POST /Panopto/Pages/Viewer/DeliveryInfo.aspx` (`responseType=json`) to map `Delivery.SessionGroupPublicID` / `Delivery.FolderId`.
+4. **Tier 3 — `Data.svc` Browse Fallback (`discoverCourseFolderFromBrowse`)**: Un-gated fallback always attempted when Panopto is enabled and Tiers 1 and 2A–2D do not yield a folder UUID, backed by Panopto 17.18 session verification (unquoted `isAuthenticated: true`, `Panopto.user.userId`, `Data.svc/GetSessions`, `SSO.php?course_id=...` fallback on guest response) and deduplicated concurrent forced re-auth (`ensurePanoptoSession(..., true)`) (**C1**).
 
 ### Session Fetching, Deduplication & Host-Based Classification
 * **`fetchPanoptoFolderSessions(folderId, courseId, courseName, panoptoBaseUrl, jar, depth, classificationOptions)`**:

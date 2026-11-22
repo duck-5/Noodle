@@ -1,5 +1,5 @@
-import {
-  MoodleApiError,
+import { MoodleApiError } from '../errors.js';
+import type {
   MoodleSiteInfo,
   RawCourseFileContent,
   RawCourseModule,
@@ -13,7 +13,8 @@ import {
   RawSubmissionStatus,
 } from '../moodleApi.js';
 import { parseTauCourseMetadata } from '../courseParser.js';
-import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
+import type { IMoodleStrategy, StrategyContext } from './types.js';
+import { UnsupportedStrategyError } from './types.js';
 
 export function decodeHtmlEntities(text: string): string {
   if (!text) return '';

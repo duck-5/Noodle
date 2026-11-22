@@ -1,5 +1,6 @@
 import { CourseFolder } from './types.js';
-import { MoodleApiError } from './moodleApi.js';
+import { MoodleApiError } from './errors.js';
+import type { FetchFn } from './runtimeEnv.js';
 
 export interface ZipEntryInput {
   /** Forward-slash relative path inside the archive, e.g. "מועד א 2026/פתרון.pdf" */
@@ -49,7 +50,7 @@ function sanitizeAndDeduplicatePaths(entries: ZipEntryInput[]): { pathBytes: Uin
   for (const entry of entries) {
     const rawSegments = entry.path.replace(/\\/g, '/').split('/');
     const safeSegments = rawSegments
-      .map((s) => s.trim())
+      .map((s) => s.replace(/[:*?"<>|]/g, '_').trim())
       .filter((seg) => seg !== '' && seg !== '.' && seg !== '..');
     const cleanPath = safeSegments.join('/') || 'file';
 
@@ -191,15 +192,38 @@ export function buildZipArchive(entries: ZipEntryInput[]): Uint8Array {
 export function buildAuthenticatedFileUrl(fileUrl: string, token: string): string {
   if (!fileUrl) return '';
   if (!token || token.startsWith('web_session_')) return fileUrl;
-  if (fileUrl.includes('token=')) return fileUrl;
-  const separator = fileUrl.includes('?') ? '&' : '?';
-  return `${fileUrl}${separator}token=${encodeURIComponent(token)}`;
+
+  let normalizedUrl = fileUrl;
+  try {
+    const parsed = new URL(fileUrl);
+    if (
+      parsed.pathname.includes('/pluginfile.php/') &&
+      !parsed.pathname.includes('/webservice/pluginfile.php/')
+    ) {
+      parsed.pathname = parsed.pathname.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
+    }
+    parsed.searchParams.set('token', token);
+    return parsed.toString();
+  } catch {
+    if (
+      normalizedUrl.includes('/pluginfile.php/') &&
+      !normalizedUrl.includes('/webservice/pluginfile.php/')
+    ) {
+      normalizedUrl = normalizedUrl.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
+    }
+    if (/([?&])token=[^&]*/i.test(normalizedUrl)) {
+      return normalizedUrl.replace(/([?&])token=[^&]*/i, `$1token=${encodeURIComponent(token)}`);
+    }
+    const separator = normalizedUrl.includes('?') ? '&' : '?';
+    return `${normalizedUrl}${separator}token=${encodeURIComponent(token)}`;
+  }
 }
 
 export async function downloadFolderAsZip(
   folder: CourseFolder,
   token: string,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  options?: { fetch?: FetchFn }
 ): Promise<Uint8Array> {
   if (!folder.files || folder.files.length === 0) {
     throw new Error('Folder is empty');
@@ -215,12 +239,18 @@ export async function downloadFolderAsZip(
     await Promise.all(
       chunk.map(async (file) => {
         const downloadUrl = buildAuthenticatedFileUrl(file.fileUrl, token);
-        const res = await fetch(downloadUrl);
+        const res = await (options?.fetch ?? fetch)(downloadUrl);
         if (!res.ok) {
           throw new Error(`Failed to download ${file.fileName} (HTTP ${res.status})`);
         }
 
-        const contentType = res.headers.get('content-type') || '';
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        const isHtmlFile = /\.(?:html?|xhtml)$/i.test(file.fileName || '');
+        if (!isHtmlFile && contentType.includes('text/html')) {
+          throw new Error(
+            `Unexpected HTML response while downloading ${file.fileName} (authentication or token may be invalid)`
+          );
+        }
         if (contentType.includes('application/json')) {
           const clone = res.clone();
           try {

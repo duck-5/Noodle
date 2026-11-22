@@ -110,7 +110,7 @@ describe('Phase 1: zipBuilder (Pure TypeScript PKZIP generator & wstoken Bulk Do
       expect(decoded).toContain('course.v1/lecture.notes (2).pdf');
     });
 
-    it('should format authenticated file URLs with token parameter correctly', () => {
+    it('should format authenticated file URLs with token replacement and /webservice/pluginfile.php/ rewrite', () => {
       expect(buildAuthenticatedFileUrl('https://moodle.tau.ac.il/file.pdf', 'MY_TOKEN')).toBe(
         'https://moodle.tau.ac.il/file.pdf?token=MY_TOKEN'
       );
@@ -119,7 +119,58 @@ describe('Phase 1: zipBuilder (Pure TypeScript PKZIP generator & wstoken Bulk Do
       ).toBe('https://moodle.tau.ac.il/file.php?forcedownload=1&token=MY_TOKEN');
       expect(
         buildAuthenticatedFileUrl('https://moodle.tau.ac.il/file.pdf?token=EXISTING', 'MY_TOKEN')
-      ).toBe('https://moodle.tau.ac.il/file.pdf?token=EXISTING');
+      ).toBe('https://moodle.tau.ac.il/file.pdf?token=MY_TOKEN');
+      expect(
+        buildAuthenticatedFileUrl(
+          'https://moodle.tau.ac.il/pluginfile.php/12345/mod_folder/content/0/slides.pdf?forcedownload=1&token=STALE',
+          'FRESH_TOKEN'
+        )
+      ).toBe(
+        'https://moodle.tau.ac.il/webservice/pluginfile.php/12345/mod_folder/content/0/slides.pdf?forcedownload=1&token=FRESH_TOKEN'
+      );
+    });
+
+    it('should sanitize Windows-illegal characters [:*?"<>|] in zip entry paths', () => {
+      const data = new TextEncoder().encode('hello');
+      const zipBytes = buildZipArchive([
+        { path: 'Week 1: Intro?/slide*1|v2<>"final".pdf', data },
+      ]);
+      const decoded = new TextDecoder().decode(zipBytes);
+      expect(decoded).toContain('Week 1_ Intro_/slide_1_v2___final_.pdf');
+      expect(decoded).not.toContain('Intro?');
+    });
+
+    it('should reject HTTP 200 text/html responses for non-HTML files during folder download', async () => {
+      const folder: CourseFolder = {
+        id: 503,
+        instanceId: 12,
+        courseId: 100,
+        courseName: 'Test Course',
+        sectionId: 1,
+        sectionName: 'General',
+        name: 'Lectures',
+        moodleUrl: 'https://moodle.tau.ac.il/mod/folder/view.php?id=503',
+        files: [
+          {
+            fileName: 'lecture1.pdf',
+            relativePath: '',
+            fileSize: 2048,
+            fileUrl: 'https://moodle.tau.ac.il/pluginfile.php/1/lecture1.pdf',
+            downloadUrl: 'https://moodle.tau.ac.il/webservice/pluginfile.php/1/lecture1.pdf?token=EXPIRED',
+            timeModified: 1700000000,
+          },
+        ],
+        totalSize: 2048,
+      };
+
+      const htmlBytes = new TextEncoder().encode('<html><body>TAU SSO Login</body></html>');
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+        arrayBuffer: async () => htmlBytes.buffer,
+      } as any);
+
+      await expect(downloadFolderAsZip(folder, 'EXPIRED')).rejects.toThrow(/Unexpected HTML response/i);
     });
 
     it('should reject Moodle HTTP 200 token/exception responses during folder download', async () => {

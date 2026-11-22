@@ -1,108 +1,39 @@
 # Noodle Mobile App - Feature Implementations & Technical Decisions
 
-This document details the features ported from the Chrome Extension into the mobile version, along with design choices, architectural changes, and capabilities.
+This document details the v4.1 features implemented in `apps/mobile`, aligning the mobile app with the Noodle design reasonings and extension capabilities across phones, tablets, Android, iOS, and Expo Web.
 
 ---
 
-## 1. TAU SSO Login & Onboarding
-* **Ported Feature**: Login via TAU SSO (Single Sign-On) credentials.
-* **Problem**: In the extension, capturing the `wstoken` was done via Chrome's specific `webRequest` API by intercepting redirects to `moodlemobile://token=...`. This API is not available in React Native.
-* **Decision**: We implemented a custom `CookieJar` class in `auth.ts` and set up manual redirect following (`fetch(..., { redirect: 'manual' })`). Each HTTP response hop is intercepted, cookies are ingested, and redirect loops are followed until the `moodlemobile://` token is extracted from the `Location` header.
-* **Security & Convenience**: Added a **Remember Me** option. When checked, the username, ID number, and password are encrypted and stored locally in the device's keychain using `expo-secure-store`. Silent re-authentication is performed when token validation fails.
+## 1. TAU SSO Login, WebView Fallback & Session Hygiene (`src/services/auth.ts`, `SsoWebViewModal.tsx`, `onboarding.tsx`)
+* **Programmatic + WebView SSO**: Uses `@tautracker/moodle-client`'s `performLogin` (via `runtimeEnv.ts` `isBrowserEnvironment()` React Native detection and `CookieJar`) with SAML + `managetoken.php` fallback, plus an embedded `SsoWebViewModal` (`react-native-webview`) capturing `moodlemobile://token=...` redirects or Panopto `.ASPXAUTH` sessions when needed.
+* **No Fake Fallback Tokens**: Removed the broken `web_session_*` fallback token; authentication throws `SSO_TOKEN_EXTRACTION_FAILED` if no valid token is returned.
+* **Israeli ID Mod-10 Validation & Remember Me**: Validates ID via `isValidIsraeliId` before login and stores credentials/tokens in hardware-backed `expo-secure-store` (with Web `localStorage`/memory fallback).
+* **Silent Renewal & Teardown**: `renewTokenSilently()` uses `NoodleNativeModule.fetchMoodleMobileTokenViaLaunch` (non-redirecting OkHttp + WebView `CookieManager` `CookieJar`) to intercept `moodlemobile://token=` on expired `wstoken` errors, surfacing a top safe-area `"Session Expired — Reconnect"` banner (`_layout.tsx`) when credentials are not stored; `logoutAndTeardownSession()` clears SQLite user tables and SecureStore secrets while preserving `theme` and `language`, and invalidates Moodle/NIDP sessions with `?_t=${Date.now()}` and `cache: 'no-store'`.
 
 ---
 
-## 2. Configuration Backup & Restore
-* **Ported Feature**: Exporting and importing configuration JSON files.
-* **Format**: Compatible with `TauTrackerConfig-v1` format.
-* **Capabilities**:
-  * **Export**: Collects tracked course IDs from SQLite, plus user preferences (theme, language, Google Tasks status), and custom color/nickname mappings. Writes this as JSON via `expo-file-system` and triggers the native sharing sheet with `expo-sharing` to allow sending via email, WhatsApp, or saving to files.
-  * **Import**: Invokes a file picker with `expo-document-picker`. Reads and validates the format, stores settings/preferences in SQLite, and merges course tracking, custom nicknames, and hex colors into the `tracked_courses` table.
+## 2. v4.1 Mobile Cockpit Navigation & Responsive Phone/Tablet Layout (`src/app/`)
+* **Expo Router 6-Tab Swipeable Portrait / 5-Tab Landscape Tablet Shell (`(tabs)/_layout.tsx`, `courses.tsx`)**: Replaced the legacy v3 monolithic screens with native Expo Router routes: **Home** (`index`), **Courses** (`courses`), **Assignments** (`assignments`), **Recordings** (`recordings`), **Grades** (`grades`), and **Settings** (`settings`), plus **`onboarding.tsx`** and **`course/[id].tsx`**. Phones and portrait tablets render the 6-tab bottom bar with RTL-aware horizontal swipe navigation (`tabs-swipe-container` bubbling `PanResponder` yielding priority to inner `RtlHorizontalScrollView` filter strips); landscape tablets (`width > height && width >= 768 && shortestEdge >= 600`) omit the standalone `Courses` tab (`href: null`, `/courses` -> `/` redirect), render `TrackedCoursesSection` directly on `Home`, and show an Extension-style collapsible left/RTL-right sidebar (`220px` expanded / `68px` collapsed, persisted in `'sidebar_collapsed'`, with bottom-left collapse toggle, Moodle nav links, Take Tour, and Disconnect actions).
+* **Orientation-Aware Tablet & Phone Responsiveness (`use-responsive-layout.ts`)**: Adaptive layouts unlock all screen orientations (`app.json` `"orientation": "default"`, `ios.supportsTablet: true`, `AndroidManifest.xml` `resizeableActivity="true"`) and differentiate **landscape tablet** using Android's `sw600dp` shortest-edge rule (`Math.min(width, height) >= 600 && width > height && width >= 768`, preventing `915x412` landscape phones from triggering tablet mode): landscape tablets render Extension-style inline Master–Detail split pane in Dashboard Upcoming To-Do Queue, `onLayout`-measured 2–3 column tracked course cards (`maxWidth: 1280`), split Calendar + Feed views, and 2-column Course Detail; portrait tablets and phones keep compact phone layouts (`maxWidth: 680`), bottom-sheet `AssignmentDetailSheet`, stacked Calendar, and 3-segment Course Detail tabs.
 
 ---
 
-## 3. Extension Logo Integration
-* **Ported Feature**: Incorporate the brand identity of Noodle.
-* **Design**: Center-aligned the login card and added a premium 80x80px logo wrapper with rounded corners (`borderRadius: 16`), bringing visual consistency with the extension onboarding layout.
+## 3. Dashboard Cockpit, Authentic Task State & Course Grouping (`src/app/(tabs)/index.tsx`, `TrackedCoursesSection.tsx`, `AssignmentDetailSheet.tsx`, `ManageCoursesModal.tsx`, `ColorPalettePickerModal.tsx`, `NoodleAnimations.tsx`)
+* **On-Demand Floating Sync Progress Window (`SyncProgressBanner.tsx`, `(tabs)/_layout.tsx`)**: Mounted as a floating bottom-end overlay displaying all 7 discrete sync stages with spinning active icons, course/activity counters, and tabular percentage; stays hidden when sync starts, opens when tapping Sync during an active sync, and dismisses immediately on completion.
+* **Live Zoom Strip**: Collapses recurring meetings (`collapseRecurringMeetings`), respects `hiddenZoomMeetings`, and surfaces sessions in the `[-15m, +120m]` active window.
+* **Upcoming To-Do Queue, Signature Gradients & Detail Sheet**: Sorted future -> undated -> overdue without quick `✓` checkbuttons on assignment rows so manual checkoffs never impersonate Moodle submissions. The #1 closest pending task highlights with a subtle animated purple-to-orange perimeter border glow (`ClosestTaskGlowWrap`), `NoodleGradientButton` renders full-bleed 135deg gradients on Android Fabric (`StyleSheet.absoluteFill` + inner padding), and expandable cards/bars animate smoothly (`SpinningIcon`, `AnimatedProgressBar`, `animateLayout`). Tapping opens `AssignmentDetailSheet` showing separate Moodle status vs. manual completion state, grace-period `<ClockIcon />` (`hasGracePeriod`), **Open / Download** actions (Share button removed; Android Download invokes native `ACTION_CREATE_DOCUMENT` File Explorer) across Attachments, Subject Files, and Submitted Files, `Go to Course`, `Mark Done`, `Hide/Unhide`, and `Submit in Moodle`.
+* **Course Grouping, Pastel Colors & Progress Dropdown**: Merges 8-digit parent portals with 10-digit sub-courses (`groupEnrolledCourses`, `aggregateUnifiedCourseItems`), bundles safety tutorials into the `-5900` Administrative Umbrella (`excludeFromGpa: true`), prompts to bulk-hide `"מעבדה"` lab assignments on selection, renders 2-column paired course cards in portrait/vertical views and 2–3 column cards on landscape tablets (`List` / `Cards` toggle grouped with `"Manage Courses"` in `TrackedCoursesSection`), uses the 14-color pastel `COURSE_COLOR_PALETTE` with `getReadableTextColor` WCAG checkmarks and `ColorPalettePickerModal` (HSV SV canvas, Hue bar, 36-tile spectrum, `#RRGGBB` input), and provides a compact press-to-open Semester Cumulative Progress dropdown (`Lectures`, `Recitations`, `Assignments`, `Total`, `All`).
 
 ---
 
-## 4. UI Themes & Colors Parity
-* **Ported Feature**: Premium layouts, spacing, and styling matching the options screen.
-* **Styling**:
-  * Integrated the premium slate-based **Dark Theme** (`#0f111a` background) and the warm terracotta **Noodle Theme** (`#faf5eb` warm cream background) with Sage green accent colors.
-  * Mapped button, loader, checkbox, switcher, and badge colors directly to the dynamic `useTheme` hooks.
-  * Standardized all cards and containers to use a premium `borderRadius: 14` (equivalent to the extension's `--radius-md: 14px`).
-  * Styled assignment badges contextually: "Submitted" badges use Sage/Emerald green, while "Assigned" badges use the theme's primary color.
+## 4. Assignments Hub, Recordings Hub, Course Detail & Calendar (`assignments.tsx`, `recordings.tsx`, `course/[id].tsx`, `ScheduleCalendarView.tsx`)
+* **Assignments Hub & Schedule Calendar**: Debounced search, 4 filter chips (`To Do`, `Past`, `Completed`, `Hidden`), course filter banner (`?courseId=`...`), collapsible Hidden Assignments drawer, and Monthly/Weekly `ScheduleCalendarView` with `"Also show recordings"` overlay.
+* **Panopto Recordings Hub (Beta Opt-In & Automated WebView SSO)**: Search, course filter, 5 filter chips (`Unwatched`, `Watched`, `Lectures`, `Recitations`, `Hidden`), host-based classification (`partitionPanoptoRecordingsByTrackedHosts`), 1-tap `Track this host`, quick mark-watched toggle, direct header & empty-state `"Connect Panopto (SSO)"` WebView triggers with NIDP auto-login (`https://nidp.tau.ac.il` guarded), native `.ASPXAUTH` verification (`hasPanoptoAuthCookie`), `/blocks/panopto/panopto_content.php` AJAX block discovery, SQLite `coursesPanoptoMap` persistence (`persistDiscoveredPanoptoFolders`), calendar mode with `"Also show assignments"` overlay, and Hidden Recordings drawer.
+* **2-Level Course Detail & Native File Explorer Downloads (`course/[id].tsx`, `fileDownloadService.ts`)**: Announcements noticeboard, 2-level section/subsection chip tree (`core_courseformat_get_state`), empty-section visibility toggle, plain-text section summaries, tap-to-open files (`openMoodleFile` via native OS viewer) plus a dedicated **Download** action (`downloadMoodleFile` & `downloadMoodleFolderZip` pure-TS PKZIP archive creation routing through Android `Intent.ACTION_CREATE_DOCUMENT` File Explorer via `saveFileWithSystemExplorerNative`, zero fallback on cancel, and guaranteed temp ZIP cleanup), external links, Zoom Hub with `Show All`/`Hide All` + hidden drawer, Panopto staff editor + folder override, and All Assignments with bulk `Hide All`/`Unhide All`.
 
 ---
 
-## 5. Google Tasks Integration & One-Tap OAuth
-* **Ported Feature**: Two-way sync of assignments to Google Tasks.
-* **Capabilities**:
-  * **One-Tap OAuth**: Added `authenticateGoogleOAuth` in `googleTasks.ts` leveraging `expo-web-browser` (`WebBrowser.openAuthSessionAsync`). Users authenticate directly with Google and receive an access token automatically without manually generating OAuth credentials.
-  * **Default Task List**: Defaults to `"University"` list.
-  * Sync can be toggled on/off, and list names customized.
-  * Foreground and background syncing triggers `performGoogleTasksSync` automatically.
-  * Added manual sync controls and status messages to Settings, with manual token fields moved to an expandable "Advanced Settings" section.
-
----
-
-## 6. Reactive Preferences & Live Theme/Language Switching
-* **Problem**: Previously, `useTheme()` and `t()` read synchronously from SQLite (`noodle.db`). Modifying the theme or language in Settings required alerting the user to restart the application because components in the tree had no React state trigger to re-render.
-* **Solution**: Introduced `PreferencesProvider` and `usePreferences()` in `src/hooks/use-preferences.tsx`.
-* **Capabilities**:
-  * All theme, mode, and language changes update React state immediately and write asynchronously to SQLite.
-  * Default theme set to `'noodle'` (warm cream & terracotta palette) and default language set to Hebrew (`'he'`).
-  * Removed all "Please restart the app" alert popups—UI reflects changes instantly across all mounted screens.
-
----
-
-## 7. Resilient File Download Architecture
-* **Problem**: Downloading files from TAU Moodle on mobile previously succeeded initially but then failed with `java.net.SocketTimeoutException`. TAU Moodle's firewall/WAF rejects or drops Android OkHttpClient requests using default `okhttp/...` User-Agents, and expired tokens redirect to internal SSO (`nidp.tau.ac.il`) which native downloaders cannot resolve.
-* **Solution**: Created `fileDownloadService.ts` providing an enterprise-grade download pipeline:
-  * **Browser Headers**: Dispatches requests with modern browser `User-Agent` (`Mozilla/5.0 (Linux; Android 14; Mobile)...`) and `Accept` headers to bypass WAF drop filters.
-  * **Automatic Token Renewal**: Intercepts 401/403/timeouts and triggers `loginTauSso()` in `auth.ts` using stored credentials from `expo-secure-store` to refresh the session and retry seamlessly.
-  * **Dual-Strategy Engine**: Attempts direct memory buffer download via `fetch` + base64 disk write first; falls back gracefully to `FileSystemLegacy.downloadAsync`.
-  * **Filename Sanitization**: Cleans illegal Android/filesystem characters and extracts MIME types to ensure valid extensions (`.pdf`, `.docx`, etc.).
-
----
-
-## 8. Mobile Files Explorer & Course Accordion
-* **Ported Feature**: Course files browsing inspired by the Chrome extension's collapsible file tree, optimized for mobile screens.
-* **Capabilities**:
-  * **Default Collapsed State**: Courses are collapsed by default on initial load to prevent infinite scroll fatigue.
-  * **Global Toggle**: Added quick "Expand All" / "Collapse All" toggle controls in the header.
-  * **Section Folders**: Nested Moodle sections/folders collapse independently within each course card.
-  * **Touch-Friendly File Cards**: Visual file-type badges (PDF, Word, Excel, PowerPoint, ZIP, Audio, Video, Code) with distinct color coding, readable file size pills, upload dates, and one-tap download / view action buttons.
-
----
-
-## 9. Mobile Brand Identity & Sidebar UX
-* **Bundling & App Icons**: Converted brand assets from `assets/logo.png` into high-resolution adaptive Android icons (`android-icon-foreground.png`, `android-icon-background.png`), splash screen (`splash-icon.png` on `#FAF5EB` cream canvas), and favicon.
-* **Sidebar Layout**: Added smooth vertical scrolling (`ScrollView` with bounce physics and hidden scrollbars) to prevent clipping on compact phones and landscape viewports.
-* **Brand Typography**: Positioned the official "Noodle" wordmark under the header logo in the sidebar navigation with dynamic theme styling.
-
----
-
-## 10. Mobile Courses Page Redesign & Extension Parity
-* **Ported Feature**: Full parity with the Chrome Extension's courses experience, custom editing, subject navigation, and assignment sidebar overview.
-* **Course Editing Modal**:
-  * Tap ✏️ on any course card in the main list or in the Course Detail header to customize course display nicknames, toggle tracking (`is_active`), and pick from 14 curated theme colors or input a custom Hex code with live preview.
-  * Writes to SQLite and automatically synchronizes to Moodle Calendar private storage (`markSettingUpdatedAndSync`), keeping settings identical between mobile and browser.
-* **Tracked Courses Configuration Panel**:
-  * Expandable panel matching the extension's configuration drawer, grouping courses by semester (Semester A, Semester B, Yearly, Other) via `parseTauCourseMetadata`.
-  * Inline tracking checkboxes, nickname inputs with auto-save on blur, and quick color swatch pickers.
-* **Course Detail Dual-View**:
-  * **Course Content Tab**:
-    * Horizontal scrolling **Subjects Navigation Pill Bar** ("All 🌐" and section pills with active color highlight) allowing instant filtering to any course topic.
-    * Expand/Collapse All toggle for all sections.
-    * Collapsible section accordions containing downloadable files (with formatted sizes) and assignments with urgency countdown badges and attachment downloads.
-    * Interactive Zoom section with active meeting detection (`● פעיל כעת`), dashboard eye interest toggle, and direct Join Zoom links.
-  * **Assignments & Grades Tab**:
-    * Course summary stats banner: Course Average Grade (`ממוצע הקורס`), Completed count (`הוגשו`), and Pending tasks count (`פתוחות`).
-    * Full chronological list of all assignments with urgency borders (green, yellow, red), status badges (`הוגש!`), grades (`ציון: X / Y`), due countdowns, attachments, and Moodle links.
-* **Deadline Utilities (`dateUtils.ts`)**:
-  * Ported `getDueTextAndClass` to mobile for consistent deadline countdown text and badge coloring (`badge-success`, `badge-warning`, `badge-danger`).
-
-
+## 5. Grades Engine, Themes, Zero-Emoji SVG Icons & Cross-Device Sync
+* **Pedagogical GPA (`grades.tsx`)**: Computes GPA strictly from official published Moodle grades (`calculateGradesSummary`), displaying policy notice, bonus badges, and grader feedback.
+* **4+2 Themes & Reactive RTL/LTR (`theme.ts`, `use-preferences.tsx`, `i18n.ts`)**: `noodle` (default), `coffee`, `dark`, `light`, `time` (30s day/night watcher using `getEffectiveTheme`), and `system`, paired with reactive Hebrew (RTL) / English (LTR) switching, official `#FAF5EB` Noodle brand icons/splash (`E9`), and 43 monochrome `react-native-svg` icons (`NoodleIcons.tsx`) with **zero unicode emojis**.
+* **Cross-Device Sync & Backup (`settingsSyncService.ts`, `database.ts`, `googleTasks.ts`, `notifications.ts`, `backgroundSync.ts`)**: Syncs all 28 v4.1 keys via `NOODLE_SYNC_DATA` (`deviceId: 'mobile-app'`), stores `recordings`, `course_staff`, and `grade_summaries` in SQLite via re-entrant `runInTransaction` (with Web/Jest in-memory fallback), fixes `TauTrackerConfig-v1` JSON import (`data.settings.*` & `c.id`/`c.moodle_id`), schedules localized 24h/1h deadline reminders (`shouldPlaySound: true` + `deadline-reminders` Android channel), syncs clean actionable tasks to Google Tasks via `expo-web-browser` OAuth, includes Mock Course `9999` and 6-step `TourOverlay` (launched from Settings & tablet sidebar footer).

@@ -33,14 +33,19 @@
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
+    "react-native-svg": "15.15.3",
     "react-native-web": "~0.21.0",
     "react-native-webview": "*",
     "react-native-worklets": "0.8.3"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.4",
     "eslint-config-expo": "~56.0.4",
+    "jest": "^29.7.0",
+    "jest-expo": "~56.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -49,7 +54,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm --filter @tautracker/moodle-client run build && jest"
   },
   "private": true
 }

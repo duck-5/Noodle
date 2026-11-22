@@ -1,4 +1,5 @@
 export * from './types.js';
+export * from './runtimeEnv.js';
 export * from './moodleApi.js';
 export * from './courseParser.js';
 export * from './syncEngine.js';

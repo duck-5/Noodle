@@ -160,7 +160,7 @@ graph LR
 | **TC-FILE-02** | File Search by Keyword & Extension | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-03** | File-Type Badges & Size Formatting | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-04** | Authenticated Download with WAF Bypass | All (Mobile + Chrome + Firefox) | Automated | Files Explorer |
-| **TC-FILE-05** | Native Document Sharing Sheet | Mobile Only | Browser Agent | Files Explorer |
+| **TC-FILE-05** | Native Document Sharing Sheet / File Explorer Fallback (iOS & Legacy) | Mobile Only | Automated & Browser Agent | Files Explorer |
 | **TC-FILE-06** | Dual-Engine Buffer vs Legacy Download | Mobile Only | Automated | Files Explorer |
 | **TC-GRD-01** | Grade Items Query & Parsing | All (Mobile + Chrome + Firefox) | Automated | Grades & GPA |
 | **TC-GRD-02** | Graded Assignment Item Breakdown | All (Mobile + Chrome + Firefox) | Automated & Browser Agent | Grades & GPA |
@@ -239,6 +239,7 @@ graph LR
 | **TC-FALLBACK-14** | Aria-Label Attribute Ordering Resiliency | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-15** | HTML Scraper Execution on Pages without View PHP Links | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-FALLBACK-18** | Scraper Strategy Gated by enableScraping Configuration | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
+| **TC-FALLBACK-19** | `MoodleApiError` Extraction to `errors.ts` & Zero Require-Cycle Strategy Imports | All (Mobile + Chrome + Firefox) | Automated | Fallback Architecture |
 | **TC-API-009** | Multilang Filter & Hebrew Entity Sanitization | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
 | **TC-API-010** | 2-Level Section Hierarchy & Course Format State Extraction | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
 | **TC-API-011** | Pure-TS IEEE 802.3 CRC-32 PKZIP Archive Builder | All (Mobile + Chrome + Firefox) | Automated | Core Client / API |
@@ -263,6 +264,16 @@ graph LR
 | **TC-LFS-08** | Scan/`rclone` Unverifiable Protection with `autoResyncMissingFiles` & Firefox UI Safeguards | Extension (Firefox) | Automated & Browser Agent | Options UI, Scanner & Downloads |
 | **TC-LFS-09** | State Serialization, Pause/Resume Race Drain, Manifest Pruning & Counter Invariants | Extension (Chrome & Firefox) | Automated & Browser Agent | Lock Mutex, Queue & Telemetry |
 | **TC-LFS-10** | Single-Pass Firefox Downloads, Chromium Streaming & `NotAllowedError` Mapping | Extension (Chrome & Firefox) | Automated | Providers & Stream Guard |
+| **TC-MOB-016** | Mobile 6-Tab Portrait / 5-Tab Landscape Cockpit, Horizontal Swipe & UI Quick Wins (`E1`–`E7`, `E9`) | Mobile Only | Automated & Browser Agent | Mobile UI & State |
+| **TC-MOB-017** | Mobile Assignments Hub, Detail Sheet, Month/Week Calendar & Open/Download File Rows (`E8`) | Mobile Only | Automated & Browser Agent | Mobile UI & Calendar |
+| **TC-MOB-018** | Mobile Panopto Recordings, `.ASPXAUTH` Native Check, Automated WebView SSO & SQLite Persistence (`C1`) | Mobile Only | Automated & Browser Agent | Mobile UI & Auth |
+| **TC-MOB-019** | Mobile Themes (`coffee`/`time`), Brand Assets (`E9`) & Zero-Emoji SVG Compliance | Mobile Only | Automated | Mobile UI & Hygiene |
+| **TC-MOB-020** | `@tautracker/moodle-client` RN/Hermes `CookieJar` & Redirect Compatibility | All (Mobile + Chrome + Firefox) | Automated | Core Client / RN |
+| **TC-PAN-C1** | Panopto `/blocks/panopto/panopto_content.php` AJAX Discovery, 17.18 Auth & Concurrent Tier 3 (`C1`) | All (Mobile + Chrome + Firefox) | Automated | Panopto Recordings |
+| **TC-MOB-021** | Mobile SQLite `runInTransaction` Re-Entrancy Safety & Android Notification Sound/Channel (`E10`, `E11`) | Mobile Only | Automated | Mobile Storage & Notifications |
+| **TC-MOB-022** | Mobile Native `ACTION_CREATE_DOCUMENT` File Explorer Download & Zero-Fallback Cancel (`C3`, `E8`) | Mobile Only | Automated & Browser Agent | Mobile Files & Native |
+| **TC-MOB-023** | Mobile 14-Color Pastel Course Palette & Interactive `ColorPalettePickerModal` (`C4`) | Mobile Only | Automated & Browser Agent | Mobile UI & Theming |
+| **TC-MOB-024** | Mobile OkHttp `moodlemobile://` Silent Token Renewal & Session-Expired Reconnect Banner (`C5`) | Mobile Only | Automated & Browser Agent | Mobile Auth & Native |
 
 
 ---
@@ -433,10 +444,10 @@ graph LR
 #### TC-CRS-05: Course Color Swatch & Hex Picker
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
 * **Modality**: `Automated` & `Browser Agent`
-* **Description**: Selecting one of the 14 preset palette swatches or entering a custom hex code updates the course's visual identity.
+* **Description**: Selecting one of the 14 preset palette swatches or entering a custom hex code updates the course's visual identity. (Extension uses its 14-swatch palette; Mobile uses the curated 14-pastel palette + interactive HSV/Hue/Spectrum `ColorPalettePickerModal` — see `TC-MOB-023`.)
 * **Browser Agent Prompt / Action**:
   1. Open the course edit modal.
-  2. Click the Emerald Green swatch (`#10b981`).
+  2. Click the Emerald Green swatch (`#10b981`) on Extension, or any pastel swatch on Mobile.
   3. Verify color preview updates immediately.
   4. Type custom hex `#ff007f`.
   5. Save and confirm course card border and dashboard tags reflect `#ff007f`.
@@ -913,13 +924,13 @@ graph LR
   2. Trigger file download via download service.
   3. Assert outgoing request includes `User-Agent: Mozilla/5.0...` and URL parameter `token=VALID_TOKEN`.
 
-#### TC-FILE-05: Native Document Sharing Sheet
+#### TC-FILE-05: Native Document Sharing Sheet / File Explorer Fallback (iOS & Legacy)
 * **Platform Target**: `Mobile Only`
-* **Modality**: `Browser Agent`
-* **Description**: On mobile, tapping download saves the file to the app cache directory and automatically triggers the OS sharing sheet (`expo-sharing`).
+* **Modality**: `Automated & Browser Agent`
+* **Description**: On Android (`C3` + `E8`), `MoodleFileRow` exposes **Open** and **Download** actions only (Share button removed), and tapping Download invokes Android's native `ACTION_CREATE_DOCUMENT` File Explorer (`saveFileWithSystemExplorerNative`); `expo-sharing` applies only to iOS or legacy/unsupported fallback paths (`TC-MOB-022`).
 * **Browser Agent Prompt / Action**:
-  1. Tap download on any PDF card.
-  2. Verify native share sheet / viewer intent opens.
+  1. Tap Download on any PDF card on iOS/legacy fallback (or Open on Android).
+  2. Verify native file explorer (`ACTION_CREATE_DOCUMENT` on Android) or share/viewer sheet (`expo-sharing` on iOS/unsupported fallback) opens.
 
 #### TC-FILE-06: Dual-Engine Buffer vs Legacy Download
 * **Platform Target**: `Mobile Only`
@@ -1651,6 +1662,13 @@ graph LR
 * **Modality**: `Automated & Sandbox`
 * **Description**: Verifies that `ScraperMoodleStrategy.getAssignments()` discovers assignments directly by scraping individual course pages (`/course/view.php?id=X`) across all active and archive years registered in `courseYearMap`. Asserts that anchor tags pointing to `/mod/assign/view.php?id=(\d+)` and their assignment titles are correctly extracted, bypassing the Moodle Calendar and successfully discovering past or unlisted course assignments.
 
+#### TC-FALLBACK-19: `MoodleApiError` Extraction to `errors.ts` & Zero Require-Cycle Strategy Imports (E11)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/errors.ts`, `packages/moodle-client/src/moodleApi.ts`, `packages/moodle-client/src/strategies/{types,ajaxStrategy,restStrategy,scraperStrategy,fallbackRunner}.ts`, `packages/moodle-client/__tests__/fallbackStrategies.test.ts`
+* **Description**: Verifies that `MoodleApiError` is isolated in `packages/moodle-client/src/errors.ts` (and re-exported by `moodleApi.ts`), while `strategies/*.ts` import `MoodleApiError` from `../errors.js` and use `import type` for `moodleApi.js` types so compiled `dist/strategies/*.js` modules have zero runtime imports of `moodleApi.js`, zero circular dependency cycles across `dist/**/*.js`, and preserved `instanceof MoodleApiError` checks for Metro/Hermes.
+* **Verification**: `pnpm run build:moodle-client && pnpm --filter @tautracker/moodle-client test -- fallbackStrategies.test.ts` (`TC-FALLBACK-19`).
+
 #### TC-EXT-DEVTOOLS-01: Chrome DevTools Service Worker & Options Log Stream
 * **Platform Target**: `Extension (Chromium Specific)`
 * **Modality**: `Automated & Browser Agent`
@@ -1854,15 +1872,14 @@ graph LR
   3. The overall progress bar and percentage reflect the proportion of completed tasks relative to active (non-hidden) tasks.
 * **Verification**: Run Playwright suite `pnpm --filter extension test:e2e -- dashboard.spec.ts`.
 
-#### TC-MOB-015: Mobile SQLite `assignments_v2` Migration & 2-Level Section Navigation
+#### TC-MOB-015: Mobile SQLite `assignments_v2`, Recordings/Staff/Grades Schema & 2-Level Section Navigation
 * **Platform Target**: `Mobile Only`
 * **Modality**: `Automated & Browser Agent`
-* **Target Components**: `apps/mobile/src/services/database.ts`, `apps/mobile/src/app/courses.tsx`
+* **Target Components**: `apps/mobile/src/services/database.ts`, `apps/mobile/src/app/course/[id].tsx`
 * **Description**:
-  1. Non-destructive migration creates `assignments_v2` with composite `uid TEXT UNIQUE NOT NULL` and copies legacy records with `assign:ID` prefix.
-  2. SQLite schema includes `course_sections`, `course_folders`, `course_links`, and `course_announcements` tables.
-  3. Mobile Courses view renders 2-level topic and subtopic tabs, folder cards with mobile ZIP download, and external resource links.
-* **Verification**: `pnpm --filter mobile exec tsc --noEmit`.
+  1. Non-destructive schema initializes `assignments` (with built-in `is_hidden` and `uid TEXT UNIQUE NOT NULL`), `course_sections`, `course_folders`, `course_links`, `course_announcements`, `recordings`, `course_staff`, and `grade_summaries` (with Web/Jest in-memory fallback).
+  2. Mobile Course Detail view (`course/[id].tsx`) renders 2-level topic and subtopic chips (`core_courseformat_get_state`), empty-section suppression toggle, `mod_folder` directory tree with pure-TS ZIP download (`FileMode.WriteOnly` + `expo-sharing`), announcements card, and external resource links.
+* **Verification**: `pnpm --filter mobile exec tsc --noEmit` and `pnpm --filter mobile test`.
 
 #### TC-SYNC-011: Selective Course Tracking Freedom & Absorbed Sub-Course Card Dedup
 * **Platform Target**: `All (Mobile + Chrome + Firefox)`
@@ -2056,4 +2073,104 @@ graph LR
 * **Description**:
   1. Dashboard section 3 (`.semester-progress-card`) renders a 5-way segmented multiswitch (`.view-mode-toggle-group.semester-progress-switch`) with **Lectures**, **Recitations**, **Assignments**, **Total**, and **All**, defaulting to the single-bar **Total** view and persisting the selected mode in `localStorage` (`noodle_semester_progress_mode`).
   2. Switching across **Lectures**, **Recitations**, **Assignments**, and **Total** updates the full-width progress bar (`.semester-progress-single`) with inline SVG icons and `done/total (pct%)` metrics matching `panoptoEnabled`, `watchedRecordings`, `hiddenRecordings`, `coursesPanoptoStaff`, and `hiddenAssignments`; selecting **All** expands `.semester-progress-grid` to display all four bars side by side.
-* **Verification**: Covered by `TC-DASH-PROG-01` in `apps/extension/e2e/dashboard.spec.ts`.
+* **Verification**: Covered by `TC-DASH-PROG-01` in `apps/extension/e2e/dashboard.spec.ts` and `apps/mobile/__tests__/unit/screens.test.tsx`.
+
+#### TC-MOB-016: Mobile 6-Tab Portrait / 5-Tab Landscape Cockpit, Horizontal Swipe & UI Quick Wins (`E1`–`E7`, `E9`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/src/app/(tabs)/_layout.tsx`, `apps/mobile/src/app/(tabs)/index.tsx`, `apps/mobile/src/app/(tabs)/courses.tsx`, `apps/mobile/src/components/TrackedCoursesSection.tsx`, `apps/mobile/src/app/onboarding.tsx`, `apps/mobile/src/app/course/[id].tsx`, `apps/mobile/src/components/AssignmentDetailSheet.tsx`, `apps/mobile/src/components/ManageCoursesModal.tsx`, `apps/mobile/src/components/SyncProgressBanner.tsx`, `apps/mobile/src/components/ui/NoodleAnimations.tsx`, `apps/mobile/src/hooks/use-app-state.tsx`
+* **Description**:
+  1. Phone (`412x915`, `915x412` via `sw600dp` shortest-edge guard) and portrait tablet (`800x1280`): **6-tab** Expo Router bottom bar in exact order `Home` (`index`) -> `Courses` (`courses`) -> `Assignments` (`assignments`) -> `Recordings` (`recordings`) -> `Grades` (`grades`) -> `Settings` (`settings`), with `CoursesScreen` rendering `TrackedCoursesSection`. Landscape tablet (`isLandscapeTablet`, `Math.min(width, height) >= 600 && width > height && width >= 768`, e.g. `1280x800`): **5-tab** Extension-style collapsible `220px`/`68px` sidebar omitting `Courses` (`href: null`, `sidebar-nav-courses` absent, `/courses` -> `/` redirect on mount/resize) while rendering `TrackedCoursesSection` directly on `DashboardScreen`; sidebar collapse toggle (`sidebar-toggle-btn`) sits in `sidebarFooter` (bottom-start) with `t('sidebar_collapse')` when expanded, and Noodle logo is centered in `sidebarHeader` (`E3`).
+  2. Horizontal swipe (`tabs-swipe-container` bubbling `PanResponder` in `(tabs)/_layout.tsx`) navigates between visible top-level tabs across all mobile and tablet layouts with RTL-inverted step direction, while yielding gesture priority (`onStartShouldSetResponderCapture: false`, `onMoveShouldSetResponderCapture: false`) to inner `RtlHorizontalScrollView` filter strips (`assignments.tsx`, `recordings.tsx`) and vertical `ScrollView`s (`C2`).
+  3. Dashboard greeting header includes `<Image testID="dashboard-header-logo" />` (`E9`), omits top-right Tour button (`E4`) and Manage Courses button (`E5` — moved beside `Cards`/`List` switcher in `TrackedCoursesSection` `coursesHeader`). `NoodleGradientButton` renders full-bleed SVG gradient without outer-padding white edges (`E1`); `ClosestTaskGlowWrap` renders subtle perimeter glow (`duration: 4500`, `strokeWidth: 1.25`, `stopOpacity` `0.15 -> 0.55 -> 0.15`, faint `rgba(160, 73, 119, 0.14)` base border, `E2`).
+  4. Semester Progress Card (`semester-progress-mode-btn`) opens `semester-progress-mode-menu` **only on press** (`E6`). `SyncProgressBanner` (`sync-progress-window`) opens **only** when the user taps Sync while `activeSyncPromiseRef.current` is running (`openSyncWindow`), dismisses immediately on completion with zero 2.5s post-complete delay (`E7`), and surfaces dismissible non-auth sync errors (suppressed when `sessionExpired === true`).
+* **Verification**: `pnpm --filter mobile test` (`__tests__/unit/screens.test.tsx`, `__tests__/unit/services.test.ts`).
+
+#### TC-MOB-017: Mobile Assignments Hub, Detail Sheet, Month/Week Calendar & Open/Download File Rows (`E8`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/src/app/(tabs)/assignments.tsx`, `apps/mobile/src/app/course/[id].tsx`, `apps/mobile/src/components/AssignmentDetailSheet.tsx`, `apps/mobile/src/components/MoodleFileRow.tsx`, `apps/mobile/src/components/ScheduleCalendarView.tsx`, `apps/mobile/src/services/fileDownloadService.ts`
+* **Description**:
+  1. Assignments Hub filters across `To Do`, `Past`, `Completed`, `Hidden`, text search, and optional `?courseId=` filter banner, plus collapsible Hidden Assignments drawer.
+  2. `AssignmentDetailSheet` keeps Moodle submission status separate from local manual completion, shows grace-period `<ClockIcon />` notices (`hasGracePeriod`), signature gradient `detail-go-to-course-btn`, and `MoodleFileRow` renders **Open** (`openMoodleFile`) and **Download** (`downloadMoodleFile`) actions only — **Share button removed (`E8`)** (`onShare` deprecated/optional) — across Attachments, Subject Files, Submitted Files, and Course Detail file rows. Android `downloadMoodleFile` and `downloadMoodleFolderZip` invoke native `ACTION_CREATE_DOCUMENT` File Explorer (`TC-MOB-022`).
+  3. `ScheduleCalendarView` switches cleanly between Monthly grid and Weekly agenda views with `"Also show recordings"` overlay.
+* **Verification**: `pnpm --filter mobile test` (`__tests__/unit/screens.test.tsx`, `__tests__/unit/services.test.ts`).
+
+#### TC-MOB-018: Mobile Panopto Recordings, `.ASPXAUTH` Native Check, Automated WebView SSO & SQLite Persistence (`C1`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/src/app/(tabs)/recordings.tsx`, `apps/mobile/src/components/SsoWebViewModal.tsx`, `apps/mobile/android/app/src/main/java/com/noodle/tau/NoodleNativeModule.kt`, `apps/mobile/src/services/nativeBridge.ts`, `apps/mobile/src/services/auth.ts`, `apps/mobile/src/services/backgroundSync.ts`
+* **Description**:
+  1. Displays opt-in CTA when `panoptoEnabled` is false; when enabled, renders header & empty-state `"Connect Panopto (SSO)"` (`recordings-panopto-sso-btn`) triggers launching `SsoWebViewModal` (`mode="panopto"`) with automatic `triggerSync()` on completion, partitions recordings via `partitionPanoptoRecordingsByTrackedHosts` with `Track this host`, quick mark-watched, calendar mode, and Hidden Recordings drawer.
+  2. In `SsoWebViewModal` (`mode="panopto"`), reads `getStoredCredentials()` on open, restricts credential auto-fill strictly to `https://nidp.tau.ac.il`, deduplicates `AllowBounce=true` and `extLoginClickCountRef`, and checks `.ASPXAUTH` via `flushCookiesNative()` + `hasPanoptoAuthCookieNative()` (`CookieManager` on `https://tau.cloud.panopto.eu` & `/Panopto/`) with `visibleRef` + `isMountedRef` guards across the 250ms retry. `persistDiscoveredPanoptoFolders` merges discovered positive-integer `courseId -> folderId` mappings into `coursesPanoptoMap` in SQLite/local settings during `onPartialResult` and post-sync while preserving manual overrides (`C1`).
+* **Verification**: `pnpm --filter mobile test` (`__tests__/unit/foundation.test.ts`, `__tests__/unit/services.test.ts`, `__tests__/unit/screens.test.tsx`) and `.\gradlew.bat :app:compileDebugKotlin`.
+
+#### TC-MOB-019: Mobile Themes (`coffee`/`time`), Brand Assets (`E9`) & Zero-Emoji SVG Compliance
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated`
+* **Target Components**: `apps/mobile/src/constants/theme.ts`, `apps/mobile/src/services/i18n.ts`, `apps/mobile/src/components/icons/NoodleIcons.tsx`, `apps/mobile/src/hooks/use-preferences.tsx`, `apps/mobile/assets/logo.png`, `apps/mobile/assets/images/*`, `apps/mobile/android/app/src/main/res/{mipmap-*,drawable-*}/*`
+* **Description**:
+  1. Supports `noodle`, `coffee`, `dark`, `light`, `time` (30s day/night watcher via `getEffectiveTheme`), and `system` palettes alongside reactive `he` (RTL) / `en` (LTR) switching.
+  2. Enforces zero unicode emojis across all `apps/mobile/src/**/*.{ts,tsx}` translation strings and UI components (including `notifications.ts`, `i18n.ts`, `ColorPalettePickerModal.tsx`) using 43 monochrome `react-native-svg` icons, plus regenerated `#FAF5EB` Noodle launcher, adaptive foreground/monochrome, and splash assets replacing placeholder icons (`E9`).
+* **Verification**: `pnpm --filter mobile test` (`__tests__/unit/foundation.test.ts`, `__tests__/unit/services.test.ts`) + zero-emoji PowerShell regex scan.
+
+#### TC-MOB-020: `@tautracker/moodle-client` React Native / Hermes `CookieJar` & Redirect Compatibility
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/runtimeEnv.ts`, `packages/moodle-client/src/panoptoScraper.ts`, `packages/moodle-client/src/zoomScraper.ts`, `packages/moodle-client/src/syncEngine.ts`, `packages/moodle-client/__tests__/rnEnvironment.test.ts`
+* **Description**:
+  1. `isBrowserEnvironment()` checks `typeof document !== 'undefined'` and `navigator.product !== 'ReactNative'` so React Native executes `CookieJar` and manual `3xx` hop-by-hop `Set-Cookie` ingestion instead of bypassing cookies.
+  2. `syncEngine.ts` passes `jar` / `cookieAdapter`-backed `formatJar` to `fetchCourseFormatState`, guarantees a non-null `CookieJar` in `getPanoptoJar()` for RN `.ASPXAUTH` persistence, prioritizes Tier 2B `resolvePanoptoViaLti` / Tier 2C–2D discovery before Tier 3 `Data.svc` browse fallback, batches Stage 1/Stage 3 + `Promise.all` Zoom LTI fetches, and attaches `User-Agent: MoodleMobile` on non-browser REST calls. (See also `TC-FALLBACK-19` for `errors.ts` require-cycle elimination and `TC-PAN-C1` for `panopto_content.php` / Panopto 17.18 / concurrent Tier 3 behavior.)
+* **Verification**: `pnpm --filter @tautracker/moodle-client test` (`__tests__/rnEnvironment.test.ts`).
+
+#### TC-PAN-C1: Panopto `/blocks/panopto/panopto_content.php` AJAX Discovery, 17.18 Auth & Concurrent Tier 3 (`C1`)
+* **Platform Target**: `All (Mobile + Chrome + Firefox)`
+* **Modality**: `Automated`
+* **Target Components**: `packages/moodle-client/src/panoptoScraper.ts`, `packages/moodle-client/src/syncEngine.ts`, `packages/moodle-client/__tests__/panopto.test.ts`
+* **Description**:
+  1. Fixes `fetchSesskeyFromJar(initialJar, ...)` argument order, unifies `normalizeBaseUrl`, and isolates archive-year `sesskey` caches from root `activeBlockSesskey`.
+  2. Discovers folder UUIDs via `POST /blocks/panopto/panopto_content.php` (handling raw HTML and JSON `response`/`content`/`html`/`result` fields while rejecting `logintoken`/`saml2` login forms).
+  3. Detects Panopto 17.18 auth (`isAuthenticated: true` unquoted JS / `Home.aspx` / `Data.svc`) and falls back to `SSO.php?course_id=...` on guest response.
+  4. Un-gates Tier 3 `discoverCourseFolderFromBrowse`, deduplicates/awaits concurrent Tier 3 `ensurePanoptoSession(..., true)` across staggered courses, and resets `initialPanoptoAuthed`/`hasPanoptoSession` on failed forced re-auth so `'Panopto Authentication'` errors emit accurately.
+* **Verification**: `pnpm --filter @tautracker/moodle-client test -- panopto.test.ts`.
+
+#### TC-MOB-021: Mobile SQLite `runInTransaction` Re-Entrancy Safety & Android Notification Sound/Channel (`E10`, `E11`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated`
+* **Target Components**: `apps/mobile/src/services/database.ts`, `apps/mobile/src/services/settingsSyncService.ts`, `apps/mobile/src/services/notifications.ts`, `apps/mobile/__tests__/unit/services.test.ts`
+* **Description**:
+  1. All transactional writes (`saveTrackedCourses`, `saveSyncResultToDatabase`, `clearUserTablesOnLogout`, `writeSettingsToLocalStorage`) execute through `runInTransaction` (`txDepth` re-entrancy guard) rather than nested raw `db.withTransactionSync` calls.
+  2. `notifications.ts` enables `shouldPlaySound: true`, omits invalid `sound: 'default'` from `scheduleNotificationAsync` `content` so Android uses the channel default sound, ensures the Android `deadline-reminders` high-importance notification channel (`ensureNotificationChannel`), and schedules emoji-free `he`/`en` reminders.
+* **Verification**: `pnpm --filter mobile test` (`__tests__/unit/services.test.ts`).
+
+#### TC-MOB-022: Mobile Native `ACTION_CREATE_DOCUMENT` File Explorer Download & Zero-Fallback Cancel (`C3`, `E8`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/android/app/src/main/java/com/noodle/tau/NoodleNativeModule.kt`, `apps/mobile/src/services/nativeBridge.ts`, `apps/mobile/src/services/fileDownloadService.ts`, `apps/mobile/src/components/MoodleFileRow.tsx`, `apps/mobile/__tests__/unit/services.test.ts`, `apps/mobile/__tests__/unit/screens.test.tsx`
+* **Description**:
+  1. `NoodleNativeModule.saveFileWithSystemExplorer` launches `Intent.ACTION_CREATE_DOCUMENT` via `BaseActivityEventListener` with `saveLock` concurrency guard and `ioExecutor` streaming.
+  2. `downloadMoodleFile` and `downloadMoodleFolderZip` invoke `saveFileWithSystemExplorerNative` first on Android, returning `{ cancelled: true, savedToDownloads: false }` with **zero** fallback to MediaStore/SAF/`expo-sharing` on user cancellation, falling back only on `unsupported`/`ACTIVITY_NOT_FOUND`, and cleaning up temp ZIPs across all exit/error paths.
+  3. `MoodleFileRow` renders Open and Download actions only (`E8`).
+* **Browser Agent Prompt / Action**: Tap Download on a course file or folder ZIP on Android; verify native system file picker opens, cancelling returns cleanly without opening Share sheet, and choosing a location saves the file cleanly.
+* **Verification**: `pnpm --filter mobile test` (`services.test.ts`, `screens.test.tsx`) and `.\gradlew.bat :app:compileDebugKotlin`.
+
+#### TC-MOB-023: Mobile 14-Color Pastel Course Palette & Interactive `ColorPalettePickerModal` (`C4`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/src/constants/theme.ts`, `apps/mobile/src/components/ColorPalettePickerModal.tsx`, `apps/mobile/src/components/ManageCoursesModal.tsx`, `apps/mobile/src/app/onboarding.tsx`, `apps/mobile/__tests__/unit/foundation.test.ts`, `apps/mobile/__tests__/unit/screens.test.tsx`
+* **Description**:
+  1. `COURSE_COLOR_PALETTE` defines 14 pastel hex colors (`#E58C7A`..`#A69382`) with `getReadableTextColor(hex)` WCAG contrast for swatch and checkbox checkmarks.
+  2. Pressing `custom-color-btn-${courseId}` in `ManageCoursesModal` or `onboarding.tsx` opens `ColorPalettePickerModal` with pure RN + `react-native-svg` + `PanResponder` 2D Saturation/Value canvas, 360-deg Hue bar, 36-tile `SPECTRUM_GRID_COLORS`, live course preview (`color-picker-preview`), and `#RRGGBB` input (`color-picker-hex-input`), persisting arbitrary hex colors in `coursesColorMap` and SQLite `tracked_courses.color`.
+* **Browser Agent Prompt / Action**: Open Manage Courses or Onboarding Step 2; verify pastel swatches have readable checkmarks, open the custom palette modal, tap a spectrum tile or drag SV/Hue sliders, enter a `#RRGGBB` hex, apply, and verify course card accent updates immediately.
+* **Verification**: `pnpm --filter mobile test` (`foundation.test.ts`, `screens.test.tsx`).
+
+#### TC-MOB-024: Mobile OkHttp `moodlemobile://` Silent Token Renewal & Session-Expired Reconnect Banner (`C5`)
+* **Platform Target**: `Mobile Only`
+* **Modality**: `Automated & Browser Agent`
+* **Target Components**: `apps/mobile/android/app/src/main/java/com/noodle/tau/NoodleNativeModule.kt`, `apps/mobile/src/services/nativeBridge.ts`, `apps/mobile/src/services/auth.ts`, `apps/mobile/src/services/backgroundSync.ts`, `apps/mobile/src/hooks/use-app-state.tsx`, `apps/mobile/src/app/_layout.tsx`, `apps/mobile/__tests__/unit/services.test.ts`, `apps/mobile/__tests__/unit/foundation.test.ts`
+* **Description**:
+  1. `NoodleNativeModule.fetchMoodleMobileTokenViaLaunch` executes non-redirecting OkHttp + WebView `CookieManager` hybrid `CookieJar` SAML launch against HTTPS `nidp.tau.ac.il` hosts and extracts `+`-preserving `moodlemobile://token=...` values.
+  2. `auth.ts` (`loginTauSso`, `renewTokenSilently`) attempts cookie-backed and credential-backed silent renewal and short-circuits on `INVALID_CREDENTIALS`.
+  3. `isTokenAuthError` detects Moodle `invalidtoken`/`accessexception`/`auth_session_expired` errors (excluding Panopto auth failures) and triggers `sessionExpired = true`, displaying an RTL-aware top safe-area `"Session Expired — Reconnect"` banner in `InnerLayout` that opens `SsoWebViewModal` (`mode="moodle"`) -> `reconnectWithToken`.
+* **Browser Agent Prompt / Action**: Trigger an expired Moodle token without saved credentials; verify the Reconnect banner appears, tap it to complete WebView SSO, and verify `reconnectWithToken` clears the banner and resumes sync.
+* **Verification**: `pnpm --filter mobile test` (`services.test.ts`, `foundation.test.ts`) and `.\gradlew.bat :app:compileDebugKotlin`.

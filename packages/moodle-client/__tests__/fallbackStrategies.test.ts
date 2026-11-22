@@ -8,6 +8,9 @@ import {
   RawCourseSection,
   ScraperMoodleStrategy,
 } from '../src/moodleApi.js';
+import { MoodleApiError as ErrorsMoodleApiError } from '../src/errors.js';
+
+declare const require: (id: string) => any;
 
 describe('Fallback Strategy Architecture', () => {
   const dummySiteInfo: MoodleSiteInfo = {
@@ -877,6 +880,34 @@ describe('Fallback Strategy Architecture', () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  it('TC-FALLBACK-19: should load strategies without runtime dependency or require cycle with moodleApi', () => {
+    expect(ErrorsMoodleApiError).toBe(MoodleApiError);
+
+    jest.isolateModules(() => {
+      jest.doMock('../src/moodleApi.js', () => {
+        throw new Error('Circular runtime import detected: strategies/* must not import moodleApi at runtime');
+      });
+
+      const strategies = require('../src/strategies/index.js');
+      const { MoodleApiError: IsolatedErrorsClass } = require('../src/errors.js');
+
+      expect(strategies.RestMoodleStrategy).toBeDefined();
+      expect(strategies.AjaxMoodleStrategy).toBeDefined();
+      expect(strategies.ScraperMoodleStrategy).toBeDefined();
+      expect(strategies.executeWithFallback).toBeDefined();
+
+      const rest = new strategies.RestMoodleStrategy({ baseUrl: 'https://moodle.tau.ac.il', token: 't' });
+      const ajax = new strategies.AjaxMoodleStrategy({ baseUrl: 'https://moodle.tau.ac.il', sesskey: 's' });
+      const scraper = new strategies.ScraperMoodleStrategy({ baseUrl: 'https://moodle.tau.ac.il' });
+      expect(rest.name).toBe('REST');
+      expect(ajax.name).toBe('AJAX');
+      expect(scraper.name).toBe('Scraper');
+
+      const err = new IsolatedErrorsClass('err', 'msg');
+      expect(err).toBeInstanceOf(IsolatedErrorsClass);
+    });
   });
 
   it('TC-FALLBACK-18: should exclude Scraper strategy by default and include only when enableScraping is true', () => {

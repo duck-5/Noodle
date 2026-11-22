@@ -99,16 +99,12 @@ export class SettingsSyncManager {
    * 4. Returns the final merged settings state.
    */
   public async sync(localSettings: SharedSettings): Promise<SharedSettings> {
-    let remoteSettings: SharedSettings | null = null;
-    
-    try {
-      remoteSettings = await this.moodleClient.loadNoodleSettings();
-    } catch (e) {
-      console.warn('[SettingsSyncManager] Failed to load remote settings, assuming empty.', e);
-    }
+    // Do NOT swallow loadNoodleSettings() errors: abort/propagate so transient network/auth/parse
+    // failures never overwrite remote settings with local defaults.
+    const remoteSettings: SharedSettings | null = await this.moodleClient.loadNoodleSettings();
 
-    if (!remoteSettings) {
-      // Remote is empty, so we push our local settings as the source of truth
+    if (remoteSettings === null || remoteSettings === undefined) {
+      // Remote genuinely has no NOODLE_SYNC_DATA event yet, so initialize it with local settings
       if (Object.keys(localSettings).length > 0) {
         try {
           await this.moodleClient.saveNoodleSettings(JSON.stringify(localSettings));

@@ -1,4 +1,4 @@
-import { MoodleApiError } from '../moodleApi.js';
+import { MoodleApiError } from '../errors.js';
 import { IMoodleStrategy, UnsupportedStrategyError } from './types.js';
 
 let tokenRefreshPromise: Promise<string | null> | null = null;

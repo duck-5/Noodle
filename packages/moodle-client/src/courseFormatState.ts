@@ -1,4 +1,11 @@
 import { CookieJar, mfetch, mfetchFollow } from './zoomScraper.js';
+import {
+  CookieAdapter,
+  FORMAT_STATE_TIMEOUT_MS,
+  FetchFn,
+  fetchWithTimeout,
+  isBrowserEnvironment,
+} from './runtimeEnv.js';
 
 export interface ParsedSectionState {
   parentSectionId: number | null;
@@ -11,12 +18,23 @@ export interface ParsedCourseFormatState {
   lockedCmids?: Set<number>;
 }
 
-export async function fetchSesskeyFromJar(jar: CookieJar, instanceBaseUrl: string): Promise<string | null> {
+export async function fetchSesskeyFromJar(
+  jar: CookieJar,
+  instanceBaseUrl: string,
+  options?: { fetch?: FetchFn; cookieAdapter?: CookieAdapter; useNativeCookies?: boolean; timeoutMs?: number }
+): Promise<string | null> {
   try {
     const targetUrl = `${instanceBaseUrl.replace(/\/$/, '')}/my/`;
-    const { response } = await mfetchFollow(jar, targetUrl);
+    const { response, finalUrl } = await mfetchFollow(jar, targetUrl, {
+      ...(options?.fetch ? { fetch: options.fetch } : {}),
+      ...(options?.cookieAdapter ? { cookieAdapter: options.cookieAdapter } : {}),
+      ...(options?.useNativeCookies !== undefined ? { useNativeCookies: options.useNativeCookies } : {}),
+      timeoutMs: options?.timeoutMs ?? FORMAT_STATE_TIMEOUT_MS,
+    });
     if (!response.ok) return null;
+    if (finalUrl.includes('/login/') || finalUrl.includes('nidp.tau.ac.il')) return null;
     const html = await response.text();
+    if (/id=["']login["']|name=["']Ecom_User_ID["']/i.test(html)) return null;
     const match = html.match(/["']sesskey["']\s*:\s*["']([A-Za-z0-9]+)["']/i) ||
       html.match(/sesskey=([A-Za-z0-9]+)/i);
     return match ? match[1] : null;
@@ -30,6 +48,10 @@ export async function fetchCourseFormatState(options: {
   courseId: number;
   sesskey: string;
   jar?: CookieJar;
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
+  useNativeCookies?: boolean;
+  timeoutMs?: number;
 }): Promise<ParsedCourseFormatState | null> {
   const { instanceBaseUrl, courseId, sesskey, jar } = options;
   if (!sesskey || !courseId) return null;
@@ -48,20 +70,30 @@ export async function fetchCourseFormatState(options: {
       Accept: 'application/json',
     };
 
+    const timeoutMs = options.timeoutMs ?? FORMAT_STATE_TIMEOUT_MS;
     let res: Response;
-    if (jar) {
-      res = await mfetch(jar, url, {
+    if (jar || (!isBrowserEnvironment() && (options.cookieAdapter || options.useNativeCookies))) {
+      res = await mfetch(jar ?? new CookieJar(), url, {
         method: 'POST',
         headers,
         body,
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.cookieAdapter ? { cookieAdapter: options.cookieAdapter } : {}),
+        ...(options.useNativeCookies !== undefined ? { useNativeCookies: options.useNativeCookies } : {}),
+        timeoutMs,
       });
     } else {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body,
-        credentials: 'include',
-      });
+      res = await fetchWithTimeout(
+        options.fetch ?? fetch,
+        url,
+        {
+          method: 'POST',
+          headers,
+          body,
+          credentials: 'include',
+        },
+        timeoutMs
+      );
     }
 
     if (!res.ok) return null;

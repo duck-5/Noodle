@@ -1,10 +1,92 @@
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { getOrCreateTaskList, syncAssignmentsToGoogleTasks, Assignment } from '@tautracker/moodle-client';
 import { getPreference, getDb } from './database';
 
 export const DEFAULT_GOOGLE_CLIENT_ID = '510394355212-opk74l9lv3e44sv3m1c1u96ocsdn1n0j.apps.googleusercontent.com';
+export const CHROME_EXTENSION_CLIENT_ID = '510394355212-0e3ums7pu5raagej4gg14nrkt9o06m78.apps.googleusercontent.com';
+export const CHROME_EXTENSION_REDIRECT_URI = 'https://gaiognmkgghdihdeokgmpcdndmencdbj.chromiumapp.org/';
+
+const WEB_SECURE_PREFIX = 'noodle_secure_';
+const webMemoryFallback = new Map<string, string>();
+
+function getSecureStoreModule(): typeof import('expo-secure-store') | null {
+  if (Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-secure-store');
+  } catch {
+    return null;
+  }
+}
+
+async function readSecureItem(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem(`${WEB_SECURE_PREFIX}${key}`);
+      }
+    } catch {
+      // Fallback to in-memory map if localStorage is restricted
+    }
+    return webMemoryFallback.get(key) ?? null;
+  }
+
+  const store = getSecureStoreModule();
+  if (!store || typeof store.getItemAsync !== 'function') {
+    return webMemoryFallback.get(key) ?? null;
+  }
+  try {
+    return await store.getItemAsync(key);
+  } catch (e) {
+    console.error(`readSecureItem(${key}) error:`, e);
+    return null;
+  }
+}
+
+async function writeSecureItem(key: string, value: string | null): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (value === null) {
+          localStorage.removeItem(`${WEB_SECURE_PREFIX}${key}`);
+        } else {
+          localStorage.setItem(`${WEB_SECURE_PREFIX}${key}`, value);
+        }
+        return;
+      }
+    } catch {
+      // Fallback to in-memory map
+    }
+    if (value === null) {
+      webMemoryFallback.delete(key);
+    } else {
+      webMemoryFallback.set(key, value);
+    }
+    return;
+  }
+
+  const store = getSecureStoreModule();
+  if (!store) {
+    if (value === null) {
+      webMemoryFallback.delete(key);
+    } else {
+      webMemoryFallback.set(key, value);
+    }
+    return;
+  }
+
+  try {
+    if (value === null) {
+      await store.deleteItemAsync(key);
+    } else {
+      await store.setItemAsync(key, value);
+    }
+  } catch (e) {
+    console.error(`writeSecureItem(${key}) error:`, e);
+  }
+}
 
 // Self-contained Pure JS SHA-256 implementation (RFC 7636 PKCE S256 compatible)
 function sha256(ascii: string): Uint8Array {
@@ -14,7 +96,8 @@ function sha256(ascii: string): Uint8Array {
   const mathPow = Math.pow;
   const maxWord = mathPow(2, 32);
   const lengthProperty = 'length';
-  let i: number, j: number;
+  let i: number;
+  let j: number;
   const words: number[] = [];
   const asciiBitLength = ascii[lengthProperty] * 8;
   let hash: number[] = [];
@@ -47,13 +130,15 @@ function sha256(ascii: string): Uint8Array {
     const oldHash = hash;
     hash = hash.slice(0, 8);
     for (i = 0; i < 64; i++) {
-      const w15 = w[i - 15], w2 = w[i - 2];
+      const w15 = w[i - 15];
+      const w2 = w[i - 2];
       const s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
       const s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
       w[i] = i < 16 ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0;
       const ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6]);
       const maj = (hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2]);
-      const temp1 = (hash[7] + (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) + ch + k[i] + w[i]) | 0;
+      const temp1 =
+        (hash[7] + (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) + ch + k[i] + w[i]) | 0;
       const temp2 = ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) + maj) | 0;
       hash = [(temp1 + temp2) | 0].concat(hash);
       hash[4] = (hash[4] + temp1) | 0;
@@ -106,45 +191,19 @@ function generateCodeVerifier(length = 64): string {
 }
 
 export async function getGoogleAccessToken(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync('google_access_token');
-  } catch (e) {
-    console.error('getGoogleAccessToken error:', e);
-    return null;
-  }
+  return readSecureItem('google_access_token');
 }
 
 export async function getGoogleRefreshToken(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync('google_refresh_token');
-  } catch (e) {
-    console.error('getGoogleRefreshToken error:', e);
-    return null;
-  }
+  return readSecureItem('google_refresh_token');
 }
 
 export async function setGoogleAccessToken(token: string | null): Promise<void> {
-  try {
-    if (token === null) {
-      await SecureStore.deleteItemAsync('google_access_token');
-    } else {
-      await SecureStore.setItemAsync('google_access_token', token);
-    }
-  } catch (e) {
-    console.error('setGoogleAccessToken error:', e);
-  }
+  return writeSecureItem('google_access_token', token);
 }
 
 export async function setGoogleRefreshToken(token: string | null): Promise<void> {
-  try {
-    if (token === null) {
-      await SecureStore.deleteItemAsync('google_refresh_token');
-    } else {
-      await SecureStore.setItemAsync('google_refresh_token', token);
-    }
-  } catch (e) {
-    console.error('setGoogleRefreshToken error:', e);
-  }
+  return writeSecureItem('google_refresh_token', token);
 }
 
 export async function refreshGoogleAccessToken(): Promise<string | null> {
@@ -188,9 +247,6 @@ export async function refreshGoogleAccessToken(): Promise<string | null> {
   }
 }
 
-export const CHROME_EXTENSION_CLIENT_ID = '510394355212-0e3ums7pu5raagej4gg14nrkt9o06m78.apps.googleusercontent.com';
-export const CHROME_EXTENSION_REDIRECT_URI = 'https://gaiognmkgghdihdeokgmpcdndmencdbj.chromiumapp.org/';
-
 export function getEffectiveRedirectUri(clientId: string): string {
   const customRedirect = getPreference('google_tasks_redirect_uri');
   if (customRedirect && customRedirect.trim()) {
@@ -199,11 +255,17 @@ export function getEffectiveRedirectUri(clientId: string): string {
   if (clientId === CHROME_EXTENSION_CLIENT_ID) {
     return CHROME_EXTENSION_REDIRECT_URI;
   }
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}/oauth2redirect`;
+    }
+    return Linking.createURL('oauth2redirect');
+  }
   if (clientId.endsWith('.apps.googleusercontent.com')) {
     const prefix = clientId.replace('.apps.googleusercontent.com', '');
     return `com.googleusercontent.apps.${prefix}:/oauth2redirect`;
   }
-  return Linking.createURL('oauth');
+  return Linking.createURL('oauth2redirect');
 }
 
 export async function authenticateGoogleOAuth(
@@ -291,7 +353,8 @@ export async function authenticateGoogleOAuth(
 
     const tokenData = await tokenRes.json();
     if (!tokenRes.ok || !tokenData.access_token) {
-      const err = tokenData.error_description || tokenData.error || 'Failed to exchange authorization code for access token';
+      const err =
+        tokenData.error_description || tokenData.error || 'Failed to exchange authorization code for access token';
       return { success: false, error: err };
     }
 
@@ -303,11 +366,58 @@ export async function authenticateGoogleOAuth(
     return { success: true, token: tokenData.access_token };
   } catch (e: any) {
     console.error('authenticateGoogleOAuth error:', e);
-    return { success: false, error: e.message || 'Authentication failed' };
+    return { success: false, error: e?.message || 'Authentication failed' };
   }
 }
 
-export async function performGoogleTasksSync(assignments: Assignment[]): Promise<{ success: boolean; message?: string }> {
+function parseAssignmentIdList(raw: string | null): (number | string)[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is number | string => typeof item === 'number' || typeof item === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function loadCourseNicknameMap(): Map<number, string> {
+  const courseNameMap = new Map<number, string>();
+  try {
+    const db = getDb();
+    if (db && typeof db.getAllSync === 'function') {
+      const rows = db.getAllSync<{ moodle_id: number; name: string }>('SELECT moodle_id, name FROM tracked_courses');
+      for (const r of rows) {
+        if (r.name && r.name.trim()) {
+          courseNameMap.set(r.moodle_id, r.name.trim());
+        }
+      }
+    }
+  } catch {
+    // Ignore DB errors when running in mocked contexts
+  }
+
+  const customNamesRaw = getPreference('courses_custom_names');
+  if (customNamesRaw) {
+    try {
+      const customNames = JSON.parse(customNamesRaw) as Record<string, string>;
+      for (const [idStr, nickname] of Object.entries(customNames)) {
+        const cid = Number(idStr);
+        if (Number.isFinite(cid) && typeof nickname === 'string' && nickname.trim()) {
+          courseNameMap.set(cid, nickname.trim());
+        }
+      }
+    } catch {
+      // Ignore malformed JSON
+    }
+  }
+
+  return courseNameMap;
+}
+
+export async function performGoogleTasksSync(
+  assignments: Assignment[]
+): Promise<{ success: boolean; message?: string }> {
   try {
     const isEnabled = getPreference('google_tasks_enabled') === 'true';
     if (!isEnabled) {
@@ -322,15 +432,9 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
       return { success: false, message: 'Google account is not connected.' };
     }
 
-    // Load course nicknames from tracked_courses
-    const db = getDb();
-    const rows = db.getAllSync<{ moodle_id: number; name: string }>('SELECT moodle_id, name FROM tracked_courses');
-    const courseNameMap = new Map<number, string>();
-    for (const r of rows) {
-      courseNameMap.set(r.moodle_id, r.name);
-    }
-
-    const mappedAssignments = assignments.map((a) => {
+    const courseNameMap = loadCourseNicknameMap();
+    const safeAssignments = Array.isArray(assignments) ? assignments : [];
+    const mappedAssignments = safeAssignments.map((a) => {
       const nickname = courseNameMap.get(a.courseId);
       return nickname && nickname.trim() ? { ...a, courseName: nickname.trim() } : a;
     });
@@ -343,8 +447,7 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
         syncErrors.push(err);
       });
     } catch (err: any) {
-      if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized'))) {
-        // Token might have expired, try refresh once
+      if (err?.message && (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized'))) {
         const refreshedToken = await refreshGoogleAccessToken();
         if (refreshedToken) {
           accessToken = refreshedToken;
@@ -359,27 +462,17 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
       }
     }
 
-    const hiddenRaw = getPreference('hidden_assignments');
-    const hiddenAssignments: number[] = hiddenRaw ? JSON.parse(hiddenRaw) : [];
-
-    const completedRaw = getPreference('completed_assignments');
-    const completedAssignments: number[] = completedRaw ? JSON.parse(completedRaw) : [];
-
-    const uncompletedRaw = getPreference('uncompleted_assignments');
-    const uncompletedAssignments: number[] = uncompletedRaw ? JSON.parse(uncompletedRaw) : [];
+    const hiddenAssignments = parseAssignmentIdList(getPreference('hidden_assignments'));
+    const completedAssignments = parseAssignmentIdList(getPreference('completed_assignments'));
+    const uncompletedAssignments = parseAssignmentIdList(getPreference('uncompleted_assignments'));
     const syncWithoutDeadline = getPreference('sync_without_deadline') === 'true';
 
-    const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(
-      accessToken,
-      listId,
-      mappedAssignments,
-      {
-        hiddenAssignmentIds: hiddenAssignments,
-        completedAssignmentIds: completedAssignments,
-        uncompletedAssignmentIds: uncompletedAssignments,
-        syncWithoutDeadline,
-      }
-    );
+    const { syncedCount, errors } = await syncAssignmentsToGoogleTasks(accessToken, listId, mappedAssignments, {
+      hiddenAssignmentIds: hiddenAssignments,
+      completedAssignmentIds: completedAssignments,
+      uncompletedAssignmentIds: uncompletedAssignments,
+      syncWithoutDeadline,
+    });
     const allErrors = [...syncErrors, ...errors];
 
     if (allErrors.length > 0) {
@@ -388,6 +481,6 @@ export async function performGoogleTasksSync(assignments: Assignment[]): Promise
     return { success: true, message: `Synced ${syncedCount} tasks successfully.` };
   } catch (e: any) {
     console.error('performGoogleTasksSync error:', e);
-    return { success: false, message: e.message };
+    return { success: false, message: e?.message || 'Google Tasks sync failed' };
   }
 }

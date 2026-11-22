@@ -50,25 +50,11 @@ Presented immediately after successful authentication or when manually triggered
 ### A. Navigation Sidebar (Desktop Options Page)
 *   **Header**: Scaled Noodle Logo (`108px` expanded, transitions to `54px` when collapsed) and "Noodle" application title (`1.45rem` bold font).
 *   **Extension Bar Action Icon**: High-contrast, full-bleed icons (`16px`, `32px`, `48px`, `128px`) generated with 95–100% canvas height coverage so the noodle bowl is prominent, sharp, and bold on browser toolbars.
-*   **Navigation Menu Items**:
-    - **Dashboard** (`dashboard`): Central overview cockpit (Hero Action Strip, Multi-Active Zoom, Semester Progress, My Tracked Courses).
-    - **Assignments** (`assignments`): Dedicated full-page assignments feed with search, status filters, course filter banner, and expandable cards.
-    - **Grades** (`grades`): Course grades breakdown, averages, and overall GPA tracker.
-    - **Settings** (`settings`): Configuration settings, theme selector, mock course generator, Panopto & Local Filesystem sync toggles, Google Tasks, and backup.
-    - **About** (`about`): Credits, application details, and interactive tour launcher.
-*   **Sidebar Collapse Toggle**:
-    - Flat button at the bottom of the sidebar with an arrow icon.
-    - Clicking toggles width state (`240px` expanded vs `72px` collapsed).
-    - (Mobile only) Clicking anywhere not on the sidebar collapses it
-    - *Collapsed state styling*: Hides text labels, scales the logo to `44px` circular bounds, and formats navigation items as centered square buttons.
-*   **Sidebar Take Tour Button (`.sidebar-tour-btn`)**:
-    - Placed inside `.sidebar-nav` directly below the Sidebar Collapse Toggle with `<TourCompassIcon />`, allowing users to launch the 10-step Interactive Tour anytime without logging out or navigating away.
-*   **Sidebar New-Version Update Banner (`.sidebar-update-banner`)**:
-    - Displayed cleanly above `.sidebar-footer` whenever the background store checker detects a published Chrome Web Store / Firefox AMO version newer than `manifest.version` (and not dismissed for that `latestVersion`).
-    - Displays version progression (`v<current> → v<latest>`), a direct Store link CTA button, and a dismiss (`✕`) button; collapses into a compact `40px` icon link (`.sidebar-update-compact`) when the sidebar is collapsed.
-*   **Footer**:
-    - **Disconnect Button**: Exit door with arrow vector icon (`ExitIcon`) that triggers log out.
-    - (Mobile only) The disconnect logo will appear only when the sidebar is expended
+*   **Navigation Layout Parity (Extension Sidebar vs. Mobile Responsive Cockpit: 6-Tab Swipeable Portrait / 5-Tab Landscape Tablet)**:
+    - **Extension Options Sidebar (`apps/extension`)**: Collapsible sidebar (`240px` expanded / `72px` collapsed) with `Dashboard`, `Assignments`, `Recordings`, `Grades`, `Settings`, `About`, `Take Tour` button, optional Store Update Banner, and Disconnect footer.
+    - **Mobile Responsive Cockpit (`apps/mobile`)**: Expo Router cockpit with push navigation to `course/[id]` and `onboarding`, plus an RTL-aware top safe-area `"Session Expired — Reconnect"` banner (`app/_layout.tsx`) surfaced when `sessionExpired` is true without stored credentials, opening `SsoWebViewModal` (`mode="moodle"`) -> `reconnectWithToken` (**C5**):
+      - **Phone & Portrait Tablet (`!isLandscapeTablet`)**: **6-tab** bottom bar and horizontal swipe order **`Home` (`(tabs)/index`) -> `Courses` (`(tabs)/courses`) -> `Assignments` (`(tabs)/assignments`) -> `Recordings` (`(tabs)/recordings`) -> `Grades` (`(tabs)/grades`) -> `Settings` (`(tabs)/settings`)** (About & Guided Tour integrated into Settings), using a bubbling `PanResponder` swipe wrapper (`tabs-swipe-container`) with RTL-aware swipe direction where inner horizontal scrollables (`RtlHorizontalScrollView` filter strips) retain gesture priority (**C2**), single-column stacked Hero queues, bottom-sheet modal `AssignmentDetailSheet`, stacked Calendar, and 3-segment Course Detail.
+      - **Landscape Tablet (`isLandscapeTablet`: `width > height && width >= 768 && shortestEdge >= 600`)**: **5-tab** Extension-style collapsible `220px`/`68px` sidebar omitting `Courses` (`href: null` + `/courses` -> `/` redirect on orientation change) and keeping `TrackedCoursesSection` directly on `Home` (`(tabs)/index`), with the sidebar collapse button (`sidebar-toggle-btn`, `"Collapse"` / `"צמצם תפריט"`) positioned at the **bottom-left (`sidebarFooter`)** and the Noodle logo mark centered in `sidebarHeader` (**E3, C2**), inline Master–Detail task split pane in Dashboard Upcoming To-Do Queue, `onLayout`-measured 2–3 column course cards, split Calendar, and 2-column Course Detail.
 
 ### B. Resizable Dashboard Container & Edge Dividers
 * **Default Width**: `1200px` centered within the main viewport for optimal reading density.
@@ -106,7 +92,8 @@ Presented immediately after successful authentication or when manually triggered
     * An exclusive chevron arrow button (`.sync-window-collapse-btn`) in the header (without an X close button) allows collapsing the progress window to the bottom corner.
     * Clicking anywhere outside the window automatically collapses it into a compact, minimal floating pill (`.sync-progress-collapsed`) displaying the spinning sync icon, live progress percentage, and an expand arrow.
     * Clicking anywhere on the collapsed pill or on the header "Sync" button while sync is in progress expands it back to the full progress window.
-  - **Automatic Dismissal on Completion**: Both the expanded window and collapsed dock automatically close 2.5 seconds after synchronization finishes.
+  - **Automatic Dismissal on Completion**: On Extension, both the expanded window and collapsed dock automatically close 2.5 seconds after synchronization finishes. On Mobile (`SyncProgressBanner.tsx`, **E7**), starting a sync keeps `syncWindowVisible` closed until the user taps `"Sync Now"` while a sync is actively running (`openSyncWindow`), and completion dismisses the banner immediately with no 2.5-second post-complete linger (while preserving dismissible non-auth sync error banners).
+  - **Mobile Header Streamlining (`(tabs)/index.tsx`)**: Mobile Home displays the official Noodle icon mark (`dashboard-header-logo`, **E9**) and `"Sync Now"` button only in the greeting header (top-right Tour button removed per **E4**; `"Manage Courses"` moved to `TrackedCoursesSection` header per **E5**).
   - **Anti-Jitter Stage Boundaries**: Sync results are emitted atomically at complete stage boundaries (Level 1: Course Contents Complete, Level 2: Activities & Submissions Complete, Level 3: Panopto Complete) rather than per-item. This eliminates page jitter, layout shifts, jumping assignment cards, and progress bar thrashing.
   - **Silent Background Synchronization**: Automatic periodic syncs (triggered via alarms or extension startup) execute in the background with only the spinning sync icon animating on the header button (`.spinning-sync-icon`), keeping the `.sync-progress-window` closed unless explicitly opened by a manual user click (`handleManualSync`).
   - Header subtitle cleanly displays the "Last synced: ..." timestamp without a countdown timer. Theme controls are centralized in Settings for a clutter-free header.
@@ -115,7 +102,7 @@ Presented immediately after successful authentication or when manually triggered
 The top of the dashboard features a focused action strip designed for rapid orientation and zero-anxiety productivity:
 1. **Upcoming To-Do Queue ("תור משימות קרובות")**:
    - Primary card listing imminent tasks with smooth internal scrollbar.
-   - **Closest Task Flowing Edge Glow**: The single nearest pending deadline features an animated, smoothly flowing border light beam (`.closest-task-glow` / `@keyframes flow-glow-beam`) with a purple-to-orange gradient traveling continuously around the card perimeter using a masked `conic-gradient` and dual drop-shadow glow. Tasks remain collapsed by default for maximum density and clutter-free scanning.
+   - **Closest Task Flowing Edge Glow**: The single nearest pending deadline features an animated, smoothly flowing border light beam (`.closest-task-glow` / `@keyframes flow-glow-beam`) with a purple-to-orange gradient traveling continuously around the card perimeter using a masked `conic-gradient` and dual drop-shadow glow. Tasks remain collapsed by default for maximum density and clutter-free scanning. On Mobile, `ClosestTaskGlowWrap` (`NoodleAnimations.tsx`, **E2**) matches this subtle appearance using a `1.25px` border-aligned SVG stroke (`padding: 0`), `18%` perimeter arc, `4500ms` cycle, soft `stopOpacity` (`0.15` -> `0.55` -> `0.15`), and faint `rgba(160, 73, 119, 0.14)` base border.
    - **Exclusion & Sorting Filters**: Automatically excludes completed tasks (both Moodle-submitted and manually marked done) as well as hidden assignments.
    - Tasks are partitioned: future-dated tasks $\rightarrow$ tasks without deadlines $\rightarrow$ overdue tasks. Tasks without a deadline are explicitly included in the queue with stable deterministic ordering.
    - **Late Submission Grace Period Clock Indicator**: If an assignment has an extended cutoff date (`hasGracePeriod(assignment) === true`), a delicate vector SVG clock icon (`.grace-period-clock-icon`) is rendered alongside the due date. Hovering reveals a localized tooltip: `"מטלות באיחור יתקבלו עד {date}"` / `"Late assignment accepted til {date}"`. (No emojis used).
@@ -127,18 +114,18 @@ The top of the dashboard features a focused action strip designed for rapid orie
 
 ### B. Live Session & Progress Bar
 * **Multi-Zoom Active Strip**: When one or more courses have live sessions running (`● פעיל כעת`), a prominent live meeting strip appears directly beneath the hero strip, strictly filtering out hidden or uninterested meetings.
-* **Semester Progress**: Compact single progress card (`.semester-progress-card`) with a 5-option segmented multiswitch (`.view-mode-toggle-group.semester-progress-switch`, matching the Courses card switcher and persisted in `localStorage` `noodle_semester_progress_mode`, defaulting to `Total`) across **Lectures**, **Recitations**, **Assignments**, **Total**, and **All**. Single-category views render a full-width progress bar (`.semester-progress-single`), while **All** expands `.semester-progress-grid` showing all four bars together, with inline SVG icons and exact `done/total (pct%)` counts respecting hidden items, `panoptoEnabled`, and per-course host filters.
+* **Semester Progress**: Compact single progress card (`.semester-progress-card`) with a 5-option segmented multiswitch on Extension (`.view-mode-toggle-group.semester-progress-switch`, matching the Courses card switcher and persisted in `localStorage` `noodle_semester_progress_mode`, defaulting to `Total`) across **Lectures**, **Recitations**, **Assignments**, **Total**, and **All**. On Mobile (**E6**), renders a compact press-to-open dropdown selector pill (`semester-progress-mode-btn`) displaying the active mode and chevron; pressing it opens `semester-progress-mode-menu` with the 5 categories and closes immediately upon selection. Single-category views render a full-width progress bar (`.semester-progress-single`), while **All** expands `.semester-progress-grid` showing all four bars together, with inline SVG icons and exact `done/total (pct%)` counts respecting hidden items, `panoptoEnabled`, and per-course host filters.
 
 ### C. My Tracked Courses ("הקורסים שלי")
-* **Deterministic Course Order**: Predictable, clean list of tracked courses.
-* **View Options Toggle**: Segmented switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") allows toggling between a vertical rows list and a responsive card grid (`.courses-cards-grid`), persisted in local storage.
-* **Manage Courses Modal Trigger**: A signature purple-orange gradient action button (`.manage-courses-trigger-btn`) featuring a clean `<BookOpenIcon size={13} />` opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, native color pickers, and tracking checkboxes.
+* **Placement & Deterministic Course Order**: Predictable, clean list of tracked courses. On Mobile (**C2**), `TrackedCoursesSection` (`TrackedCoursesSection.tsx`) renders on the dedicated **`Courses` tab (`(tabs)/courses.tsx`)** in phone/portrait layouts and directly on **`Home` (`(tabs)/index.tsx`)** in landscape tablet mode (`isLandscapeTablet`).
+* **View Options Toggle & Manage Courses Trigger (`E5`)**: Segmented switcher ("רשימה" / "List" vs "כרטיסים" / "Cards") allows toggling between a vertical rows list and a responsive card grid (`.courses-cards-grid`), persisted in local storage. On Mobile, `"Manage Courses"` (`dashboard-manage-courses-btn`) is grouped horizontally (`gap: 8`) beside the `"Cards / List"` segmented switcher in `coursesHeader` (**E5**).
+* **Manage Courses Modal & Pastel Palette / Gradient CTA (`E1`, `C4`)**: A signature purple-orange gradient action button (`.manage-courses-trigger-btn`) featuring a clean `<BookOpenIcon size={13} />` opens a centered frosted-glass modal partitioned into semester groups, with course code/full name, display nickname text inputs, color pickers, and tracking checkboxes. On Mobile, `NoodleGradientButton` wraps its `<Svg>` gradient in an absolute-fill non-interactive layer (`padding: 0` on outer `<Pressable>`, padding on inner content view) so Android Fabric renders full-bleed gradients without half-colored offsets (**E1**), and course color selection (`ManageCoursesModal.tsx`, `onboarding.tsx`) uses the curated 14-color pastel `COURSE_COLOR_PALETTE` (`#E58C7A`–`#A69382`) with `getReadableTextColor` WCAG checkmarks and a `+` / `<PaletteIcon />` button opening `ColorPalettePickerModal` (2D HSV SV canvas, 360° Hue slider, 36-tile `SPECTRUM_GRID_COLORS`, live card preview, `#RRGGBB` input) (**C4**).
 * **Dual View Modes (List & Cards)**:
-   - **List Mode**: Single horizontal flex row with course info, breakdown statistics, progress bar, next task, and 1-click navigation buttons ("Assignments", "Go to Course").
-   - **Cards Mode**: Clean 3-row layout partitioned into maximum 3 cards per row (`repeat(3, minmax(0, 1fr))` on desktop, adapting to 2 and 1 on narrower viewports):
-     - **1st Row**: Course display title + real title/code with color indicator on the start side (clicking anywhere on the card smoothly navigates to the course).
+   - **List Mode**: Single horizontal flex row with course info, breakdown statistics, progress bar, next task, and 1-click navigation buttons ("Assignments", "Go to Course" featuring the signature 135deg `#5b48b6` -> `#a04977` -> `#d46337` gradient CTA).
+   - **Cards Mode**: Clean 3-row layout partitioned into maximum 3 cards per row (`repeat(3, minmax(0, 1fr))` on desktop & wide landscape tablets, adapting to 2-column paired cards in vertical/portrait mobile & tablet views so course tiles stay compact and scannable):
+     - **1st Row**: Course display title + real title/code with color indicator (`4px` start border + course-colored title) on the start side (clicking anywhere on the card smoothly navigates to the course).
      - **2nd Row**: Next task preview with due date (`.course-card-next-task`) and secondary "Assignments" button (`.course-card-assignments-btn`).
-     - **3rd Row**: Stat breakdown pills for assignments, lectures, and recitations (`.course-card-gaps` displaying numeric counts without "gaps" text labels), and an integrated overall course progress bar with percentage (`.course-card-progress-box`).
+     - **3rd Row**: Stat breakdown pills for assignments, lectures, and recitations (`.course-card-gaps` displaying amber `#f59e0b` when pending gaps exist and emerald `#10b981` when clear), and an animated overall course progress bar with percentage (`.course-card-progress-box`).
 * **Direct Navigation**: Course cards and list rows are clean, focused overview cards with no clutter or collapse/expand accordion. Clicking anywhere on a card smoothly navigates directly to the comprehensive course detail page.
 
 ---
@@ -208,7 +195,7 @@ A full-page Panopto recording feed complementing the Assignments tab (`Recording
     - Includes a direct **"פתח במודל ↗" / "Open in Moodle ↗"** (`data-moodle-link="true"`) button in `.detail-header` to open the course's Moodle page directly (displaying a `"מתחבר למודל..."` / `"Signing in to Moodle..."` status indicator while SSO session verification runs).
 *   **Personalization Editor**:
     - **Nickname Field**: Real-time editable text input. Saving changes re-labels the course everywhere.
-    - **Color Palette Picker**: A grid of selectable colored circles (min. 8 options). Selecting a circle updates the course's primary accent color.
+    - **Color Palette Picker**: 14 preset palette swatches plus a custom color picker (`<input type="color">` on Extension; 14 pastel `COURSE_COLOR_PALETTE` swatches with `getReadableTextColor` checkmarks + `ColorPalettePickerModal` in `ManageCoursesModal` / `onboarding` on Mobile, **C4**). Selecting a color updates the course's primary accent color.
 *   **Layout Containment & Responsiveness**:
     - `.detail-grid` utilizes `grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr)` ensuring sidebars and content never slide out of frame or cause horizontal viewport scrolling.
     - Responsive single-column breakpoint at `960px` with `overflow-wrap: anywhere` for long titles and file names.
@@ -243,7 +230,7 @@ A full-page Panopto recording feed complementing the Assignments tab (`Recording
         - **File Format Icon**: PDF, slide (PPTX), document (DOCX), or archive (ZIP).
         - **File Name**: Localized filename.
         - **Course Name**: Small indicator showing course origin.
-        - **Download/Open Action**: Click to open. On mobile, downloads to local storage and raises the OS share dialogue.
+        - **Download/Open Action**: Click to open. On Mobile (**C3, E8**), tapping a file row opens it in the native viewer (`openMoodleFile`), and tapping the single Download action invokes Android's native system File Explorer (`Intent.ACTION_CREATE_DOCUMENT` via `saveFileWithSystemExplorerNative`); the redundant Share button was removed from file rows.
 
 ---
 
@@ -456,7 +443,7 @@ The extension and companion platforms support three distinct, high-contrast visu
 
 ## 10. Interactive Landing & Onboarding Tour (v4 Cockpit)
 
-The extension includes a 10-step interactive walkthrough designed in the v4 frosted glassmorphic aesthetic to orient first-time users and showcase Noodle's core features. It triggers automatically upon first successful setup (when `hasSeenTour` is falsy) and can be relaunched anytime from the **About** tab.
+The extension includes a 10-step interactive walkthrough designed in the v4 frosted glassmorphic aesthetic to orient first-time users and showcase Noodle's core features. It triggers automatically upon first successful setup (when `hasSeenTour` is falsy) and can be relaunched anytime from the **About** tab. On Mobile (**E4**), the top-right Dashboard Tour button is removed; the 6-step tour is launched from **Settings** (and the tablet sidebar footer).
 
 ### A. Walkthrough Progression & Steps
 1. **Step 0 — Cockpit Overview (`tour_welcome`)**:
@@ -515,30 +502,30 @@ Course Detail views in the desktop extension and mobile apps render a format-awa
 
 ### B. Quizzes & בחנים (`mod_quiz`) UI Components
 1. **Activity Badges**:
-   - Distinctive purple badge: `❓ בוחן` (Hebrew) / `❓ Quiz` (English).
-   - Time limit pill: `⏱️ 30 דק'` / `⏱️ 30 min` displayed whenever `timelimit > 0`.
+   - Distinctive purple badge with monochrome `<QuizIcon />`: `בוחן` (Hebrew) / `Quiz` (English).
+   - Time limit pill with `<ClockIcon />`: `30 דק'` / `30 min` displayed whenever `timelimit > 0`.
 2. **Interactive Two-Way Completion Checkbox**:
    - For activities with manual completion tracking (`requiresManualCompletion`), renders an interactive `Mark as done` (`סמן כבוצע`) button.
    - Clicking toggles state locally and synchronously dispatches completion back to Moodle server via `core_completion_update_activity_completion_status_manually`.
-   - Visual state changes to green `✓ בוצע` / `✓ Done`.
+   - Visual state changes to green `<CheckIcon />` `בוצע` / `Done`.
 
 ### C. Folder Cards, Interactive Directory Browser & Pure-TS ZIP Downloader
 1. **Folder Container**: Renders a dedicated card for Moodle folders (`mod_folder`) displaying folder title, description, file count, and total size.
 2. **Interactive Directory Tree & Single-File Access**:
-   - Folders are expandable and collapsible via header click or toggle chevron (`▼`/`▲`), defaulting to expanded so students can immediately see and access files.
-   - Files inside the folder are rendered with a clean, minimalist monochrome <FileIcon />, file sizes, 1-click in-browser/local PC opening via FileOpenAction, and direct single-file download buttons. Zero emojis are used.
-   - Preserves nested directory paths (`relativePath`), visually grouping files under styled subfolder headers (`📁 <subfolder>/`).
+   - Folders are expandable and collapsible via header click or toggle chevron, defaulting to expanded so students can immediately see and access files.
+   - Files inside the folder and section rows are rendered with a clean, minimalist monochrome `<FileIcon />`, file sizes, 1-click opening (via `FileOpenAction` on Extension or native OS viewer `openMoodleFile` on Mobile), and a dedicated Download action (`downloadMoodleFile`, which on Android opens the native File Explorer via `Intent.ACTION_CREATE_DOCUMENT` / `saveFileWithSystemExplorerNative`, falling back to MediaStore/SAF/Sharing only if unsupported and never on user cancel; `MoodleFileRow.tsx` removed `<ShareIcon />` and made `onShare` optional/deprecated, **C3, E8**). Zero emojis are used.
+   - Preserves nested directory paths (`relativePath`), visually grouping files under styled subfolder headers (`<FolderIcon /> <subfolder>/`).
    - Empty folders display an empty state note (`No files in this folder` / `אין קבצים בתיקייה זו`) and disable ZIP downloading.
 3. **Bulk ZIP Download Button**:
-   - Prominent action button labeled `📦 הורד תיקייה כ-ZIP` / `Download ZIP`.
-   - On click, triggers pure TypeScript in-memory ZIP assembly with live progress bar (`מוריד 2/5 קבצים...`).
-   - Automatically prompts native browser or mobile OS save dialog with UTF-8 Hebrew filename preservation.
-4. **Direct Moodle Deep Link**: Provides a secondary link button (`פתח תיקייה במודל ↗` / `Open in Moodle ↗`) pointing directly to `/mod/folder/view.php?id={cmid}`.
+   - Prominent action button with `<ZipIcon />` / `<DownloadIcon />` labeled `הורד תיקייה כ-ZIP` / `Download Folder ZIP`.
+   - On click, triggers pure TypeScript in-memory ZIP assembly with live progress (`מוריד 2/5 קבצים...`).
+   - Automatically prompts native browser save dialog or, on Android (**C3**), builds the UTF-8 ZIP in cache and opens Android's native File Explorer (`saveFileWithSystemExplorerNative`), guaranteeing temporary ZIP cleanup (`cleanupTempZip()`) across all exit paths (falling back to MediaStore/SAF/`expo-sharing` only on iOS or unsupported devices, never on user cancel) with UTF-8 Hebrew filename preservation.
+4. **Direct Moodle Deep Link**: Provides a secondary link button (`פתח תיקייה במודל` / `Open in Moodle`) with `<ExternalLinkIcon />` pointing directly to `/mod/folder/view.php?id={cmid}`.
 
 ### D. Course Announcements Noticeboard Card
 Renders a blue accent noticeboard card at the top of the course detail page for courses with active announcement forums (`mod_forum`):
-- Icon: `📢`.
-- Title: `לוח מודעות והודעות` / `Announcements & News`.
+- Icon: monochrome `<AnnouncementIcon />`.
+- Title: `הודעות ופורומים` / `Announcements & News`.
 - Direct action buttons linking straight to individual Moodle forum views.
 
 ### E. Gradebook Fidelity, Bonus Badges, Feedback & Calculation Policy
@@ -567,4 +554,5 @@ Renders a blue accent noticeboard card at the top of the course detail page for 
 
 * **Zero Emojis**: The Noodle UI enforces a strict, professional design language. Colorful unicode emojis (such as file type emojis) are strictly prohibited across all screens, cards, badges, and file trees. They create a cheap, AI-generated appearance.
 * **Minimalist Monochrome Icons**: When visual affordances are necessary, use crisp SVG vector components (<FileIcon />, <FolderIcon />, <ClockIcon />, <DownloadIcon />, <EyeIcon />).
+* **Official Brand Assets (`E9`)**: Mobile launcher icons, adaptive foreground/monochrome layers, splash screen (`#FAF5EB` cream background), and Dashboard/Sidebar header brand marks use the official Noodle bowl icon (`apps/mobile/assets/logo.png`).
 * **Clean Restraint**: Never overuse icons. Prefer typography, clear hierarchy, and subtle neutral badges over icon clutter.

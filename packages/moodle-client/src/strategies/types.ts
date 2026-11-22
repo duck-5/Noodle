@@ -1,4 +1,4 @@
-import {
+import type {
   MoodleSiteInfo,
   RawMoodleCourse,
   RawMoodleAssignmentsResponse,
@@ -9,6 +9,7 @@ import {
   RawMoodleQuizAttempt,
 } from '../moodleApi.js';
 import type { CourseStaffMember } from '../types.js';
+import type { CookieAdapter, FetchFn } from '../runtimeEnv.js';
 
 export class UnsupportedStrategyError extends Error {
   constructor(
@@ -33,6 +34,10 @@ export interface StrategyContext {
   /** @deprecated Legacy Web Scraping fallback option (removed from extension Settings UI). */
   enableScraping?: boolean;
   lang?: 'he' | 'en';
+  userAgent?: string;
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
+  timeoutMs?: number;
 }
 
 export interface IMoodleStrategy {
@@ -40,7 +45,7 @@ export interface IMoodleStrategy {
   isOperationSupported?(operationName: string): boolean;
   getSiteInfo(): Promise<MoodleSiteInfo>;
   getEnrolledCourses(userId: number): Promise<RawMoodleCourse[]>;
-  getAssignments(): Promise<RawMoodleAssignmentsResponse>;
+  getAssignments(courseIds?: number[]): Promise<RawMoodleAssignmentsResponse>;
   getSubmissionStatus(assignId: number, cmid?: number): Promise<RawSubmissionStatus>;
   getGradeItems(courseId: number, userId: number): Promise<RawGradeReportResponse>;
   getCourseContents(courseId: number): Promise<RawCourseSection[]>;

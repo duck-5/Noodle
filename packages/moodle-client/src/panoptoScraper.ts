@@ -6,6 +6,38 @@ import {
   PanoptoRecordingType,
 } from './types.js';
 import { CookieJar, decodeHTMLEntities } from './zoomScraper.js';
+import {
+  CookieAdapter,
+  DEFAULT_FETCH_TIMEOUT_MS,
+  FetchFn,
+  extractSetCookieHeader,
+  fetchWithTimeout,
+  isBrowserEnvironment,
+  mergeCookieHeaders,
+} from './runtimeEnv.js';
+
+export interface PanoptoRequestOptions {
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
+  userAgent?: string;
+  useNativeCookies?: boolean;
+  timeoutMs?: number;
+  sampleCourseId?: number;
+}
+
+async function panoptoBatchPromises<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
 
 export const PANOPTO_BASE_URL = 'https://tau.cloud.panopto.eu';
 
@@ -1265,7 +1297,8 @@ export async function fetchCourseStaffFromParticipantsPage(
   courseBaseUrl = 'https://moodle.tau.ac.il',
   fallbackSesskey?: string,
   jar?: CookieJar | null,
-  creds?: MoodleCredentials
+  creds?: MoodleCredentials,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<CourseStaffMember[]> {
   if (!courseId || courseId <= 0) return [];
   const cleanMoodle = courseBaseUrl.replace(/\/+$/, '');
@@ -1273,6 +1306,9 @@ export async function fetchCourseStaffFromParticipantsPage(
 
   const extractFromPage = async (pageHtml: string): Promise<CourseStaffMember[]> => {
     const ssrStaff = parseParticipantsHtml(pageHtml);
+    if (ssrStaff.length > 0) {
+      return ssrStaff;
+    }
 
     // Check if Moodle 4.x dynamic table needs an AJAX query (e.g., paginated or empty SSR tbody)
     const handlerMatch = pageHtml.match(/data-table-handler=["']([^"']+)["']/i);
@@ -1328,7 +1364,8 @@ export async function fetchCourseStaffFromParticipantsPage(
               },
             ]),
           },
-          jar
+          jar,
+          requestOptions
         );
 
         if (ajaxRes.ok) {
@@ -1350,9 +1387,14 @@ export async function fetchCourseStaffFromParticipantsPage(
   };
 
   try {
-    let res = await panoptoFetch(participantsUrl, { method: 'GET' }, jar);
+    let { response: res, finalUrl: landedUrl } = await panoptoFetchFollow(
+      participantsUrl,
+      { method: 'GET' },
+      jar,
+      requestOptions
+    );
     let html = await res.text();
-    let landedUrl = res.url || participantsUrl;
+    if (!landedUrl) landedUrl = participantsUrl;
 
     if (
       (landedUrl.includes('nidp.tau.ac.il') ||
@@ -1364,9 +1406,14 @@ export async function fetchCourseStaffFromParticipantsPage(
       creds?.password
     ) {
       const rootMoodle = cleanMoodle.replace(/\/\d{4}$/, '');
-      const ok = await ensureMoodleWebSessionWithCreds(rootMoodle, creds, jar);
+      const ok = await ensureMoodleWebSessionWithCreds(rootMoodle, creds, jar, requestOptions);
       if (ok) {
-        res = await panoptoFetch(participantsUrl, { method: 'GET' }, jar);
+        ({ response: res, finalUrl: landedUrl } = await panoptoFetchFollow(
+          participantsUrl,
+          { method: 'GET' },
+          jar,
+          requestOptions
+        ));
         html = await res.text();
       }
     }
@@ -1379,13 +1426,13 @@ export async function fetchCourseStaffFromParticipantsPage(
     // temporarily query with &lang=he and restore &lang=en so the user's Moodle session stays in English.
     if (staff.length === 0 && /<html[^>]*\blang=["']en/i.test(html)) {
       try {
-        const heRes = await panoptoFetch(`${participantsUrl}&lang=he`, { method: 'GET' }, jar);
+        const heRes = await panoptoFetch(`${participantsUrl}&lang=he`, { method: 'GET' }, jar, requestOptions);
         if (heRes.ok) {
           const heHtml = await heRes.text();
           staff = await extractFromPage(heHtml);
         }
       } finally {
-        await panoptoFetch(`${cleanMoodle}/my/?lang=en`, { method: 'GET' }, jar).catch(() => { });
+        await panoptoFetch(`${cleanMoodle}/my/?lang=en`, { method: 'GET' }, jar, requestOptions).catch(() => { });
       }
     }
 
@@ -1681,15 +1728,13 @@ export function parsePanoptoListHtml(
   return filterAndDeduplicateRecordings(results);
 }
 
-async function panoptoFetch(
+async function panoptoFetchHop(
   url: string,
   init: RequestInit = {},
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<Response> {
-  const isBrowser =
-    typeof window !== 'undefined' ||
-    (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) ||
-    (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
+  const isBrowser = isBrowserEnvironment();
 
   const headers: Record<string, string> = {};
   if (init.headers) {
@@ -1697,6 +1742,10 @@ async function panoptoFetch(
       init.headers.forEach((v, k) => {
         headers[k] = v;
       });
+    } else if (Array.isArray(init.headers)) {
+      for (const [k, v] of init.headers) {
+        headers[k] = v;
+      }
     } else {
       Object.assign(headers, init.headers as Record<string, string>);
     }
@@ -1705,22 +1754,132 @@ async function panoptoFetch(
   const fetchInit: RequestInit = {
     ...init,
     headers,
+    redirect: isBrowser ? 'follow' : 'manual',
   };
 
   if (isBrowser) {
     fetchInit.credentials = 'include';
     delete headers['User-Agent'];
     delete headers['user-agent'];
-  } else if (jar) {
-    const cookieStr = jar.header();
-    if (cookieStr) headers['Cookie'] = cookieStr;
+  } else {
+    delete headers['Cookie'];
+    delete headers['cookie'];
+    if (!(requestOptions?.useNativeCookies === true && !requestOptions?.cookieAdapter)) {
+      const adapterCookie = requestOptions?.cookieAdapter
+        ? await requestOptions.cookieAdapter.getCookieHeader(url)
+        : undefined;
+      const cookieStr = mergeCookieHeaders(adapterCookie, jar?.header());
+      if (cookieStr) headers['Cookie'] = cookieStr;
+    }
   }
 
-  const res = await fetch(url, fetchInit);
-  if (!isBrowser && jar) {
-    jar.ingest(res.headers.get('set-cookie'));
+  const res = await fetchWithTimeout(
+    requestOptions?.fetch ?? fetch,
+    url,
+    fetchInit,
+    requestOptions?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+  );
+  if (!isBrowser) {
+    const setCookie = extractSetCookieHeader(res.headers);
+    if (jar) jar.ingest(setCookie);
+    if (requestOptions?.cookieAdapter?.ingestSetCookie) {
+      await requestOptions.cookieAdapter.ingestSetCookie(url, setCookie);
+    }
   }
   return res;
+}
+
+async function panoptoFetchFollow(
+  url: string,
+  init: RequestInit = {},
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions,
+  maxRedirects = 15
+): Promise<{ response: Response; finalUrl: string }> {
+  const isBrowser = isBrowserEnvironment();
+  if (isBrowser) {
+    const res = await panoptoFetchHop(url, init, jar, requestOptions);
+    return { response: res, finalUrl: res.url || url };
+  }
+
+  let currentUrl = url;
+  let currentInit: RequestInit = { ...init };
+
+  for (let i = 0; i <= maxRedirects; i++) {
+    const res = await panoptoFetchHop(currentUrl, currentInit, jar, requestOptions);
+    const status = res.status;
+
+    if (status >= 300 && status < 400) {
+      const loc = res.headers?.get?.('location') ?? res.headers?.get?.('Location') ?? '';
+      if (!loc) {
+        return { response: res, finalUrl: currentUrl };
+      }
+
+      let nextUrl: string;
+      try {
+        nextUrl = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href;
+      } catch {
+        nextUrl = loc;
+      }
+
+      if (nextUrl.startsWith('moodlemobile://') || nextUrl.startsWith('moodleapp://')) {
+        return { response: res, finalUrl: nextUrl };
+      }
+
+      if (status === 301 || status === 302 || status === 303) {
+        const nextHeaders: Record<string, string> = {};
+        if (currentInit.headers) {
+          if (currentInit.headers instanceof Headers) {
+            currentInit.headers.forEach((v, k) => {
+              nextHeaders[k] = v;
+            });
+          } else if (Array.isArray(currentInit.headers)) {
+            for (const [k, v] of currentInit.headers) {
+              nextHeaders[k] = v;
+            }
+          } else {
+            Object.assign(nextHeaders, currentInit.headers as Record<string, string>);
+          }
+        }
+        for (const key of Object.keys(nextHeaders)) {
+          const lower = key.toLowerCase();
+          if (lower === 'content-type' || lower === 'content-length' || lower === 'cookie') {
+            delete nextHeaders[key];
+          }
+        }
+        const { body: _droppedBody, method: _droppedMethod, headers: _droppedHeaders, ...restInit } = currentInit;
+        currentInit = {
+          ...restInit,
+          method: 'GET',
+          ...(Object.keys(nextHeaders).length > 0 ? { headers: nextHeaders } : {}),
+        };
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    const finalUrl = i === 0 ? (res.url || currentUrl) : currentUrl;
+    if (finalUrl && res.url !== finalUrl) {
+      try {
+        Object.defineProperty(res, 'url', { value: finalUrl, configurable: true });
+      } catch {
+        // Ignore if mock Response object is non-configurable
+      }
+    }
+    return { response: res, finalUrl };
+  }
+
+  throw new Error('Too many redirects');
+}
+
+async function panoptoFetch(
+  url: string,
+  init: RequestInit = {},
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
+): Promise<Response> {
+  const { response } = await panoptoFetchFollow(url, init, jar, requestOptions);
+  return response;
 }
 
 /**
@@ -1782,141 +1941,182 @@ function parseAutoSubmitSsoForm(
   return null;
 }
 
+const inFlightMoodleWebSessionLogins = new Map<string, Promise<boolean>>();
+
 /**
  * Performs a silent TAU NIDP SAML login to establish active web session cookies on
  * `nidp.tau.ac.il` and `moodle.tau.ac.il` using the user's stored Moodle credentials
  * (without resetting the user's mobile `wstoken`).
+ * Deduplicates concurrent calls for the same Moodle base URL & username via a shared single-flight promise.
  */
-async function ensureMoodleWebSessionWithCreds(
+export async function ensureMoodleWebSessionWithCreds(
   cleanMoodle: string,
   creds: MoodleCredentials,
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<boolean> {
   if (!creds?.username || !creds?.idNumber || !creds?.password) return false;
 
-  try {
-    const initialRes = await panoptoFetch(`${cleanMoodle}/login/index.php`, { method: 'GET' }, jar);
-    let urlAfterLogin = initialRes.url || `${cleanMoodle}/login/index.php`;
-    let html1 = await initialRes.text();
+  const normalizedMoodle = cleanMoodle.replace(/\/+$/, '');
+  const flightKey = `${normalizedMoodle}::${creds.username}`;
+  const existing = inFlightMoodleWebSessionLogins.get(flightKey);
+  if (existing) {
+    return existing;
+  }
 
-    // If we landed on the Moodle dashboard with a sesskey, Moodle web session is already active
-    if (urlAfterLogin.includes('moodle.tau.ac.il') && !urlAfterLogin.includes('/login/') && /"sesskey"\s*:\s*"[^"]+"/.test(html1)) {
-      console.log('[Panopto][SSO] Existing Moodle web session is already active.');
-      return true;
-    }
+  const loginPromise = (async (): Promise<boolean> => {
+    try {
+      const { response: initialRes, finalUrl: initialUrl } = await panoptoFetchFollow(
+        `${normalizedMoodle}/login/index.php`,
+        { method: 'GET' },
+        jar,
+        requestOptions
+      );
+      let urlAfterLogin = initialUrl || `${normalizedMoodle}/login/index.php`;
+      let html1 = await initialRes.text();
 
-    let ssoUrl = urlAfterLogin;
-    if (urlAfterLogin.includes('/auth/saml2/login.php')) {
-      const samlRes = await panoptoFetch(urlAfterLogin, { method: 'GET' }, jar);
-      ssoUrl = samlRes.url || urlAfterLogin;
-      html1 = await samlRes.text();
-    } else if (!ssoUrl.includes('nidp.tau.ac.il')) {
-      // Look for /auth/saml2/login.php link in login/index.php HTML
-      const samlLinkMatch = html1.match(/href=["'](https?:\/\/[^"']*\/auth\/saml2\/login\.php[^"']*)["']/i);
-      if (samlLinkMatch) {
-        const samlLoginUrl = decodeHTMLEntities(samlLinkMatch[1]);
-        const samlRes = await panoptoFetch(samlLoginUrl, { method: 'GET' }, jar);
-        ssoUrl = samlRes.url || samlLoginUrl;
-        html1 = await samlRes.text();
+      // If we landed on the Moodle dashboard with a sesskey, Moodle web session is already active
+      if (urlAfterLogin.includes('moodle.tau.ac.il') && !urlAfterLogin.includes('/login/') && /"sesskey"\s*:\s*"[^"]+"/.test(html1)) {
+        console.log('[Panopto][SSO] Existing Moodle web session is already active.');
+        return true;
       }
-    }
 
-    if (!ssoUrl.includes('nidp.tau.ac.il')) {
-      return false;
-    }
+      let ssoUrl = urlAfterLogin;
+      if (urlAfterLogin.includes('/auth/saml2/login.php')) {
+        const { response: samlRes, finalUrl: samlFinalUrl } = await panoptoFetchFollow(
+          urlAfterLogin,
+          { method: 'GET' },
+          jar,
+          requestOptions
+        );
+        ssoUrl = samlFinalUrl || urlAfterLogin;
+        html1 = await samlRes.text();
+      } else if (!ssoUrl.includes('nidp.tau.ac.il')) {
+        // Look for /auth/saml2/login.php link in login/index.php HTML
+        const samlLinkMatch = html1.match(/href=["'](https?:\/\/[^"']*\/auth\/saml2\/login\.php[^"']*)["']/i);
+        if (samlLinkMatch) {
+          const samlLoginUrl = decodeHTMLEntities(samlLinkMatch[1]);
+          const { response: samlRes, finalUrl: samlFinalUrl } = await panoptoFetchFollow(
+            samlLoginUrl,
+            { method: 'GET' },
+            jar,
+            requestOptions
+          );
+          ssoUrl = samlFinalUrl || samlLoginUrl;
+          html1 = await samlRes.text();
+        }
+      }
 
-    console.log('[Panopto][SSO] Performing silent TAU NIDP login with stored credentials...');
+      if (!ssoUrl.includes('nidp.tau.ac.il')) {
+        return false;
+      }
 
-    // Parse initial auto-submitting form that sets up the NIDP SAML session
-    const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
-    if (formActionMatch1) {
-      const action = decodeHTMLEntities(formActionMatch1[1]);
-      ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
+      console.log('[Panopto][SSO] Performing silent TAU NIDP login with stored credentials...');
 
-      const params = new URLSearchParams();
-      const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']*)["']/gi)];
-      inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
+      // Parse initial auto-submitting form that sets up the NIDP SAML session
+      const formActionMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
+      if (formActionMatch1) {
+        const action = decodeHTMLEntities(formActionMatch1[1]);
+        ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
 
+        const params = new URLSearchParams();
+        const inputs = [...html1.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]+value=["']([^"']*)["']/gi)];
+        inputs.forEach(m => params.append(decodeHTMLEntities(m[1]), decodeHTMLEntities(m[2])));
+
+        await panoptoFetch(
+          ssoUrl,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+          },
+          jar,
+          requestOptions
+        );
+      }
+
+      // Initiate NIDP login sequence
       await panoptoFetch(
         ssoUrl,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params.toString(),
+          body: 'option=credential&initiateLoginSequence=true&isAjax=true',
         },
-        jar
+        jar,
+        requestOptions
       );
-    }
 
-    // Initiate NIDP login sequence
-    await panoptoFetch(
-      ssoUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'option=credential&initiateLoginSequence=true&isAjax=true',
-      },
-      jar
-    );
-
-    // Submit credentials
-    const credBody = `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(creds.username)}&Ecom_User_Pid=${encodeURIComponent(creds.idNumber)}&Ecom_Password=${encodeURIComponent(creds.password)}`;
-    const credRes = await panoptoFetch(
-      ssoUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: credBody,
-      },
-      jar
-    );
-    const credText = await credRes.text();
-    if (credText.replace(/\s/g, '').includes('"isError":true')) {
-      console.warn('[Panopto][SSO] TAU NIDP rejected stored credentials.');
-      return false;
-    }
-
-    // Fetch SAMLResponse assertion
-    const finalSsoRes = await panoptoFetch(ssoUrl, { method: 'GET' }, jar);
-    const html2 = await finalSsoRes.text();
-
-    let samlResponse = '';
-    let relayState = '';
-    const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
-    for (const m of finalInputs) {
-      const nMatch = m[1].match(/name=["']([^"']+)["']/i);
-      const vMatch = m[1].match(/value=["']([^"']*)["']/i);
-      if (nMatch && vMatch) {
-        if (nMatch[1] === 'SAMLResponse') samlResponse = decodeHTMLEntities(vMatch[1]);
-        if (nMatch[1] === 'RelayState') relayState = decodeHTMLEntities(vMatch[1]);
+      // Submit credentials
+      const credBody = `option=credential&isAjax=true&Ecom_User_ID=${encodeURIComponent(creds.username)}&Ecom_User_Pid=${encodeURIComponent(creds.idNumber)}&Ecom_Password=${encodeURIComponent(creds.password)}`;
+      const credRes = await panoptoFetch(
+        ssoUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: credBody,
+        },
+        jar,
+        requestOptions
+      );
+      const credText = await credRes.text();
+      if (credText.replace(/\s/g, '').includes('"isError":true')) {
+        console.warn('[Panopto][SSO] TAU NIDP rejected stored credentials.');
+        return false;
       }
-    }
 
-    const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
-    if (!actionMatch || !samlResponse) {
+      // Fetch SAMLResponse assertion
+      const finalSsoRes = await panoptoFetch(ssoUrl, { method: 'GET' }, jar, requestOptions);
+      const html2 = await finalSsoRes.text();
+
+      let samlResponse = '';
+      let relayState = '';
+      const finalInputs = [...html2.matchAll(/<input([^>]+)>/gi)];
+      for (const m of finalInputs) {
+        const nMatch = m[1].match(/name=["']([^"']+)["']/i);
+        const vMatch = m[1].match(/value=["']([^"']*)["']/i);
+        if (nMatch && vMatch) {
+          if (nMatch[1] === 'SAMLResponse') samlResponse = decodeHTMLEntities(vMatch[1]);
+          if (nMatch[1] === 'RelayState') relayState = decodeHTMLEntities(vMatch[1]);
+        }
+      }
+
+      const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
+      if (!actionMatch || !samlResponse) {
+        return false;
+      }
+
+      const actionUrl = decodeHTMLEntities(actionMatch[1]);
+      const bodyParams = new URLSearchParams();
+      bodyParams.append('SAMLResponse', samlResponse);
+      if (relayState) bodyParams.append('RelayState', relayState);
+
+      const moodleRes = await panoptoFetch(
+        actionUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: bodyParams.toString(),
+        },
+        jar,
+        requestOptions
+      );
+
+      console.log(`[Panopto][SSO] TAU NIDP + Moodle SAML session established (status=${moodleRes.status}).`);
+      return moodleRes.ok;
+    } catch (err) {
+      console.warn('[Panopto][SSO] Silent TAU SSO login failed:', err);
       return false;
     }
+  })();
 
-    const actionUrl = decodeHTMLEntities(actionMatch[1]);
-    const bodyParams = new URLSearchParams();
-    bodyParams.append('SAMLResponse', samlResponse);
-    if (relayState) bodyParams.append('RelayState', relayState);
-
-    const moodleRes = await panoptoFetch(
-      actionUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyParams.toString(),
-      },
-      jar
-    );
-
-    console.log(`[Panopto][SSO] TAU NIDP + Moodle SAML session established (status=${moodleRes.status}).`);
-    return moodleRes.ok;
-  } catch (err) {
-    console.warn('[Panopto][SSO] Silent TAU SSO login failed:', err);
-    return false;
+  inFlightMoodleWebSessionLogins.set(flightKey, loginPromise);
+  try {
+    return await loginPromise;
+  } finally {
+    if (inFlightMoodleWebSessionLogins.get(flightKey) === loginPromise) {
+      inFlightMoodleWebSessionLogins.delete(flightKey);
+    }
   }
 }
 
@@ -1929,7 +2129,8 @@ export async function ensurePanoptoAuthenticated(
   baseUrl = PANOPTO_BASE_URL,
   moodleBaseUrl = 'https://moodle.tau.ac.il',
   jar?: CookieJar | null,
-  creds?: MoodleCredentials
+  creds?: MoodleCredentials,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<boolean> {
   const cleanPanopto = baseUrl.replace(/\/+$/, '');
   const cleanMoodle = moodleBaseUrl.replace(/\/+$/, '');
@@ -1940,13 +2141,18 @@ export async function ensurePanoptoAuthenticated(
       return false;
     }
     didRunCredsLogin = true;
-    return await ensureMoodleWebSessionWithCreds(cleanMoodle, creds, jar);
+    return await ensureMoodleWebSessionWithCreds(cleanMoodle, creds, jar, requestOptions);
   };
 
   const followSsoChain = async (startUrl: string): Promise<boolean> => {
     try {
-      let currentRes = await panoptoFetch(startUrl, { method: 'GET' }, jar);
-      let currentUrl = currentRes.url || startUrl;
+      let { response: currentRes, finalUrl: currentUrl } = await panoptoFetchFollow(
+        startUrl,
+        { method: 'GET' },
+        jar,
+        requestOptions
+      );
+      if (!currentUrl) currentUrl = startUrl;
       let html = await currentRes.text();
 
       // If redirected to Moodle login or TAU NIDP login, authenticate with stored credentials and retry startUrl
@@ -1957,15 +2163,20 @@ export async function ensurePanoptoAuthenticated(
           /id=["']login["']|name=["']logintoken["']/i.test(html)) &&
         (await ensureWebSessionOnce())
       ) {
-        currentRes = await panoptoFetch(startUrl, { method: 'GET' }, jar);
-        currentUrl = currentRes.url || startUrl;
+        ({ response: currentRes, finalUrl: currentUrl } = await panoptoFetchFollow(
+          startUrl,
+          { method: 'GET' },
+          jar,
+          requestOptions
+        ));
+        if (!currentUrl) currentUrl = startUrl;
         html = await currentRes.text();
       }
 
       for (let hop = 0; hop < 6; hop++) {
         const form = parseAutoSubmitSsoForm(html, currentUrl);
         if (!form) break;
-        currentRes = await panoptoFetch(
+        ({ response: currentRes, finalUrl: currentUrl } = await panoptoFetchFollow(
           form.actionUrl,
           {
             method: 'POST',
@@ -1974,9 +2185,10 @@ export async function ensurePanoptoAuthenticated(
             },
             body: form.params.toString(),
           },
-          jar
-        );
-        currentUrl = currentRes.url || form.actionUrl;
+          jar,
+          requestOptions
+        ));
+        if (!currentUrl) currentUrl = form.actionUrl;
         html = await currentRes.text();
       }
 
@@ -1986,18 +2198,82 @@ export async function ensurePanoptoAuthenticated(
     }
   };
 
-  // 1. Check if Panopto session (.ASPXAUTH) is already active on Home.aspx before touching SSO endpoints
+  // 1. Check if Panopto session (.ASPXAUTH) is already active via server-side probe / Home.aspx
+  //    Never trust guest Home.aspx 200 alone (Panopto renders anonymous Home.aspx without redirecting to Login.aspx)
+  const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
   try {
-    const homeRes = await panoptoFetch(`${cleanPanopto}/Panopto/Pages/Home.aspx`, { method: 'GET' }, jar);
-    const homeUrl = homeRes.url || '';
+    const { response: meRes } = await panoptoFetchFollow(
+      `${cleanPanopto}/Panopto/Api/v1/users/me`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      },
+      jar,
+      requestOptions
+    );
+    if (meRes.ok) {
+      const meData = await meRes.json();
+      const rawUserId = String(meData?.UserId ?? meData?.userId ?? meData?.Id ?? meData?.id ?? '').trim();
+      if (rawUserId && rawUserId.toLowerCase() !== ZERO_UUID) {
+        console.log('[Panopto][SSO] Existing Panopto session is active (verified via /Api/v1/users/me).');
+        return true;
+      }
+    }
+  } catch {
+    // Endpoint unavailable or requires OAuth bearer; fall back to cookie-based probes
+  }
+
+  let homeExplicitlyGuest = false;
+  try {
+    const { response: homeRes, finalUrl: homeUrl } = await panoptoFetchFollow(
+      `${cleanPanopto}/Panopto/Pages/Home.aspx`,
+      { method: 'GET' },
+      jar,
+      requestOptions
+    );
     const homeHtml = await homeRes.text();
+    const hasQuotedOrUnquotedAuth = /["']?isAuthenticated["']?\s*:\s*true/i.test(homeHtml);
+    const hasNonZeroUserId =
+      /userId["']?\s*[:=]\s*["'](?!00000000-0000-0000-0000-000000000000)[0-9a-f-]{36}["']/i.test(homeHtml);
     if (
       homeRes.ok &&
       !homeUrl.includes('/Auth/Login.aspx') &&
-      !/externalLoginButton|PageContentPlaceholder_loginControl/i.test(homeHtml)
+      (hasQuotedOrUnquotedAuth || hasNonZeroUserId)
     ) {
-      console.log('[Panopto][SSO] Existing Panopto session is active.');
+      console.log('[Panopto][SSO] Existing Panopto session is active (verified via Home.aspx).');
       return true;
+    }
+    if (
+      homeRes.ok &&
+      (/["']?isAuthenticated["']?\s*:\s*false/i.test(homeHtml) ||
+        /userId["']?\s*[:=]\s*["']00000000-0000-0000-0000-000000000000["']/i.test(homeHtml))
+    ) {
+      homeExplicitlyGuest = true;
+    }
+  } catch {
+    // Proceed to Data.svc probe / SSO handshake
+  }
+
+  try {
+    const { response: svcRes } = await panoptoFetchFollow(
+      `${cleanPanopto}/Panopto/Services/Data.svc/GetSessions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ queryParameters: { maxResults: 1, page: 0 } }),
+      },
+      jar,
+      requestOptions
+    );
+    if (svcRes.ok) {
+      const svcData = await svcRes.json().catch(() => null);
+      if (Array.isArray(svcData?.d?.Results) && (!homeExplicitlyGuest || svcData.d.Results.length > 0)) {
+        console.log('[Panopto][SSO] Existing Panopto session is active (verified via Data.svc/GetSessions).');
+        return true;
+      }
     }
   } catch {
     // Proceed to SSO handshake
@@ -2008,7 +2284,8 @@ export async function ensurePanoptoAuthenticated(
     await ensureWebSessionOnce();
   }
 
-  const ssoUrl = `${cleanMoodle}/blocks/panopto/SSO.php`;
+  const ssoQuery = requestOptions?.sampleCourseId ? `?course_id=${requestOptions.sampleCourseId}` : '';
+  const ssoUrl = `${cleanMoodle}/blocks/panopto/SSO.php${ssoQuery}`;
   const viaMoodleSso = await followSsoChain(ssoUrl);
   if (viaMoodleSso) {
     console.log('[Panopto][SSO] Authenticated Panopto via Moodle blocks/panopto/SSO.php');
@@ -2031,7 +2308,8 @@ export async function resolvePanoptoViaLti(
   courseName: string,
   moodleBaseUrl = 'https://moodle.tau.ac.il',
   panoptoBaseUrl = PANOPTO_BASE_URL,
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<{ folderIds: string[]; recordings: PanoptoRecording[] }> {
   const folderIds: string[] = [];
   const recordings: PanoptoRecording[] = [];
@@ -2046,7 +2324,18 @@ export async function resolvePanoptoViaLti(
       toolid: String(instanceId),
     });
 
-    const wsRes = await fetch(`${wsUrl}?${urlParams.toString()}`);
+    const fetchImpl = requestOptions?.fetch ?? fetch;
+    const wsInit: RequestInit | undefined =
+      !isBrowserEnvironment() && requestOptions?.userAgent !== ''
+        ? { headers: { 'User-Agent': requestOptions?.userAgent ?? 'MoodleMobile' } }
+        : undefined;
+    const wsFullUrl = `${wsUrl}?${urlParams.toString()}`;
+    const wsRes = await fetchWithTimeout(
+      fetchImpl,
+      wsFullUrl,
+      wsInit,
+      requestOptions?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+    );
     if (!wsRes.ok) return { folderIds, recordings };
 
     const launchData = await wsRes.json();
@@ -2081,20 +2370,26 @@ export async function resolvePanoptoViaLti(
 
     // Use credentials: 'omit' in browser context so Panopto's LTI.aspx endpoint does not
     // overwrite or invalidate the browser's main SSO .ASPXAUTH cookie mid-sync
-    const isBrowser =
-      typeof window !== 'undefined' ||
-      (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) ||
-      (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
-    const ltiRes = isBrowser
-      ? await fetch(endpoint, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+    const isBrowser = isBrowserEnvironment();
+    let ltiRes: Response;
+    let ltiFinalUrl: string | undefined;
+    if (isBrowser) {
+      ltiRes = await fetchWithTimeout(
+        requestOptions?.fetch ?? fetch,
+        endpoint,
+        {
+          method: 'POST',
+          credentials: 'omit',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: ltiParams.toString(),
         },
-        body: ltiParams.toString(),
-      })
-      : await panoptoFetch(
+        requestOptions?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+      );
+      ltiFinalUrl = ltiRes.url;
+    } else {
+      const followResult = await panoptoFetchFollow(
         endpoint,
         {
           method: 'POST',
@@ -2103,13 +2398,19 @@ export async function resolvePanoptoViaLti(
           },
           body: ltiParams.toString(),
         },
-        jar
+        jar,
+        requestOptions
       );
+      ltiRes = followResult.response;
+      ltiFinalUrl = followResult.finalUrl;
+    }
 
-    if (ltiRes.url) {
-      const redirectedFolder = extractPanoptoFolderId(ltiRes.url);
-      if (redirectedFolder && !folderIds.includes(redirectedFolder)) {
-        folderIds.push(redirectedFolder);
+    for (const candidateUrl of [ltiFinalUrl, ltiRes.url]) {
+      if (candidateUrl) {
+        const redirectedFolder = extractPanoptoFolderId(candidateUrl);
+        if (redirectedFolder && !folderIds.includes(redirectedFolder)) {
+          folderIds.push(redirectedFolder);
+        }
       }
     }
 
@@ -2139,7 +2440,13 @@ export async function discoverPanoptoFromMoodleBlocks(
   token: string,
   courseId: number,
   moodleBaseUrl = 'https://moodle.tau.ac.il',
-  panoptoBaseUrl = PANOPTO_BASE_URL
+  panoptoBaseUrl = PANOPTO_BASE_URL,
+  requestOptions?: PanoptoRequestOptions,
+  blockFetchContext?: {
+    jar?: CookieJar | null;
+    sesskey?: string;
+    moodleCookies?: string;
+  }
 ): Promise<ExtractedCoursePanoptoLinks> {
   const folderIds: string[] = [];
   const seenFolders = new Set<string>();
@@ -2148,8 +2455,11 @@ export async function discoverPanoptoFromMoodleBlocks(
 
   if (!token || !courseId) return { folderIds, deliveries };
 
+  const cleanMoodle = moodleBaseUrl.replace(/\/+$/, '');
+  let hasLazyPanoptoPlaceholder = false;
+
   try {
-    const wsUrl = `${moodleBaseUrl.replace(/\/+$/, '')}/webservice/rest/server.php`;
+    const wsUrl = `${cleanMoodle}/webservice/rest/server.php`;
     const urlParams = new URLSearchParams({
       wstoken: token,
       wsfunction: 'core_block_get_course_blocks',
@@ -2158,7 +2468,18 @@ export async function discoverPanoptoFromMoodleBlocks(
       returncontents: '1',
     });
 
-    const res = await fetch(`${wsUrl}?${urlParams.toString()}`);
+    const wsFetch = requestOptions?.fetch ?? fetch;
+    const wsInit: RequestInit | undefined =
+      !isBrowserEnvironment() && requestOptions?.userAgent !== ''
+        ? { headers: { 'User-Agent': requestOptions?.userAgent ?? 'MoodleMobile' } }
+        : undefined;
+    const wsFullUrl = `${wsUrl}?${urlParams.toString()}`;
+    const res = await fetchWithTimeout(
+      wsFetch,
+      wsFullUrl,
+      wsInit,
+      requestOptions?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+    );
     if (!res.ok) {
       console.warn(`[Panopto][Tier 2 - Moodle WS] core_block_get_course_blocks HTTP ${res.status} for course ${courseId}`);
       return { folderIds, deliveries };
@@ -2200,6 +2521,9 @@ export async function discoverPanoptoFromMoodleBlocks(
       const footerHtml = String(block?.contents?.footer || '');
 
       if (bName.includes('panopto')) {
+        if (/panopto_block_|loading_text/i.test(contentHtml) || /panopto_block_|loading_text/i.test(footerHtml)) {
+          hasLazyPanoptoPlaceholder = true;
+        }
         console.log(
           `[Panopto][Tier 2 - Moodle WS] Panopto block payload for course ${courseId}:`,
           JSON.stringify({
@@ -2245,6 +2569,73 @@ export async function discoverPanoptoFromMoodleBlocks(
       }
     }
 
+    // TAU Moodle lazy-loads block_panopto via AJAX POST /blocks/panopto/panopto_content.php
+    if (folderIds.length === 0 && hasLazyPanoptoPlaceholder) {
+      try {
+        const blockJar = blockFetchContext?.jar ?? null;
+        if (blockJar && blockFetchContext?.moodleCookies) {
+          blockJar.ingestCookieHeader(blockFetchContext.moodleCookies);
+        }
+        const formParams = new URLSearchParams({
+          courseid: String(courseId),
+          id: String(courseId),
+        });
+        if (blockFetchContext?.sesskey) {
+          formParams.set('sesskey', blockFetchContext.sesskey);
+        }
+        const ajaxHeaders: Record<string, string> = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'text/html, application/json, */*',
+          'X-Requested-With': 'XMLHttpRequest',
+        };
+        if (!isBrowserEnvironment()) {
+          ajaxHeaders['Referer'] = `${cleanMoodle}/course/view.php?id=${courseId}`;
+        }
+        const { response: ajaxRes } = await panoptoFetchFollow(
+          `${cleanMoodle}/blocks/panopto/panopto_content.php`,
+          {
+            method: 'POST',
+            headers: ajaxHeaders,
+            body: formParams.toString(),
+          },
+          blockJar,
+          requestOptions
+        );
+        if (ajaxRes.ok) {
+          const rawAjaxText = await ajaxRes.text();
+          let ajaxHtml = rawAjaxText;
+          try {
+            const parsedJson = JSON.parse(rawAjaxText);
+            if (typeof parsedJson === 'string') {
+              ajaxHtml = parsedJson;
+            } else if (parsedJson && typeof parsedJson === 'object') {
+              const htmlFields = [
+                parsedJson.response,
+                parsedJson.content,
+                parsedJson.html,
+                parsedJson.result,
+              ].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+              ajaxHtml = htmlFields.length > 0 ? htmlFields.join('\n') : JSON.stringify(parsedJson);
+            }
+          } catch {
+            // Response is raw HTML; also unescape JSON-escaped forward slashes if present
+            if (ajaxHtml.includes('\\/')) {
+              ajaxHtml = ajaxHtml.replace(/\\\//g, '/');
+            }
+          }
+          const isLoginHtml =
+            /login\/index\.php|nidp\.tau\.ac\.il/i.test(ajaxHtml) ||
+            (/<form\b/i.test(ajaxHtml) &&
+              /Ecom_User_ID|name=["']logintoken["']|\/auth\/saml2\//i.test(ajaxHtml));
+          if (ajaxHtml && !isLoginHtml) {
+            mergeExtracted(extractPanoptoFromCourseHtml(ajaxHtml, panoptoBaseUrl));
+          }
+        }
+      } catch (ajaxErr) {
+        console.warn(`[Panopto][Tier 2C - panopto_content.php] Failed for course ${courseId}:`, ajaxErr);
+      }
+    }
+
     if (folderIds.length > 0 || deliveries.length > 0) {
       console.log(
         `[Panopto][Tier 2 - Moodle WS] Extracted ${folderIds.length} folder(s) and ${deliveries.length} delivery link(s) from core_block_get_course_blocks for course ${courseId}`
@@ -2265,7 +2656,8 @@ export async function discoverPanoptoFromMoodleBlocks(
 export async function resolveFolderIdFromDelivery(
   deliveryId: string,
   baseUrl = PANOPTO_BASE_URL,
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<string | null> {
   const cleanId = extractPanoptoDeliveryId(`Viewer.aspx?id=${deliveryId}`) || deliveryId.trim().toLowerCase();
   if (!EXACT_UUID_REGEX.test(cleanId)) return null;
@@ -2295,7 +2687,8 @@ export async function resolveFolderIdFromDelivery(
         },
         body: body.toString(),
       },
-      jar
+      jar,
+      requestOptions
     );
 
     if (res.ok) {
@@ -2339,7 +2732,8 @@ export async function fetchPanoptoFolderSessions(
   baseUrl = PANOPTO_BASE_URL,
   jar?: CookieJar | null,
   depth = 0,
-  classificationOptions?: ClassifyRecordingOptions
+  classificationOptions?: ClassifyRecordingOptions,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<PanoptoRecording[]> {
   const cleanFolderId = extractPanoptoFolderId(folderId);
   if (!cleanFolderId) {
@@ -2382,7 +2776,8 @@ export async function fetchPanoptoFolderSessions(
         },
         body: JSON.stringify(payload),
       },
-      jar
+      jar,
+      requestOptions
     );
 
     if (res.ok) {
@@ -2441,19 +2836,22 @@ export async function fetchPanoptoFolderSessions(
           return filtered;
         }
         if (filtered.length > 0 && depth === 0 && subfolderIds.length > 0) {
-          const childRecordings: PanoptoRecording[] = [...filtered];
-          for (const sfId of subfolderIds.slice(0, 8)) {
-            const recs = await fetchPanoptoFolderSessions(
-              sfId,
-              courseId,
-              courseName,
-              cleanBase,
-              jar,
-              depth + 1,
-              classificationOptions
-            );
-            childRecordings.push(...recs);
-          }
+          const childBatches = await panoptoBatchPromises(
+            subfolderIds.slice(0, 8),
+            4,
+            (sfId) =>
+              fetchPanoptoFolderSessions(
+                sfId,
+                courseId,
+                courseName,
+                cleanBase,
+                jar,
+                depth + 1,
+                classificationOptions,
+                requestOptions
+              )
+          );
+          const childRecordings: PanoptoRecording[] = [...filtered, ...childBatches.flat()];
           return filterAndDeduplicateRecordings(childRecordings, classificationOptions);
         }
       } else {
@@ -2473,19 +2871,22 @@ export async function fetchPanoptoFolderSessions(
   // Fallback 1: If the course folder organizes recordings into child subfolders (e.g. "הרצאות", "תרגולים"),
   // traverse one level of subfolders discovered via Data.svc/GetSessions
   if (depth === 0 && subfolderIds.length > 0) {
-    const childRecordings: PanoptoRecording[] = [];
-    for (const sfId of subfolderIds.slice(0, 8)) {
-      const recs = await fetchPanoptoFolderSessions(
-        sfId,
-        courseId,
-        courseName,
-        cleanBase,
-        jar,
-        depth + 1,
-        classificationOptions
-      );
-      childRecordings.push(...recs);
-    }
+    const childBatches = await panoptoBatchPromises(
+      subfolderIds.slice(0, 8),
+      4,
+      (sfId) =>
+        fetchPanoptoFolderSessions(
+          sfId,
+          courseId,
+          courseName,
+          cleanBase,
+          jar,
+          depth + 1,
+          classificationOptions,
+          requestOptions
+        )
+    );
+    const childRecordings = childBatches.flat();
     if (childRecordings.length > 0) {
       return filterAndDeduplicateRecordings(childRecordings, classificationOptions);
     }
@@ -2494,7 +2895,7 @@ export async function fetchPanoptoFolderSessions(
   // Fallback 2: HTML parsing of Sessions/List.aspx?folderID=... (mirrors _parse_html in legacy)
   try {
     const listUrl = `${cleanBase}/Panopto/Pages/Sessions/List.aspx?folderID=${cleanFolderId}`;
-    const listRes = await panoptoFetch(listUrl, { method: 'GET' }, jar);
+    const listRes = await panoptoFetch(listUrl, { method: 'GET' }, jar, requestOptions);
     if (listRes.ok) {
       const listHtml = await listRes.text();
       const parsedHtml = parsePanoptoListHtml(listHtml, courseId, courseName, cleanBase);
@@ -2536,7 +2937,8 @@ export async function discoverPanoptoFromMoodleAjaxBlock(
   moodleBaseUrl = 'https://moodle.tau.ac.il',
   panoptoBaseUrl = PANOPTO_BASE_URL,
   fallbackSesskey?: string,
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<ExtractedCoursePanoptoLinks> {
   const folderIds: string[] = [];
   const deliveries: { id: string; title: string; recordingUrl: string }[] = [];
@@ -2567,7 +2969,8 @@ export async function discoverPanoptoFromMoodleAjaxBlock(
         },
         body: body.toString(),
       },
-      jar
+      jar,
+      requestOptions
     );
 
     if (res.ok) {
@@ -2703,7 +3106,8 @@ export async function discoverCourseFolderFromBrowse(
     year?: string;
   },
   baseUrl = PANOPTO_BASE_URL,
-  jar?: CookieJar | null
+  jar?: CookieJar | null,
+  requestOptions?: PanoptoRequestOptions
 ): Promise<string | null> {
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const {
@@ -2759,7 +3163,8 @@ export async function discoverCourseFolderFromBrowse(
           },
           body: JSON.stringify(payload),
         },
-        jar
+        jar,
+        requestOptions
       );
       if (!res.ok) continue;
 
@@ -2804,7 +3209,7 @@ export async function discoverCourseFolderFromBrowse(
             rawResults[0]?.DeliveryID || rawResults[0]?.SessionID || rawResults[0]?.Id || ''
           ).trim();
           if (firstDeliveryId) {
-            const resolvedFromDelivery = await resolveFolderIdFromDelivery(firstDeliveryId, cleanBase, jar);
+            const resolvedFromDelivery = await resolveFolderIdFromDelivery(firstDeliveryId, cleanBase, jar, requestOptions);
             if (resolvedFromDelivery) {
               console.log(
                 `[Panopto][Tier 3 - Data.svc Search] Resolved folder ${resolvedFromDelivery} via DeliveryInfo for query="${q}"`

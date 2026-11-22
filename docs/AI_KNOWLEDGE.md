@@ -103,6 +103,7 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   **Silent Mobile Web Service Refresh:** Moodle Web Service tokens (`wstoken`) expire periodically or get revoked. Previously, this caused the client to either prompt for user login or drop permanently into a slow, brittle HTML scraping mode.
     *   *Rule:* `fallbackRunner.ts` intercepts `invalidtoken` and `accessexception` errors on `RestMoodleStrategy`. It immediately invokes `getMobileToken()` across strategies (`ScraperMoodleStrategy.getMobileToken()` issues a POST reset request to `/user/managetoken.php` using the browser's active SSO cookies).
     *   *Rule:* Once a new token is extracted from the `copytoclipboardtoken` element, all registered strategies receive the new token via `strategy.setToken(newToken)`, the REST circuit breaker is cleared, and the operation is retried immediately with REST. The user is never prompted to log in again if their browser SSO session remains active.
+    *   *Rule (Mobile Native `C5`):* React Native's `XMLHttpRequest` cannot intercept `303 -> moodlemobile://token=`, so `auth.ts` (`loginTauSso`, `renewTokenSilently`) uses `NoodleNativeModule.fetchMoodleMobileTokenViaLaunch` (non-redirecting OkHttp + WebView `CookieManager` hybrid `CookieJar`). When credentials are absent on `invalidtoken` (`isTokenAuthError`), `use-app-state.tsx` + `app/_layout.tsx` display the `"Session Expired — Reconnect"` banner opening `SsoWebViewModal` (`mode="moodle"`).
 
 ### J. Direct Course-Page Assignment Scraping (D4 Fix — Legacy Note)
 *   **Deprecation / Policy Note (`ScraperMoodleStrategy`)**: HTML scraping via `ScraperMoodleStrategy` is **very unstable** across TAU Moodle's diverse course formats (such as tabbed `onetopic` and `multitopic` courses) and theme updates, and is **not a relevant target handler**. **Do NOT design or require `ScraperMoodleStrategy` implementations for new Moodle structures or features.** Rely exclusively on structured JSON endpoints: Moodle REST Web Services (`/webservice/rest/server.php` via `wstoken`, kept alive via silent token renewal in Rule 3.I) and, when supplementary JSON state is needed, Moodle AJAX Services (`/lib/ajax/service.php` via `sesskey`).
@@ -131,8 +132,14 @@ When implementing features in TypeScript, refer to the corresponding legacy Pyth
 *   **Related Rules**:
     *   Never clear `.ASPXAUTH` before opening the hidden login tab unless `forceRefresh` is set. Deleting a valid session caused a pointless re-login on every sync.
     *   When the user is already authenticated, `Login.aspx` (without `ReturnUrl`) does **not** render `#PageContentPlaceholder_loginControl_externalLoginButton`. The injected step must check `window.Panopto.user.isAuthenticated` first, or it loops until the 25s timeout.
-    *   `/blocks/panopto/ajax/load_panopto_block.php` returns **HTTP 404** on TAU Moodle. Do not call it. `core_block_get_course_blocks` returns only the lazy `<div id="loading_text">` placeholder for the Panopto block, so folder IDs must come from course modules, LTI, or `Data.svc` search (Tier 3).
+    *   `/blocks/panopto/ajax/load_panopto_block.php` returns **HTTP 404** on TAU Moodle. Do not call it. `core_block_get_course_blocks` returns only the lazy `<div id="loading_text">` placeholder for the Panopto block; TAU Moodle lazy-loads it via **`POST /blocks/panopto/panopto_content.php`** (`sesskey` + `courseid`), which `discoverPanoptoFromMoodleBlocks()` now queries (extracting JSON `response`/`content`/`html`/`result` and rejecting login `<form>` HTML) before falling through to un-gated Tier 3 `Data.svc` browse search. Also note Panopto 17.18 session detection (`isAuthenticated: true`, `Panopto.user.userId`, `Data.svc/GetSessions`, `SSO.php?course_id=...`), `hasPanoptoAuthCookieNative()`, and SQLite `coursesPanoptoMap` persistence (`persistDiscoveredPanoptoFolders`) (**C1**).
 *   **Debugging Signal**: If `hasAuthCookie=true` but `serverOk=false`, the cookie exists but is not being sent. Treat this as a transport problem (cookie stripping), not an SSO problem.
+
+### N. Mobile Stability & Shared Client Invariants (`E10`, `E11`, `C2`–`C4`)
+*   **Require-Cycle Prevention (`packages/moodle-client/src/errors.ts`, E11)**: Keep `MoodleApiError` in `errors.ts` (re-exported by `moodleApi.ts`); `strategies/*` import `MoodleApiError` from `../errors.js` and types via `import type` from `../moodleApi.js` to avoid Metro/Hermes require cycles.
+*   **SQLite Nested Transactions (`E10`)**: Always wrap SQLite multi-statement writes in `runInTransaction()` (`apps/mobile/src/services/database.ts`), never raw `db.withTransactionSync()`, to prevent `cannot start a transaction within a transaction`.
+*   **Android Notifications (`E11`)**: Keep `shouldPlaySound: true` in `setNotificationHandler` and the Android `deadline-reminders` channel, and omit invalid `sound: 'default'` from `scheduleNotificationAsync` `content` so Android uses the channel's default sound.
+*   **Responsive Navigation & File Actions (`C2`, `C3`, `E8`)**: Maintain the 6-tab swipeable portrait layout (`Home -> Courses -> Assignments -> Recordings -> Grades -> Settings`) vs. 5-tab landscape tablet layout (`Courses` rendered on `Home`), `MoodleFileRow` with Open + Download only (no Share button), and `Intent.ACTION_CREATE_DOCUMENT` File Explorer downloads (`saveFileWithSystemExplorerNative`, zero fallback on user cancel).
 
 ---
 
@@ -156,7 +163,7 @@ When creating new features, keep the following roadmap milestones in mind:
 
 ### Milestone 4: Dashboard Widgets & Search
 *   **Widget Reordering:** Persist grid widget ordering to local databases (SQLite/chrome.storage).
-*   **Course Colors:** Color picker to assign colors to courses, synced across platforms.
+*   **Course Colors:** Color picker to assign colors to courses, synced across platforms. Implemented across Extension (`<input type="color">`) and Mobile (14-pastel `COURSE_COLOR_PALETTE` in `theme.ts`, `getReadableTextColor`, and `ColorPalettePickerModal.tsx` in `ManageCoursesModal.tsx` / `onboarding.tsx`, **C4**).
 *   **GPA Progress Bar:** Render course average gauges and term-based GPA progress trackers.
 *   **Global Search:** Implement client-side fuzzy searching supporting both Hebrew and English strings.
 

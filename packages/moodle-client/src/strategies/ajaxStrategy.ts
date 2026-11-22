@@ -1,5 +1,5 @@
-import {
-  MoodleApiError,
+import { MoodleApiError } from '../errors.js';
+import type {
   MoodleSiteInfo,
   RawCourseSection,
   RawGradeReportResponse,
@@ -7,7 +7,9 @@ import {
   RawMoodleCourse,
   RawSubmissionStatus,
 } from '../moodleApi.js';
-import { IMoodleStrategy, StrategyContext, UnsupportedStrategyError } from './types.js';
+import type { IMoodleStrategy, StrategyContext } from './types.js';
+import { UnsupportedStrategyError } from './types.js';
+import { extractSetCookieHeader, isBrowserEnvironment } from '../runtimeEnv.js';
 
 export const AJAX_SUPPORTED_OPERATIONS = new Set<string>([
   'getEnrolledCourses',
@@ -45,14 +47,36 @@ export class AjaxMoodleStrategy implements IMoodleStrategy {
       this.context.sesskey
     )}&info=${encodeURIComponent(methodname)}`;
 
-    const response = await fetch(url, {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const isBrowser = isBrowserEnvironment();
+    const fetchInit: RequestInit = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
+      headers,
       body: JSON.stringify([{ index: 0, methodname, args }]),
-    });
+    };
+
+    if (isBrowser) {
+      fetchInit.credentials = 'include';
+    } else {
+      if (this.context.userAgent) {
+        headers['User-Agent'] = this.context.userAgent;
+      }
+      if (this.context.cookieAdapter) {
+        const cookie = await this.context.cookieAdapter.getCookieHeader(url);
+        if (cookie) {
+          headers['Cookie'] = cookie;
+        }
+      } else {
+        fetchInit.credentials = 'include';
+      }
+    }
+
+    const response = await (this.context.fetch ?? fetch)(url, fetchInit);
+    if (!isBrowser && this.context.cookieAdapter?.ingestSetCookie) {
+      await this.context.cookieAdapter.ingestSetCookie(url, extractSetCookieHeader(response.headers));
+    }
 
     if (!response.ok) {
       throw new Error(`AJAX HTTP error! status: ${response.status}`);

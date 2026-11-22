@@ -1,4 +1,13 @@
 import { MoodleCredentials, ZoomMeeting } from './types.js';
+import {
+  CookieAdapter,
+  DEFAULT_FETCH_TIMEOUT_MS,
+  FetchFn,
+  extractSetCookieHeader,
+  fetchWithTimeout,
+  isBrowserEnvironment,
+  mergeCookieHeaders,
+} from './runtimeEnv.js';
 
 export interface LtiZoomMeeting {
   topic: string;
@@ -170,7 +179,7 @@ export function extractZoomLinksFromHtml(html: string): { url: string; title?: s
   return results;
 }
 
-export class CookieJar {
+export class CookieJar implements CookieAdapter {
   private store: Record<string, string> = {};
 
   ingest(raw: string | null): void {
@@ -188,29 +197,96 @@ export class CookieJar {
     }
   }
 
+  ingestCookieHeader(raw: string | null): void {
+    if (!raw) return;
+    for (const part of raw.split(';')) {
+      const trimmed = part.trim();
+      const eq = trimmed.indexOf('=');
+      if (eq > 0) {
+        const name = trimmed.slice(0, eq).trim();
+        const value = trimmed.slice(eq + 1).trim();
+        if (name) this.store[name] = value;
+      }
+    }
+  }
+
+  set(name: string, value: string): void {
+    if (name) this.store[name] = value;
+  }
+
+  get(name: string): string | undefined {
+    return this.store[name];
+  }
+
+  has(name: string): boolean {
+    return Object.prototype.hasOwnProperty.call(this.store, name);
+  }
+
+  clear(): void {
+    this.store = {};
+  }
+
+  toRecord(): Record<string, string> {
+    return { ...this.store };
+  }
+
   header(): string {
     return Object.entries(this.store)
       .map(([k, v]) => `${k}=${v}`)
       .join('; ');
   }
+
+  getCookieHeader(_url: string): string {
+    return this.header();
+  }
+
+  ingestSetCookie(_url: string, raw: string | null): void {
+    this.ingest(raw);
+  }
+
+  static fromCookies(cookies: string | Record<string, string>): CookieJar {
+    const jar = new CookieJar();
+    if (typeof cookies === 'string') {
+      jar.ingestCookieHeader(cookies);
+    } else if (cookies && typeof cookies === 'object') {
+      for (const [k, v] of Object.entries(cookies)) {
+        if (k && typeof v === 'string') jar.set(k, v);
+      }
+    }
+    return jar;
+  }
 }
 
-type ManagedInit = Omit<RequestInit, 'redirect'>;
+export interface ZoomRequestOptions {
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
+  userAgent?: string;
+  useNativeCookies?: boolean;
+  timeoutMs?: number;
+}
+
+export type ManagedInit = Omit<RequestInit, 'redirect'> & {
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
+  useNativeCookies?: boolean;
+  timeoutMs?: number;
+};
 
 export async function mfetch(jar: CookieJar, url: string, init: ManagedInit = {}): Promise<Response> {
-  const isBrowser = typeof window !== 'undefined' || (typeof (globalThis as any).browser !== 'undefined' && (globalThis as any).browser.runtime) || (typeof (globalThis as any).chrome !== 'undefined' && (globalThis as any).chrome.runtime);
+  const isBrowser = isBrowserEnvironment();
+  const { fetch: customFetch, cookieAdapter, useNativeCookies, timeoutMs, ...requestInit } = init;
 
   const headers: Record<string, string> = {};
-  if (init.headers) {
-    if (init.headers instanceof Headers) {
-      init.headers.forEach((v, k) => { headers[k] = v; });
+  if (requestInit.headers) {
+    if (requestInit.headers instanceof Headers) {
+      requestInit.headers.forEach((v, k) => { headers[k] = v; });
     } else {
-      Object.assign(headers, init.headers as Record<string, string>);
+      Object.assign(headers, requestInit.headers as Record<string, string>);
     }
   }
 
   const fetchInit: RequestInit = {
-    ...init,
+    ...requestInit,
     headers,
     redirect: isBrowser ? 'follow' : 'manual'
   };
@@ -220,15 +296,23 @@ export async function mfetch(jar: CookieJar, url: string, init: ManagedInit = {}
     // Browsers forbid setting User-Agent, Cookie, Host, etc. via fetch()
     delete headers['User-Agent'];
     delete headers['user-agent'];
+  } else if (useNativeCookies === true && !cookieAdapter) {
+    delete headers['Cookie'];
+    delete headers['cookie'];
   } else {
-    const cookieStr = jar.header();
+    const adapterCookie = cookieAdapter ? await cookieAdapter.getCookieHeader(url) : undefined;
+    const cookieStr = mergeCookieHeaders(adapterCookie, jar.header());
     if (cookieStr) headers['Cookie'] = cookieStr;
   }
 
-  const res = await fetch(url, fetchInit);
+  const res = await fetchWithTimeout(customFetch ?? fetch, url, fetchInit, timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS);
 
   if (!isBrowser) {
-    jar.ingest(res.headers.get('set-cookie'));
+    const setCookie = extractSetCookieHeader(res.headers);
+    jar.ingest(setCookie);
+    if (cookieAdapter?.ingestSetCookie) {
+      await cookieAdapter.ingestSetCookie(url, setCookie);
+    }
   }
 
   return res;
@@ -241,14 +325,14 @@ export async function mfetchFollow(
   maxRedirects = 15
 ): Promise<{ response: Response; finalUrl: string }> {
   let currentUrl = url;
-  let currentInit = { ...init };
+  let currentInit: ManagedInit = { ...init };
 
   for (let i = 0; i <= maxRedirects; i++) {
     const res = await mfetch(jar, currentUrl, currentInit);
     const status = res.status;
 
     if (status >= 300 && status < 400) {
-      const loc = res.headers.get('location') ?? res.headers.get('Location') ?? '';
+      const loc = res.headers?.get('location') ?? res.headers?.get('Location') ?? '';
       if (!loc) return { response: res, finalUrl: currentUrl };
 
       let nextUrl: string;
@@ -263,22 +347,40 @@ export async function mfetchFollow(
       }
 
       if (status === 301 || status === 302 || status === 303) {
-        currentInit = {};
+        currentInit = {
+          ...(init.fetch ? { fetch: init.fetch } : {}),
+          ...(init.cookieAdapter ? { cookieAdapter: init.cookieAdapter } : {}),
+          ...(init.useNativeCookies !== undefined ? { useNativeCookies: init.useNativeCookies } : {}),
+          ...(init.timeoutMs !== undefined ? { timeoutMs: init.timeoutMs } : {}),
+        };
       }
       currentUrl = nextUrl;
       continue;
     }
-    return { response: res, finalUrl: currentUrl };
+    return { response: res, finalUrl: i === 0 ? (res.url || currentUrl) : currentUrl };
   }
   throw new Error('Too many redirects');
 }
 
-function tryExtractTokenFromUrl(url: string): string | null {
+export function tryExtractTokenFromUrl(url: string): string | null {
   if (!url) return null;
-  const match = url.match(/(?:moodlemobile|moodleapp):\/\/token=([a-zA-Z0-9+/=]+)/);
+  const match = url.match(/(?:moodlemobile|moodleapp):\/\/token=([^&#\s]+)/i);
   if (!match) return null;
   try {
-    const decoded = atob(match[1]);
+    let raw = match[1];
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {
+      // Keep raw if not valid percent-encoding
+    }
+    // Support URL-safe base64 (- and _) and missing '=' padding
+    let normalized = raw.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
+    const rem = normalized.length % 4;
+    if (rem === 2) normalized += '==';
+    else if (rem === 3) normalized += '=';
+    if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) return null;
+
+    const decoded = atob(normalized);
     const parts = decoded.split(':::');
     return parts.length > 1 ? parts[1] : parts[0];
   } catch {
@@ -286,11 +388,21 @@ function tryExtractTokenFromUrl(url: string): string | null {
   }
 }
 
-export async function performLogin(jar: CookieJar, creds: MoodleCredentials): Promise<string> {
+export async function performLogin(
+  jar: CookieJar,
+  creds: MoodleCredentials,
+  options?: ZoomRequestOptions
+): Promise<string> {
+  const reqOpts: ManagedInit = {
+    ...(options?.fetch ? { fetch: options.fetch } : {}),
+    ...(options?.cookieAdapter ? { cookieAdapter: options.cookieAdapter } : {}),
+    ...(options?.useNativeCookies !== undefined ? { useNativeCookies: options.useNativeCookies } : {}),
+    ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  };
   const passport = Math.random().toString(36).substring(2, 15);
   const launchUrl = `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=${passport}`;
 
-  const { response: res1, finalUrl: afterLaunch } = await mfetchFollow(jar, launchUrl);
+  const { response: res1, finalUrl: afterLaunch } = await mfetchFollow(jar, launchUrl, reqOpts);
   const earlyToken = tryExtractTokenFromUrl(afterLaunch);
   if (earlyToken) return earlyToken;
 
@@ -299,12 +411,27 @@ export async function performLogin(jar: CookieJar, creds: MoodleCredentials): Pr
   const html1 = await res1.text();
   const formMatch1 = html1.match(/<form[^>]+action=["']([^"']+)["']/i);
   if (formMatch1) {
-    const action = formMatch1[1];
+    const action = decodeHTMLEntities(formMatch1[1]);
     ssoUrl = action.startsWith('http') ? action : new URL(action, 'https://nidp.tau.ac.il').href;
-    await mfetch(jar, ssoUrl, { method: 'POST' });
+    const initParams = new URLSearchParams();
+    const inputTags = html1.match(/<input\b[^>]*>/gi) || [];
+    for (const tag of inputTags) {
+      const nameMatch = tag.match(/\bname=["']([^"']+)["']/i);
+      const valMatch = tag.match(/\bvalue=["']([^"']*)["']/i);
+      if (nameMatch) {
+        initParams.append(decodeHTMLEntities(nameMatch[1]), valMatch ? decodeHTMLEntities(valMatch[1]) : '');
+      }
+    }
+    await mfetch(jar, ssoUrl, {
+      ...reqOpts,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: initParams.toString(),
+    });
   }
 
   await mfetch(jar, ssoUrl, {
+    ...reqOpts,
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'option=credential&initiateLoginSequence=true&isAjax=true',
@@ -319,6 +446,7 @@ export async function performLogin(jar: CookieJar, creds: MoodleCredentials): Pr
   ].join('&');
 
   const credRes = await mfetch(jar, ssoUrl, {
+    ...reqOpts,
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: credBody,
@@ -328,7 +456,7 @@ export async function performLogin(jar: CookieJar, creds: MoodleCredentials): Pr
     throw new Error('SSO Authentication failed: invalid credentials');
   }
 
-  const samlRes = await mfetch(jar, ssoUrl);
+  const samlRes = await mfetch(jar, ssoUrl, reqOpts);
   const html2 = await samlRes.text();
 
   const actionMatch = html2.match(/<form[^>]+action=["']([^"']+)["']/i);
@@ -348,6 +476,7 @@ export async function performLogin(jar: CookieJar, creds: MoodleCredentials): Pr
   if (relayState) bodyParams.append('RelayState', relayState);
 
   const { finalUrl } = await mfetchFollow(jar, actionUrl, {
+    ...reqOpts,
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: bodyParams.toString(),
@@ -756,11 +885,18 @@ export async function scrapeZoomMeetingsWithToken(
   baseUrl = 'https://moodle.tau.ac.il',
   cmid?: number,
   jar?: CookieJar | null,
-  modname = 'lti'
+  modname = 'lti',
+  options?: ZoomRequestOptions
 ): Promise<LtiZoomMeeting[]> {
   const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
   const meetings: LtiZoomMeeting[] = [];
   const seenMeetingKeys = new Set<string>();
+  const reqOpts: ManagedInit = {
+    ...(options?.fetch ? { fetch: options.fetch } : {}),
+    ...(options?.cookieAdapter ? { cookieAdapter: options.cookieAdapter } : {}),
+    ...(options?.useNativeCookies !== undefined ? { useNativeCookies: options.useNativeCookies } : {}),
+    ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  };
 
   const addParsedMeetings = (list: LtiZoomMeeting[]) => {
     for (const m of list) {
@@ -780,21 +916,60 @@ export async function scrapeZoomMeetingsWithToken(
   let endpoint: string | undefined;
   const ltiParams = new URLSearchParams();
 
-  // 1. Fetch Moodle view page: /mod/${modname}/view.php?id=${targetCmid}
-  if (targetCmid) {
+  // 1. For mod_lti, try pure-REST mod_lti_get_tool_launch_data FIRST (instanceId first, then cmid)
+  if (modname === 'lti' && token) {
+    const wsUrl = `${cleanBaseUrl}/webservice/rest/server.php`;
+    const candidateToolIds = [instanceId, cmid].filter((id): id is number => typeof id === 'number' && !isNaN(id) && id > 0);
+    const uniqueCandidateIds = Array.from(new Set(candidateToolIds));
+
+    for (const tid of uniqueCandidateIds) {
+      try {
+        const urlParams = new URLSearchParams({
+          wstoken: token,
+          wsfunction: 'mod_lti_get_tool_launch_data',
+          moodlewsrestformat: 'json',
+          toolid: String(tid),
+        });
+
+        const wsFetch = options?.fetch ?? fetch;
+        const wsFullUrl = `${wsUrl}?${urlParams.toString()}`;
+        const wsInit: RequestInit | undefined =
+          !isBrowserEnvironment() && options?.userAgent !== ''
+            ? { headers: { 'User-Agent': options?.userAgent ?? 'MoodleMobile' } }
+            : undefined;
+        const res = await fetchWithTimeout(wsFetch, wsFullUrl, wsInit, options?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.exception && data.endpoint) {
+            endpoint = data.endpoint;
+            if (Array.isArray(data.parameters)) {
+              data.parameters.forEach((p: any) => {
+                if (p && p.name) ltiParams.append(p.name, p.value ?? '');
+              });
+            }
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Fetch Moodle view page: /mod/${modname}/view.php?id=${targetCmid}
+  // (Always for non-LTI modules like mod_zoom; fallback for mod_lti only if REST launch failed)
+  if (targetCmid && (modname !== 'lti' || !endpoint)) {
     try {
       const viewUrl = `${cleanBaseUrl}/mod/${modname}/view.php?id=${targetCmid}`;
-      const viewRes = await mfetch(zoomJar, viewUrl);
+      const viewRes = await mfetch(zoomJar, viewUrl, reqOpts);
       if (viewRes.ok) {
         const viewHtml = await viewRes.text();
 
-        // 1a. Table rows directly on view.php (e.g. mod_zoom)
+        // 2a. Table rows directly on view.php (e.g. mod_zoom)
         const tableMeetings = extractZoomMeetingsFromHtml(viewHtml);
         if (tableMeetings.length > 0) {
           addParsedMeetings(tableMeetings);
         }
 
-        // 1b. Embedded Zoom URLs
+        // 2b. Embedded Zoom URLs
         const embeddedLinks = extractZoomLinksFromHtml(viewHtml);
         for (const el of embeddedLinks) {
           const parsed = parseZoomUrl(el.url);
@@ -812,7 +987,7 @@ export async function scrapeZoomMeetingsWithToken(
           }
         }
 
-        // 1c. Check if viewHtml has an LTI launch form
+        // 2c. Check if viewHtml has an LTI launch form
         try {
           const parsedForm = parseLtiForm(viewHtml);
           if (parsedForm && parsedForm.actionUrl) {
@@ -821,13 +996,13 @@ export async function scrapeZoomMeetingsWithToken(
           }
         } catch (_) {}
 
-        // 1d. Check if viewHtml embeds an iframe (contentframe -> launch.php or applications.zoom.us)
+        // 2d. Check if viewHtml embeds an iframe (contentframe -> launch.php or applications.zoom.us)
         const iframeMatch = viewHtml.match(/<iframe[^>]+src=["']([^"']+)["']/i);
         if (iframeMatch) {
           try {
             const rawSrc = decodeHTMLEntities(iframeMatch[1]);
             const iframeUrl = rawSrc.startsWith('http') ? rawSrc : new URL(rawSrc, viewUrl).href;
-            const iframeRes = await mfetch(zoomJar, iframeUrl);
+            const iframeRes = await mfetch(zoomJar, iframeUrl, reqOpts);
             if (iframeRes.ok) {
               const iframeHtml = await iframeRes.text();
 
@@ -871,43 +1046,11 @@ export async function scrapeZoomMeetingsWithToken(
     }
   }
 
-  // 2. If endpoint not found and modname === 'lti', try WS API mod_lti_get_tool_launch_data
-  if (!endpoint && modname === 'lti') {
-    const wsUrl = `${cleanBaseUrl}/webservice/rest/server.php`;
-    const candidateToolIds = [cmid, instanceId].filter((id): id is number => typeof id === 'number' && !isNaN(id) && id > 0);
-    const uniqueCandidateIds = Array.from(new Set(candidateToolIds));
-
-    for (const tid of uniqueCandidateIds) {
-      try {
-        const urlParams = new URLSearchParams({
-          wstoken: token,
-          wsfunction: 'mod_lti_get_tool_launch_data',
-          moodlewsrestformat: 'json',
-          toolid: String(tid),
-        });
-
-        const res = await fetch(`${wsUrl}?${urlParams.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (!data.exception && data.endpoint) {
-            endpoint = data.endpoint;
-            if (Array.isArray(data.parameters)) {
-              data.parameters.forEach((p: any) => {
-                if (p && p.name) ltiParams.append(p.name, p.value ?? '');
-              });
-            }
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-  }
-
   // 3. Fallback to /mod/lti/launch.php?id={cmid}&triggerview=0 if still no endpoint
   if (!endpoint && modname === 'lti' && targetCmid) {
     try {
       const launchUrl = `${cleanBaseUrl}/mod/lti/launch.php?id=${targetCmid}&triggerview=0`;
-      const launchRes = await mfetch(zoomJar, launchUrl);
+      const launchRes = await mfetch(zoomJar, launchUrl, reqOpts);
       if (launchRes.ok) {
         const launchHtml = await launchRes.text();
         const launchTableMeetings = extractZoomMeetingsFromHtml(launchHtml);
@@ -930,6 +1073,7 @@ export async function scrapeZoomMeetingsWithToken(
     let zoomHtml = '';
     try {
       const zoomRes = await mfetch(zoomJar, endpoint, {
+        ...reqOpts,
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -1018,7 +1162,7 @@ export async function scrapeZoomMeetingsWithToken(
 
       const fetchLtiApi = async (apiUrl: string, isUpcoming: boolean) => {
         try {
-          const apiRes = await mfetch(zoomJar, apiUrl, { method: 'GET', headers: ajaxHeaders });
+          const apiRes = await mfetch(zoomJar, apiUrl, { ...reqOpts, method: 'GET', headers: ajaxHeaders });
           if (apiRes.ok) {
             const data = await apiRes.json();
             if (Array.isArray(data?.result?.list)) {
@@ -1044,8 +1188,10 @@ export async function scrapeZoomMeetingsWithToken(
         } catch (_) {}
       };
 
-      await fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0', true);
-      await fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0', false);
+      await Promise.all([
+        fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/upComing/COURSE/all?page=1&total=0', true),
+        fetchLtiApi('https://applications.zoom.us/api/v1/lti/rich/meeting/previous/COURSE/all?page=1&total=0', false),
+      ]);
     }
   }
 

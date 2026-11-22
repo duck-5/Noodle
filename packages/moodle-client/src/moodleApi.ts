@@ -7,19 +7,11 @@ import {
   executeWithFallback,
 } from './strategies/index.js';
 import type { CourseStaffMember } from './types.js';
+import { CookieAdapter, FetchFn, isBrowserEnvironment } from './runtimeEnv.js';
+import { MoodleApiError } from './errors.js';
 
+export { MoodleApiError };
 export * from './strategies/index.js';
-
-export class MoodleApiError extends Error {
-  constructor(
-    public errorcode: string,
-    message: string,
-    public exception?: string
-  ) {
-    super(message);
-    this.name = 'MoodleApiError';
-  }
-}
 
 export function isValidIsraeliId(id: string): boolean {
   const str = String(id).trim();
@@ -292,6 +284,9 @@ export interface MoodleClientOptions {
   /** @deprecated Legacy Web Scraping fallback option (removed from extension Settings UI; pure REST/AJAX is standard). */
   enableScraping?: boolean;
   lang?: 'he' | 'en';
+  userAgent?: string;
+  fetch?: FetchFn;
+  cookieAdapter?: CookieAdapter;
 }
 
 export class MoodleClient {
@@ -313,6 +308,9 @@ export class MoodleClient {
       devMode: this.devMode,
       enableScraping: options?.enableScraping,
       lang: options?.lang,
+      userAgent: options?.userAgent,
+      fetch: options?.fetch,
+      cookieAdapter: options?.cookieAdapter,
     };
 
     this.restStrategy = new RestMoodleStrategy(context);
@@ -340,12 +338,17 @@ export class MoodleClient {
   public static async fetchToken(
     username: string,
     password: string,
-    baseUrl: string = 'https://moodle.tau.ac.il'
+    baseUrl: string = 'https://moodle.tau.ac.il',
+    options?: { userAgent?: string; fetch?: FetchFn }
   ): Promise<string> {
     const url = `${baseUrl}/login/token.php?username=${encodeURIComponent(
       username
     )}&password=${encodeURIComponent(password)}&service=moodle_mobile_app`;
-    const response = await fetch(url);
+    const fetchImpl = options?.fetch ?? fetch;
+    const response =
+      !isBrowserEnvironment() && options?.userAgent
+        ? await fetchImpl(url, { headers: { 'User-Agent': options.userAgent } })
+        : await fetchImpl(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -403,13 +406,13 @@ export class MoodleClient {
     return courses;
   }
 
-  public async getAssignments(): Promise<RawMoodleAssignmentsResponse> {
-    const res = await executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(), this.devMode);
+  public async getAssignments(courseIds?: number[]): Promise<RawMoodleAssignmentsResponse> {
+    const res = await executeWithFallback('getAssignments', this.strategies, (s) => s.getAssignments(courseIds), this.devMode);
     
     const scraper = this.strategies.find(s => s.name === 'Scraper');
     if (scraper) {
       try {
-        const scraperRes = await scraper.getAssignments();
+        const scraperRes = await scraper.getAssignments(courseIds);
         const courseMap = new Map((res.courses || []).map((c: any) => [c.id, c]));
         
         (scraperRes.courses || []).forEach((c: any) => {

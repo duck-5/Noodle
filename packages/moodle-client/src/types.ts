@@ -217,6 +217,7 @@ export interface SyncResult {
   meetings: ZoomMeeting[];
   recordings?: PanoptoRecording[];
   courseStaff?: Record<number, CourseStaffMember[]>;
+  discoveredPanoptoFolders?: Record<number, string>;
   errors: SyncError[];
   syncedAt: string; // ISO 8601
 }
