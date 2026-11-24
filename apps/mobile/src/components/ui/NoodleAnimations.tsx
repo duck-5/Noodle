@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useState } from 'react';
 import {
   Animated,
   Easing,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -88,6 +89,17 @@ export interface NoodleGradientButtonProps {
   style?: StyleProp<ViewStyle>;
 }
 
+function createLinearGradientStyle(cssGradient: string): ViewStyle {
+  if (Platform.OS === 'web') {
+    return { backgroundImage: cssGradient } as unknown as ViewStyle;
+  }
+  return { experimental_backgroundImage: cssGradient };
+}
+
+const NOODLE_CTA_GRADIENT_STYLE = createLinearGradientStyle(
+  'linear-gradient(135deg, #5b48b6 0%, #a04977 48%, #d46337 100%)'
+);
+
 /**
  * Signature 135-degree Purple-Magenta-Orange Noodle CTA gradient button
  * matching `.manage-courses-trigger-btn` and `.btn-go-to-course` in the Extension.
@@ -104,8 +116,6 @@ export function NoodleGradientButton({
   accessibilityLabel,
   style,
 }: NoodleGradientButtonProps) {
-  const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const gradId = `noodleBtnGrad_${reactId}`;
   const scaleAnim = useState(() => new Animated.Value(1))[0];
 
   const handlePressIn = () => {
@@ -155,30 +165,12 @@ export function NoodleGradientButton({
         onPressOut={handlePressOut}
         style={[
           styles.gradBtnOuter,
+          NOODLE_CTA_GRADIENT_STYLE,
           size === 'xs' && styles.gradBtnXsRadius,
           fullWidth && styles.fullWidth,
           { opacity: disabled ? 0.6 : 1 },
         ]}
       >
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Svg
-            pointerEvents="none"
-            style={StyleSheet.absoluteFill}
-            width="100%"
-            height="100%"
-            preserveAspectRatio="none"
-          >
-            <Defs>
-              <LinearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor="#5b48b6" />
-                <Stop offset="48%" stopColor="#a04977" />
-                <Stop offset="100%" stopColor="#d46337" />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradId})`} />
-          </Svg>
-        </View>
-
         <View
           style={[
             styles.gradBtnContent,
@@ -382,8 +374,6 @@ export function AnimatedProgressBar({
   isRtl = false,
   gradientColors,
 }: AnimatedProgressBarProps) {
-  const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const gradId = `progressGrad_${reactId}`;
   const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
   const [widthAnim] = useState(() => new Animated.Value(isJestEnv ? clamped : 0));
 
@@ -404,6 +394,15 @@ export function AnimatedProgressBar({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
   });
+  const fillGradientStyle = useMemo(
+    () =>
+      gradientColors
+        ? createLinearGradientStyle(
+            `linear-gradient(${isRtl ? '270deg' : '90deg'}, ${gradientColors[0]} 0%, ${gradientColors[1]} 100%)`
+          )
+        : undefined,
+    [gradientColors, isRtl]
+  );
 
   return (
     <View
@@ -421,37 +420,14 @@ export function AnimatedProgressBar({
           styles.progressFill,
           {
             width: widthInterpolated,
-            backgroundColor: gradientColors ? 'transparent' : color,
+            backgroundColor: gradientColors ? gradientColors[0] : color,
             borderRadius: height / 2,
             alignSelf: isRtl ? 'flex-end' : 'flex-start',
             overflow: 'hidden',
           },
+          fillGradientStyle,
         ]}
-      >
-        {gradientColors && (
-          <Svg
-            pointerEvents="none"
-            style={StyleSheet.absoluteFill}
-            width="100%"
-            height="100%"
-            preserveAspectRatio="none"
-          >
-            <Defs>
-              <LinearGradient
-                id={gradId}
-                x1={isRtl ? '100%' : '0%'}
-                y1="0%"
-                x2={isRtl ? '0%' : '100%'}
-                y2="0%"
-              >
-                <Stop offset="0%" stopColor={gradientColors[0]} />
-                <Stop offset="100%" stopColor={gradientColors[1]} />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradId})`} />
-          </Svg>
-        )}
-      </Animated.View>
+      />
     </View>
   );
 }
@@ -463,6 +439,7 @@ const styles = StyleSheet.create({
   gradBtnOuter: {
     position: 'relative',
     padding: 0,
+    backgroundColor: '#a04977',
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,

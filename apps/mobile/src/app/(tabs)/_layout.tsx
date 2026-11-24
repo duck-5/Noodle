@@ -2,13 +2,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Animated,
+  Easing,
   Image,
+  LayoutChangeEvent,
   PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Href, Tabs, usePathname, useRouter } from 'expo-router';
@@ -69,8 +72,11 @@ const ALL_NAV_ITEMS: {
   { key: 'settings', href: '/settings', labelKey: 'settings' },
 ];
 
+const TAB_TRANSITION_MS = 260;
+
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname() || '/';
   const { isLandscapeTablet } = useResponsiveLayout();
@@ -153,6 +159,15 @@ export default function TabsLayout() {
   }, [navItems, isNavActive]);
 
   const [swipeTranslateX] = useState(() => new Animated.Value(0));
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+
+  const handleTabsLayout = useCallback((e: LayoutChangeEvent) => {
+    const measured = Math.round(e.nativeEvent.layout.width);
+    if (measured > 0) {
+      setContainerWidth((prev) => (Math.abs(prev - measured) > 1 ? measured : prev));
+    }
+  }, []);
+
   const resetSwipeTranslate = useCallback(() => {
     if (isJestEnv) {
       swipeTranslateX.setValue(0);
@@ -161,6 +176,20 @@ export default function TabsLayout() {
         toValue: 0,
         useNativeDriver: true,
         bounciness: 0,
+      }).start();
+    }
+  }, [swipeTranslateX]);
+
+  const settleSwipeAfterNavigation = useCallback(() => {
+    if (isJestEnv) {
+      swipeTranslateX.setValue(0);
+    } else {
+      // Match the tab transition curve so release handoff glides forward without recoiling
+      Animated.timing(swipeTranslateX, {
+        toValue: 0,
+        duration: TAB_TRANSITION_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
       }).start();
     }
   }, [swipeTranslateX]);
@@ -199,11 +228,13 @@ export default function TabsLayout() {
             targetIndex < navItems.length
           ) {
             navigateTo(navItems[targetIndex].href);
+            settleSwipeAfterNavigation();
+            return;
           }
           resetSwipeTranslate();
         },
         onPanResponderTerminate: () => {
-          swipeTranslateX.setValue(0);
+          resetSwipeTranslate();
         },
       }),
     [
@@ -212,6 +243,7 @@ export default function TabsLayout() {
       navItems,
       navigateTo,
       resetSwipeTranslate,
+      settleSwipeAfterNavigation,
       swipeTranslateX,
       tourActive,
     ]
@@ -278,6 +310,46 @@ export default function TabsLayout() {
   const sidebarWidth = (sidebarCollapsed ? 68 : 220) + (isRtl ? insets.right : insets.left);
   const rowDir = isRtl ? 'row-reverse' : 'row';
   const showChevronRight = isRtl ? !sidebarCollapsed : sidebarCollapsed;
+  const fallbackTabsWidth = Math.max(
+    240,
+    windowWidth - (isLandscapeTablet ? sidebarWidth : 0)
+  );
+  const slideWidth = containerWidth > 0 ? containerWidth : fallbackTabsWidth;
+
+  const tabTransitionSpec = useMemo(
+    () => ({
+      animation: 'timing' as const,
+      config: {
+        duration: isJestEnv ? 0 : TAB_TRANSITION_MS,
+        easing: Easing.out(Easing.cubic),
+      },
+    }),
+    []
+  );
+
+  const tabSceneInterpolator = useCallback(
+    ({ current }: { current: { progress: Animated.Value } }) => ({
+      sceneStyle: {
+        opacity: current.progress.interpolate({
+          inputRange: [-1, -0.85, 0, 0.85, 1],
+          outputRange: [0, 0.92, 1, 0.92, 0],
+          extrapolate: 'clamp',
+        }),
+        transform: [
+          {
+            translateX: current.progress.interpolate({
+              inputRange: [-1, 0, 1],
+              outputRange: isRtl
+                ? [slideWidth, 0, -slideWidth]
+                : [-slideWidth, 0, slideWidth],
+              extrapolate: 'clamp',
+            }),
+          },
+        ],
+      },
+    }),
+    [isRtl, slideWidth]
+  );
 
   return (
     <View
@@ -482,6 +554,7 @@ export default function TabsLayout() {
 
       <Animated.View
         testID="tabs-swipe-container"
+        onLayout={handleTabsLayout}
         style={[
           styles.tabsWrap,
           { transform: [{ translateX: swipeTranslateX }] },
@@ -489,9 +562,15 @@ export default function TabsLayout() {
         {...panResponder.panHandlers}
       >
         <Tabs
+          detachInactiveScreens={false}
           tabBar={isLandscapeTablet ? () => null : undefined}
           screenOptions={{
             headerShown: false,
+            lazy: false,
+            animation: 'shift',
+            transitionSpec: tabTransitionSpec,
+            sceneStyleInterpolator: tabSceneInterpolator,
+            sceneStyle: { backgroundColor: theme.background },
             tabBarActiveTintColor: theme.primary,
             tabBarInactiveTintColor: theme.textSecondary,
             tabBarStyle: isLandscapeTablet
@@ -529,6 +608,7 @@ export default function TabsLayout() {
             name="courses"
             options={{
               title: t('courses'),
+              lazy: isLandscapeTablet,
               href: isLandscapeTablet ? null : undefined,
               tabBarIcon: ({ color, size }) => (
                 <CourseIcon

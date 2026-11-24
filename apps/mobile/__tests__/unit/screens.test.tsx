@@ -10,16 +10,19 @@ import { DEFAULT_MOBILE_SETTINGS, MobileAppSettings } from '@/services/settingsS
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
+let lastTabsProps: any = null;
 
 jest.mock('expo-router', () => {
   const ReactActual = require('react');
   const { View } = require('react-native');
-  const TabsMock: any = ({ children, tabBar }: any) =>
-    ReactActual.createElement(
+  const TabsMock: any = ({ children, tabBar, screenOptions, detachInactiveScreens }: any) => {
+    lastTabsProps = { tabBar, screenOptions, detachInactiveScreens };
+    return ReactActual.createElement(
       View,
       { testID: tabBar ? 'tabs-no-bottom-bar' : 'tabs-with-bottom-bar' },
       children
     );
+  };
   TabsMock.Screen = ({ name, options }: any) =>
     ReactActual.createElement(View, {
       testID: `tab-screen-${name}`,
@@ -472,6 +475,18 @@ describe('Mobile v4.1 screens and components integration tests', () => {
 
     // Horizontal swipe LTR -> forward to '/courses'
     const swipeContainer = phone.getByTestId('tabs-swipe-container');
+    expect(lastTabsProps?.detachInactiveScreens).toBe(false);
+    expect(lastTabsProps?.screenOptions?.animation).toBe('shift');
+    expect(lastTabsProps?.screenOptions?.lazy).toBe(false);
+    expect(lastTabsProps?.screenOptions?.transitionSpec?.animation).toBe('timing');
+    const ltrProgress = new RN.Animated.Value(1);
+    const ltrScene = lastTabsProps?.screenOptions?.sceneStyleInterpolator?.({
+      current: { progress: ltrProgress },
+    })?.sceneStyle;
+    expect(ltrScene?.opacity).toBeDefined();
+    expect(ltrScene?.transform?.[0]?.translateX).toBeDefined();
+    expect(Math.round((ltrScene.transform[0].translateX as any).__getValue())).toBeGreaterThan(0);
+
     simulateHorizontalSwipe(swipeContainer, 200, 100);
     expect(mockPush).toHaveBeenCalledWith('/courses');
     phone.unmount();
@@ -480,6 +495,11 @@ describe('Mobile v4.1 screens and components integration tests', () => {
     mockPush.mockClear();
     mockPreferencesValue.isRtl = true;
     const rtlPhone = render(<TabsLayout />);
+    const rtlProgress = new RN.Animated.Value(1);
+    const rtlScene = lastTabsProps?.screenOptions?.sceneStyleInterpolator?.({
+      current: { progress: rtlProgress },
+    })?.sceneStyle;
+    expect(Math.round((rtlScene.transform[0].translateX as any).__getValue())).toBeLessThan(0);
     const rtlSwipe = rtlPhone.getByTestId('tabs-swipe-container');
     simulateHorizontalSwipe(rtlSwipe, 100, 200);
     expect(mockPush).toHaveBeenCalledWith('/courses');
@@ -625,6 +645,33 @@ describe('Mobile v4.1 screens and components integration tests', () => {
     const manage = render(<ManageCoursesModal visible={true} onClose={jest.fn()} />);
     expect(manage.getByTestId(`custom-color-btn-${MOCK_COURSE_ID}`)).toBeTruthy();
     manage.unmount();
+  });
+
+  it('renders NoodleGradientButton & AnimatedProgressBar with native linear gradients and zero SVG background offset layers', () => {
+    const { NoodleGradientButton, AnimatedProgressBar } = require('@/components/ui/NoodleAnimations');
+    const view = render(
+      <>
+        <NoodleGradientButton
+          testID="test-grad-btn"
+          label="Manage Courses"
+          onPress={jest.fn()}
+        />
+        <AnimatedProgressBar
+          percent={50}
+          color="#3b82f6"
+          trackColor="#e5e7eb"
+          gradientColors={['#3b82f6', '#60a5fa']}
+        />
+      </>
+    );
+    const btn = view.getByTestId('test-grad-btn');
+    const flatStyle = RN.StyleSheet.flatten(btn.props.style);
+    expect(flatStyle.backgroundColor).toBe('#a04977');
+    expect(
+      flatStyle.experimental_backgroundImage ?? (flatStyle as any).backgroundImage
+    ).toContain('linear-gradient(135deg');
+    expect(view.UNSAFE_queryAllByType(require('react-native-svg').default)).toHaveLength(0);
+    view.unmount();
   });
 
   it('renders MoodleFileRow with Open and Download actions only (no Share button)', () => {
